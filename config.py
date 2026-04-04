@@ -537,6 +537,12 @@ class Config:
         if key not in self._UPDATABLE_KEYS:
             print(f"[CONFIG] Blocked update of non-updatable key: {key}")
             return False
+
+        # Reject control characters that could inject extra .env lines
+        if any(c in str(value) for c in ("\n", "\r", "\x00")):
+            print(f"[CONFIG] Blocked update of {key}: value contains control characters")
+            return False
+
         try:
             # Record old value for change tracking
             old_value = str(getattr(self, key, ""))

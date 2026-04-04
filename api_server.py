@@ -1194,15 +1194,9 @@ def _launch_external_url(raw_url: str) -> bool:
     if not _is_allowed_external_url(url):
         return False
     try:
-        opened = webbrowser.open(url, new=2)
-        if opened:
-            return True
-        if os.name == "nt" and hasattr(os, "startfile"):
-            os.startfile(url)
-            return True
+        return webbrowser.open(url, new=2)
     except Exception:
         return False
-    return False
 
 
 @app.route("/api/open-external", methods=["GET", "POST"])

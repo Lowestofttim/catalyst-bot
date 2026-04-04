@@ -4790,9 +4790,6 @@ class BotLoop:
 
         self._last_housekeeping = now
 
-        # Prune fill tracker known IDs
-        self.fill_tracker.prune_known_ids()
-
         # Prune Dexie mappings — use DB open offers instead of re-fetching from wallet
         # (sync_from_wallet already ran in the main cycle)
         try:
@@ -4818,6 +4815,14 @@ class BotLoop:
                 prune_splash_incoming(max_age_hours=24)
             except Exception:
                 pass
+
+        # ---- Prune unbounded tables ----
+        try:
+            from database import cleanup_old_pool_snapshots, cleanup_old_trading_pace
+            cleanup_old_pool_snapshots(days=30)
+            cleanup_old_trading_pace(days=7)
+        except Exception:
+            pass
 
         # ---- Coin sanity check + orphan cleanup ----
         # Runs every housekeeping cycle (5 min). Catches:

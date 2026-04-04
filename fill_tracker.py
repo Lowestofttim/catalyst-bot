@@ -49,8 +49,8 @@ class FillTracker:
         # Previous loop's offer IDs (the "before" snapshot)
         self._previous_ids: Dict[str, Set[str]] = {"buy": set(), "sell": set()}
 
-        # Known offer IDs (prevents re-processing on restart)
-        self._known_ids: Set[str] = set()
+        # _known_ids REMOVED — was populated but never read for any decision.
+        # Baseline-reset approach handles restart detection instead.
 
         # Mass disappearance guard counter + timeout
         self._mass_disappearance_count: int = 0
@@ -92,7 +92,6 @@ class FillTracker:
         if not self._previous_ids["buy"] and not self._previous_ids["sell"]:
             self._previous_ids["buy"] = current_buy_ids.copy()
             self._previous_ids["sell"] = current_sell_ids.copy()
-            self._known_ids.update(current_buy_ids | current_sell_ids)
             log_event("info", "fill_tracker_init",
                       f"Baseline set: {len(current_buy_ids)} buys, {len(current_sell_ids)} sells")
             return result
@@ -137,9 +136,6 @@ class FillTracker:
         # Update baseline for next loop
         self._previous_ids["buy"] = current_buy_ids.copy()
         self._previous_ids["sell"] = current_sell_ids.copy()
-
-        # Track new IDs
-        self._known_ids.update(current_buy_ids | current_sell_ids)
 
         return result
 
@@ -1246,7 +1242,6 @@ class FillTracker:
     def reset_baseline(self):
         """Reset the before/after baseline (e.g., on bot restart)."""
         self._previous_ids = {"buy": set(), "sell": set()}
-        self._known_ids.clear()
         self._mass_disappearance_count = 0
         log_event("info", "fill_tracker_reset", "Fill tracker baseline reset")
 
@@ -1265,20 +1260,8 @@ class FillTracker:
         """
         self._previous_ids["buy"] = set(buy_ids)
         self._previous_ids["sell"] = set(sell_ids)
-        self._known_ids.update(buy_ids | sell_ids)
         log_event("info", "fill_tracker_baseline_set",
                   f"Pre-startup baseline set: {len(buy_ids)} buys, "
                   f"{len(sell_ids)} sells — offline fills will be detected on first loop")
 
-    def prune_known_ids(self, max_size: int = 500):
-        """Prevent unbounded growth of known_ids set."""
-        if len(self._known_ids) > max_size:
-            # Keep only IDs that are still active in previous_ids (the rest are stale)
-            active = self._previous_ids["buy"] | self._previous_ids["sell"]
-            old_len = len(self._known_ids)
-            self._known_ids = self._known_ids & active
-            # If still too big (shouldn't happen), just clear and rebuild next loop
-            if len(self._known_ids) > max_size:
-                self._known_ids = active.copy()
-            log_event("debug", "known_ids_pruned",
-                      f"Pruned known_ids from {old_len} to {len(self._known_ids)}")
+    # prune_known_ids REMOVED — _known_ids was dead state (write-only, never read)

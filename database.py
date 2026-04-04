@@ -17,7 +17,7 @@ import os
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any
 
@@ -3386,6 +3386,46 @@ def cleanup_old_events(days: int = 7) -> int:
         conn.commit()
         return cursor.rowcount
     except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return 0
+
+
+def cleanup_old_pool_snapshots(days: int = 30) -> int:
+    """Remove pool snapshots older than the specified number of days.
+
+    Prevents the pool_snapshots table from growing unbounded.
+    Returns the number of rows deleted.
+    """
+    try:
+        conn = get_connection()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        cursor = conn.execute("DELETE FROM pool_snapshots WHERE timestamp < ?", (cutoff,))
+        conn.commit()
+        return cursor.rowcount
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return 0
+
+
+def cleanup_old_trading_pace(days: int = 7) -> int:
+    """Remove trading_pace entries older than the specified number of days.
+
+    Prevents the trading_pace table from growing unbounded.
+    Returns the number of rows deleted.
+    """
+    try:
+        conn = get_connection()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        cursor = conn.execute("DELETE FROM trading_pace WHERE timestamp < ?", (cutoff,))
+        conn.commit()
+        return cursor.rowcount
+    except Exception:
         try:
             conn.rollback()
         except Exception:
