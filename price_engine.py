@@ -287,6 +287,10 @@ class PriceEngine:
         try:
             url = f"{cfg.DEXIE_API_BASE}/v2/prices/tickers"
             resp = self._session.get(url, params={"ticker_id": ticker_id}, timeout=10)
+            if resp.status_code == 429:
+                log_event("warning", "dexie_rate_limited",
+                          f"Dexie price API returned 429 — skipping this cycle")
+                return None
             resp.raise_for_status()
             data = resp.json()
 
@@ -427,6 +431,11 @@ class PriceEngine:
             url = f"{cfg.TIBET_API_BASE}/pairs"
             resp = self._session.get(url, params={"skip": 0, "limit": 200},
                                       timeout=cfg.TIBET_TIMEOUT)
+            if resp.status_code == 429:
+                log_event("warning", "tibet_rate_limited",
+                          f"TibetSwap returned 429 — will use cached price if available")
+                # Fall through to stale cache logic below
+                raise requests.RequestException("HTTP 429 rate limited")
             resp.raise_for_status()
             pairs = resp.json()
 

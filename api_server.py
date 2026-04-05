@@ -134,6 +134,7 @@ _TOKEN_EXEMPT_WRITE_ROUTES = {
 # Those machine routes stay loopback-only and must implement their own validation.
 _RATE_LIMIT_EXEMPT_WRITE_ROUTES = {
     "/api/splash/incoming",
+    "/api/log",              # GUI flushes buffered log entries in bursts
 }
 
 # ---------------------------------------------------------------------------

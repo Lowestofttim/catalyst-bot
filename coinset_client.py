@@ -68,6 +68,9 @@ class CoinsetClient:
         self._consecutive_failures: int = 0
         self._last_success_time: float = 0
 
+        # Rate limit cooldown (epoch time until which we skip Coinset calls)
+        self._rate_limited_until: float = 0.0
+
     # -------------------------------------------------------------------
     # Initialization — extract puzzle hashes from wallet
     # -------------------------------------------------------------------
@@ -204,6 +207,10 @@ class CoinsetClient:
 
         Returns list of unspent coin records, or None on error.
         """
+        # Respect 429 cooldown
+        if time.time() < self._rate_limited_until:
+            return None
+
         api_url = getattr(cfg, "COINSET_API_URL", "https://api.coinset.org")
         timeout = getattr(cfg, "COINSET_TIMEOUT", 5)
 
@@ -219,6 +226,13 @@ class CoinsetClient:
             headers=COINSET_HEADERS,
             timeout=timeout
         )
+
+        if r.status_code == 429:
+            retry_after = min(int(r.headers.get("Retry-After", "60")), 300)
+            self._rate_limited_until = time.time() + retry_after
+            log_event("warning", "coinset_rate_limited",
+                      f"Coinset returned 429 — backing off {retry_after}s")
+            return None
 
         if r.status_code != 200:
             log_event("debug", "coinset_http_error",
@@ -246,6 +260,10 @@ class CoinsetClient:
         if not getattr(cfg, "COINSET_ENABLED", True):
             return None
 
+        # Respect 429 cooldown
+        if time.time() < self._rate_limited_until:
+            return None
+
         api_url = getattr(cfg, "COINSET_API_URL", "https://api.coinset.org")
         timeout = getattr(cfg, "COINSET_TIMEOUT", 5)
 
@@ -258,6 +276,13 @@ class CoinsetClient:
                 headers=COINSET_HEADERS,
                 timeout=timeout
             )
+
+            if r.status_code == 429:
+                retry_after = min(int(r.headers.get("Retry-After", "60")), 300)
+                self._rate_limited_until = time.time() + retry_after
+                log_event("warning", "coinset_rate_limited",
+                          f"Coinset returned 429 on coin lookup — backing off {retry_after}s")
+                return None
 
             if r.status_code == 200:
                 data = r.json()
@@ -330,6 +355,10 @@ class CoinsetClient:
         if not getattr(cfg, "ENABLE_MEMPOOL_WATCH", False):
             return []
 
+        # Respect 429 cooldown
+        if time.time() < self._rate_limited_until:
+            return []
+
         with self._lock:
             if not hasattr(self, "_watched_coins") or not self._watched_coins:
                 return []
@@ -357,6 +386,12 @@ class CoinsetClient:
                     headers=COINSET_HEADERS,
                     timeout=min(timeout, 3),  # Short timeout for best-effort check
                 )
+                if r.status_code == 429:
+                    retry_after = min(int(r.headers.get("Retry-After", "60")), 300)
+                    self._rate_limited_until = time.time() + retry_after
+                    log_event("warning", "coinset_rate_limited",
+                              f"Coinset mempool 429 — backing off {retry_after}s")
+                    return None
                 if r.status_code != 200:
                     return None
                 data = r.json()

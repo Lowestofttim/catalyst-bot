@@ -156,6 +156,13 @@ class MarketIntel:
 
             resp = self._session.get(url, params=params, timeout=10)
 
+            # Bail early on 429 — don't burn through the buy request too
+            if resp.status_code == 429:
+                log_event("warning", "dexie_rate_limited",
+                          "Dexie orderbook API returned 429 — skipping refresh")
+                self._orderbook["errors"] = self._orderbook.get("errors", 0) + 1
+                return self._competitors
+
             # Buy side: people offering XCH for CAT (requesting our CAT)
             buy_params = {
                 "offered": "xch",
@@ -166,6 +173,13 @@ class MarketIntel:
             }
 
             buy_resp = self._session.get(url, params=buy_params, timeout=10)
+
+            # Check buy side for 429 too
+            if buy_resp.status_code == 429:
+                log_event("warning", "dexie_rate_limited",
+                          "Dexie orderbook buy API returned 429 — skipping refresh")
+                self._orderbook["errors"] = self._orderbook.get("errors", 0) + 1
+                return self._competitors
 
             sell_offers = []
             buy_offers = []

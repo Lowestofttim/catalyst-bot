@@ -51,6 +51,9 @@ class DexieManager:
         # Lock for thread safety
         self._lock = threading.Lock()
 
+        # Rate limit cooldown (epoch time until which we skip Dexie calls)
+        self._rate_limited_until: float = 0.0
+
         # Stats
         self._total_posted: int = 0
         self._total_failed: int = 0
@@ -173,6 +176,11 @@ class DexieManager:
 
         Returns result dict with success/skipped/error fields.
         """
+        # Respect 429 cooldown — don't hammer Dexie during backoff
+        if time.time() < self._rate_limited_until:
+            remaining = int(self._rate_limited_until - time.time())
+            return {"success": False, "error": f"rate_limited (cooldown {remaining}s remaining)"}
+
         # Validate bech32 format
         if not offer_bech32.lower().startswith("offer1"):
             return {"success": False, "error": "not_bech32_offer1"}
@@ -237,6 +245,15 @@ class DexieManager:
                         "dexie_id": dexie_id,
                         "trade_id": trade_id,
                     }
+
+                # 429 — back off longer and let the cooldown apply
+                if r.status_code == 429:
+                    retry_after = min(int(r.headers.get("Retry-After", "30")), 120)
+                    self._rate_limited_until = time.time() + retry_after
+                    last_err = f"HTTP 429 rate limited (backing off {retry_after}s)"
+                    log_event("warning", "dexie_rate_limited",
+                              f"Dexie returned 429 — backing off {retry_after}s")
+                    break  # Don't burn remaining retries
 
                 last_err = f"HTTP {r.status_code}: {r.text[:200]}"
 
@@ -381,6 +398,10 @@ def get_offer_detail(dexie_id: str, timeout: int = 8,
     try:
         resp = requests.get(url, headers=headers, timeout=timeout)
         if resp.status_code == 404:
+            return None
+        if resp.status_code == 429:
+            log_event("warning", "dexie_rate_limited",
+                      f"Dexie GET 429 on offer detail {dexie_id[:16]}...")
             return None
         resp.raise_for_status()
         data = resp.json()
