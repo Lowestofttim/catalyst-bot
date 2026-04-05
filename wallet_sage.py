@@ -198,46 +198,84 @@ class SageTransactionError(Exception):
         self.error_type = error_type
 
 
+# ---- Sage RPC result validation ----
+
+def _rpc_succeeded(result) -> bool:
+    """Check if an RPC result represents a successful response.
+
+    rpc() returns structured error dicts on transport/HTTP errors
+    (e.g., {"success": False, "error": "Sage HTTP 500: ..."}),
+    or None on unexpected exceptions. This function distinguishes
+    genuine success from those failure modes.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("success") is False:
+        return False
+    if result.get("error") or result.get("error_message"):
+        return False
+    status = str(result.get("status") or "").strip().lower()
+    if status in ("error", "failed", "failure"):
+        return False
+    return True
+
+
 # ---- Sage initialization state ----
 # Sage requires an explicit `initialize` RPC before wallet reads work.
 # sage_login() calls sage_initialize(), but GUI/API read paths can race
 # ahead before login finishes. This guard prevents those early reads from
 # hitting un-initialized Sage and returning garbage/errors.
 import threading as _thr
+import time as _time
 _init_lock = _thr.Lock()
 _init_ok = False
-_init_failed = False
+_init_last_attempt = 0.0
+_INIT_RETRY_SECS = 5.0
 
 
-def ensure_initialized() -> bool:
+def reset_initialization_state() -> None:
+    """Reset init state so the next ensure_initialized() retries.
+
+    Called externally (e.g. after wallet switch) or by tests.
+    """
+    global _init_ok, _init_last_attempt
+    with _init_lock:
+        _init_ok = False
+        _init_last_attempt = 0.0
+
+
+def ensure_initialized(force_retry: bool = False) -> bool:
     """Ensure Sage wallet manager has been initialized.
 
-    Returns True if already initialized, False if initialization failed
-    or hasn't happened yet. Thread-safe via _init_lock.
+    Returns True if already initialized or initialization succeeds now.
+    Uses a retry cooldown (_INIT_RETRY_SECS) instead of a permanent
+    failure latch — transient errors don't permanently wedge the bot.
+
+    Thread-safe: the actual RPC call happens inside _init_lock to prevent
+    concurrent init attempts.
     """
-    global _init_ok, _init_failed
+    global _init_ok, _init_last_attempt
     with _init_lock:
         if _init_ok:
             return True
-        if _init_failed:
+
+        now = _time.time()
+        if not force_retry and _init_last_attempt and (now - _init_last_attempt) < _INIT_RETRY_SECS:
             return False
-    # Not yet initialized — attempt it once
-    try:
-        result = rpc("initialize", {}, timeout=30)
-        if result is None:
-            _console("  [Sage] INIT FAILED: initialize returned no response")
-            with _init_lock:
-                _init_failed = True
-            return False
-        _console("  [Sage] initialize OK")
-        with _init_lock:
+        _init_last_attempt = now
+
+        # Attempt initialization under the lock
+        try:
+            result = rpc("initialize", {}, timeout=30)
+            if not _rpc_succeeded(result):
+                _console(f"  [Sage] INIT FAILED: initialize returned {result!r}")
+                return False
+            _console("  [Sage] initialize OK")
             _init_ok = True
-        return True
-    except Exception as e:
-        _console(f"  [Sage] INIT FAILED: initialize error: {e}")
-        with _init_lock:
-            _init_failed = True
-        return False
+            return True
+        except Exception as e:
+            _console(f"  [Sage] INIT FAILED: initialize error: {e}")
+            return False
 
 
 # Thread-local connection cache — reuses TLS connections within a thread.
@@ -467,9 +505,10 @@ def _require_signing_capability() -> bool:
 def sage_initialize() -> bool:
     """Explicit Sage wallet manager initialization — required before wallet ops.
 
-    Delegates to ensure_initialized() which handles locking and caching.
+    Delegates to ensure_initialized() with force_retry=True so that
+    an explicit init request always retries even within the cooldown window.
     """
-    return ensure_initialized()
+    return ensure_initialized(force_retry=True)
 
 
 def sage_login(fingerprint: int, force_resync: bool = False) -> bool:
@@ -495,13 +534,12 @@ def sage_login(fingerprint: int, force_resync: bool = False) -> bool:
     # This distinguishes "Sage not running" from "login failed" errors.
     try:
         version_result = rpc("get_version", {}, timeout=5)
-        if version_result is None:
-            print(f"  [Sage] INIT FAILED: Sage RPC not responding (get_version returned None)")
+        if not _rpc_succeeded(version_result) or not (isinstance(version_result, dict) and version_result.get("version")):
+            _console(f"  [Sage] INIT FAILED: Cannot reach Sage RPC: {version_result}")
             return False
-        version = version_result.get("version", "?") if isinstance(version_result, dict) else "?"
-        print(f"  [Sage] Sage v{version} is reachable -- proceeding with login")
+        _console(f"  [Sage] Sage v{version_result['version']} is reachable -- proceeding with login")
     except Exception as e:
-        print(f"  [Sage] INIT FAILED: Cannot reach Sage RPC: {e}")
+        _console(f"  [Sage] INIT FAILED: Cannot reach Sage RPC: {e}")
         return False
 
     # Step 1: explicit initialize
@@ -512,28 +550,20 @@ def sage_login(fingerprint: int, force_resync: bool = False) -> bool:
 
     # Step 2: resync — loads wallet data (only when forced)
     if force_resync:
-        try:
-            result = rpc("resync", {"fingerprint": fingerprint}, timeout=30)
-            if result is None:
-                print(f"  [Sage] resync failed (no response)")
-                return False
-            print(f"  [Sage] resync OK")
-        except Exception as e:
-            print(f"  [Sage] resync error: {e}")
+        result = rpc("resync", {"fingerprint": fingerprint}, timeout=30)
+        if not _rpc_succeeded(result):
+            _console(f"  [Sage] resync failed: {result}")
             return False
+        _console("  [Sage] resync OK")
 
         time.sleep(1)
 
     # Step 3: login — activates the key
-    try:
-        result = rpc("login", {"fingerprint": fingerprint}, timeout=30)
-        if result is None:
-            print(f"  [Sage] login failed (no response)")
-            return False
-        print(f"  [Sage] login OK")
-    except Exception as e:
-        print(f"  [Sage] login error: {e}")
+    result = rpc("login", {"fingerprint": fingerprint}, timeout=30)
+    if not _rpc_succeeded(result):
+        _console(f"  [Sage] login failed: {result}")
         return False
+    _console("  [Sage] login OK")
 
     time.sleep(1)
 
@@ -586,7 +616,7 @@ def get_wallet_sync_status() -> dict:
         return {"reachable": False, "synced": False, "syncing": False, "sync_state": "offline"}
     try:
         result = rpc("get_sync_status", {}, timeout=5)
-        if result and isinstance(result, dict):
+        if _rpc_succeeded(result):
             # Sage returns synced status directly.
             # IMPORTANT: some Sage versions return synced=None (not True/False).
             # We must not promote that undocumented value into "synced=True".
@@ -1421,13 +1451,15 @@ def get_wallet_balance(wallet_id: int):
         # CAT balance: "selectable" = spendable, "owned" = total (free + locked)
         # Valid Sage filter_mode values: all, selectable, owned, spent, clawback
         # "all" includes spent coins and hits 500-limit. "owned" = currently held only.
+        # IMPORTANT: reject structured error results — don't silently turn them into zero balance.
         sel_result = rpc("get_coins", {
             "asset_id": asset_id,
             "offset": 0, "limit": 500,
             "filter_mode": "selectable",
         }, timeout=10)
-        sel_coins = (sel_result.get("coins") or sel_result.get("records")
-                     or sel_result.get("data") or []) if sel_result else []
+        if not _rpc_succeeded(sel_result):
+            return {"success": False, "error": f"CAT selectable balance query failed for wallet {wallet_id}: {sel_result}"}
+        sel_coins = sel_result.get("coins") or sel_result.get("records") or sel_result.get("data") or []
         spendable = sum(int(c.get("amount", "0")) for c in sel_coins)
 
         owned_result = rpc("get_coins", {
@@ -1435,8 +1467,9 @@ def get_wallet_balance(wallet_id: int):
             "offset": 0, "limit": 500,
             "filter_mode": "owned",
         }, timeout=10)
-        owned_coins = (owned_result.get("coins") or owned_result.get("records")
-                       or owned_result.get("data") or []) if owned_result else []
+        if not _rpc_succeeded(owned_result):
+            return {"success": False, "error": f"CAT owned balance query failed for wallet {wallet_id}: {owned_result}"}
+        owned_coins = owned_result.get("coins") or owned_result.get("records") or owned_result.get("data") or []
         total = sum(int(c.get("amount", "0")) for c in owned_coins)
 
         if not hasattr(get_wallet_balance, '_cat_diag_logged'):
@@ -1468,7 +1501,7 @@ def get_wallet_balance(wallet_id: int):
         # Step 1: get selectable (spendable) from get_sync_status (fastest)
         spendable = 0
         sync = rpc("get_sync_status", {}, timeout=5)
-        if sync:
+        if _rpc_succeeded(sync):
             sel_val = sync.get("selectable_balance")
             if sel_val is not None:
                 spendable = int(sel_val)
@@ -1479,8 +1512,9 @@ def get_wallet_balance(wallet_id: int):
             "offset": 0, "limit": 500,
             "filter_mode": "owned",
         }, timeout=10)
-        owned_coins = (owned_result.get("coins") or owned_result.get("records")
-                       or owned_result.get("data") or []) if owned_result else []
+        if not _rpc_succeeded(owned_result):
+            return {"success": False, "error": f"XCH owned balance query failed: {owned_result}"}
+        owned_coins = owned_result.get("coins") or owned_result.get("records") or owned_result.get("data") or []
         total = sum(int(c.get("amount", "0")) for c in owned_coins)
 
         if not hasattr(get_wallet_balance, '_xch_diag_logged'):
