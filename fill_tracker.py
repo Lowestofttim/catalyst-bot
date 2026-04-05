@@ -901,11 +901,17 @@ class FillTracker:
 
         # Record to database
         try:
-            # Compute fee in mojos from current config
-            # (approximation — fee at fill time may differ slightly from creation time)
+            # Use the fee stored on the offer row (set at creation time).
+            # Falls back to current config if the offer has no stored fee.
+            _fee_mojos = 0
             try:
-                _fee_xch = Decimal(str(getattr(cfg, "TRANSACTION_FEE_XCH", "0") or "0"))
-                _fee_mojos = int(_fee_xch * Decimal("1000000000000"))  # 1e12 mojos per XCH
+                from database import get_offer as _get_offer_fee
+                db_offer = _get_offer_fee(trade_id) if trade_id else None
+                if db_offer and int(db_offer.get("fee_mojos_xch") or 0) > 0:
+                    _fee_mojos = int(db_offer["fee_mojos_xch"])
+                else:
+                    _fee_xch = Decimal(str(getattr(cfg, "TRANSACTION_FEE_XCH", "0") or "0"))
+                    _fee_mojos = int(_fee_xch * Decimal("1000000000000"))
             except Exception:
                 _fee_mojos = 0
             fill_id = record_fill(

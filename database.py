@@ -544,6 +544,20 @@ def init_database():
         log_event("info", "db_migration",
                   "Migrated fills table: added 'fee_mojos_xch' column for fee-aware PnL")
 
+    # Migration: add fee_mojos_xch column to offers table.
+    # Persists the exact fee attached to the offer at creation time.
+    # Previously, fill recording used the current config fee (which can change)
+    # or hardcoded 0 during repair backfills. Now fills read the offer's stored fee.
+    try:
+        conn.execute("SELECT fee_mojos_xch FROM offers LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute(
+            "ALTER TABLE offers ADD COLUMN fee_mojos_xch INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+        log_event("info", "db_migration",
+                  "Migrated offers table: added 'fee_mojos_xch' column for per-offer fee tracking")
+
     conn.commit()
     log_event("info", "database_init", "Database initialized successfully")
 
@@ -698,7 +712,8 @@ def _infer_reconcile_designation_by_size(amt: int, tier_sizes_mojos: Dict[str, i
 
 def add_offer(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
               size_cat: Decimal, cat_asset_id: str, tier: str = "mid",
-              expires_at: str = None, coin_id: str = None) -> bool:
+              expires_at: str = None, coin_id: str = None,
+              fee_mojos_xch: int = 0) -> bool:
     """Record a new offer in the database.
 
     Args:
@@ -711,6 +726,7 @@ def add_offer(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
         tier: 'inner', 'mid', 'outer', or 'extreme'
         expires_at: ISO timestamp when this offer expires
         coin_id: The specific coin locked by this offer (from before/after snapshot)
+        fee_mojos_xch: Transaction fee in mojos attached to this offer at creation
 
     Returns:
         True if inserted successfully, False on error
@@ -719,10 +735,10 @@ def add_offer(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
         conn = get_connection()
         conn.execute(
             """INSERT INTO offers (trade_id, side, price_xch, size_xch, size_cat,
-               tier, status, cat_asset_id, created_at, expires_at, coin_id)
-               VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)""",
+               tier, status, cat_asset_id, created_at, expires_at, coin_id, fee_mojos_xch)
+               VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)""",
             (trade_id, side, str(price_xch), str(size_xch), str(size_cat),
-             tier, cat_asset_id, _now(), expires_at, coin_id)
+             tier, cat_asset_id, _now(), expires_at, coin_id, int(fee_mojos_xch))
         )
         conn.commit()
         return True
@@ -2706,7 +2722,7 @@ def backfill_verified_fills_from_offers(limit: int = 50,
         query = """SELECT o.trade_id, o.side, o.price_xch, o.size_xch, o.size_cat,
                           COALESCE(o.filled_at, o.created_at, ?) AS effective_filled_at,
                           o.cat_asset_id, COALESCE(o.tier, 'unknown') AS tier,
-                          0 AS fee_mojos_xch
+                          COALESCE(o.fee_mojos_xch, 0) AS fee_mojos_xch
                    FROM offers o
                    LEFT JOIN fills f ON f.trade_id = o.trade_id
                    WHERE o.status='filled' AND f.trade_id IS NULL"""
