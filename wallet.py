@@ -96,9 +96,15 @@ if WALLET_TYPE == "chia":
     get_exact_spendable_coins_rpc = get_spendable_coins_rpc
 else:
     # Default: Sage (or unknown type falls back to Sage)
+    def _safe_console(msg: str) -> None:
+        try:
+            print(msg, flush=True)
+        except UnicodeEncodeError:
+            print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
+
     if WALLET_TYPE != "sage":
-        print(f"⚠️  [Wallet] Unknown WALLET_TYPE '{WALLET_TYPE}', defaulting to 'sage'")
-    print("🔄 [Wallet] Using Sage light wallet backend (port 9257)")
+        _safe_console(f"[Wallet] Unknown WALLET_TYPE '{WALLET_TYPE}', defaulting to 'sage'")
+    _safe_console("[Wallet] Using Sage light wallet backend (port 9257)")
     try:
         from database import log_event as _log_wallet
         _log_wallet("info", "wallet_backend", "Using Sage light wallet backend (port 9257)")

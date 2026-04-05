@@ -175,6 +175,8 @@ def _spacescan_get(endpoint: str) -> Optional[Dict]:
     Returns:
         JSON response dict, or None on error.
     """
+    global _calls_this_session, _calls_today, _rate_limited_until
+
     _rate_limit()
 
     # Non-blocking 429 backoff — skip calls during cooldown
@@ -184,15 +186,12 @@ def _spacescan_get(endpoint: str) -> Optional[Dict]:
     url = f"{_get_base_url()}{endpoint}"
     timeout = getattr(cfg, "SPACESCAN_TIMEOUT", 10)
 
-    global _calls_this_session, _calls_today
-
     try:
         response = requests.get(url, headers=_get_headers(), timeout=timeout)
 
         if response.status_code == 429:
             log_event("warning", "spacescan_rate_limited",
                       "Spacescan rate limit hit — backing off 60s (non-blocking)")
-            global _rate_limited_until
             _rate_limited_until = time.time() + 60
             return None
 

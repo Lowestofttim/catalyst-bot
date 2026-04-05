@@ -17,6 +17,7 @@ Usage:
 
 import os
 import sys
+import io
 import json
 import time
 import signal
@@ -29,6 +30,24 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from typing import Dict
 from urllib.parse import urlparse, quote
+
+# ---------------------------------------------------------------------------
+# Fix Windows cp1252 terminal encoding so emoji in log messages don't crash.
+# ---------------------------------------------------------------------------
+if sys.platform == "win32":
+    for _pair in [("stdout", "__stdout__"), ("stderr", "__stderr__")]:
+        _st = getattr(sys, _pair[0], None)
+        if _st is not None and hasattr(_st, "buffer"):
+            try:
+                _buf = _st.detach()
+                _wrapped = io.TextIOWrapper(
+                    _buf, encoding="utf-8", errors="replace",
+                    line_buffering=True,
+                )
+                setattr(sys, _pair[0], _wrapped)
+                setattr(sys, _pair[1], _wrapped)
+            except Exception:
+                pass
 from flask import Flask, jsonify, request, send_from_directory, send_file, Response
 
 # ---- Super Log: capture EVERYTHING to terminal + file ----
@@ -1035,7 +1054,7 @@ def _restore_run_history_cutoff_from_events() -> str:
 def _reset_runtime_session_stats() -> Dict:
     """Reset in-memory per-run stats for a new bot/session start."""
     reset_summary = {
-        "offerpool_reset": False,
+        "market_intel_reset": False,
         "splash_reset": False,
         "splash_incoming_cleared": 0,
     }
@@ -1052,9 +1071,9 @@ def _reset_runtime_session_stats() -> Dict:
     try:
         if getattr(bot, "market_intel", None):
             bot.market_intel.reset_session_stats()
-            reset_summary["offerpool_reset"] = True
+            reset_summary["market_intel_reset"] = True
     except Exception:
-        reset_summary["offerpool_reset"] = False
+        reset_summary["market_intel_reset"] = False
 
     try:
         if getattr(bot, "splash_manager", None):
@@ -1084,7 +1103,8 @@ def _reset_fresh_run_session(clear_coins: bool = False,
     """
     global _run_history_cutoff
 
-    reset_at = datetime.now(timezone.utc).isoformat()
+    from database import _sqlite_ts
+    reset_at = _sqlite_ts(datetime.now(timezone.utc))
     summary = {
         "reset_at": reset_at,
         "fills_cleared": 0,
@@ -2208,23 +2228,35 @@ def api_status():
             db_coin_summary = {}
 
         if db_coin_summary:
+            _xch_free_db = db_coin_summary.get("xch_free_count", 0)
+            _xch_locked_db = db_coin_summary.get("xch_locked_count", 0)
+            _cat_free_db = db_coin_summary.get("cat_free_count", 0)
+            _cat_locked_db = db_coin_summary.get("cat_locked_count", 0)
             coin_tracking = {
-                "xch_free": db_coin_summary.get("xch_free_count", 0),
-                "xch_locked": db_coin_summary.get("xch_locked_count", 0),
+                "xch_spendable": _xch_free_db + _xch_locked_db,
+                "xch_free": _xch_free_db,
+                "xch_locked": _xch_locked_db,
                 "xch_total": db_coin_summary.get("xch_total", 0),
-                "cat_free": db_coin_summary.get("cat_free_count", 0),
-                "cat_locked": db_coin_summary.get("cat_locked_count", 0),
+                "cat_spendable": _cat_free_db + _cat_locked_db,
+                "cat_free": _cat_free_db,
+                "cat_locked": _cat_locked_db,
                 "cat_total": db_coin_summary.get("cat_total", 0),
                 "xch_locked_amount": f"{db_coin_summary.get('xch_locked_mojos', 0) / 1e12:.4f}",
                 "cat_locked_amount": f"{db_coin_summary.get('cat_locked_mojos', 0) / (10 ** ((_active_cat.get('decimals') or getattr(cfg, 'CAT_DECIMALS', 3)))):.2f}",
             }
         else:
+            _xch_coins = coins_data.get("xch_coins", 0)
+            _xch_locked_c = coins_data.get("xch_locked_coins", 0)
+            _cat_coins = coins_data.get("cat_coins", 0)
+            _cat_locked_c = coins_data.get("cat_locked_coins", 0)
             coin_tracking = {
-                "xch_free": coins_data.get("xch_coins", 0),
-                "xch_locked": coins_data.get("xch_locked_coins", 0),
+                "xch_spendable": _xch_coins + _xch_locked_c,
+                "xch_free": _xch_coins,
+                "xch_locked": _xch_locked_c,
                 "xch_total": coins_data.get("xch_total_coins", 0),
-                "cat_free": coins_data.get("cat_coins", 0),
-                "cat_locked": coins_data.get("cat_locked_coins", 0),
+                "cat_spendable": _cat_coins + _cat_locked_c,
+                "cat_free": _cat_coins,
+                "cat_locked": _cat_locked_c,
                 "cat_total": coins_data.get("cat_total_coins", 0),
                 "xch_locked_amount": inv.get("xch_locked_amount", "0"),
                 "cat_locked_amount": inv.get("cat_locked_amount", "0"),
@@ -2274,10 +2306,17 @@ def api_status():
                     float(o.get("size_cat", 0)) * (10 ** cat_dec) for o in offers_sell
                 )) if offers_sell else 0
 
-                coin_tracking["xch_free"] = xch_free
+                # "spendable" = raw wallet selectable coin count
+                # "free" = truly available (spendable minus coins locked by active offers)
+                # "total" = spendable + locked (full wallet coin count)
+                xch_truly_free = max(0, xch_free - xch_locked)
+                cat_truly_free = max(0, cat_free - cat_locked)
+                coin_tracking["xch_spendable"] = xch_free
+                coin_tracking["xch_free"] = xch_truly_free
                 coin_tracking["xch_locked"] = xch_locked
                 coin_tracking["xch_total"] = xch_free + xch_locked
-                coin_tracking["cat_free"] = cat_free
+                coin_tracking["cat_spendable"] = cat_free
+                coin_tracking["cat_free"] = cat_truly_free
                 coin_tracking["cat_locked"] = cat_locked
                 coin_tracking["cat_total"] = cat_free + cat_locked
                 coin_tracking["xch_locked_amount"] = f"{xch_locked_mojos / 1e12:.4f}"
@@ -2452,7 +2491,7 @@ def api_config_update():
         "SPACESCAN_API_KEY", "SAGE_CERT_PATH", "SAGE_KEY_PATH",
         # Endpoint URLs — an attacker could redirect wallet/API calls
         "CHIA_WALLET_RPC_URL", "CHIA_FULL_NODE_RPC_URL", "SAGE_RPC_URL",
-        "DEXIE_API_BASE", "TIBET_API_BASE", "OFFERPOOL_API_URL",
+        "DEXIE_API_BASE", "TIBET_API_BASE",
         "SPLASH_SUBMIT_URL", "COINSET_API_URL",
         "SPACESCAN_PRO_URL", "SPACESCAN_FREE_URL",
         # Wallet type — changing mid-run would break everything
@@ -2669,7 +2708,7 @@ def api_config_live():
         "SPACESCAN_API_KEY", "SAGE_CERT_PATH", "SAGE_KEY_PATH",
         # Endpoint URLs — an attacker could redirect wallet/API calls
         "CHIA_WALLET_RPC_URL", "CHIA_FULL_NODE_RPC_URL", "SAGE_RPC_URL",
-        "DEXIE_API_BASE", "TIBET_API_BASE", "OFFERPOOL_API_URL",
+        "DEXIE_API_BASE", "TIBET_API_BASE",
         "SPLASH_SUBMIT_URL", "COINSET_API_URL",
         "SPACESCAN_PRO_URL", "SPACESCAN_FREE_URL",
         # Wallet type — changing mid-run would break everything
@@ -4243,8 +4282,7 @@ def _fetch_dbx_pair_status(asset_id: str, ticker_id: str) -> dict:
 def api_market_intel():
     """Get full market intelligence summary.
 
-    Includes competitor analysis, orderbook depth, DBX eligibility,
-    and Offerpool stats.
+    Includes competitor analysis, orderbook depth, and DBX eligibility.
     """
     if not bot:
         return jsonify({"error": "Bot not initialised"}), 500

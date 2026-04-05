@@ -36,6 +36,10 @@ class TestWalletSageStartupReadiness(unittest.TestCase):
         self.assertFalse(health["healthy"])
 
     def test_get_wallets_does_not_crash_when_no_configured_cat(self):
+        # Reset init state in case previous tests set _init_failed
+        wallet_sage._init_ok = True
+        wallet_sage._init_failed = False
+
         sample_cats = {
             "cats": [
                 {"asset_id": "a" * 64, "name": "Alpha", "ticker": "ALPHA"},

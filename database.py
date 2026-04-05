@@ -561,6 +561,25 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _sqlite_ts(value) -> str:
+    """Normalize a datetime or ISO string to SQLite timestamp format.
+
+    _now() writes timestamps as 'YYYY-MM-DD HH:MM:SS', but Python's
+    .isoformat() produces 'YYYY-MM-DDTHH:MM:SS+00:00'.  SQLite does
+    lexical comparison, so mixing formats silently breaks time-window
+    queries.  Pass any datetime or string through this helper before
+    using it in a WHERE clause or INSERT.
+    """
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(value)
+    return text.replace("T", " ").replace("Z", "").split("+")[0]
+
+
 def _get_reconcile_tier_sizes_mojos(wallet_type: str) -> Dict[str, int]:
     """Build tier sizes for reconcile-time auto-designation."""
     try:
@@ -835,9 +854,9 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
             expires_at = None
             if max_time and int(max_time) > 0:
                 from datetime import datetime, timezone
-                expires_at = datetime.fromtimestamp(
+                expires_at = _sqlite_ts(datetime.fromtimestamp(
                     int(max_time), tz=timezone.utc
-                ).isoformat()
+                ))
 
             # Insert into DB (retry on lock) — explicit transaction per offer
             # since we're using isolation_level=None (autocommit mode)
@@ -2470,7 +2489,7 @@ def count_recent_fills(hours: int = 1) -> int:
     """
     conn = get_connection()
     from datetime import datetime, timezone, timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cutoff = _sqlite_ts(datetime.now(timezone.utc) - timedelta(hours=hours))
     row = conn.execute(
         """SELECT COUNT(*) as cnt FROM fills
            WHERE filled_at > ?
@@ -2693,7 +2712,7 @@ def backfill_verified_fills_from_offers(limit: int = 50,
                    WHERE o.status='filled' AND f.trade_id IS NULL"""
         if since:
             query += " AND COALESCE(o.filled_at, o.created_at) >= ?"
-            params.append(str(since))
+            params.append(_sqlite_ts(since))
         query += " ORDER BY COALESCE(o.filled_at, o.created_at) ASC LIMIT ?"
         params.append(int(limit))
         missing_rows = conn.execute(query, params).fetchall()
@@ -2831,7 +2850,7 @@ def get_unmatched_fills(cat_asset_id: str, side: str,
              AND COALESCE(verification_status, 'legacy') = 'verified'"""
     if since:
         query += " AND filled_at>=?"
-        params.append(str(since))
+        params.append(_sqlite_ts(since))
     query += " ORDER BY filled_at ASC"
     rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
@@ -2970,7 +2989,7 @@ def get_recent_prices(cat_asset_id: str, hours: float = 4.0,
     conn = get_connection()
     # Calculate cutoff time
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    cutoff = _sqlite_ts(datetime.now(timezone.utc) - timedelta(hours=hours))
 
     rows = conn.execute(
         """SELECT * FROM price_history
@@ -3202,7 +3221,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         params.append(cat_asset_id)
     if since:
         query_base += " AND filled_at>=?"
-        params.append(str(since))
+        params.append(_sqlite_ts(since))
     row = conn.execute(query_base, params).fetchone()
     stats["total_fills"] = row["cnt"]
 
@@ -3217,7 +3236,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         params.append(cat_asset_id)
     if since:
         query_base += " AND filled_at>=?"
-        params.append(str(since))
+        params.append(_sqlite_ts(since))
     rows = conn.execute(query_base, params).fetchall()
     stats["realised_pnl_xch"] = str(sum((Decimal(str(r["pnl_xch"])) for r in rows), Decimal("0")))
 
@@ -3231,7 +3250,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         params.append(cat_asset_id)
     if since:
         query_base += " AND filled_at>=?"
-        params.append(str(since))
+        params.append(_sqlite_ts(since))
     row = conn.execute(query_base, params).fetchone()
     stats["round_trips"] = row["cnt"]
 
@@ -3247,7 +3266,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
             params.append(cat_asset_id)
         if since:
             query_base += " AND filled_at>=?"
-            params.append(str(since))
+            params.append(_sqlite_ts(since))
         row = conn.execute(query_base, params).fetchone()
         stats["win_rate"] = round(row["cnt"] / stats["round_trips"] * 100, 1)
     else:
@@ -3263,13 +3282,13 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
             params.append(cat_asset_id)
         if since:
             query_base += " AND filled_at>=?"
-            params.append(str(since))
+            params.append(_sqlite_ts(since))
         row = conn.execute(query_base, params).fetchone()
         stats[f"{side}_fills"] = row["cnt"]
 
     # Verified fill rate (last hour)
     from datetime import datetime, timezone, timedelta as _timedelta
-    _cutoff_1h = (datetime.now(timezone.utc) - _timedelta(hours=1)).isoformat()
+    _cutoff_1h = _sqlite_ts(datetime.now(timezone.utc) - _timedelta(hours=1))
     query_base = """SELECT COUNT(*) as cnt FROM fills
                     WHERE filled_at > ?
                       AND COALESCE(verification_status, 'legacy') = 'verified'"""
@@ -3279,7 +3298,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         params.append(cat_asset_id)
     if since:
         query_base += " AND filled_at>=?"
-        params.append(str(since))
+        params.append(_sqlite_ts(since))
     row = conn.execute(query_base, params).fetchone()
     stats["fill_rate_per_hour"] = float(row["cnt"] or 0)
 
@@ -3300,7 +3319,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
             params.append(cat_asset_id)
         if since:
             query_base += " AND filled_at>=?"
-            params.append(str(since))
+            params.append(_sqlite_ts(since))
         row = conn.execute(query_base, params).fetchone()
         stats[f"unmatched_{side}_fills"] = row["cnt"]
 
@@ -3314,7 +3333,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         params.append(cat_asset_id)
     if since:
         query_base += " AND filled_at>=?"
-        params.append(str(since))
+        params.append(_sqlite_ts(since))
     rows = conn.execute(query_base, params).fetchall()
     stats["volume_xch"] = str(sum((Decimal(str(r["size_xch"] or 0)) for r in rows), Decimal("0")))
     stats["volume_cat"] = str(sum((Decimal(str(r["size_cat"] or 0)) for r in rows), Decimal("0")))
@@ -3330,7 +3349,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
             params.append(cat_asset_id)
         if since:
             query_base += " AND filled_at>=?"
-            params.append(str(since))
+            params.append(_sqlite_ts(since))
         rows = conn.execute(query_base, params).fetchall()
         if rows:
             total = sum((Decimal(str(r["size_xch"])) for r in rows), Decimal("0"))
@@ -3378,7 +3397,7 @@ def cleanup_old_events(days: int = 7) -> int:
     Returns the number of rows deleted.
     """
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = _sqlite_ts(datetime.now(timezone.utc) - timedelta(days=days))
 
     try:
         conn = get_connection()
@@ -3478,7 +3497,7 @@ def set_setting(key: str, value: str):
             """INSERT INTO bot_settings (key, value, updated_at)
                VALUES (?, ?, ?)
                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
-            (key, value, datetime.now(timezone.utc).isoformat())
+            (key, value, _sqlite_ts(datetime.now(timezone.utc)))
         )
         conn.commit()
     except Exception as e:

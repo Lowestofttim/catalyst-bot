@@ -11,7 +11,6 @@ class MarketIntelOrderbookTests(unittest.TestCase):
         fake_config.cfg = types.SimpleNamespace(
             CAT_ASSET_ID="test-cat",
             DBX_MAX_SPREAD_BPS=Decimal("500"),
-            OFFERPOOL_ENABLED=False,
         )
         fake_database = types.ModuleType("database")
         fake_database.log_event = lambda *args, **kwargs: None

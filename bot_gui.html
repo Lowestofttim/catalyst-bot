@@ -3436,16 +3436,16 @@
         .cc-token-icon {
             display: inline-block;
             vertical-align: middle;
-            border-radius: 4px;      /* Slight rounding — not forced circle */
-            object-fit: contain;     /* Show whole logo, never crop edges */
+            border-radius: 50%;      /* Circular — matches coin-shaped token logos */
+            object-fit: cover;       /* Fill circle cleanly, slight crop if needed */
             flex-shrink: 0;
-            image-rendering: -webkit-optimize-contrast; /* Crisp at small sizes */
+            image-rendering: auto;   /* Smooth bilinear/bicubic scaling (not pixelated) */
             /* Gentle fade-in when icon loads */
             transition: opacity 0.3s ease;
         }
-        .cc-token-icon-lg { width: 28px; height: 28px; }
-        .cc-token-icon-md { width: 22px; height: 22px; }
-        .cc-token-icon-sm { width: 18px; height: 18px; }
+        .cc-token-icon-lg { width: 32px; height: 32px; }
+        .cc-token-icon-md { width: 24px; height: 24px; }
+        .cc-token-icon-sm { width: 20px; height: 20px; }
 
         .btn-stop {
             background: #ef4444;
@@ -13714,7 +13714,7 @@
         function showStyledConfirm({ icon = '⚠️', title = 'Confirm', message = 'Are you sure?', confirmText = 'Confirm', cancelText = 'Cancel', extraText = '', style = 'danger' } = {}) {
             return new Promise((resolve) => {
                 _confirmResolve = resolve;
-                document.getElementById('confirmIcon').textContent = icon;
+                document.getElementById('confirmIcon').innerHTML = icon;
                 document.getElementById('confirmTitle').textContent = title;
                 // Use innerHTML so callers can pass <strong>, <br> etc.
                 document.getElementById('confirmMessage').innerHTML = message;
@@ -16307,16 +16307,22 @@
                 
                 if (data.success && data.fingerprint) {
                     const badge = document.getElementById('fingerprintBadge');
-                    badge.textContent = data.fingerprint;
-                    badge.style.color = '#10b981';
-                    badge.title = 'Wallet Fingerprint (auto-detected)';
+                    if (badge) {
+                        badge.textContent = data.fingerprint;
+                        badge.style.color = '#10b981';
+                        badge.title = 'Wallet Fingerprint (auto-detected)';
+                    }
                 } else {
-                    document.getElementById('fingerprintBadge').textContent = 'Not detected';
-                    document.getElementById('fingerprintBadge').style.color = '#ef4444';
+                    const badge = document.getElementById('fingerprintBadge');
+                    if (badge) {
+                        badge.textContent = 'Not detected';
+                        badge.style.color = '#ef4444';
+                    }
                 }
             } catch (error) {
                 console.error('Failed to fetch fingerprint:', error);
-                document.getElementById('fingerprintBadge').textContent = 'Error';
+                const badge = document.getElementById('fingerprintBadge');
+                if (badge) badge.textContent = 'Error';
             }
         }
 
@@ -19237,6 +19243,9 @@
         // ── Inline Coin Prep Log Viewer ──────────────────────────────────
         let _coinPrepLogVisible = false;
         let _coinPrepLogPoll = null;
+        // Rolling message buffer — accumulates status messages when DB log_lines are empty
+        let _coinPrepMsgHistory = [];
+        let _coinPrepLastMsg = '';
 
         function toggleCoinPrepLogs() {
             const box = document.getElementById('coinPrepLogBox');
@@ -19270,15 +19279,44 @@
 
                 let lines = [];
                 if (data.log_lines && Array.isArray(data.log_lines) && data.log_lines.length) {
+                    // DB-backed logs available — use them directly
                     lines = data.log_lines;
                 } else if (data.output) {
                     lines = data.output.split('\n').filter(Boolean);
                 } else {
-                    if (data.phase) lines.push(`Phase: ${data.phase}`);
-                    if (data.status) lines.push(`Status: ${data.status}`);
-                    if (data.progress !== undefined) lines.push(`Progress: ${data.progress}%`);
-                    if (data.xch_coins !== undefined) lines.push(`XCH coins: ${data.xch_coins} / ${data.xch_target || '?'}`);
-                    if (data.cat_coins !== undefined) lines.push(`CAT coins: ${data.cat_coins} / ${data.cat_target || '?'}`);
+                    // Fallback: accumulate status messages as a rolling log.
+                    // The worker's 'message' field has good detail (e.g.
+                    // "Step 2/4: Waiting for CAT pool coins...") but the
+                    // DB log_lines may be empty if events aren't reaching
+                    // the database. Build a live transcript from status polls.
+                    const now = new Date().toLocaleTimeString('en-GB', {hour12: false});
+                    const msg = data.message || '';
+                    const phase = data.phase || '';
+                    const pct = data.progress !== undefined
+                        ? Math.round(data.progress * 100) : '?';
+                    const xch = data.xch_coins !== undefined
+                        ? `${data.xch_coins}/${data.xch_target || '?'}` : '';
+                    const cat = data.cat_coins !== undefined
+                        ? `${data.cat_coins}/${data.cat_target || '?'}` : '';
+
+                    // Only append when message changes (avoids flooding)
+                    const statusLine = msg || phase;
+                    if (statusLine && statusLine !== _coinPrepLastMsg) {
+                        _coinPrepLastMsg = statusLine;
+                        const coins = [xch && `XCH ${xch}`, cat && `CAT ${cat}`]
+                            .filter(Boolean).join(' · ');
+                        const detail = coins ? ` (${coins})` : '';
+                        _coinPrepMsgHistory.push(
+                            `${now} [${pct}%] ${statusLine}${detail}`
+                        );
+                        // Cap at 200 lines
+                        if (_coinPrepMsgHistory.length > 200) {
+                            _coinPrepMsgHistory = _coinPrepMsgHistory.slice(-150);
+                        }
+                    }
+                    lines = _coinPrepMsgHistory.length
+                        ? _coinPrepMsgHistory
+                        : ['Waiting for coin prep activity...'];
                 }
 
                 box.textContent = lines.join('\n') || 'Waiting for coin prep...';
@@ -21777,6 +21815,26 @@
         // SETTINGS MODAL
         // =================================================================
         async function openConfig() {
+            // Block settings navigation while bot is running — redirect to Live Controls
+            if (bot_state && bot_state.running) {
+                const result = await showStyledConfirm({
+                    icon: '&#9881;',
+                    title: 'Settings Locked While Running',
+                    message: 'Core settings cannot be changed while the bot is running.<br><br>Use <strong>Live Controls</strong> on the dashboard for real-time adjustments (spread, inventory, requote), or <strong>stop the bot</strong> first to change setup settings.',
+                    confirmText: 'Go to Live Controls',
+                    cancelText: 'Back',
+                    style: 'warning'
+                });
+                if (result) {
+                    v4SwitchView('dashboard');
+                    // Scroll Live Controls into view after a short delay for view switch
+                    setTimeout(() => {
+                        const lc = document.getElementById('liveControlsSection') || document.getElementById('settingsLiveSection');
+                        if (lc) lc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 150);
+                }
+                return;
+            }
             setSaveConfigButtonState(false);
             if (typeof v4SwitchView === 'function') {
                 await v4SwitchView('settings');
@@ -23247,6 +23305,10 @@ function closeCtgErrorModal() {
                 const data = await response.json();
 
                 if (data.success) {
+                    // Reset rolling log history for new run
+                    _coinPrepMsgHistory = [];
+                    _coinPrepLastMsg = '';
+
                     // Switch to progress view
                     showCoinPrepView('progress');
 

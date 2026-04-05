@@ -21,11 +21,30 @@ Usage:
 
 import sys
 import os
+import io
 import signal
 import threading
 import time
 import argparse
 import subprocess
+
+# ---------------------------------------------------------------------------
+# Fix Windows cp1252 terminal encoding so emoji in log messages don't crash.
+# Forces UTF-8 on stdout/stderr (including sys.__stdout__/__stderr__ used by
+# super_log's slog() function).
+# ---------------------------------------------------------------------------
+if sys.platform == "win32":
+    # stdout and __stdout__ share a buffer, so detach old wrapper first
+    for _pair in [("stdout", "__stdout__"), ("stderr", "__stderr__")]:
+        _st = getattr(sys, _pair[0], None)
+        if _st is not None and hasattr(_st, "buffer"):
+            _buf = _st.detach()  # disconnect old wrapper without closing buffer
+            _wrapped = io.TextIOWrapper(
+                _buf, encoding="utf-8", errors="replace",
+                line_buffering=True,
+            )
+            setattr(sys, _pair[0], _wrapped)
+            setattr(sys, _pair[1], _wrapped)
 
 # ---------------------------------------------------------------------------
 # Early path setup â€” make sure we can import everything from our directory

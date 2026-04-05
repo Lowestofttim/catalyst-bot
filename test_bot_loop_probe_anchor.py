@@ -14,7 +14,6 @@ class _FakeCfg:
     AUTO_REQUOTE = True
     DEXIE_AUTO_POST = True
     SPLASH_ENABLED = True
-    OFFERPOOL_ENABLED = False
     COIN_IDS_ENABLED = True
     CAT_ASSET_ID = "test-cat"
     CAT_DECIMALS = 3
@@ -207,9 +206,6 @@ class _DummyAMMMonitor:
 class _DummyMarketIntel:
     def __init__(self, price_engine=None):
         self.orderbook = {}
-
-    def queue_offerpool_post(self, *args, **kwargs):
-        pass
 
     def refresh_orderbook(self, force=False):
         del force

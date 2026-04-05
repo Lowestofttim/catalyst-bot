@@ -11,7 +11,6 @@ class _FakeCfg:
     AUTO_REQUOTE = True
     DEXIE_AUTO_POST = False
     SPLASH_ENABLED = False
-    OFFERPOOL_ENABLED = False
     COIN_IDS_ENABLED = True
     CAT_ASSET_ID = "test-cat"
     CAT_DECIMALS = 3
@@ -239,12 +238,6 @@ class _DummyMarketIntel:
 
     def get_stats(self):
         return {}
-
-    def prune_fingerprints(self):
-        pass
-
-    def queue_offerpool_post(self, *args, **kwargs):
-        pass
 
     def refresh_orderbook(self, force=False):
         del force

@@ -25,7 +25,7 @@ class EventCategory(StrEnum):
     OFFER = "offer"           # offer create/cancel/fill/requote/refresh
     PRICING = "pricing"       # price fetch/validation/limits/arb
     WALLET = "wallet"         # wallet sync/health/address
-    EXCHANGE = "exchange"     # dexie/splash/offerpool posting
+    EXCHANGE = "exchange"     # dexie/splash posting
     RISK = "risk"             # circuit breakers/recovery/guards
     SYSTEM = "system"         # db/config/monitor/diagnostics
     COIN = "coin"             # coin prep/topup/reconcile/split
@@ -296,9 +296,6 @@ _EVENT_CATEGORY_MAP = {
     "splash_unhealthy": EventCategory.EXCHANGE,
     "splash_recovered": EventCategory.EXCHANGE,
     "splash_fingerprints_cleared": EventCategory.EXCHANGE,
-    "offerpool_error": EventCategory.EXCHANGE,
-    "offerpool_posted": EventCategory.EXCHANGE,
-    "offerpool_fingerprints_cleared": EventCategory.EXCHANGE,
     "repost_error": EventCategory.EXCHANGE,
 
     # ---- RISK ----

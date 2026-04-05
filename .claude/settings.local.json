@@ -287,7 +287,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\(''app_bridge.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''app_bridge.py OK''\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''dexie_manager.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''dexie_manager.py OK''\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''splash_manager.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''splash_manager.py OK''\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\(''fill_tracker.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''fill_tracker.py OK''\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''fill_tracker.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''fill_tracker.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''bot_loop.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")"
     ],
     "defaultMode": "bypassPermissions"
   }

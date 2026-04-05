@@ -369,8 +369,6 @@ class Config:
 
         # ----- Market Intelligence (V2 — ecosystem upgrades) -----
         self.COMPETITOR_AWARE_ENABLED = _bool("COMPETITOR_AWARE_ENABLED", False)
-        self.OFFERPOOL_ENABLED = _bool("OFFERPOOL_ENABLED", False)
-        self.OFFERPOOL_API_URL = _safe_url("OFFERPOOL_API_URL", "https://offerpool.io/api/v1/offers")
         self.DBX_MAX_SPREAD_BPS = _decimal("DBX_MAX_SPREAD_BPS", "500")
 
         # ----- Splash Network (V3 — decentralized offer broadcasting) -----
@@ -495,7 +493,7 @@ class Config:
         "GAP_CLOSE_CONVERGENCE_SECS", "GAP_CLOSE_CONVERGENCE_STEP_PCT",
         "GAP_CLOSE_CASCADE_WAIT_SECS", "GAP_CLOSE_CASCADE_BATCH_SIZE",
         # Market intel
-        "COMPETITOR_AWARE_ENABLED", "OFFERPOOL_ENABLED",
+        "COMPETITOR_AWARE_ENABLED",
         "DBX_MAX_SPREAD_BPS",
         # Splash
         "SPLASH_ENABLED", "SPLASH_POST_RETRIES",

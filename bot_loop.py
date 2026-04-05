@@ -208,15 +208,6 @@ class BotLoop:
         self._state_lock = threading.Lock()
         self._probe_lock = threading.Lock()   # Protects _probe_state multi-key updates
 
-    def _set_state(self, **updates):
-        """Update _bot_state under the state lock (GUI-visible state).
-
-        All bot_state writes must go through this method so the read side
-        in get_state() sees a consistent snapshot.
-        """
-        with self._state_lock:
-            self._bot_state.update(updates)
-
         # ---- Event bus (set by api_server after creation) ----
         self._event_bus = None
 
@@ -370,6 +361,19 @@ class BotLoop:
         self._recovery_exit_healthy_cycles: int = 2
         self._recovery_min_side_deficit: int = 2
         self._recovery_min_total_deficit: int = 2
+
+        # Flag: __init__ complete — get_state() checks this to avoid
+        # AttributeError when SSE connects before all attrs are set.
+        self._init_complete = True
+
+    def _set_state(self, **updates):
+        """Update _bot_state under the state lock (GUI-visible state).
+
+        All bot_state writes must go through this method so the read side
+        in get_state() sees a consistent snapshot.
+        """
+        with self._state_lock:
+            self._bot_state.update(updates)
 
     # -------------------------------------------------------------------
     # Start / Stop
@@ -1766,8 +1770,8 @@ class BotLoop:
         stats["enabled"] = bool(getattr(cfg, "SPLASH_RECEIVE_ENABLED", False))
         stats["pair_asset_id"] = asset_id
         stats["pair_label"] = self._current_splash_pair_label()
-        stats["poll_secs"] = self._splash_receive_interval
-        stats["batch_size"] = self._splash_receive_batch_size
+        stats["poll_secs"] = getattr(self, "_splash_receive_interval", 5)
+        stats["batch_size"] = getattr(self, "_splash_receive_batch_size", 10)
         return stats
 
     def _resolve_splash_view_offer(self):
@@ -1992,10 +1996,10 @@ class BotLoop:
             validation = cfg.validate()
             for warn in validation.get("warnings", []):
                 log_event("warning", "config_validation", f"CONFIG WARNING: {warn}")
-                slog("STARTUP", f"⚠️  CONFIG WARNING: {warn}")
+                slog("STARTUP", f"[WARN] CONFIG WARNING: {warn}")
             for err in validation.get("errors", []):
                 log_event("error", "config_validation", f"CONFIG ERROR: {err}")
-                slog("STARTUP", f"❌ CONFIG ERROR: {err}")
+                slog("STARTUP", f"[ERROR] CONFIG ERROR: {err}")
             if validation.get("errors"):
                 print(f"[STARTUP] {len(validation['errors'])} config error(s) — check settings")
             if not validation["warnings"] and not validation["errors"]:
@@ -2029,7 +2033,7 @@ class BotLoop:
                     r_norm = resolved.lower().replace("0x", "").strip()
                     c_norm = configured.lower().replace("0x", "").strip()
                     if r_norm != c_norm:
-                        msg = (f"🚫 SAFETY STOP: wallet_id {cfg.CAT_WALLET_ID} resolves to "
+                        msg = (f"[SAFETY STOP] wallet_id {cfg.CAT_WALLET_ID} resolves to "
                                f"asset {resolved[:20]}... but .env has {configured[:20]}... "
                                f"— these are DIFFERENT tokens! Refusing to start.")
                         log_event("error", "cat_mapping_mismatch", msg)
@@ -2038,10 +2042,10 @@ class BotLoop:
                         self._set_state(status="error", error="CAT asset_id mismatch — wrong token detected")
                         return
                     else:
-                        slog("STARTUP", f"✅ CAT mapping verified: wallet_id {cfg.CAT_WALLET_ID} "
-                             f"→ {resolved[:20]}... matches .env config")
+                        slog("STARTUP", f"[OK] CAT mapping verified: wallet_id {cfg.CAT_WALLET_ID} "
+                             f"-> {resolved[:20]}... matches .env config")
         except Exception as e:
-            slog("STARTUP", f"⚠️ CAT mapping check skipped: {e}")
+            slog("STARTUP", f"[WARN] CAT mapping check skipped: {e}")
 
         try:
             # ---- Auto-detect wallet address for Spacescan verification ----
@@ -2605,7 +2609,7 @@ class BotLoop:
                             if tid in wallet_open_ids:
                                 boost_ids.append(tid)
                         if boost_ids:
-                            print(f"   📈 Found {len(boost_ids)} boost offers in wallet "
+                            print(f"   [BOOST] Found {len(boost_ids)} boost offers in wallet "
                                   f"(DB status was not 'open' — recovered via cross-reference)",
                                   flush=True)
                     except Exception as e2:
@@ -2648,7 +2652,7 @@ class BotLoop:
                                   f"Recovered {len(boost_ids)} gap-closer offers — "
                                   f"resuming at {_bps_to_pct(recovered_spread)} (step {recovered_steps}, "
                                   f"floor {_bps_to_pct(recovered_floor)})")
-                        print(f"📈 Gap closer recovery: {len(boost_ids)} offers restored "
+                        print(f"[BOOST] Gap closer recovery: {len(boost_ids)} offers restored "
                               f"at {_bps_to_pct(recovered_spread)} (step {recovered_steps})", flush=True)
                     else:
                         # Fallback: no event data → use config default
@@ -2657,7 +2661,7 @@ class BotLoop:
                         log_event("info", "gap_closer_recovery",
                                   f"Recovered {len(boost_ids)} gap-closer offers from DB "
                                   f"(spread data lost — starting fresh at {_bps_to_pct(self.boost_manager._gap_spread_bps)})")
-                        print(f"📈 Gap closer recovery: {len(boost_ids)} offers restored "
+                        print(f"[BOOST] Gap closer recovery: {len(boost_ids)} offers restored "
                               f"(will resume probing from default)", flush=True)
                 # Pre-register recovered boost IDs so fill tracker ignores
                 # them if they disappear during gap closer stepping
@@ -2744,11 +2748,11 @@ class BotLoop:
                     print(baseline_msg, flush=True)
                     log_event("info", "startup_baseline_price", baseline_msg)
                 else:
-                    print("⚠️ WARNING: Could not set requote baseline — mid_price is 0!", flush=True)
+                    print("[WARN] Could not set requote baseline -- mid_price is 0!", flush=True)
                     log_event("warning", "startup_baseline_zero",
                               "mid_price was 0 — requoting will be disabled until offers are created")
             except Exception as e:
-                err_msg = f"⚠️ WARNING: Could not set baseline price: {e}"
+                err_msg = f"[WARN] Could not set baseline price: {e}"
                 print(err_msg, flush=True)
                 log_event("warning", "startup_baseline_failed", err_msg)
 
@@ -2913,7 +2917,7 @@ class BotLoop:
             avg_spread_bps = (buy_spread + sell_spread) / 2 * Decimal("10000")
             self._set_state(spread_bps=str(int(avg_spread_bps)))
         except Exception as e:
-            print(f"   ⚠️ Spread calc failed: {e}", flush=True)
+            print(f"   [WARN] Spread calc failed: {e}", flush=True)
             # Fallback: use config base spread so modal isn't stuck on zero
             try:
                 fallback = int(getattr(cfg, "BASE_SPREAD_BPS", 0) or getattr(cfg, "SPREAD_BPS", 0))
@@ -3016,7 +3020,7 @@ class BotLoop:
             if self.risk_manager.is_full_halt():
                 # Price CB: price is outside safe range — skip cycle entirely.
                 # No position should be built when price validity is in question.
-                print(" ⚠️ PRICE CB — skipping cycle", flush=True)
+                print(" [CB] PRICE CB -- skipping cycle", flush=True)
                 log_event("warning", "circuit_breaker",
                           "PRICE circuit breaker — skipping cycle (both sides halted)")
                 return
@@ -3025,7 +3029,7 @@ class BotLoop:
                 # Cancel the accumulating side (done above) but CONTINUE the cycle
                 # so the correcting side can place new offers to reduce position.
                 blocked = self.risk_manager.get_circuit_breaker_blocked_side()
-                print(f" ⚠️ POSITION CB ({blocked} blocked) — continuing correcting side",
+                print(f" [CB] POSITION CB ({blocked} blocked) -- continuing correcting side",
                       flush=True)
                 log_event("warning", "circuit_breaker_partial",
                           f"POSITION circuit breaker — '{blocked}' side halted, "
@@ -3118,7 +3122,7 @@ class BotLoop:
         sell_fills = fill_result.get("sell_fills", [])
 
         if buy_fills or sell_fills:
-            print(f" 🎯 {len(buy_fills)} buys, {len(sell_fills)} sells FILLED!", flush=True)
+            print(f" [FILL] {len(buy_fills)} buys, {len(sell_fills)} sells FILLED!", flush=True)
             log_event("info", "fills_detected",
                       f"Fills this cycle: {len(buy_fills)} buys, {len(sell_fills)} sells")
             # Push fill events to GUI instantly
@@ -3258,7 +3262,8 @@ class BotLoop:
                 wallet_bal = get_wallet_balance(cfg.WALLET_ID_XCH)
                 wallet_xch = Decimal("0")
                 if wallet_bal and wallet_bal.get("success"):
-                    wallet_xch = Decimal(str(wallet_bal.get("confirmed_wallet_balance", 0))) / Decimal("1000000000000")
+                    _wb = wallet_bal.get("wallet_balance") or wallet_bal
+                    wallet_xch = Decimal(str(_wb.get("confirmed_wallet_balance", 0))) / Decimal("1000000000000")
 
                 our_address = getattr(cfg, "WALLET_ADDRESS", "")
                 if our_address and wallet_xch > 0:
@@ -3268,7 +3273,7 @@ class BotLoop:
                                   f"Balance check OK — Wallet: {wallet_xch:.4f}, "
                                   f"On-chain: {result.get('xch_onchain', '?')}")
                     else:
-                        print(f"\n   ⚠️  BALANCE MISMATCH! Wallet: {wallet_xch:.4f} XCH, "
+                        print(f"\n   [WARN] BALANCE MISMATCH! Wallet: {wallet_xch:.4f} XCH, "
                               f"On-chain: {result.get('xch_onchain', '?')} XCH", flush=True)
             except ImportError:
                 pass  # spacescan module not available
@@ -3739,9 +3744,9 @@ class BotLoop:
                 )
 
                 if is_vulnerable and move_bps > cfg.ARB_ALERT_THRESHOLD_BPS:
-                    msg = (f"⚡ EMERGENCY requote of {eq_side} side — "
+                    msg = (f"[EMERGENCY] requote of {eq_side} side -- "
                            f"price shock {_bps_to_pct(move_bps)} "
-                           f"({last_q:.8f} → {mid_price:.8f}, "
+                           f"({last_q:.8f} -> {mid_price:.8f}, "
                            f"arb gap: {_bps_to_pct(arb_gap)})")
                     print(msg, flush=True)  # Terminal-visible
                     log_event("warning", "emergency_requote", msg)
@@ -3775,7 +3780,7 @@ class BotLoop:
                     self._emit_coin_update("emergency_requote")
                     self._last_bulk_create_time = time.time()
 
-                    done_msg = (f"✅ Emergency requote {eq_side}: "
+                    done_msg = (f"[OK] Emergency requote {eq_side}: "
                                 f"{len(new_offers)} new offers at {requote_mid:.8f}")
                     print(done_msg, flush=True)  # Terminal-visible
                     log_event("info", "emergency_requote_done", done_msg)
@@ -3944,7 +3949,7 @@ class BotLoop:
                         self._emit("boost", state)
                         tc = cascade_result.get("total_created", 0)
                         tk = cascade_result.get("total_cancelled", 0)
-                        print(f"   [8d] 🔄 CASCADE: +{tc} new, -{tk} stale "
+                        print(f"   [8d] CASCADE: +{tc} new, -{tk} stale "
                               f"(probe at {_bps_to_pct(state['current_spread_bps'])})",
                               flush=True)
 
@@ -3982,7 +3987,8 @@ class BotLoop:
             _cat_reserve = getattr(cfg, "CAT_RESERVE", Decimal("0"))
 
             if _xch_reserve > Decimal("0"):
-                _xch_bal = _get_wallet_balance(cfg.WALLET_ID_XCH)
+                _xch_bal_raw = _get_wallet_balance(cfg.WALLET_ID_XCH)
+                _xch_bal = (_xch_bal_raw.get("wallet_balance") or _xch_bal_raw) if _xch_bal_raw else None
                 _xch_total = (
                     Decimal(str(_xch_bal.get("confirmed_wallet_balance", 0)))
                     / Decimal("1000000000000")
@@ -4025,7 +4031,8 @@ class BotLoop:
                     self._clear_alert("reserve_floor")
 
             if not _reserve_skip_create and _cat_reserve > Decimal("0"):
-                _cat_bal = _get_wallet_balance(cfg.CAT_WALLET_ID)
+                _cat_bal_raw = _get_wallet_balance(cfg.CAT_WALLET_ID)
+                _cat_bal = (_cat_bal_raw.get("wallet_balance") or _cat_bal_raw) if _cat_bal_raw else None
                 _cat_scale = Decimal(10) ** Decimal(str(cfg.CAT_DECIMALS))
                 _cat_total = (
                     Decimal(str(_cat_bal.get("confirmed_wallet_balance", 0))) / _cat_scale
@@ -4143,13 +4150,6 @@ class BotLoop:
         else:
             print(f"   [11b] Splash OFF", flush=True)
 
-        # ---- Step 11c: Cross-post to Offerpool (NEW — ecosystem) ----
-        if getattr(cfg, "OFFERPOOL_ENABLED", False):
-            try:
-                self.market_intel.flush_offerpool_queue()
-            except Exception as e:
-                log_event("debug", "offerpool_error", f"Offerpool flush failed: {e}")
-
         # ---- Step 12: Coin management ----
         print(f"   [12] Coin health...", end="", flush=True)
         self._handle_coins(len(current_buy_ids), len(current_sell_ids))
@@ -4224,7 +4224,7 @@ class BotLoop:
         except Exception as e:
             print(f"   [15] Dashboard emit error: {e}", flush=True)
 
-        print(f" done ✅", flush=True)
+        print(f" done [OK]", flush=True)
         log_event("debug", "step15_gui", "Housekeeping + inventory + GUI push done")
 
         # Console cycle summary — one clean line showing the cycle result
@@ -4371,8 +4371,8 @@ class BotLoop:
             should_requote = forced or self.offer_manager.should_requote(side, mid_price, last_price)
 
             if should_requote:
-                reason = "convergence tightening" if forced else f"price moved {last_price:.8f} → {mid_price:.8f}"
-                print(f"\n   🔄 REQUOTING {side} side ({reason})", flush=True)
+                reason = "convergence tightening" if forced else f"price moved {last_price:.8f} -> {mid_price:.8f}"
+                print(f"\n   [REQUOTE] {side} side ({reason})", flush=True)
                 log_event("info", "requoting",
                           f"Requoting {side} side ({reason})")
 
@@ -4624,7 +4624,6 @@ class BotLoop:
                     trade_id = offer.get("trade_id", "")
                     if bech32 and trade_id:
                         self.dexie_manager.queue_post(bech32, trade_id)
-                        self.market_intel.queue_offerpool_post(bech32, trade_id)
                         if getattr(cfg, "SPLASH_ENABLED", False):
                             self.splash_manager.queue_post(bech32, trade_id)
 
@@ -4686,7 +4685,7 @@ class BotLoop:
             self.coin_manager.snapshot_coins("startup_recheck")
             self._emit_coin_update("startup_recheck")
             readiness = self.coin_manager.coin_readiness_report()
-            print(f"   📊 Startup coin re-check: {readiness.get('overall_status', '?')}", flush=True)
+            print(f"   [COINS] Startup coin re-check: {readiness.get('overall_status', '?')}", flush=True)
             log_event("info", "startup_coin_recheck",
                       f"Re-checked coins after wallet settled: "
                       f"{readiness.get('overall_status', 'UNKNOWN')}")
@@ -4802,9 +4801,6 @@ class BotLoop:
 
         # Prune offer manager caches
         self.offer_manager.prune_caches(active_ids)
-
-        # Prune market intel fingerprints
-        self.market_intel.prune_fingerprints()
 
         # Prune Splash fingerprints + old incoming offers (V3)
         if getattr(cfg, "SPLASH_ENABLED", False):
@@ -6099,6 +6095,11 @@ class BotLoop:
 
     def get_state(self) -> Dict:
         """Get full bot state for the GUI/API."""
+        # Guard: if __init__ hasn't finished, return minimal state to avoid
+        # AttributeError crashes when SSE connects during startup.
+        if not getattr(self, "_init_complete", False):
+            with self._state_lock:
+                return dict(self._bot_state)
         with self._state_lock:
             state = dict(self._bot_state)
         state["loop_duration"] = round(self._last_loop_duration, 2)

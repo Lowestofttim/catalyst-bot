@@ -1,5 +1,5 @@
 """
-V2 Market Intelligence — Dexie Orderbook Monitoring + Offerpool Cross-Posting
+V2 Market Intelligence — Dexie Orderbook Monitoring
 
 NEW MODULE — This is the "ecosystem advantage" that no other Chia market maker has.
 
@@ -8,14 +8,10 @@ What it does:
    identifies competing offers, and calculates the best bid/ask spread from other
    market participants. Feeds this into risk_manager for smarter spread decisions.
 
-2. **Offerpool Cross-Posting** — Posts offers to Offerpool (decentralized P2P
-   offer discovery network) in addition to Dexie, giving our offers wider visibility
-   across the Chia ecosystem.
-
-3. **DBX Rewards Tracking** — Monitors whether our offers qualify for Dexie's
+2. **DBX Rewards Tracking** — Monitors whether our offers qualify for Dexie's
    DBX liquidity incentive program (offers within eligible spread earn DBX tokens).
 
-4. **Market Depth Analysis** — Calculates total liquidity depth on each side,
+3. **Market Depth Analysis** — Calculates total liquidity depth on each side,
    detects thin books where we can be more aggressive, and identifies whale orders.
 
 Usage:
@@ -23,11 +19,9 @@ Usage:
     intel = MarketIntel(price_engine)
     intel.refresh_orderbook()
     competitor_spread = intel.get_competitor_spread()
-    intel.queue_offerpool_post(offer_bech32, trade_id)
 """
 
 import time
-import hashlib
 import requests
 import threading
 from decimal import Decimal, InvalidOperation
@@ -97,15 +91,6 @@ class MarketIntel:
             "max_eligible_spread": Decimal(str(getattr(cfg, "DBX_MAX_SPREAD_BPS", "500"))),
             "estimated_dbx_rate": Decimal("0"),   # Estimated DBX per hour
             "last_check": 0,
-        }
-
-        # ---- Offerpool state ----
-        self._offerpool_queue: List[Dict] = []
-        self._offerpool_posted: set = set()  # SHA256 fingerprints
-        self._offerpool_stats: Dict = {
-            "total_posted": 0,
-            "total_failed": 0,
-            "total_skipped": 0,
         }
 
         # ---- Thread safety ----
@@ -354,10 +339,22 @@ class MarketIntel:
         elif overall_best_bid > 0 and overall_best_ask > 0:
             overall_spread_bps = Decimal("0")
 
+        # Our own spread (from our best bid/ask on the orderbook)
+        our_buys = [o for o in buy_offers if o.get("is_ours")]
+        our_sells = [o for o in sell_offers if o.get("is_ours")]
+        our_best_bid = max((o["price"] for o in our_buys), default=Decimal("0"))
+        our_best_ask = min((o["price"] for o in our_sells), default=Decimal("0"))
+        our_spread_bps = Decimal("0")
+        if our_best_bid > 0 and our_best_ask > 0 and our_best_bid < our_best_ask:
+            our_mid = (our_best_bid + our_best_ask) / 2
+            if our_mid > 0:
+                our_spread_bps = (our_best_ask - our_best_bid) / our_mid * Decimal("10000")
+
         with self._lock:
             self._competitors["best_bid"] = best_bid
             self._competitors["best_ask"] = best_ask
             self._competitors["competitor_spread_bps"] = competitor_spread_bps
+            self._competitors["our_spread_bps"] = our_spread_bps
             self._competitors["overall_best_bid"] = overall_best_bid
             self._competitors["overall_best_ask"] = overall_best_ask
             self._competitors["overall_spread_bps"] = overall_spread_bps
@@ -457,86 +454,6 @@ class MarketIntel:
         return adjustment
 
     # -------------------------------------------------------------------
-    # Offerpool Cross-Posting
-    # -------------------------------------------------------------------
-
-    def queue_offerpool_post(self, offer_bech32: str, trade_id: str = None):
-        """Queue an offer for posting to Offerpool.
-
-        Offerpool is a decentralized P2P offer discovery protocol.
-        Cross-posting gives our offers wider visibility beyond just Dexie.
-        """
-        if not getattr(cfg, "OFFERPOOL_ENABLED", False):
-            return
-
-        if not offer_bech32 or not isinstance(offer_bech32, str):
-            return
-
-        with self._lock:
-            self._offerpool_queue.append({
-                "offer": offer_bech32.strip(),
-                "trade_id": trade_id,
-            })
-
-    def flush_offerpool_queue(self) -> Dict:
-        """Post all queued offers to Offerpool.
-
-        Returns summary: {posted: N, failed: N, skipped: N}
-        """
-        if not getattr(cfg, "OFFERPOOL_ENABLED", False):
-            return {"posted": 0, "failed": 0, "skipped": 0, "disabled": True}
-
-        with self._lock:
-            batch = list(self._offerpool_queue)
-            self._offerpool_queue.clear()
-
-        if not batch:
-            return {"posted": 0, "failed": 0, "skipped": 0}
-
-        posted = 0
-        failed = 0
-        skipped = 0
-
-        offerpool_url = getattr(cfg, "OFFERPOOL_API_URL",
-                                "https://offerpool.io/api/v1/offers")
-
-        for item in batch[:10]:  # Cap at 10 per flush
-            offer_bech32 = item["offer"]
-            trade_id = item.get("trade_id", "")
-
-            # Fingerprint dedup
-            fp = hashlib.sha256(offer_bech32.encode("utf-8")).hexdigest()
-            if fp in self._offerpool_posted:
-                skipped += 1
-                self._offerpool_stats["total_skipped"] += 1
-                continue
-
-            try:
-                resp = self._session.post(
-                    offerpool_url,
-                    json={"offer": offer_bech32},
-                    timeout=10
-                )
-
-                if 200 <= resp.status_code < 300:
-                    self._offerpool_posted.add(fp)
-                    posted += 1
-                    self._offerpool_stats["total_posted"] += 1
-                else:
-                    failed += 1
-                    self._offerpool_stats["total_failed"] += 1
-
-            except Exception:
-                failed += 1
-                self._offerpool_stats["total_failed"] += 1
-
-        if posted > 0:
-            log_event("info", "offerpool_posted",
-                      f"Cross-posted {posted} offers to Offerpool ({skipped} skipped)")
-
-        return {"posted": posted, "failed": failed, "skipped": skipped}
-
-    # -------------------------------------------------------------------
     # DBX Rewards Tracking
     # -------------------------------------------------------------------
 
@@ -612,10 +529,6 @@ class MarketIntel:
             "estimated_rate": str(self._dbx.get("estimated_dbx_rate", "0")),
         }
 
-        # Add Offerpool stats
-        serialized["offerpool"] = dict(self._offerpool_stats)
-        serialized["offerpool"]["enabled"] = getattr(cfg, "OFFERPOOL_ENABLED", False)
-
         return serialized
 
     def get_orderbook_snapshot(self) -> Dict:
@@ -651,32 +564,18 @@ class MarketIntel:
             "buy_depth_xch": str(self._competitors.get("buy_depth_xch", "0")),
             "sell_depth_xch": str(self._competitors.get("sell_depth_xch", "0")),
             "thin_side": self._competitors.get("thin_side", ""),
-            "offerpool": dict(self._offerpool_stats),
         }
 
+    def prune_fingerprints(self):
+        """Compatibility no-op after Offerpool removal."""
+        return
+
     def reset_session_stats(self):
-        """Reset per-run broadcast stats and queued offerpool state.
-
-        Used when the operator explicitly starts a fresh run or restarts the
-        bot and wants market-intel counters to represent only the current run.
-        """
+        """Reset per-run market-intel counters for a fresh run."""
         with self._lock:
-            self._offerpool_queue.clear()
-            self._offerpool_posted.clear()
-            self._offerpool_stats = {
-                "total_posted": 0,
-                "total_failed": 0,
-                "total_skipped": 0,
-            }
-
-    # -------------------------------------------------------------------
-    # Housekeeping
-    # -------------------------------------------------------------------
-
-    def prune_fingerprints(self, max_entries: int = 300):
-        """Prune old fingerprints to prevent unbounded growth."""
-        if len(self._offerpool_posted) > max_entries:
-            old_len = len(self._offerpool_posted)
-            self._offerpool_posted.clear()
-            log_event("debug", "offerpool_fingerprints_cleared",
-                      f"Cleared {old_len} fingerprints (exceeded {max_entries} cap)")
+            self._orderbook["refresh_count"] = 0
+            self._orderbook["errors"] = 0
+            self._known_dexie_ids.clear()
+            self._dbx["eligible_offers"] = 0
+            self._dbx["estimated_dbx_rate"] = Decimal("0")
+            self._dbx["last_check"] = 0

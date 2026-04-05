@@ -37,6 +37,14 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 
+
+def _console(msg: str) -> None:
+    """Print to console, replacing unencodable chars on cp1252 Windows terminals."""
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
+
 # Sage defaults to port 9257 — uses HTTPS with self-signed cert
 # IMPORTANT: use 127.0.0.1 (not localhost) to match Sage's actual bind address
 WALLET_URL = os.getenv("SAGE_RPC_URL", "https://127.0.0.1:9257").rstrip("/")
@@ -190,9 +198,50 @@ class SageTransactionError(Exception):
         self.error_type = error_type
 
 
+# ---- Sage initialization state ----
+# Sage requires an explicit `initialize` RPC before wallet reads work.
+# sage_login() calls sage_initialize(), but GUI/API read paths can race
+# ahead before login finishes. This guard prevents those early reads from
+# hitting un-initialized Sage and returning garbage/errors.
+import threading as _thr
+_init_lock = _thr.Lock()
+_init_ok = False
+_init_failed = False
+
+
+def ensure_initialized() -> bool:
+    """Ensure Sage wallet manager has been initialized.
+
+    Returns True if already initialized, False if initialization failed
+    or hasn't happened yet. Thread-safe via _init_lock.
+    """
+    global _init_ok, _init_failed
+    with _init_lock:
+        if _init_ok:
+            return True
+        if _init_failed:
+            return False
+    # Not yet initialized — attempt it once
+    try:
+        result = rpc("initialize", {}, timeout=30)
+        if result is None:
+            _console("  [Sage] INIT FAILED: initialize returned no response")
+            with _init_lock:
+                _init_failed = True
+            return False
+        _console("  [Sage] initialize OK")
+        with _init_lock:
+            _init_ok = True
+        return True
+    except Exception as e:
+        _console(f"  [Sage] INIT FAILED: initialize error: {e}")
+        with _init_lock:
+            _init_failed = True
+        return False
+
+
 # Thread-local connection cache — reuses TLS connections within a thread.
 # Eliminates ~100-200ms TLS handshake overhead per RPC call.
-import threading as _thr
 _conn_local = _thr.local()
 
 
@@ -378,6 +427,8 @@ def get_current_key() -> dict:
     Returns:
         Dict with key info {name, fingerprint, ...} or None if not logged in.
     """
+    if not ensure_initialized():
+        return None
     try:
         result = rpc("get_key", {}, timeout=5)
         if result and isinstance(result, dict):
@@ -413,16 +464,26 @@ def _require_signing_capability() -> bool:
         return False
 
 
-def sage_login(fingerprint: int) -> bool:
+def sage_initialize() -> bool:
+    """Explicit Sage wallet manager initialization — required before wallet ops.
+
+    Delegates to ensure_initialized() which handles locking and caching.
+    """
+    return ensure_initialized()
+
+
+def sage_login(fingerprint: int, force_resync: bool = False) -> bool:
     """Log in to a specific fingerprint via readiness check + resync + login.
 
     Sage requires:
     0. Readiness check — verify Sage RPC is responding before attempting login
-    1. resync(fingerprint) — loads the wallet data for that key
-    2. login(fingerprint) — activates the key as the current session
+    1. initialize — explicit wallet manager initialization
+    2. resync(fingerprint) — loads the wallet data for that key (only if force_resync=True)
+    3. login(fingerprint) — activates the key as the current session
 
     Args:
         fingerprint: Integer fingerprint to connect to.
+        force_resync: If True, run resync before login. Default False.
 
     Returns:
         True if login succeeded and get_key confirms the right fingerprint.
@@ -438,27 +499,32 @@ def sage_login(fingerprint: int) -> bool:
             print(f"  [Sage] INIT FAILED: Sage RPC not responding (get_version returned None)")
             return False
         version = version_result.get("version", "?") if isinstance(version_result, dict) else "?"
-        print(f"  [Sage] Sage v{version} is reachable — proceeding with login")
+        print(f"  [Sage] Sage v{version} is reachable -- proceeding with login")
     except Exception as e:
         print(f"  [Sage] INIT FAILED: Cannot reach Sage RPC: {e}")
         return False
 
-    time.sleep(1)
-
-    # Step 1: resync — loads wallet data
-    try:
-        result = rpc("resync", {"fingerprint": fingerprint}, timeout=30)
-        if result is None:
-            print(f"  [Sage] resync failed (no response)")
-            return False
-        print(f"  [Sage] resync OK")
-    except Exception as e:
-        print(f"  [Sage] resync error: {e}")
+    # Step 1: explicit initialize
+    if not sage_initialize():
         return False
 
     time.sleep(1)
 
-    # Step 2: login — activates the key
+    # Step 2: resync — loads wallet data (only when forced)
+    if force_resync:
+        try:
+            result = rpc("resync", {"fingerprint": fingerprint}, timeout=30)
+            if result is None:
+                print(f"  [Sage] resync failed (no response)")
+                return False
+            print(f"  [Sage] resync OK")
+        except Exception as e:
+            print(f"  [Sage] resync error: {e}")
+            return False
+
+        time.sleep(1)
+
+    # Step 3: login — activates the key
     try:
         result = rpc("login", {"fingerprint": fingerprint}, timeout=30)
         if result is None:
@@ -516,6 +582,8 @@ def get_wallet_sync_status() -> dict:
     Sage uses get_sync_status which returns:
       { "balance": str, "unit": { ... }, "synced": bool }
     """
+    if not ensure_initialized():
+        return {"reachable": False, "synced": False, "syncing": False, "sync_state": "offline"}
     try:
         result = rpc("get_sync_status", {}, timeout=5)
         if result and isinstance(result, dict):
@@ -537,11 +605,11 @@ def get_wallet_sync_status() -> dict:
                 synced = False
                 syncing = True
             else:
-                # raw_synced is None — Sage did not return an explicit sync state.
-                # Per Sage review rules, do NOT promote this to "ready".
-                sync_state = "unknown"
-                synced = False
-                syncing = True
+                # raw_synced is None — Sage did not return an explicit sync field.
+                # Only explicit synced=True from Sage should be treated as synced.
+                # Do NOT infer sync state from undocumented fields like
+                # synced_coins/total_coins — that promotes None to True.
+                sync_state, synced, syncing = "unknown", False, False
 
             return {
                 "reachable": True,
@@ -581,22 +649,15 @@ def get_chia_health() -> dict:
     node = get_full_node_sync_status()
 
     if not wallet["reachable"]:
-        status = "unreachable"
-        healthy = False
+        status, healthy = "unreachable", False
+    elif wallet.get("sync_state") == "synced":
+        status, healthy = "healthy", True
     elif wallet.get("sync_state") == "not_synced":
-        status = "wallet_not_synced"
-        healthy = False
-    elif wallet.get("sync_state") == "unknown":
-        # Per Sage review rules: do not promote undocumented values into
-        # "ready".  Report honestly that sync state is unknown.  The bot
-        # loop has its own `sage_wallet_service_ok` heuristic that treats
-        # reachable+unknown as usable for Sage service monitoring, but this
-        # health function should not claim healthy when sync is unconfirmed.
-        status = "wallet_sync_unknown"
-        healthy = False
+        status, healthy = "wallet_not_synced", False
     else:
-        status = "healthy"
-        healthy = True
+        # Covers "unknown" and any other unexpected sync_state values.
+        # Only explicit synced=True from Sage should be treated as healthy.
+        status, healthy = "wallet_sync_unknown", False
 
     return {
         "status": status,
@@ -1521,6 +1582,9 @@ def get_wallets():
       - The configured CAT (from .env) gets CAT_WALLET_ID (typically 5)
       - Other discovered CATs get IDs starting from 100, incrementing
     """
+    if not ensure_initialized():
+        return {"success": False, "wallets": None, "error": "Sage not initialized"}
+
     global _wallet_id_to_asset_id
 
     wallets = [
@@ -1531,7 +1595,7 @@ def get_wallets():
     try:
         result = rpc("get_cats", {}, timeout=10)
     except Exception as e:
-        print(f"⚠️  [Sage] get_cats RPC failed: {e} — falling back to .env config")
+        _console(f"  [Sage] get_cats RPC failed: {e} -- falling back to .env config")
         result = None
 
     if result and isinstance(result, dict):
@@ -1602,9 +1666,8 @@ def get_wallets():
                     old_wid = getattr(_cfg_instance, 'CAT_WALLET_ID', '?')
                     _cfg_instance.CAT_WALLET_ID = CONFIGURED_CAT_WID
                     if old_wid != CONFIGURED_CAT_WID:
-                        print(f"  [Sage] CAT_WALLET_ID updated: {old_wid} → "
-                              f"{CONFIGURED_CAT_WID} (dynamic from asset_id match)",
-                              flush=True)
+                        _console(f"  [Sage] CAT_WALLET_ID updated: {old_wid} -> "
+                                 f"{CONFIGURED_CAT_WID} (dynamic from asset_id match)")
             except Exception as e:
                 print(f"  [Sage] Could not update cfg.CAT_WALLET_ID: {e}",
                       flush=True)
@@ -1616,9 +1679,8 @@ def get_wallets():
                       flush=True)
                 # Log the full mapping for debugging wallet_id → asset_id issues
                 for wid, aid in new_mapping.items():
-                    tag = "✅ TRADING" if wid == CONFIGURED_CAT_WID else "   other"
-                    print(f"  [Sage]   wallet_id {wid} → {aid[:20]}... ({tag})",
-                          flush=True)
+                    tag = "TRADING" if wid == CONFIGURED_CAT_WID else "other"
+                    _console(f"  [Sage]   wallet_id {wid} -> {aid[:20]}... ({tag})")
                 if not found_configured and configured_asset_id:
                     print(f"  🚫 [Sage] CONFIGURED CAT NOT FOUND in wallet! "
                           f"Configured asset: {str(configured_asset_id)[:20]}... "
@@ -2725,8 +2787,8 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
 
     # Chia TradeStatus numeric: 0=PENDING_ACCEPT, 1=PENDING_CONFIRM,
     # 2=PENDING_CANCEL, 3=CANCELLED, 4=CONFIRMED (filled), 5=FAILED
-    CANCELLED_STATUSES = {"CANCELLED", "CANCELED", "3", "CONFIRMED_CANCEL",
-                          "PENDING_CANCEL", "2"}  # 2/PENDING_CANCEL = en route
+    CANCELLED_STATUSES = {"CANCELLED", "CANCELED", "3", "CONFIRMED_CANCEL"}
+    IN_PROGRESS_CANCEL_STATUSES = {"PENDING_CANCEL", "2"}  # 2/PENDING_CANCEL = en route, NOT terminal
     ACTIVE_STATUSES = {"ACTIVE", "OPEN", "PENDING_ACCEPT", "PENDING",
                        "PENDING_CONFIRM", "IN_PROGRESS", "0", "1"}
     TERMINAL_NON_CANCEL = {"CONFIRMED", "COMPLETED", "SUCCESS", "FAILED", "4", "5"}
@@ -2750,6 +2812,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                 # Categorize each target offer
                 explicitly_cancelled = set()
                 still_active = set()
+                in_progress_cancel = set()
                 vanished = set(trade_id_set)  # start assuming all vanished
 
                 for o in current_offers:
@@ -2762,6 +2825,8 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
 
                     if status in CANCELLED_STATUSES:
                         explicitly_cancelled.add(tid)
+                    elif status in IN_PROGRESS_CANCEL_STATUSES:
+                        in_progress_cancel.add(tid)
                     elif status in ACTIVE_STATUSES:
                         still_active.add(tid)
                     elif status in TERMINAL_NON_CANCEL:
@@ -2811,8 +2876,8 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
 
                 # Success criteria: all offers either explicitly cancelled OR
                 # gone from list AND coins freed on-chain
-                if len(still_active) == 0 and len(vanished) == 0:
-                    # All offers found with CANCELLED status — best case
+                if explicitly_cancelled == trade_id_set:
+                    # All offers are terminally cancelled by status — best case
                     print(f"   ✅ [Sage] All {len(trade_ids)} cancellations "
                           f"confirmed by status!")
                     confirmed = True
@@ -2820,7 +2885,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                         results[tid] = {"success": True, "method": "confirmed_by_status"}
                     break
 
-                if len(still_active) == 0 and lock_state_known and len(still_locked) == 0 and (
+                if len(still_active) == 0 and not in_progress_cancel and lock_state_known and len(still_locked) == 0 and (
                     pending_count <= pre_pending_count or coin_delta > 0
                 ):
                     # Offers no longer active, no owned coins remain locked to
@@ -2888,6 +2953,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                 if current_offers is not None:
                     final_still_active = set()
                     final_cancelled = set()
+                    final_in_progress_cancel = set()
                     final_vanished = set(trade_id_set)
 
                     for o in current_offers:
@@ -2898,12 +2964,21 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                         status = str(o.get("status", "")).upper()
                         if status in CANCELLED_STATUSES:
                             final_cancelled.add(tid)
+                        elif status in IN_PROGRESS_CANCEL_STATUSES:
+                            final_in_progress_cancel.add(tid)
                         elif status in ACTIVE_STATUSES:
                             final_still_active.add(tid)
 
                     # Mark results based on final state
                     for tid in final_cancelled:
                         results[tid] = {"success": True, "method": "confirmed_by_status"}
+                    for tid in final_in_progress_cancel:
+                        results[tid] = {"success": False,
+                                        "error": "Cancel still PENDING (PENDING_CANCEL) — "
+                                                 "not yet confirmed on-chain",
+                                        "method": "on_chain_verification"}
+                        print(f"   ⏳ [Sage] PENDING CANCEL for {tid[:16]}... — "
+                              f"cancel submitted but not confirmed on-chain")
                     for tid in final_still_active:
                         results[tid] = {"success": False,
                                         "error": "STILL ACTIVE after cancel — "
@@ -2931,7 +3006,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                                   f"pending={final_pending_count}, "
                                   f"coin_delta=+{final_coin_delta}")
 
-                    failed_count = len(final_still_active) + sum(
+                    failed_count = len(final_still_active) + len(final_in_progress_cancel) + sum(
                         1 for tid in final_vanished
                         if (final_lock_state_known and tid in final_still_locked)
                         or (final_pending_count > pre_pending_count and final_coin_delta <= 0)
