@@ -1222,18 +1222,22 @@ def _launch_external_url(raw_url: str) -> bool:
         return False
 
 
-@app.route("/api/open-external", methods=["GET", "POST"])
+@app.route("/api/open-external", methods=["POST"])
 def api_open_external():
-    """Open a vetted external URL in the user's default browser."""
+    """Open a vetted external URL in the user's default browser.
+
+    POST-only to prevent CSRF via cross-origin GET from any webpage.
+    Requires the per-run local token (enforced by before_request).
+    """
     if not _is_loopback_addr(request.remote_addr):
         return jsonify({"success": False, "error": "loopback_only"}), 403
 
-    payload = request.get_json(silent=True) if request.method == "POST" else None
+    payload = request.get_json(silent=True)
     raw_url = (
         (payload or {}).get("url")
         if isinstance(payload, dict)
         else None
-    ) or request.args.get("url", "")
+    )
     url = str(raw_url or "").strip()
 
     if not _is_allowed_external_url(url):
@@ -9440,11 +9444,13 @@ def api_sage_setup_certs():
                 }), 404
 
         if not os.path.isfile(cert_path):
-            return jsonify({"success": False, "error": f"Cert not found: {cert_path}"}), 400
+            log_event("warning", "sage_cert_missing", f"Cert not found: {cert_path}")
+            return jsonify({"success": False, "error": "Certificate file not found at the specified path"}), 400
         if not key_path:
             key_path = cert_path.replace(".crt", ".key")
         if not os.path.isfile(key_path):
-            return jsonify({"success": False, "error": f"Key not found: {key_path}"}), 400
+            log_event("warning", "sage_key_missing", f"Key not found: {key_path}")
+            return jsonify({"success": False, "error": "Key file not found at the expected path"}), 400
 
         # Write to .env and update live environment
         os.environ["SAGE_CERT_PATH"] = cert_path
@@ -9472,8 +9478,6 @@ def api_sage_setup_certs():
 
         return jsonify({
             "success": True,
-            "cert_path": cert_path,
-            "key_path": key_path,
             "message": "Certificate paths saved to .env",
         })
     except Exception as e:

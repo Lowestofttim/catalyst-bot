@@ -14011,12 +14011,15 @@
                         + badge(src.has_competitor_data,'Book')
                         + badge(src.has_spacescan,'Spacescan');
 
-                    // Market row
-                    const regime = (src.volatility_regime || 'normal');
+                    // Market row — allowlist regime/risk to prevent XSS
+                    const _regimeAllowed = { extreme: 'extreme', volatile: 'volatile', quiet: 'quiet', normal: 'normal' };
+                    const _riskAllowed = { healthy: 'healthy', thin: 'thin', risky: 'risky' };
+                    const regime = _regimeAllowed[src.volatility_regime] || 'normal';
                     const regimeColour = regime === 'extreme' ? '#f87171' : regime === 'volatile' ? '#fb923c' : regime === 'quiet' ? '#60a5fa' : '#86efac';
                     const fpd = src.fills_per_day || 0;
                     const mktActivity = fpd > 10 ? 'active' : fpd > 3 ? 'moderate' : fpd > 0.5 ? 'quiet' : 'very quiet';
-                    const riskColour = src.risk_level === 'healthy' ? '#86efac' : src.risk_level === 'thin' ? '#fb923c' : src.risk_level === 'risky' ? '#f87171' : '#9ca3af';
+                    const riskLabel = _riskAllowed[src.risk_level] || '';
+                    const riskColour = riskLabel === 'healthy' ? '#86efac' : riskLabel === 'thin' ? '#fb923c' : riskLabel === 'risky' ? '#f87171' : '#9ca3af';
                     const priceStr = src.mid_price > 0 ? src.mid_price.toFixed(8) + ' XCH' : '—';
                     const marketRow = `<div style="margin-bottom:6px;">
                         <span style="color:#9ca3af;font-size:0.8em;text-transform:uppercase;letter-spacing:0.05em;">Market</span>
@@ -14024,7 +14027,7 @@
                             <span>Price: <strong>${priceStr}</strong></span>
                             <span style="color:${regimeColour};">● ${regime}</span>
                             <span>${fpd > 0 ? fpd.toFixed(1) + ' fills/day' : 'no fills data'}</span>
-                            <span style="color:${riskColour};">${src.risk_level || ''} risk</span>
+                            <span style="color:${riskColour};">${riskLabel} risk</span>
                             ${src.arb_gap_bps > 50 ? `<span style="color:#fb923c;">arb gap ${(src.arb_gap_bps / 100).toFixed(2)}%</span>` : ''}
                         </div>
                     </div>`;
@@ -19659,7 +19662,7 @@
                 'FAILED': 'FAILED',
                 'EXPIRED': 'EXPIRED'
             };
-            return labels[status] || status;
+            return labels[status] || 'UNKNOWN';
         }
 
         // ENHANCED: Update offers with collapsible cards
@@ -19807,7 +19810,8 @@
                 const isCollapsed = _collapsedOffers.has(offer.full_id);
                 const collapsedClass = isCollapsed ? 'collapsed' : '';
                 const toggleIcon = isCollapsed ? '?' : '?';
-                const statusClass = `status-${offer.status.replace(/ /g, '_')}`;
+                const _statusClassMap = { PENDING_ACCEPT: 'status-PENDING_ACCEPT', PENDING_CONFIRM: 'status-PENDING_CONFIRM', CONFIRMED: 'status-CONFIRMED', COMPLETED: 'status-COMPLETED', CANCELLED: 'status-CANCELLED', PENDING_CANCEL: 'status-PENDING_CANCEL', FAILED: 'status-FAILED', EXPIRED: 'status-EXPIRED' };
+                const statusClass = _statusClassMap[offer.status] || 'status-unknown';
                 const catName = offer.cat_name || currentCAT.name || 'CAT';
                 
                 // Smart price display: trim trailing zeros but keep meaningful precision
@@ -22439,7 +22443,7 @@
                 if (validation.warnings && validation.warnings.length > 0) {
                     const warnItems = validation.warnings
                         .map(w => w.message || w)
-                        .map(msg => `• ${msg}`)
+                        .map(msg => `• ${escapeHtml(msg)}`)
                         .join('<br>');
                     const proceed = await showStyledConfirm({
                         icon: '⚠️',
@@ -22953,7 +22957,7 @@ function closeCtgErrorModal() {
                 coinsStatusHTML = `
                     <div style="background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 0.9em;">
                         <strong style="color: #fbbf24;">Note:</strong> You also need more coins 
-                        (have ${xchCoins}/${xchNeeded} XCH, ${catCoins}/${catNeeded} ${catName}). 
+                        (have ${xchCoins}/${xchNeeded} XCH, ${catCoins}/${catNeeded} ${escapeHtml(catName)}).
                         Re-preparing will fix both the size and count.
                     </div>`;
             }

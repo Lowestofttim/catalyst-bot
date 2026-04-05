@@ -32,7 +32,8 @@ SECURITY MODEL:
        running inside the PyWebView/Tauri desktop window.
     2. The only way an attacker can invoke bridge methods is by injecting
        JavaScript into the GUI (XSS). The GUI applies escapeHtml() to all
-       server-sourced data rendered via innerHTML, closing this vector.
+       server-sourced data rendered via innerHTML, and uses allowlist maps
+       for enum-like values used in CSS classes. Audited 2026-04-05.
     3. Switching to test_client() with token headers on all 82+ methods would
        be a massive refactor for no practical gain — the token would need to
        be embedded in the same process that already has full access.

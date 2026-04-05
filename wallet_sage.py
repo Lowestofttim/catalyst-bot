@@ -102,7 +102,7 @@ def _generate_self_signed_cert(cert_path, key_path):
         with open(cert_path, "wb") as f:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
 
-        print(f"✅ [Sage] Generated self-signed client cert: {cert_path}")
+        print("✅ [Sage] Generated self-signed client cert")
         return True
     except ImportError:
         print("⚠️  [Sage] 'cryptography' package not installed — cannot generate client cert")
