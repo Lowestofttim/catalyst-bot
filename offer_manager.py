@@ -3092,3 +3092,4 @@ class OfferManager:
             )
 
         return open_buy, open_sell, closed
+
