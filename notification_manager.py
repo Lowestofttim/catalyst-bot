@@ -164,3 +164,4 @@ class NotificationManager:
         except Exception:
             # Notification failure is never critical — silently ignore
             pass
+
