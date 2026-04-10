@@ -551,3 +551,4 @@ class SplashNode:
     def get_recent_output(self, lines: int = 20) -> list:
         """Get recent output lines from Splash for debugging."""
         return self._last_output_lines[-lines:]
+
