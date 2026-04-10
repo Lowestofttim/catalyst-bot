@@ -1073,19 +1073,21 @@ def serve_console():
 
 @app.route("/brand/<path:filename>")
 def serve_brand_asset(filename: str):
-    """Serve a tiny allowlist of local brand assets used by the GUI."""
+    """Serve brand assets used by the GUI from the assets/ folder."""
     gui_dir = os.path.dirname(os.path.abspath(__file__))
+    assets_dir = os.path.join(gui_dir, "assets")
     allowed = {
         "bot_icon_new.png",
-        "MonkeyZoo_Logo_HighDef_Transparent.png",
-        "monkeyzoo_wordmark.svg",
         "sage_logo_official.png",
         "dexie_logo_official.png",
-        "spacescan-logo-192.webp",
+        "dexie_logo_official.ico",
         "tibetswap_logo_official.png",
     }
     if filename not in allowed:
         return Response("Not Found", status=404, mimetype="text/plain")
+    # Try assets/ folder first, fall back to app root for backward compat
+    if os.path.isfile(os.path.join(assets_dir, filename)):
+        return send_from_directory(assets_dir, filename)
     return send_from_directory(gui_dir, filename)
 
 
@@ -11396,3 +11398,4 @@ if __name__ == "__main__":
         debug=False,
         threaded=True
     )
+
