@@ -277,3 +277,4 @@ def coarse_status(lifecycle_state: str) -> str:
 def is_terminal(state: str) -> bool:
     """Check if a lifecycle state is terminal (no further transitions)."""
     return state in {"cancelled", "filled", "expired", "phantom_rejected"}
+
