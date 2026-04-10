@@ -22858,8 +22858,12 @@
                         .replace(/Step (\d+)\/(\d+).*waiting for (.+) \((\d+)\/(\d+)\)/, 'Step $1/$2: Waiting for confirmations ($4/$5)')
                         // Fee coin cleanup
                         .replace(/Consolidating (\d+) spare fee coins.*/, 'Tidying up $1 spare fee coins')
-                        .replace(/Fee coin consolidation.*/, 'Cleaning up spare fee coins')
-                        .replace(/fee.*consolidat/i, 'Tidying spare fee coins')
+                        .replace(/Fee coin consolidation.*/, 'Tidying up spare fee coins')
+                        .replace(/XCH fee cleanup: merging (\d+) extra coin.*/, 'Tidying up $1 spare fee coins')
+                        .replace(/XCH fee cleanup confirmed.*/, 'Spare fee coins tidied up')
+                        .replace(/XCH fee cleanup.*pending.*/, 'Waiting for fee coin tidy to confirm...')
+                        .replace(/XCH fee cleanup.*not confirm.*/, 'Fee coin tidy still pending — will settle next block')
+                        .replace(/fee.*consolidat/i, 'Tidying up spare fee coins')
                         // Final messages
                         .replace(/🎉 All \d+ splits confirmed!/, '🎉 All splits confirmed!')
                         .replace(/COIN PREPARATION COMPLETE!/, '✅ Coin preparation complete!')
