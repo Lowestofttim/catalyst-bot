@@ -257,3 +257,4 @@ try:
     migrate_legacy_files()
 except Exception as _e:
     print(f"[user_paths] Import-time migration skipped: {_e}", flush=True)
+
