@@ -3471,6 +3471,7 @@ def api_open_offer_count():
     on-chain before proceeding with app exit.
     """
     try:
+        from database import get_open_offers
         open_offers = get_open_offers()
         return jsonify({"success": True, "open_count": len(open_offers)})
     except Exception as e:
