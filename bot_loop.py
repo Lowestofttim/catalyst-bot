@@ -7891,3 +7891,4 @@ class BotLoop:
             "last_quoted_buy": str(self._last_quoted_price.get("buy", "0")),
             "last_quoted_sell": str(self._last_quoted_price.get("sell", "0")),
         }
+
