@@ -1235,3 +1235,4 @@ def get_selectable_coins_map(wallet_id: int) -> Optional[Dict]:
         None (Chia wallet doesn't support this query)
     """
     return None
+
