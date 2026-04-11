@@ -35,6 +35,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
       - name: Install dependencies
         run: |
           pip install pyinstaller
@@ -81,8 +87,6 @@ jobs:
           # Update version in installer script to match tag
           $version = "${{ github.ref_name }}".TrimStart("v")
           (Get-Content installer.iss) -replace 'MyAppVersion     ".*"', "MyAppVersion     `"$version`"" | Set-Content installer.iss
-          # Copy icon to root for Inno (SetupIconFile expects it in script dir)
-          Copy-Item assets/bot_icon_new.ico bot_icon_new.ico -ErrorAction SilentlyContinue
           # Build installer
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           # Rename output to match release naming
@@ -92,11 +96,27 @@ jobs:
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          cd dist && zip -r "../${{ matrix.artifact }}-${{ github.ref_name }}${{ matrix.ext }}" ChiaMarketMaker/
+          # If PyInstaller produced a .app bundle, package it; otherwise fall back to folder
+          if [ -d "dist/CATalyst.app" ]; then
+            cd dist && zip -r "../${{ matrix.artifact }}-${{ github.ref_name }}${{ matrix.ext }}" CATalyst.app/
+          else
+            cd dist && zip -r "../${{ matrix.artifact }}-${{ github.ref_name }}${{ matrix.ext }}" ChiaMarketMaker/
+          fi
 
       - name: Package (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
+          # Add .desktop file for Linux desktop integration
+          cat > dist/ChiaMarketMaker/catalyst.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=CATalyst
+          Comment=Chia liquidity market maker
+          Exec=ChiaMarketMaker
+          Icon=assets/bot_icon_new.png
+          Terminal=false
+          Categories=Finance;Network;
+          DESKTOP
           cd dist && tar -czf "../${{ matrix.artifact }}-${{ github.ref_name }}${{ matrix.ext }}" ChiaMarketMaker/
 
       - name: Upload zip/tar to Release

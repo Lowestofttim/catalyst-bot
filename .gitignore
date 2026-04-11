@@ -111,8 +111,8 @@ splash.exe.bak
 tmp_greenfloor_review/
 
 # --- Dev-only files (stay local) ---
-splash.html
 tools/
 website
 simulation/
 !catalyst.spec
+!splash.html

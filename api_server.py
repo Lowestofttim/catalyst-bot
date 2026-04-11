@@ -66,7 +66,15 @@ from database import (
 )
 from tx_fees import get_fee_settings_snapshot
 
-_APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+# ---------------------------------------------------------------------------
+# Bundle-aware path resolution.
+#
+# In a PyInstaller onedir bundle, __file__ for non-entry-point modules
+# resolves to the _internal/ subdirectory, NOT the bundle root where data
+# files (HTML, images) are placed.  sys._MEIPASS always points to the
+# bundle root, so we use it when available.
+# ---------------------------------------------------------------------------
+_APP_ROOT = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
 _APP_VERSION_CACHE = None
 _SPACESCAN_PUBLIC_PLANS = {
     "free": {
@@ -583,7 +591,7 @@ def _get_sage_signing_block_reason():
 
 def _serve_bootstrapped_html(filename: str):
     """Serve HTML with the local runtime token injected for same-machine use."""
-    gui_dir = os.path.dirname(os.path.abspath(__file__))
+    gui_dir = _APP_ROOT
     path = os.path.join(gui_dir, filename)
     with open(path, "r", encoding="utf-8") as f:
         html_doc = f.read()
@@ -1084,7 +1092,7 @@ def serve_console():
 @app.route("/assets/<path:filename>")
 def serve_brand_asset(filename: str):
     """Serve brand assets used by the GUI from the assets/ folder."""
-    gui_dir = os.path.dirname(os.path.abspath(__file__))
+    gui_dir = _APP_ROOT
     assets_dir = os.path.join(gui_dir, "assets")
     allowed = {
         "bot_icon_new.png",
@@ -1094,6 +1102,7 @@ def serve_brand_asset(filename: str):
         "dexie_logo_official.ico",
         "tibetswap_logo_official.png",
         "MonkeyZoo_Logo.png",
+        "monkeyzoo-logo-1.gif",
         "spacescan-logo-192.webp",
     }
     if filename not in allowed:
@@ -1291,7 +1300,7 @@ def _reset_fresh_run_session(clear_coins: bool = False,
 
 @app.route("/favicon.ico")
 def favicon():
-    gui_dir = os.path.dirname(os.path.abspath(__file__))
+    gui_dir = _APP_ROOT
     assets_dir = os.path.join(gui_dir, "assets")
     # Try assets/ first, then app root for backward compat
     for d in (assets_dir, gui_dir):

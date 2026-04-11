@@ -40,6 +40,7 @@ _HERE = os.path.dirname(os.path.abspath(SPEC))  # noqa: F821  (SPEC is injected 
 # All HTML files served by Flask
 _html_files = [
     (os.path.join(_HERE, 'bot_gui.html'), '.'),
+    (os.path.join(_HERE, 'splash.html'), '.'),
 ]
 
 # Brand / UI assets (now in assets/ subfolder)
@@ -263,3 +264,31 @@ coll = COLLECT(  # noqa: F821
     upx_exclude=[],
     name='ChiaMarketMaker',
 )
+
+# ---------------------------------------------------------------------------
+# macOS .app bundle (only produced on macOS builds)
+#
+# On macOS users expect a double-clickable .app, not a bare folder.
+# PyInstaller's BUNDLE() wraps the COLLECT output into a proper
+# macOS application bundle with the correct Info.plist and icon.
+#
+# To generate the .icns icon from the PNG:
+#   mkdir icon.iconset
+#   sips -z 1024 1024 assets/bot_icon_new.png --out icon.iconset/icon_512x512@2x.png
+#   iconutil -c icns icon.iconset -o assets/bot_icon_new.icns
+# ---------------------------------------------------------------------------
+if sys.platform == 'darwin':
+    _icns_path = os.path.join(_assets_dir, 'bot_icon_new.icns')
+    app = BUNDLE(  # noqa: F821
+        coll,
+        name='CATalyst.app',
+        icon=_icns_path if os.path.isfile(_icns_path) else None,
+        bundle_identifier='com.monkeyzoo.catalyst',
+        info_plist={
+            'CFBundleName': 'CATalyst',
+            'CFBundleDisplayName': 'CATalyst',
+            'CFBundleVersion': '1.0.0',
+            'CFBundleShortVersionString': '1.0.0',
+            'NSHighResolutionCapable': True,
+        },
+    )
