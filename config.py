@@ -478,6 +478,14 @@ class Config:
         # ----- Coin Prep -----
         self.COIN_PREP_MULTIPLIER = _decimal("COIN_PREP_MULTIPLIER", "1.0")
         self.COIN_PREP_HEADROOM_PCT = _decimal("COIN_PREP_HEADROOM_PCT", "10")
+        # Maximum ratio of coin size to offer size in exact_tier_spend_mode.
+        # Prevents a 5 XCH coin being used for a 0.634 XCH offer (87% locked
+        # as change, causing cascading wrong-size cycles). When no coin fits
+        # within [offer_size, offer_size × ratio], the slot fails cleanly and
+        # triggers topup to split the reserve into right-sized coins.
+        # Default 1.5 = coin may be at most 50% larger than the offer amount.
+        # Set to 0 to disable (restores old fallback behaviour).
+        self.COIN_MAX_SIZE_RATIO = float(os.getenv("COIN_MAX_SIZE_RATIO", "1.5"))
         default_fee_mode = "manual" if self.WALLET_TYPE == "sage" else "auto"
         self.TRANSACTION_FEE_MODE = _str("TRANSACTION_FEE_MODE", default_fee_mode)
         self.TRANSACTION_FEE_XCH = _decimal("TRANSACTION_FEE_XCH", "0")
@@ -637,7 +645,7 @@ class Config:
         "ENABLE_COIN_PREP", "COIN_PREP_COOLDOWN_SECS",
         "XCH_TARGET_COINS", "XCH_COIN_SIZE",
         "CAT_TARGET_COINS", "CAT_COIN_SIZE",
-        "COIN_PREP_MULTIPLIER", "COIN_PREP_HEADROOM_PCT",
+        "COIN_PREP_MULTIPLIER", "COIN_PREP_HEADROOM_PCT", "COIN_MAX_SIZE_RATIO",
         "TRANSACTION_FEE_MODE", "TRANSACTION_FEE_XCH",
         "TRANSACTION_FEE_TARGET_SECS", "TRANSACTION_FEE_ESTIMATE_COST",
         "FEE_PREP_COUNT", "FEE_COIN_SIZE_XCH",

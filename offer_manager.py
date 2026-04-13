@@ -330,7 +330,8 @@ class OfferManager:
                                 preferred_tier: str = None,
                                 strict_preferred_tier: bool = False,
                                 spendable_records: List[Dict] = None,
-                                exclude_coin_ids: set = None) -> Optional[str]:
+                                exclude_coin_ids: set = None,
+                                max_amount_mojos: int = None) -> Optional[str]:
         """Pre-select the best coin for an offer before creating it.
 
         Instead of letting the wallet auto-select (and then polling to
@@ -347,6 +348,12 @@ class OfferManager:
             wallet_id: Which wallet to query (1=XCH, CAT wallet ID for CATs)
             amount_mojos: How much this offer needs to spend (in mojos)
             used_coins: Set of coin_ids already used in this batch (reuse guard)
+            max_amount_mojos: Upper bound on coin size (exclusive). When set,
+                coins larger than this are rejected even as fallback. This
+                prevents a 5 XCH coin being selected for a 0.634 XCH offer in
+                exact_tier_spend_mode — locking 87% of the coin as change.
+                When no coin fits within [amount_mojos, max_amount_mojos],
+                returns None so the slot suspends and triggers a topup.
 
         Returns:
             coin_id string if a suitable coin is found, None otherwise.
@@ -384,6 +391,11 @@ class OfferManager:
                 if coin_id in self._cycle_used_coin_ids:
                     continue
                 if exclude_coin_ids and coin_id in exclude_coin_ids:
+                    continue
+                # Reject coins that are too large when a size cap is set.
+                # A 5 XCH coin for a 0.634 XCH offer locks 87% as change and
+                # creates a cascading wrong-size cycle. Fail cleanly instead.
+                if max_amount_mojos is not None and coin_amount > max_amount_mojos:
                     continue
 
                 fallback_candidates.append((coin_amount - amount_mojos, coin_id, coin_amount))
@@ -425,6 +437,8 @@ class OfferManager:
 
                     coin_amount = spendable_amounts.get(coin_id)
                     if coin_amount is None or coin_amount < amount_mojos:
+                        continue
+                    if max_amount_mojos is not None and coin_amount > max_amount_mojos:
                         continue
 
                     priority = self._coin_designation_priority(
@@ -1487,12 +1501,24 @@ class OfferManager:
                 # both prep and selection.
                 from coin_manager import coin_size_tier_for_slot_position as _coin_tier
                 coin_size_pref = _coin_tier(spec["tier"], side=side)
+
+                # In exact_tier_spend_mode, cap the coin size so we never use
+                # a wildly oversized coin (e.g. 5 XCH for a 0.634 XCH offer).
+                # When no coin fits within the cap, return None → clean slot
+                # failure → slot suspension → topup splits the reserve.
+                _max_coin = None
+                if exact_tier_spend_mode:
+                    _ratio = float(getattr(cfg, "COIN_MAX_SIZE_RATIO", "1.5"))
+                    if _ratio > 0:
+                        _max_coin = int(spend_amount * _ratio)
+
                 coin_id = self._select_coin_for_offer(
                     spec_spend_wallet_id or spend_wallet_id,
                     spend_amount,
                     used_coin_ids,
                     preferred_tier=coin_size_pref,
                     spendable_records=spendable_records,
+                    max_amount_mojos=_max_coin,
                 )
                 spec["coin_id"] = coin_id
                 if coin_id:
@@ -1695,9 +1721,27 @@ class OfferManager:
             else:
                 expires_at = None
 
-            # Prefer the first verified coin_id (covers multi-coin offers);
-            # fall back to locked_coin_id if verification list is empty.
-            db_coin_id = verified_locked_coin_ids[0] if verified_locked_coin_ids else locked_coin_id
+            # Select the coin_id to store in the DB.
+            # When Sage bundles both the trade coin and the fee coin as maker
+            # inputs, `verified_locked_coin_ids` contains both (sorted by hash).
+            # Always prefer the pre-selected trade coin (`locked_coin_id`) when
+            # it appears in the verified list — this prevents the fee coin from
+            # being recorded as the offer's trade coin (bug: fee-coin backed offers).
+            if verified_locked_coin_ids:
+                if locked_coin_id and locked_coin_id in verified_locked_coin_ids:
+                    db_coin_id = locked_coin_id   # pre-selected trade coin confirmed ✓
+                else:
+                    # Pre-selected coin not verified (Sage used different coin).
+                    # Use whatever Sage locked — and log a warning so we can track.
+                    db_coin_id = verified_locked_coin_ids[0]
+                    if locked_coin_id:
+                        log_event("warning", "trade_coin_not_verified",
+                                  f"Pre-selected coin {locked_coin_id[:16]}... was NOT found in "
+                                  f"Sage's locked inputs for {trade_id[:12]}... "
+                                  f"(Sage locked: {', '.join(c[:14]+'...' for c in verified_locked_coin_ids[:3])}). "
+                                  f"Offer may use an unexpected coin.")
+            else:
+                db_coin_id = locked_coin_id
             db_ok = add_offer(
                 trade_id=trade_id, side=side, price_xch=price,
                 size_xch=size_xch, size_cat=cat_amount,

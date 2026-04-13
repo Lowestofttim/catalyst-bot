@@ -5386,8 +5386,32 @@ class BotLoop:
         3. check_runtime_health() — every 5 loops, independent free coin check
         """
         if self._recovery_is_active():
-            log_event("debug", "coin_ops_skip_recovery",
-                      "Recovery mode active — skipping topup/prep until the book is healthy")
+            # During recovery, still allow coin prep and topup to fire when a
+            # tier is empty. Without this, a coin-exhaustion-triggered recovery
+            # deadlocks:
+            #   coin failures → recovery mode → topup blocked → still no coins →
+            #   offers keep failing → recovery never exits.
+            # Both checks have their own cooldowns and busy-guards so they won't
+            # double-fire or overwhelm the wallet. The health-check topup (Tier 3)
+            # is still suppressed to avoid unnecessary churn.
+            #
+            # Refresh coin counts first so needs_topup() sees current tier state,
+            # not the stale snapshot from before recovery mode was entered.
+            if not self.coin_manager.is_busy():
+                self.coin_manager.update_coin_counts()
+            if self.coin_manager.needs_coin_prep(active_buy_count, active_sell_count):
+                log_event("info", "coin_prep_trigger_recovery",
+                          "Coins critically low during recovery — forcing coin prep "
+                          "to break coin-exhaustion deadlock")
+                self.coin_manager.start_topup(active_buy_count, active_sell_count)
+            elif self.coin_manager.needs_topup(active_buy_count, active_sell_count):
+                log_event("info", "topup_trigger_recovery",
+                          "Tier coin shortage during recovery — running topup to "
+                          "break coin-exhaustion deadlock (outer/extreme empty)")
+                self.coin_manager.start_topup(active_buy_count, active_sell_count)
+            else:
+                log_event("debug", "coin_ops_skip_recovery",
+                          "Recovery mode active — skipping topup/prep until the book is healthy")
             return
 
         # Re-check coins after startup — Sage needs time to report all coins.

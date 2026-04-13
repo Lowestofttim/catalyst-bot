@@ -106,6 +106,7 @@ splash.exe.bak
 .claude/settings.local.json
 .claude/launch.json
 .claude/projects/
+CLAUDE.md
 
 # --- Misc ---
 tmp_greenfloor_review/

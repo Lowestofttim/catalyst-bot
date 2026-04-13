@@ -3789,6 +3789,32 @@ class CoinManager:
             any_tier_needed = False   # tracks whether any tier was below its threshold
             did_anything = False
 
+            # ---- Step 0: Absorb misfit tier_spare coins into reserve ----
+            # Coins returned as change from filled offers frequently land
+            # between tier boundaries (too large for one tier, too small for
+            # the next). With COIN_MAX_SIZE_RATIO capping selection, these
+            # coins sit idle indefinitely. Fold them back into the reserve so
+            # their value is recaptured for the next targeted split cycle.
+            if cfg.TIER_ENABLED:
+                _xch_absorbed = self._absorb_misfits_to_reserve(
+                    "XCH", cfg.WALLET_ID_XCH, xch_inv,
+                    xch_tier_mojos, is_cat=False,
+                )
+                _cat_absorbed = (
+                    self._absorb_misfits_to_reserve(
+                        "CAT", cfg.CAT_WALLET_ID, cat_inv,
+                        cat_tier_mojos, is_cat=True,
+                    )
+                    if cfg.ENABLE_SELL
+                    else False
+                )
+                if _xch_absorbed or _cat_absorbed:
+                    did_anything = True
+                    log_event("info", "topup_absorb_defer",
+                              "Misfit coins absorbed into reserve — tier splits "
+                              "deferred to next cycle (awaiting on-chain confirmation)")
+                    return
+
             if cfg.TIER_ENABLED:
                 # ---- Tier-aware topup: check each tier ----
                 max_per_side = max(
@@ -4350,7 +4376,17 @@ class CoinManager:
                           f"Consolidating {len(small_coins)} small {name} coins "
                           f"({total_str} total) into one coin for splitting")
 
-                success = self._consolidate_coins(name, wallet_id, total_small, is_cat)
+                # Explicit coin IDs prevent Sage from picking coins from other
+                # tiers (e.g. freshly-created tier_spare coins) when building
+                # this consolidation transaction.
+                _small_ids = [
+                    _coin_id_from_record(r) for r in small_coins
+                ]
+                _small_ids = [cid for cid in _small_ids if cid]
+                success = self._consolidate_coins(
+                    name, wallet_id, total_small, is_cat,
+                    source_coin_ids=_small_ids or None,
+                )
                 if success:
                     log_event("success", f"topup_{name.lower()}_consolidate_ok",
                               f"{name} consolidation submitted — will split after confirmation")
@@ -4413,7 +4449,17 @@ class CoinManager:
                           f"({_pool_str} total). Pool will be available after "
                           f"on-chain confirmation.")
 
-                _rebuild_ok = self._consolidate_coins(name, wallet_id, _pool_total, is_cat)
+                # Pass explicit coin IDs so Sage only spends the intended
+                # excess spare coins — not freshly-created coins from concurrent
+                # topup splits that haven't been registered in the DB yet.
+                _pool_candidate_ids = [
+                    _coin_id_from_record(r) for r in _pool_candidates
+                ]
+                _pool_candidate_ids = [cid for cid in _pool_candidate_ids if cid]
+                _rebuild_ok = self._consolidate_coins(
+                    name, wallet_id, _pool_total, is_cat,
+                    source_coin_ids=_pool_candidate_ids or None,
+                )
                 if _rebuild_ok:
                     log_event("success", f"topup_{name.lower()}_pool_rebuild_ok",
                               f"{name} topup pool rebuild submitted — new reserve coin "
@@ -5343,10 +5389,18 @@ class CoinManager:
         return [{"coin_id": cid, "amount": after[cid]} for cid in new_ids]
 
     def _consolidate_coins(self, name: str, wallet_id: int,
-                            total_amount: int, is_cat: bool) -> bool:
-        """Consolidate all coins in a wallet by sending total balance to self.
+                            total_amount: int, is_cat: bool,
+                            source_coin_ids: Optional[List[str]] = None) -> bool:
+        """Consolidate specific coins into one large coin by sending to self.
 
         This creates one large coin from many small ones.
+
+        Args:
+            source_coin_ids: If provided, Sage will ONLY spend these coins (passed
+                as the coin_ids hint to send_xch/send_cat).  This prevents Sage
+                from "helpfully" picking freshly-created tier coins from other
+                topup runs when building the total.  Pass None to let Sage pick
+                freely (original behaviour, used only when no coin list is known).
         """
         try:
             # Get address
@@ -5376,10 +5430,14 @@ class CoinManager:
                 wallet_id=wallet_id,
                 amount_mojos=send_amount,
                 address=address,
-                fee_mojos=fee
+                fee_mojos=fee,
+                source_coin_ids=source_coin_ids or [],
             )
 
-            if result and result.get("success"):
+            # Sage's send_xch/send_cat returns {summary, coin_spends} on success
+            # (no "success" key in that response format). Accept either form.
+            if result and (result.get("success") is True
+                           or result.get("coin_spends") is not None):
                 return True
             else:
                 error = (result or {}).get("error", "Unknown")
@@ -5390,6 +5448,250 @@ class CoinManager:
         except Exception as e:
             log_event("error", f"consolidate_{name.lower()}_error",
                       f"Consolidation error: {e}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Misfit coin detection and absorption
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_misfit_coin(coin_amount_mojos: int,
+                        tier_sizes_mojos: Dict[str, int],
+                        max_size_ratio: float,
+                        floor_tolerance: float = 0.98) -> bool:
+        """Return True if this coin cannot fund any configured tier offer.
+
+        A coin is considered usable for tier T if:
+          tier_T_mojos × floor_tolerance <= coin_amount <= tier_T_mojos × max_size_ratio
+
+        The floor_tolerance (default 2%) prevents tiny fee-rounding artefacts
+        from the coin-prep split (where a coin ends up a handful of mojos below
+        the exact tier floor) from being incorrectly flagged as misfits.
+        Only coins that are genuinely and significantly below a tier floor —
+        i.e. they can't fund any offer even with the tolerance — are flagged.
+
+        If no tier fits, the coin is stranded — it will never be selected
+        by _select_coin_for_offer and its value is wasted unless reclaimed.
+
+        Args:
+            coin_amount_mojos: Coin size in mojos.
+            tier_sizes_mojos:  Mapping of tier name → target offer size (mojos).
+            max_size_ratio:    From COIN_MAX_SIZE_RATIO config (e.g. 1.5).
+                               Pass float('inf') if the ratio guard is disabled.
+            floor_tolerance:   Fraction of tier floor that still counts as usable.
+                               Default 0.98 allows a coin to be up to 2% below
+                               the exact tier size before it is flagged.
+        """
+        for tier_mojos in tier_sizes_mojos.values():
+            if not tier_mojos or tier_mojos <= 0:
+                continue
+            effective_floor = int(tier_mojos * floor_tolerance)
+            max_usable = (
+                int(tier_mojos * max_size_ratio)
+                if max_size_ratio < float("inf")
+                else float("inf")
+            )
+            if effective_floor <= coin_amount_mojos <= max_usable:
+                return False  # Close enough to fund this tier — not a misfit
+        return True  # Cannot fund any tier
+
+    def _absorb_misfits_to_reserve(self, name: str, wallet_id: int,
+                                   inventory: Dict[str, list],
+                                   tier_sizes_mojos: Dict[str, int],
+                                   is_cat: bool) -> bool:
+        """Fold stranded misfit tier_spare coins back into the reserve coin.
+
+        When a fill returns change that lands between tier sizes (e.g. a
+        4.39 XCH coin from a 5 XCH coin used to back a 0.63 XCH offer),
+        the change coin is labelled as a tier_spare but can never be
+        selected for any offer: too large given COIN_MAX_SIZE_RATIO for
+        the smaller tier, too small to fund the larger tier. It stalls.
+
+        This method consolidates those misfits together WITH the existing
+        reserve coin into one larger reserve coin via a send-to-self
+        transaction. The enlarged reserve is then available for the next
+        topup cycle's targeted split.
+
+        Only fires when a reserve coin already exists.  The no-reserve
+        recovery path (Strategy 3 in _smart_topup_wallet) handles the
+        case where there is no reserve.
+
+        Sage only — Chia wallet cannot specify source_coin_ids so we
+        skip to avoid accidentally consuming the wrong coins.
+
+        Returns True if a consolidation transaction was submitted.
+        """
+        try:
+            reserve_coins = inventory.get("reserve", [])
+            if not reserve_coins:
+                return False  # No reserve — Strategy 3 handles this
+
+            if get_wallet_type() != "sage":
+                # source_coin_ids is a Sage-only feature; skip for Chia.
+                return False
+
+            max_size_ratio = float(getattr(cfg, "COIN_MAX_SIZE_RATIO", "1.5") or 1.5)
+            if max_size_ratio <= 0:
+                max_size_ratio = float("inf")  # ratio guard disabled
+
+            # Misfit detection must use BASE tier sizes (no prep headroom).
+            # _get_tier_sizes_mojos applies a prep_mult (typically 1.10) so
+            # that coins are cut slightly larger than the live offer size.
+            # This gives the wallet room for fee deductions and price drift.
+            # But a freshly-minted base-size coin (e.g. 1.4803 XCH for mid)
+            # is below the prepped floor (1.4803×1.10×0.98 = 1.596) and
+            # would be incorrectly flagged as a misfit — absorbed back into
+            # the reserve on the very next cycle, causing an infinite loop.
+            # Dividing by prep_mult restores the true offer sizes.
+            prep_mult = self._get_coin_prep_headroom_multiplier()
+            pm = Decimal(str(prep_mult)) if prep_mult and prep_mult > 1 else Decimal("1")
+            if pm > Decimal("1"):
+                # fees tier uses an absolute coin size (not prepped), keep it as-is
+                base_tier_mojos: Dict[str, int] = {
+                    k: (int(Decimal(str(v)) / pm)
+                        if k not in (get_fee_tier_name(),)
+                        else v)
+                    for k, v in tier_sizes_mojos.items()
+                }
+            else:
+                base_tier_mojos = tier_sizes_mojos
+
+            # Scan every tier bucket for coins that can't fund any tier offer.
+            # Uses a 2% floor tolerance so coins that are a handful of mojos
+            # below the exact tier floor (fee-rounding artefacts from splits)
+            # are not incorrectly flagged as misfits.
+            misfit_records = []
+            for tier_name in ("inner", "mid", "outer", "extreme", "sniper"):
+                bucket = inventory.get(tier_name, [])
+                for rec in bucket:
+                    amt = _coin_amount(rec)
+                    if self._is_misfit_coin(amt, base_tier_mojos, max_size_ratio):
+                        misfit_records.append(rec)
+
+            if not misfit_records:
+                return False
+
+            reserve_rec = reserve_coins[0]
+            reserve_id = _coin_id_from_record(reserve_rec)
+            reserve_amt = _coin_amount(reserve_rec)
+
+            misfit_ids: List[str] = []
+            total_misfit = 0
+            for r in misfit_records:
+                cid = _coin_id_from_record(r)
+                if cid:
+                    misfit_ids.append(cid)
+                    total_misfit += _coin_amount(r)
+
+            if not misfit_ids:
+                return False
+
+            # ---- Race-condition guard ----
+            # Between the inventory scan (start of _topup_worker) and now,
+            # the offer-creation thread may have locked some of the identified
+            # coins. Re-fetch the current selectable set and filter to only
+            # coins that are still free. If any have been grabbed, skip this
+            # cycle (the topup will retry next time needs_topup() fires).
+            fresh_result = _get_free_coins_rpc(wallet_id)
+            fresh_sel = {
+                _coin_id_from_record(r)
+                for r in _extract_coin_records(fresh_result)
+            }
+            if reserve_id not in fresh_sel:
+                log_event("info", f"topup_{name.lower()}_absorb_skip_race",
+                          "Reserve coin no longer selectable — "
+                          "skipping absorption this cycle (will retry)")
+                return False
+            # Filter misfits to only those still selectable
+            misfit_ids = [cid for cid in misfit_ids if cid in fresh_sel]
+            if not misfit_ids:
+                log_event("info", f"topup_{name.lower()}_absorb_skip_race",
+                          "All misfit coins were locked since inventory scan — "
+                          "skipping absorption this cycle (will retry)")
+                return False
+            # Recalculate total with the confirmed-selectable set
+            confirmed_misfit_records = [
+                r for r in misfit_records
+                if _coin_id_from_record(r) in set(misfit_ids)
+            ]
+            total_misfit = sum(_coin_amount(r) for r in confirmed_misfit_records)
+
+            total_amount = reserve_amt + total_misfit
+            fee = self._tx_fee_mojos()
+            # XCH: fee deducted from the coin value (same wallet).
+            # CAT: fee paid separately from XCH balance.
+            send_amount = total_amount - fee if not is_cat else total_amount
+
+            if send_amount <= 0:
+                log_event("debug", f"topup_{name.lower()}_absorb_skip",
+                          "Misfit absorption skipped — combined amount cannot "
+                          "cover transaction fee")
+                return False
+
+            if is_cat:
+                amt_str = _format_amount_cat(total_amount, cfg.CAT_DECIMALS)
+                mis_str = _format_amount_cat(total_misfit, cfg.CAT_DECIMALS)
+            else:
+                amt_str = _format_amount_xch(total_amount)
+                mis_str = _format_amount_xch(total_misfit)
+
+            log_event("info", f"topup_{name.lower()}_absorb_misfits",
+                      f"Absorbing {len(confirmed_misfit_records)} stranded {name} "
+                      f"misfit coin(s) ({mis_str}) into reserve "
+                      f"[{reserve_id[:12]}...] — new reserve will be {amt_str}")
+
+            addr_result = get_next_address(wallet_id=wallet_id, new_address=False)
+            if not addr_result or not addr_result.get("success"):
+                log_event("warning", f"topup_{name.lower()}_absorb_addr_fail",
+                          "Could not obtain wallet address for misfit absorption")
+                return False
+            address = addr_result.get("address", "")
+            if not address:
+                return False
+
+            result = send_transaction(
+                wallet_id=wallet_id,
+                amount_mojos=send_amount,
+                address=address,
+                fee_mojos=fee,
+                source_coin_ids=[reserve_id] + misfit_ids,
+            )
+
+            # Sage's send_xch/send_cat returns {summary, coin_spends} on success
+            # (no "success" key in that response format). Accept either form.
+            sage_submitted = bool(
+                result and (
+                    result.get("success") is True
+                    or result.get("coin_spends") is not None
+                )
+            )
+            if sage_submitted:
+                # Optional: note if Sage used different coins than we requested
+                spent_ids = {
+                    cs.get("coin", {}).get("parent_coin_info", "").lstrip("0x")
+                    for cs in (result.get("coin_spends") or [])
+                }
+                # coin_id in our context = coin_id field, not parent_coin_info,
+                # so just log how many coin_spends Sage included for transparency
+                n_spends = len(result.get("coin_spends") or [])
+                extra = (f" (Sage used {n_spends} input coin(s) in the spend)"
+                         if n_spends else "")
+                log_event("success", f"topup_{name.lower()}_absorb_ok",
+                          f"Misfit absorption submitted — enlarged reserve "
+                          f"({amt_str}) will be available after confirmation{extra}")
+                return True
+
+            # Log the actual Sage error (not just "Unknown") for diagnosis
+            sage_error = (result or {}).get("error") or (result or {}).get("message")
+            error_detail = str(sage_error) if sage_error else f"result={result!r}"
+            log_event("info", f"topup_{name.lower()}_absorb_skip_sage",
+                      f"Misfit absorption declined by Sage ({error_detail}) — "
+                      "will retry next topup cycle")
+            return False
+
+        except Exception as exc:
+            log_event("error", f"topup_{name.lower()}_absorb_error",
+                      f"Misfit absorption unexpected error: {exc}")
             return False
 
     def _poll_for_confirmation(self, pre_xch: int, pre_cat: int,
