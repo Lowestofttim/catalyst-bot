@@ -365,15 +365,23 @@ def verify_fill(coin_id: str, our_address: str,
     #   1 = active / open        → coin may still be live; fall through
     # -----------------------------------------------------------------------
     offer_info = result.get("offer_info") or []
-    for oi in offer_info:
-        oi_status = oi.get("offer_status")
-        oi_hash = str(oi.get("hash_base_58") or "")[:16]
-        if oi_status == 4:
+    if offer_info:
+        # A coin can be associated with multiple offer files — the same coin is
+        # reused when the bot cancels and reposts an offer (different Dexie hash,
+        # same underlying UTXO). Spacescan lists ALL of them in offer_info.
+        # Priority: status=4 (COMPLETED) ALWAYS wins over status=3 (CANCELLED).
+        # If ANY version was filled, the coin was genuinely spent as a fill.
+        _oi_completed = [oi for oi in offer_info if oi.get("offer_status") == 4]
+        _oi_cancelled = [oi for oi in offer_info if oi.get("offer_status") == 3]
+
+        if _oi_completed:
+            oi_hash = str(_oi_completed[0].get("hash_base_58") or "")[:16]
             log_event("success", "spacescan_fill_via_offer_info",
                       f"Coin {coin_id[:16]}... offer_info reports status=4 "
                       f"(COMPLETED, offer {oi_hash}...) — confirmed fill.")
             return True
-        elif oi_status == 3:
+        elif _oi_cancelled:
+            oi_hash = str(_oi_cancelled[0].get("hash_base_58") or "")[:16]
             log_event("info", "spacescan_cancel_via_offer_info",
                       f"Coin {coin_id[:16]}... offer_info reports status=3 "
                       f"(CANCELLED, offer {oi_hash}...) — not a fill.")
