@@ -210,6 +210,33 @@ class SessionManagementTests(unittest.TestCase):
             f"Flag file should be named .fresh_start_chosen, got: {flag!r}",
         )
 
+    # ------------------------------------------------------------------
+    # 7. api_check_resume() returns can_resume=False when bot is running
+    # ------------------------------------------------------------------
+
+    def test_check_resume_returns_no_resume_when_bot_running(self):
+        """When the bot is actively running (loop_count>0), check-resume must
+        return can_resume=False with reason='bot_already_running' so the GUI
+        doesn't show a spurious 'Resume session?' modal on page reload."""
+        import types as _types
+
+        # Build a minimal fake bot with _loop_count > 0
+        fake_bot = _types.SimpleNamespace(_loop_count=1)
+
+        with patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path), \
+             patch.object(_api_server, "bot", fake_bot):
+            resp = self._client.get(
+                "/api/check-resume",
+                headers={"X-Bot-Local-Token": _api_server._LOCAL_API_TOKEN},
+                environ_base=self._loopback,
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertFalse(body.get("can_resume"),
+                         "can_resume must be False when bot is running")
+        self.assertEqual(body.get("reason"), "bot_already_running")
+
 
 if __name__ == "__main__":
     unittest.main()
