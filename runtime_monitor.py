@@ -90,6 +90,10 @@ class RuntimeMonitor:
         self._slow_samples: Dict[str, Deque[float]] = {}
         self._slow_last_ms: Dict[str, float] = {}
         self._slow_active: set[str] = set()
+        # Tracks when each condition was last logged so min_refire_secs can
+        # suppress spurious re-notifications when a condition briefly clears
+        # and re-triggers within a short window.
+        self._condition_last_logged: Dict[str, float] = {}
         self._conditions: Dict[str, bool] = {
             "wallet_sync_stale": False,
             "db_wallet_divergence": False,
@@ -719,6 +723,7 @@ class RuntimeMonitor:
             ),
             close_event="bot_health_ladder_shape_ok",
             close_message="Live ladder tier mix matches the configured template again",
+            min_refire_secs=1800,  # max one re-notification per 30 min for transient shape drift
         ):
             active_conditions.append(self._condition_entry(
                 "ladder_shape_drift",
@@ -848,17 +853,30 @@ class RuntimeMonitor:
 
     def _apply_condition(self, key: str, active: bool, severity: str,
                          open_event: str, open_message: str,
-                         close_event: str, close_message: str) -> bool:
+                         close_event: str, close_message: str,
+                         min_refire_secs: float = 0.0) -> bool:
+        """Evaluate a health condition and emit log events on transitions.
+
+        min_refire_secs — if > 0, suppress the open-event log when the
+        condition re-fires within this many seconds of the last firing.
+        This prevents spurious re-notifications when a condition briefly
+        clears for one health-check cycle and then re-triggers immediately.
+        The active_conditions list (UI state) is unaffected.
+        """
         was_active = bool(self._conditions.get(key))
         self._conditions[key] = bool(active)
+        now = time.monotonic()
         if active and not was_active:
-            log_event(severity, open_event, open_message)
-            self._recent_findings.append({
-                "timestamp": _utc_now_iso(),
-                "severity": severity,
-                "code": key,
-                "message": open_message,
-            })
+            last_logged = self._condition_last_logged.get(key, 0.0)
+            if min_refire_secs <= 0.0 or (now - last_logged) >= min_refire_secs:
+                log_event(severity, open_event, open_message)
+                self._condition_last_logged[key] = now
+                self._recent_findings.append({
+                    "timestamp": _utc_now_iso(),
+                    "severity": severity,
+                    "code": key,
+                    "message": open_message,
+                })
         elif not active and was_active:
             log_event("success", close_event, close_message)
         return bool(active)
