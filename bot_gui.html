@@ -14282,6 +14282,19 @@
                     saApplySpread(bps);
                     return;
                 }
+                case 'reserveFloor':
+                    // Reserve floor hit — open Settings and scroll to Safety section
+                    if (typeof switchView === 'function') switchView('settings');
+                    else {
+                        const settingsTab = document.querySelector('[data-view="settings"], [onclick*="settings"]');
+                        if (settingsTab) settingsTab.click();
+                    }
+                    setTimeout(() => {
+                        const safetyEl = document.querySelector('.safety-section, [data-section="safety"]')
+                            || Array.from(document.querySelectorAll('h3,h4')).find(el => el.textContent.includes('Safety'));
+                        if (safetyEl) safetyEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 300);
+                    return;
                 case 'openSettings': {
                     // Navigate to Settings view and optionally scroll to a section
                     const section = String(rawValue || '');
@@ -22359,7 +22372,8 @@
             'applySpread',
             'openSettings',
             'openLiveControls',
-            'activateGapCloser'
+            'activateGapCloser',
+            'reserveFloor'
         ]);
         const ACTIONABLE_ALERT_IDS = new Set([
             'bot_recovery',

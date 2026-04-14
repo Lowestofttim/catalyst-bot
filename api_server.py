@@ -3807,8 +3807,14 @@ def api_cancel_offer():
     if not trade_id or not isinstance(trade_id, str):
         return jsonify({"error": "Missing trade_id"}), 400
 
-    result = bot.offer_manager.cancel_offers([trade_id], reason="manual_api")
-    return jsonify({"status": "cancelled", "trade_id": trade_id})
+    try:
+        result = bot.offer_manager.cancel_offers([trade_id], reason="manual_api")
+    except Exception as e:
+        return _api_error(e, request.path)
+    # cancel_offers returns a dict; surface any storm-protection refusal
+    if isinstance(result, dict) and result.get("error"):
+        return jsonify({"success": False, "trade_id": trade_id, **result}), 400
+    return jsonify({"success": True, "status": "cancelled", "trade_id": trade_id})
 
 
 # ---------------------------------------------------------------------------
