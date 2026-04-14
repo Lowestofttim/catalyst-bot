@@ -35,7 +35,7 @@ _node_status_cache_time: float = 0
 _NODE_STATUS_CACHE_MAX_AGE = 15  # seconds — serve cached data if fresh enough
 _preload_thread: Optional[threading.Thread] = None
 _preload_running = False
-MIN_SUPPORTED_SAGE_VERSION = "0.12.10"
+MIN_SUPPORTED_SAGE_VERSION = "0.12.9"
 
 # Fingerprint selection state
 _selected_fingerprint: Optional[str] = None

@@ -26,16 +26,16 @@ class TestSageStartupVersionGate(unittest.TestCase):
             sage_node._start_triggered.clear()
 
     def test_minimum_supported_version_is_allowed(self):
-        with patch.object(sage_node, "_load_current_sage_version", return_value="0.12.10"):
-            requirement = sage_node.get_sage_version_requirement()
-        self.assertTrue(requirement["supported"])
-        self.assertEqual(requirement["minimum_required_version"], "0.12.10")
-
-    def test_older_version_is_blocked(self):
         with patch.object(sage_node, "_load_current_sage_version", return_value="0.12.9"):
             requirement = sage_node.get_sage_version_requirement()
+        self.assertTrue(requirement["supported"])
+        self.assertEqual(requirement["minimum_required_version"], "0.12.9")
+
+    def test_older_version_is_blocked(self):
+        with patch.object(sage_node, "_load_current_sage_version", return_value="0.12.8"):
+            requirement = sage_node.get_sage_version_requirement()
         self.assertFalse(requirement["supported"])
-        self.assertIn("0.12.10", requirement["reason"])
+        self.assertIn("0.12.9", requirement["reason"])
 
     def test_trigger_start_rejects_unsupported_sage_version(self):
         blocked_requirement = {
