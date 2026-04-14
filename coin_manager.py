@@ -5801,35 +5801,54 @@ class CoinManager:
             prep_headroom_pct = getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))
 
             if cfg.TIER_ENABLED:
-                # Tier-aware coin prep: pass tier sizes and counts
+                # Tier-aware coin prep: pass PER-SIDE tier sizes and counts so the
+                # worker preps XCH coins at BUY sizes and CAT coins at SELL sizes.
+                # Using the old shared --tier-sizes defaulted to SELL-side sizes for
+                # both wallets, causing XCH coins to be wrong size when BUY≠SELL.
                 max_per_side = max(max_buy, max_sell)
-                tier_counts = get_weighted_tier_prep_counts(max_per_side, multiplier)
+                buy_tier_sizes  = self._configured_tier_sizes_xch(side="buy")
+                sell_tier_sizes = self._configured_tier_sizes_xch(side="sell")
+                xch_tier_counts = get_weighted_tier_prep_counts(
+                    max_per_side, multiplier,
+                    tier_sizes_xch=buy_tier_sizes, side="xch")
+                cat_tier_counts = get_weighted_tier_prep_counts(
+                    max_per_side, multiplier,
+                    tier_sizes_xch=sell_tier_sizes, side="cat")
                 if self._sniper_pool_enabled():
-                    tier_counts["sniper"] = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
-                cat_total_coins = sum(tier_counts.values())
+                    sniper_count = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
+                    xch_tier_counts["sniper"] = sniper_count
+                    cat_tier_counts["sniper"] = sniper_count
+                cat_total_coins = sum(cat_tier_counts.values())
                 if self._fee_pool_enabled():
-                    tier_counts[get_fee_tier_name()] = get_fee_pool_count()
-                total_coins = sum(tier_counts.values())
+                    xch_tier_counts[get_fee_tier_name()] = get_fee_pool_count()
+                total_coins = sum(xch_tier_counts.values())
 
-                tier_sizes_str = ",".join(
-                    f"{tier}={size}"
-                    for tier, size in self._configured_xch_prep_sizes().items()
-                )
-                tier_counts_str = ",".join(f"{k}={v}" for k, v in tier_counts.items())
+                buy_tier_sizes_str  = ",".join(f"{t}={s}" for t, s in buy_tier_sizes.items())
+                sell_tier_sizes_str = ",".join(f"{t}={s}" for t, s in sell_tier_sizes.items())
+                # Fee/sniper tiers reuse their buy-side size (XCH-only)
+                if self._fee_pool_enabled():
+                    fee_name = get_fee_tier_name()
+                    fee_sz = Decimal(str(get_fee_coin_size_xch()))
+                    buy_tier_sizes_str  += f",{fee_name}={fee_sz}"
+                    sell_tier_sizes_str += f",{fee_name}={fee_sz}"
+                xch_counts_str = ",".join(f"{k}={v}" for k, v in xch_tier_counts.items())
+                cat_counts_str = ",".join(f"{k}={v}" for k, v in cat_tier_counts.items())
 
                 cmd.extend(["--xch-target", str(total_coins)])
-                cmd.extend(["--tier-sizes", tier_sizes_str])
-                cmd.extend(["--tier-counts", tier_counts_str])
+                cmd.extend(["--buy-tier-sizes",  buy_tier_sizes_str])
+                cmd.extend(["--sell-tier-sizes", sell_tier_sizes_str])
+                cmd.extend(["--tier-counts-xch", xch_counts_str])
+                cmd.extend(["--tier-counts-cat", cat_counts_str])
                 cmd.extend(["--cat-target", str(cat_total_coins)])
                 cmd.extend(["--prep-headroom-pct", str(prep_headroom_pct)])
 
                 tier_detail = " + ".join(
-                    f"{c} {t} × {self._configured_xch_prep_sizes().get(t, Decimal('0'))}"
-                    for t, c in tier_counts.items() if c > 0
+                    f"{c} {t} × {buy_tier_sizes.get(t, Decimal('0'))}"
+                    for t, c in xch_tier_counts.items() if c > 0
                 )
                 log_event("info", "coin_prep_config",
-                          f"Tier coin prep ({multiplier}×): {total_coins} coins = {tier_detail} "
-                          f"(+{prep_headroom_pct}% headroom)")
+                          f"Tier coin prep ({multiplier}×): {total_coins} XCH coins = {tier_detail} "
+                          f"(+{prep_headroom_pct}% headroom, BUY sizes for XCH / SELL sizes for CAT)")
             else:
                 # Uniform coin prep with multiplier
                 target_xch_size = self.get_target_xch_coin_size()
