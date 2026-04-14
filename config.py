@@ -220,9 +220,14 @@ class Config:
         self.HARD_MAX_PRICE_XCH = _hard_max if _hard_max > 0 else _legacy_max
 
         # ----- Sweep Protection -----
-        # Minimum fills in the same block to classify as a sweep (default 2).
-        # Raise to 3+ if you only want protection when larger sweeps occur.
-        self.SWEEP_MIN_FILLS = _int("SWEEP_MIN_FILLS", 2)
+        # Minimum fills in the same block to classify as a sweep (default 3).
+        # On liquid pairs with many active offers (40+), two fills in the same
+        # ~18-second Chia block are very often just two independent retail buyers
+        # who happened to transact simultaneously — NOT an arb sweep.  Setting
+        # this too low (2) causes false-positive protection events that pause
+        # offer creation for 90 s.  Raise to 4+ for very active pairs; lower to
+        # 2 for thin/illiquid pairs where any multi-fill is suspicious.
+        self.SWEEP_MIN_FILLS = _int("SWEEP_MIN_FILLS", 3)
         # Seconds to pause requoting the swept side (direction known), default 90.
         self.SWEEP_PROTECTION_SECS = _int("SWEEP_PROTECTION_SECS", 90)
         # Seconds to pause both sides when sweep direction is unknown, default 30.

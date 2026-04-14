@@ -29,7 +29,10 @@ _fake_conn: _FakeConn = _FakeConn()
 
 def _install_fakes():
     fake_config = types.ModuleType("config")
-    fake_config.cfg = types.SimpleNamespace(SWEEP_WINDOW_SECS=15.0)
+    fake_config.cfg = types.SimpleNamespace(
+        SWEEP_WINDOW_SECS=15.0,
+        SWEEP_MIN_FILLS=2,   # tests exercise the 2-fill boundary explicitly
+    )
     sys.modules["config"] = fake_config
 
     fake_database = types.ModuleType("database")

@@ -187,14 +187,15 @@ class SweepCoordinator:
         self, block_idx: int, entries: List[SweepEntry]
     ) -> None:
         """Convert a list of entries into a SweepEvent (or discard if single)."""
-        # Read min-fills threshold from config (default 2 — any 2 fills in the
-        # same block is treated as a sweep).  Set SWEEP_MIN_FILLS=3 to only
-        # trigger protection when 3+ of your offers are swept in one block.
+        # Read min-fills threshold from config (default 3).
+        # On liquid pairs, two fills in the same block are usually two retail
+        # buyers, not a coordinated arb sweep.  Use SWEEP_MIN_FILLS=2 for
+        # thin/illiquid pairs; 3 (default) or higher for liquid ones.
         try:
             from config import cfg as _cfg
-            _min_fills = max(2, int(getattr(_cfg, "SWEEP_MIN_FILLS", 2) or 2))
+            _min_fills = max(2, int(getattr(_cfg, "SWEEP_MIN_FILLS", 3) or 3))
         except Exception:
-            _min_fills = 2
+            _min_fills = 3
 
         if len(entries) < _min_fills:
             # Not enough fills to be a sweep — leave classification as-is.
