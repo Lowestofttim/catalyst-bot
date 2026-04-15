@@ -79,6 +79,7 @@ These findings are informational and resolve on their own. Don't waste cycles in
 | `dexie_visibility_gap` | Within 30s of offer creation | Dexie indexer catch-up delay |
 | `coin_headroom_low` (severity=info) | Spare count > 0, just below target | Topup will fire within `COIN_PREP_COOLDOWN_SECS` |
 | `orderbook_age_secs < 60` | During Dexie rate limit cooldown | Non-critical if < 120s |
+| Offer count = `MAX_ACTIVE_BUY + active snipers` on a side | `SNIPER_ENABLED=True` and `sniper.active_snipes > 0` | Sniper offers live alongside the ladder. Ladder is the 24; sniper adds 1-2 per side. Compute expected total as `MAX_ACTIVE_{side} + sniper.active_{side}` before flagging drift. |
 
 ---
 

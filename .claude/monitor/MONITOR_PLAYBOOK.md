@@ -613,9 +613,31 @@ Add a periodic sweep in `coin_manager.runtime_coin_health` that finds open offer
 
 **Symptoms**:
 - `runtime_monitor` fires `db_wallet_divergence` finding.
-- E.g., "wallet 30/30 vs DB 24/24" or "wallet 24/0 vs DB 24/24".
+- E.g., "wallet 30/30 vs DB 24/24" or "wallet 24/0 vs DB 24/24" or "wallet 25/25 vs DB 24/24".
 
-**Root cause**:
+**BEFORE DIAGNOSING — always compute the sniper-adjusted expected count**:
+
+```python
+# The canonical formula: expected_wallet_count = db_open_count + sniper_active_count
+# If sniper is enabled, sniper offers live in the Sage wallet but NOT in the offers DB table.
+# They are tracked only in bot.sniper._active_snipe_ids (in-memory) and exposed via
+# /api/status → status.sniper.{buy_active,sell_active,active_snipes}
+token = ...  # from .env
+resp = requests.get('http://127.0.0.1:5000/api/status', headers={'X-Bot-Local-Token': token}).json()
+sniper_buy = int(resp.get('sniper', {}).get('buy_active', 0) or 0)
+sniper_sell = int(resp.get('sniper', {}).get('sell_active', 0) or 0)
+db_buy = resp.get('diagnostics',{}).get('market',{}).get('db_buy', 0)
+db_sell = resp.get('diagnostics',{}).get('market',{}).get('db_sell', 0)
+wallet_buy = resp.get('diagnostics',{}).get('market',{}).get('wallet_buy', 0)
+wallet_sell = resp.get('diagnostics',{}).get('market',{}).get('wallet_sell', 0)
+expected_buy = db_buy + sniper_buy
+expected_sell = db_sell + sniper_sell
+# Only flag as divergence if: wallet_{side} != expected_{side}
+```
+
+If `wallet_count == db_count + sniper_active` on both sides → **NOT A DIVERGENCE**. Log as benign and skip. Do NOT cancel the extras.
+
+**Root cause** (when it IS a real divergence, sniper-adjusted):
 - `wallet 24/0`: Sage wallet sync returned empty — stale cache, not a real count.
 - `wallet 30/30 vs DB 24/24`: The bot saw `wallet_sell=0` (false), thought it needed to create fresh offers, created 6 extra, then sync corrected. Those 6 extras become zombies.
 
