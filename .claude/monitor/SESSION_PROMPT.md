@@ -37,7 +37,9 @@ Append a JSON line `{"ts":"<iso>","event":"onboarding_start","session_id":"<your
 
 **Phase 5 — Schedule the tiered sweeps as SPAWNED SESSIONS:**
 
-Use `mcp__scheduled-tasks__create_scheduled_task` three times to create Tier 1, Tier 2, and Tier 3 tasks. Each scheduled task spawns a FRESH session when it fires — this eliminates all context-accumulation concerns.
+Use **`mcp__scheduled-tasks__create_scheduled_task`** (local, persistent, spawns fresh sessions). Do NOT use `CronCreate` (in-session) or `RemoteTrigger` (requires claude.ai connectivity) — those are fallbacks only. The `mcp__scheduled-tasks__*` tool stores tasks under `C:\Users\t_you\.claude\scheduled-tasks\` and fires fresh sessions regardless of whether any terminal is open, so the monitor survives laptop restarts.
+
+Call it three times to create Tier 1, Tier 2, and Tier 3 tasks. Each scheduled task spawns a FRESH session when it fires — this eliminates all context-accumulation concerns.
 
 For each task, set:
 - `taskId`: `catalyst-monitor-tier-1`, `catalyst-monitor-tier-2`, `catalyst-monitor-tier-3`
