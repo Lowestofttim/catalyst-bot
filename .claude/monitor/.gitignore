@@ -1,8 +1,0 @@
-# Monitor runtime files — these are session state, not source
-# The playbook + start-monitor.ps1 ARE tracked (they define how the monitor works)
-# These files below are written BY the monitor as it runs.
-
-monitor.log
-monitor.log.*
-monitor.lock
-MEMORY.md
