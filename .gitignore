@@ -117,3 +117,22 @@ website
 simulation/
 !catalyst.spec
 !splash.html
+
+# --- Local scratch / debug scripts (not for commit) ---
+check_dexie.py
+check_status.py
+check_thresholds.py
+config_live.py
+qdb*.py
+restart_after_coinprep.py
+shutdown_bot.py
+start_bot.py
+test_prep.py
+trigger_coin_prep.py
+wait_for_bot.py
+/null
+version_info.txt
+
+# --- Claude Code agent scratch ---
+.claude/
+
