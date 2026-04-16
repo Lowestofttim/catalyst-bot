@@ -1562,7 +1562,7 @@
         }
         .dashboard-startup-grid {
             display: grid;
-            grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+            grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
             gap: var(--space-4);
             align-items: stretch;
         }
@@ -9425,6 +9425,9 @@
                                     <span>Reverse Buy Ladder <span class="cc-help">?<span class="cc-tooltip">When on: buy side places the SMALLEST offers closest to price and the LARGEST offers furthest away. This limits your XCH exposure when sellers hit the top of the book — a large commitment only gets filled on a genuine support-level drop. Sell side is unaffected (large sells stay closest to price, where buyers find them). Requires Tiered Sizing to be enabled.</span></span></span>
                                 </label>
                                 <div class="v4-settings-hint" style="margin-top: 2px; margin-left: 26px; color: var(--slate-400);">Buy: small near price → large far. Sell: large near price → small far (unchanged).</div>
+                                <div id="reverseLadderRerunHint" style="display:none; margin-top: 6px; margin-left: 26px; padding: 6px 10px; border-radius: 6px; background: rgba(234,179,8,0.12); border: 1px solid rgba(234,179,8,0.35); color: var(--yellow-300, #fbbf24); font-size: 0.82em; line-height: 1.4;">
+                                    ⚠ Buy ladder orientation changed — spare coin counts were set for the previous orientation. <strong>Re-run Smart Settings</strong> to re-optimise spare counts and total allocation for the new layout.
+                                </div>
                             </div>
                             <div id="tierSizeGrid" style="display: none;">
                                 <!-- F62 (2026-04-09): per-side tier sizes.
@@ -9591,7 +9594,8 @@
 
                         <!-- Coin Prep Preview -->
                         <div class="coin-prep-preview" id="coinPrepPreview" style="border-top: 1px solid rgba(16,185,129,0.15); padding: 12px 0 0 0; margin-top: 12px;">
-                            <div style="font-weight: bold; margin-bottom: 8px; color: var(--status-success); font-size: 0.95em;">Coin Prep Summary <span class="cc-help">?<span class="cc-tooltip">Preview of how your wallet will be split into trading coins. Shows total coins needed and XCH/token amounts based on your offer settings above.</span></span>
+                            <div style="font-weight: bold; margin-bottom: 8px; color: var(--status-success); font-size: 0.95em;">Coin Prep Summary <span class="cc-help">?<span class="cc-tooltip">Preview of how your wallet will be split into trading coins. Labels (Large/Medium/Small/Micro) show coin denomination — the physical size of each coin being split — not offer position on the ladder. With a reversed buy ladder the two are inverted: Micro coins serve inner (closest-to-mid) buy positions because those positions use the smallest coins.</span></span>
+                                <span style="color: var(--text-tertiary); font-weight: normal; font-size: 0.82em; margin-left: 4px;">by coin size</span>
                                 <span id="coinPrepCatName" style="color: var(--text-tertiary); font-weight: normal; font-size: 0.9em;"></span>
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
@@ -11515,7 +11519,11 @@
                         if (te !== null) {
                             document.getElementById('configTierEnabled').checked = tierEnabledOn;
                             const blr = g('BUY_LADDER_REVERSED');
-                            if (blr !== null) document.getElementById('configBuyLadderReversed').checked = (blr === true || blr === 'true' || blr === '1' || blr === 'True');
+                            if (blr !== null) {
+                                document.getElementById('configBuyLadderReversed').checked = !(blr === true || blr === 'true' || blr === '1' || blr === 'True');
+                                // Snapshot orientation so rerun-hint knows what "saved state" is
+                                window._smartSettingsToggleState = document.getElementById('configBuyLadderReversed').checked;
+                            }
                             document.getElementById('tierSizeGrid').style.display = tierEnabledOn ? 'block' : 'none';
                             document.getElementById('tierCountSection').style.display = tierEnabledOn ? 'block' : 'none';
                             document.getElementById('tierSpareSection').style.display = tierEnabledOn ? 'block' : 'none';
@@ -12575,11 +12583,21 @@
             const cancelAllCountEl = document.getElementById('cancelAllCount');
             if (cancelAllCountEl) cancelAllCountEl.textContent = totalOffers;
 
-            // Session PnL — from data.stats or ccPnl element
-            const ccPnlEl = document.getElementById('ccPnl');
-            const pnlText = ccPnlEl ? ccPnlEl.textContent : '';
-            const pnlMatch = pnlText.match(/([-+]?\d+\.?\d*)/);
-            const pnl = pnlMatch ? parseFloat(pnlMatch[1]) : 0;
+            // Session PnL — prefer cached dashboard payload (authoritative
+            // source with full precision), fall back to scraping the ccPnl
+            // element which is populated later. Without this fallback chain,
+            // the hero tile shows stale +0.0000 for the first few seconds
+            // after page load until /api/dashboard resolves.
+            let pnl = 0;
+            const _perf = (typeof _dashboardData !== 'undefined' && _dashboardData && _dashboardData.performance) || null;
+            if (_perf && _perf.realised_pnl_xch !== undefined && _perf.realised_pnl_xch !== null) {
+                pnl = parseFloat(_perf.realised_pnl_xch) || 0;
+            } else {
+                const ccPnlEl = document.getElementById('ccPnl');
+                const pnlText = ccPnlEl ? ccPnlEl.textContent : '';
+                const pnlMatch = pnlText.match(/([-+]?\d+\.?\d*)/);
+                pnl = pnlMatch ? parseFloat(pnlMatch[1]) : 0;
+            }
             const heroPnl = document.getElementById('heroPnl');
             if (heroPnl) {
                 const pnlStr = formatPnlDisplay(pnl);
@@ -12588,12 +12606,23 @@
                 heroPnl.className = 'v4-hero-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral');
             }
             const heroFills = document.getElementById('heroFills');
-            const totalFills = (data.stats && data.stats.total_fills) || 0;
+            let totalFills = (data.stats && data.stats.total_fills) || 0;
+            if (!totalFills && _perf && _perf.total_fills !== undefined) totalFills = _perf.total_fills;
             if (heroFills) heroFills.textContent = totalFills + ' fills';
 
-            // Position — read from the inventory display if available
-            const invNetEl = document.getElementById('invNetPosition');
-            const pos = invNetEl ? parseFloat(invNetEl.textContent || 0) : 0;
+            // Position — prefer cached dashboard payload, fall back to the
+            // inventory display (same reason as PnL above: /api/status doesn't
+            // carry net_position, so without this fallback the hero tile
+            // shows 0.00 / "neutral" until /api/dashboard resolves).
+            let pos = 0;
+            if (_perf && _perf.net_position !== undefined && _perf.net_position !== null) {
+                pos = parseFloat(_perf.net_position) || 0;
+            } else if (_perf && _perf.net_position_cat !== undefined && _perf.net_position_cat !== null) {
+                pos = parseFloat(_perf.net_position_cat) || 0;
+            } else {
+                const invNetEl = document.getElementById('invNetPosition');
+                pos = invNetEl ? (parseFloat(invNetEl.textContent) || 0) : 0;
+            }
             const heroPos = document.getElementById('heroPosition');
             if (heroPos) {
                 const posStr = Math.abs(pos).toFixed(2);
@@ -14441,9 +14470,9 @@
             if (locked) {
                 display.title = reason;
             } else if (valueEl && valueEl.textContent && valueEl.textContent !== 'Connect â–¸') {
-                display.title = 'Wallet Fingerprint: ' + valueEl.textContent + ' â€” click to change';
+                display.title = 'Wallet Fingerprint: ' + valueEl.textContent + ' \u2014 click to change';
             } else {
-                display.title = 'No wallet connected â€” click to select one';
+                display.title = 'No wallet connected \u2014 click to select one';
             }
         }
 
@@ -16111,7 +16140,9 @@
                 if (data.coin_prep_multiplier != null) document.getElementById('configCoinPrepMultiplier').value = data.coin_prep_multiplier;
 
                 // Ladder Strategy — reverse buy ladder is always on (risk management).
-                if (data.buy_ladder_reversed !== undefined) document.getElementById('configBuyLadderReversed').checked = data.buy_ladder_reversed;
+                if (data.buy_ladder_reversed !== undefined) document.getElementById('configBuyLadderReversed').checked = !data.buy_ladder_reversed;
+                // Snapshot taken AFTER the buy-size auto-swap below (see end of
+                // this block) so it reflects the final displayed toggle state.
 
                 // Tiered Orders — capital-derived sizes from backend (reserve → available → trading capital → tiers)
                 // Any individual tier size may be null when Smart Defaults
@@ -16152,20 +16183,37 @@
                     _setBuy('configBuyMidSizeXch',     _buyMid);
                     _setBuy('configBuyOuterSizeXch',   _buyOuter);
                     _setBuy('configBuyExtremeSizeXch', _buyExt);
+                    // Smart settings always returns sizes in natural position order
+                    // (inner = largest). If the Reverse Buy Ladder toggle is ON the
+                    // sizes must be swapped so inner shows the smallest value, matching
+                    // the "small near price" orientation. This mirrors what
+                    // handleReverseLadderToggle does on a manual click.
+                    if (document.getElementById('configBuyLadderReversed')?.checked) {
+                        const _swapBuy = (idA, idB) => {
+                            const a = document.getElementById(idA);
+                            const b = document.getElementById(idB);
+                            if (a && b) { const t = a.value; a.value = b.value; b.value = t; }
+                        };
+                        _swapBuy('configBuyInnerSizeXch',   'configBuyExtremeSizeXch');
+                        _swapBuy('configBuyMidSizeXch',     'configBuyOuterSizeXch');
+                    }
+                    // Snapshot the final toggle state (post-swap) as the new
+                    // "last optimised orientation" and clear the rerun hint.
+                    window._smartSettingsToggleState = document.getElementById('configBuyLadderReversed')?.checked;
+                    const _rlHintSS = document.getElementById('reverseLadderRerunHint');
+                    if (_rlHintSS) _rlHintSS.style.display = 'none';
                     document.getElementById('tierSizeGrid').style.display = 'block';
                     document.getElementById('tierCountSection').style.display = 'block';
                     if (data.default_trade_xch > 0) {
                         document.getElementById('configTradeXch').value = data.default_trade_xch.toFixed(4);
                     }
-                    // F62: also stash in window for any stragglers that
-                    // still read the old stash (transitional). Eventually
-                    // these can be removed — the form inputs are the
-                    // authoritative source now.
+                    // F62: stash is read after any toggle-swap so the window cache
+                    // reflects the post-swap field values, not the raw API values.
                     window._smartBuySizes = {
-                        inner:   parseFloat(_buyInner)  || 0,
-                        mid:     parseFloat(_buyMid)    || 0,
-                        outer:   parseFloat(_buyOuter)  || 0,
-                        extreme: parseFloat(_buyExt)    || 0,
+                        inner:   parseFloat(document.getElementById('configBuyInnerSizeXch')?.value)   || 0,
+                        mid:     parseFloat(document.getElementById('configBuyMidSizeXch')?.value)     || 0,
+                        outer:   parseFloat(document.getElementById('configBuyOuterSizeXch')?.value)   || 0,
+                        extreme: parseFloat(document.getElementById('configBuyExtremeSizeXch')?.value) || 0,
                     };
                     window._smartSellSizes = {
                         inner:   parseFloat(_sellInner) || 0,
@@ -16255,6 +16303,14 @@
                     const _topupCat = Number(data.topup_pool_cat || 0);
                     window._topupBufferCat = _topupCat > 0 ? _topupCat : 0;
                 } catch (_e) { window._topupBufferXch = 0; window._topupBufferCat = 0; }
+                // F66 (2026-04-16): snapshot wallet balance so the coin-prep
+                // preview can back-fill freed-up XCH into the topup line when
+                // the Reverse Buy Ladder swap reduces tier XCH below the server's
+                // _trading_xch estimate (making total = balance always).
+                try {
+                    const _xchBal = Number(data.xch_balance || 0);
+                    window._smartXchBalance = _xchBal > 0 ? _xchBal : 0;
+                } catch (_e) { window._smartXchBalance = 0; }
                 // F65 (2026-04-12): snapshot the mid_price Smart Settings
                 // used so the coin-prep preview computes token amounts at
                 // the same price — prevents false overshoot warnings when
@@ -16747,18 +16803,20 @@
             return Math.round(num).toLocaleString();
         }
 
+        // Coin prep summary labels refer to COIN DENOMINATION (size of each coin
+        // being split), NOT offer position on the price ladder. With a reversed
+        // buy ladder the two are inverted — e.g. "Micro" coins serve the inner
+        // (closest-to-mid) buy positions because those use the smallest coins.
+        // Using size names avoids confusion with the position-based tier labels
+        // shown in the "XCH counts" / "CAT counts" inputs above.
         const COIN_PREP_TIER_LABELS = {
-            inner: 'Inner',
-            mid: 'Mid',
-            outer: 'Outer',
-            extreme: 'Extreme',
-            sniper: 'Sniper',
-            fees: 'Fees',
-            topup: 'Topup',
-            // F58 (2026-04-09): reserve is now its own line item showing the
-            // user's untouchable hard floor in the Coin Prep Summary, so the
-            // breakdown visually adds up to the full wallet balance instead
-            // of leaving the user wondering where the reserve went.
+            inner:   'Large',    // largest coin denomination
+            mid:     'Medium',
+            outer:   'Small',
+            extreme: 'Micro',    // smallest coin denomination
+            sniper:  'Sniper',
+            fees:    'Fees',
+            topup:   'Topup',
             reserve: 'Reserve'
         };
 
@@ -16780,10 +16838,32 @@
         function buildCoinPrepSizeMarkup(plan, asset, variant = 'preview') {
             if (!plan) return '<span class="coin-prep-breakdown-empty">--</span>';
 
+            // When Reverse Buy Ladder is ON the buy-side sizes are swapped in
+            // the fields: inner denomination is now the SMALLEST coin and
+            // extreme is the LARGEST. Reverse the display order and labels so
+            // LARGE always refers to the highest-value coin.
+            const _buyToggleOn = (asset === 'xch') &&
+                (document.getElementById('configBuyLadderReversed')?.checked === true);
+            const _REVERSED_LABELS = { inner: 'Micro', mid: 'Small', outer: 'Medium', extreme: 'Large' };
+            const _getLabel = (tier) => (_buyToggleOn && _REVERSED_LABELS[tier])
+                ? _REVERSED_LABELS[tier]
+                : getCoinPrepTierLabel(tier);
+
             const rows = [];
 
             if (plan.tierEnabled) {
-                for (const tier of plan.tierSequence) {
+                // When Reverse Buy Ladder toggle is ON, iterate base tiers in
+                // reverse order (extreme→inner) so LARGE rows appear at top.
+                // Non-base tiers (sniper, fees, topup, reserve) always follow.
+                const _baseTiers = ['inner', 'mid', 'outer', 'extreme'];
+                const _iterSequence = _buyToggleOn
+                    ? [
+                        ...['extreme', 'outer', 'mid', 'inner'].filter(t => plan.tierSequence.includes(t)),
+                        ...plan.tierSequence.filter(t => !_baseTiers.includes(t))
+                      ]
+                    : plan.tierSequence;
+
+                for (const tier of _iterSequence) {
                     // Use the side-correct count source. plan.tierCounts is
                     // buy-side (drives XCH column); plan.sellTierCounts is
                     // sell-side (drives CAT column). Falling back to the
@@ -16802,7 +16882,7 @@
                         // Topup buffer = working budget for splits (not a live offer)
                         if (tier === 'topup') {
                             rows.push(buildCoinPrepBreakdownRow(
-                                getCoinPrepTierLabel(tier),
+                                _getLabel(tier),
                                 `${count} \u00d7 ${formatCoinPrepXch(plan.preparedTierSizesXch?.[tier])} XCH`
                             ));
                             continue;
@@ -16810,7 +16890,7 @@
                         // Reserve = user's untouchable hard floor (F58)
                         if (tier === 'reserve') {
                             rows.push(buildCoinPrepBreakdownRow(
-                                getCoinPrepTierLabel(tier),
+                                _getLabel(tier),
                                 `${formatCoinPrepXch(plan.preparedTierSizesXch?.[tier])} XCH`
                             ));
                             continue;
@@ -16824,7 +16904,7 @@
                             ? plan.liveTierSizesXchBuy[tier]
                             : plan.offerTierSizesXch?.[tier];
                         rows.push(buildCoinPrepBreakdownRow(
-                            getCoinPrepTierLabel(tier),
+                            _getLabel(tier),
                             `${count} \u00d7 ${formatCoinPrepXch(plan.preparedTierSizesXch?.[tier])} prep`
                         ));
                     } else if (asset === 'cat') {
@@ -17100,7 +17180,10 @@
 
             // Check whether buy ladder is reversed (the standard setting)
             const buyLadderReversedEl = document.getElementById('configBuyLadderReversed');
-            const buyLadderReversed = buyLadderReversedEl ? buyLadderReversedEl.checked : true;
+            // With swap-based design the size fields already hold the correct values
+            // for the current orientation (inner=small when toggle ON). Direct
+            // size-proportional weights work for both toggle states.
+            const buyLadderReversed = false;
 
             if (!buyLadderReversed) return sellWeights;
 
@@ -17202,7 +17285,8 @@
             // the inner POSITION uses the extreme SIZE, so flip the canonical
             // size-indexed distribution into position-indexed values.
             const buyAutoSize = getCoinPrepTierDistribution(maxBuy, null);
-            const buyLadderRev = document.getElementById('configBuyLadderReversed')?.checked !== false;
+            // Swap design: sizes already reflect toggle orientation, no position flip needed.
+            const buyLadderRev = false;
             const buyAuto = buyLadderRev
                 ? { inner: buyAutoSize.extreme, mid: buyAutoSize.outer,
                     outer: buyAutoSize.mid, extreme: buyAutoSize.inner }
@@ -17253,7 +17337,8 @@
                 const headroomPctEl = document.getElementById('configCoinPrepHeadroomPct');
                 const headroomPct = parseFloat(headroomPctEl?.value || 10) || 10;
                 const prepFactor = 1 + (headroomPct / 100);
-                const buyLadderReversed = document.getElementById('configBuyLadderReversed')?.checked !== false;
+                // Swap design: field sizes are already in the correct orientation.
+                const buyLadderReversed = false;
                 const tiers = ['inner', 'mid', 'outer', 'extreme'];
                 // F65: use Smart Settings snapshot price if available
                 const _liveM = (typeof bot_state !== 'undefined' && bot_state?.pricing?.mid)
@@ -17440,17 +17525,29 @@
                 const b = document.getElementById(idB);
                 if (a && b) { const t = a.value; a.value = b.value; b.value = t; }
             };
-            // Swap buy-side sizes
+            // Swap buy-side sizes only — counts stay positional (inner/mid/outer/extreme
+            // always mean the same position regardless of orientation). The preview
+            // function (_flipSlotToSize) already handles position→size conversion
+            // accounting for orientation, so swapping counts here would double-transform.
             _swap('configBuyInnerSizeXch',   'configBuyExtremeSizeXch');
             _swap('configBuyMidSizeXch',     'configBuyOuterSizeXch');
-            // Swap buy-side counts
-            _swap('configInnerTierCountXch', 'configExtremeTierCountXch');
-            _swap('configMidTierCountXch',   'configOuterTierCountXch');
-            // Swap buy-side spare counts
-            _swap('configInnerTierSpareCountXch', 'configExtremeTierSpareCountXch');
-            _swap('configMidTierSpareCountXch',   'configOuterTierSpareCountXch');
-            // Recalculate spares if in auto mode, refresh preview
-            if (_tierSpareMode === 'auto') autoFillTierSpareCountsFromRecommendation(true);
+            // In auto-spare mode, recalculate with the new sizes.
+            // In custom mode (set by Smart Settings), keep existing spare values
+            // and show an inline reminder to re-run Smart Settings instead —
+            // forcing recalculation here loses Smart Settings' balance-aware
+            // optimisation (getWalletBalance returns 0 outside the live context).
+            if (_tierSpareMode === 'auto') {
+                autoFillTierSpareCountsFromRecommendation(true);
+            }
+            // Show/hide inline rerun hint: visible only when in custom-spare mode
+            // AND the current toggle state differs from the last saved/Smart Settings state.
+            const _rlHint = document.getElementById('reverseLadderRerunHint');
+            if (_rlHint) {
+                const _currentToggle = document.getElementById('configBuyLadderReversed')?.checked;
+                const _savedToggle = window._smartSettingsToggleState;
+                const _orientationChanged = (_savedToggle !== undefined) && (_currentToggle !== _savedToggle);
+                _rlHint.style.display = (_tierSpareMode !== 'auto' && _orientationChanged) ? 'block' : 'none';
+            }
             updateCoinPrepPreview();
             validateSettingsForm();
         }
@@ -17697,21 +17794,10 @@
                 // slot extreme uses an INNER-size coin, etc. The Coin Prep
                 // Summary must reflect the SIZE bucket counts so the totals
                 // match what the worker will actually prepare.
-                const _buyReversedEl = document.getElementById('configBuyLadderReversed');
-                const _buyReversed = _buyReversedEl ? _buyReversedEl.checked : false;
-                const _flipSlotToSize = (slotCounts) => {
-                    if (!_buyReversed) return { ...slotCounts };
-                    // slot inner   → size extreme
-                    // slot mid     → size outer
-                    // slot outer   → size mid
-                    // slot extreme → size inner
-                    return {
-                        inner:   slotCounts.extreme || 0,  // inner SIZE bucket gets slot-extreme count
-                        mid:     slotCounts.outer   || 0,
-                        outer:   slotCounts.mid     || 0,
-                        extreme: slotCounts.inner   || 0,
-                    };
-                };
+                // Swap-based design: size fields are already in the correct orientation
+                // (inner=small when toggle ON, inner=large when OFF). No position→size
+                // denomination flip is needed — counts map directly to their denomination.
+                const _flipSlotToSize = (slotCounts) => { return { ...slotCounts }; };
                 const buySizeCounts = _flipSlotToSize(buyWeightedCounts);
                 const buySizeDist   = _flipSlotToSize(buyDist);
 
@@ -17733,18 +17819,14 @@
                 // counts in buySizeCounts already point at this size tier.
                 // F62 (2026-04-09): compute the SIZE-oriented buy sizes ONCE
                 // before the loop so the per-tier live/prep values are
-                // consistent. Under reverse-buy the `buyTierSizes` dict is
-                // position-indexed (buy_inner_size_xch = smallest for
-                // position inner), so we flip it to SIZE-indexed to match
-                // the tier labels used in the summary display.
-                const _buyReversedEl2 = document.getElementById('configBuyLadderReversed');
-                const _buyReversed2 = _buyReversedEl2 ? _buyReversedEl2.checked : false;
-                const _sizeOrientedBuy = _buyReversed2 ? {
-                    inner:   plan.buyTierSizesXch.extreme,
-                    mid:     plan.buyTierSizesXch.outer,
-                    outer:   plan.buyTierSizesXch.mid,
-                    extreme: plan.buyTierSizesXch.inner,
-                } : { ...plan.buyTierSizesXch };
+                // Denomination values are FIXED regardless of reversal.
+                // inner denomination = BUY_INNER_SIZE = always the largest coin,
+                // extreme denomination = BUY_EXTREME_SIZE = always the smallest coin.
+                // Only the COUNTS flip (handled by _flipSlotToSize above):
+                // with reversal, inner SLOT positions use extreme-denomination
+                // coins, so the extreme denomination bucket ends up with many
+                // small coins and the inner denomination bucket has few large coins.
+                const _sizeOrientedBuy = { ...plan.buyTierSizesXch };
                 // Store the SIZE-indexed buy live sizes on the plan so
                 // buildCoinPrepSizeMarkup can render them in the XCH column
                 // (instead of falling back to the shared offerTierSizesXch
@@ -17817,7 +17899,25 @@
                 // was inflated by a CAT bottleneck. Stored on
                 // window._topupBufferXch / window._topupBufferCat by the
                 // Smart Settings handler. (F55 2026-04-09)
-                const _topupBufferXch = Number(window._topupBufferXch || 0);
+                // F66 (2026-04-16): when Smart Settings has run and stored
+                // the wallet balance, compute XCH topup as the residual so
+                // total always equals the full wallet balance. The Reverse Buy
+                // Ladder swap reduces tier XCH below the server's _trading_xch
+                // estimate; back-filling here ensures the freed-up XCH shows
+                // in the topup line rather than silently disappearing from the
+                // total. Falls back to the server value when balance is unknown.
+                const _topupBufferXchRaw = Number(window._topupBufferXch || 0);
+                let _topupBufferXch = _topupBufferXchRaw;
+                // F66: compute topup as residual so Total always equals wallet
+                // balance. Use _smartXchBalance (set by Smart Settings run) or
+                // fall back to the live bot_state balance so it also works when
+                // loading existing config without re-running Smart Settings.
+                const _smartXchBal = Number(window._smartXchBalance || 0)
+                    || Number(typeof bot_state !== 'undefined' && bot_state?.balances?.xch?.total || 0);
+                if (_smartXchBal > 0) {
+                    const _reserveForTopup = parseFloat(document.getElementById('configXchReserve')?.value) || 0;
+                    _topupBufferXch = Math.max(0, _smartXchBal - _reserveForTopup - plan.totalXchForCoinPrep);
+                }
                 const _topupBufferCat = Number(window._topupBufferCat || 0);
                 if (_topupBufferXch > 0 || _topupBufferCat > 0) {
                     plan.tierSequence.push('topup');
@@ -18504,8 +18604,9 @@
                 const cMid   = _i('configMidTierCount');
                 const cOuter = _i('configOuterTierCount');
                 const cExt   = _i('configExtremeTierCount');
-                const _reverseEl = document.getElementById('configBuyLadderReversed');
-                const _buyReversed = _reverseEl ? _reverseEl.checked : true;
+                // Swap design: field values are already correct for current orientation.
+                // Always use the direct (non-reversed) formula.
+                const _buyReversed = false;
                 if (_buyReversed) {
                     // Position × flipped size (what the bot actually deploys
                     // on the buy side under reverse-buy)
@@ -24236,8 +24337,8 @@
             updateStartupChecklist(bot_state);
             updateDashboardStartupLayout(bot_state);
             fetchDashboard();
-            console.log('[RESUME] User chose Start Fresh â€” settingsReviewed:', settingsReviewed);
-            showToast('Fresh run started â€” review settings and run coin prep for the new setup.', 'info');
+            console.log('[RESUME] User chose Start Fresh \u2014 settingsReviewed:', settingsReviewed);
+            showToast('Fresh run started \u2014 review settings and run coin prep for the new setup.', 'info');
         }
 
         function resumeSkip() {
@@ -26401,7 +26502,7 @@
 
                 // V2: Tiered Orders
                 tier_enabled: document.getElementById('configTierEnabled').checked,
-                buy_ladder_reversed: document.getElementById('configBuyLadderReversed').checked,
+                buy_ladder_reversed: !document.getElementById('configBuyLadderReversed').checked,
                 inner_size_xch: parseFloat(document.getElementById('configInnerSizeXch').value),
                 mid_size_xch: parseFloat(document.getElementById('configMidSizeXch').value),
                 outer_size_xch: parseFloat(document.getElementById('configOuterSizeXch').value),
@@ -27243,12 +27344,15 @@ function closeCtgErrorModal() {
                     if (completeXch) {
                         const xc = status.xch_coins;
                         const xt = status.xch_target;
-                        completeXch.textContent = xt ? `${xc || xt} / ${xt}` : `${xc || 0}`;
+                        // Phase=complete only fires when the worker verified >= target coins.
+                        // Show target/target — any extra fee-change coins are non-trading and
+                        // make the "-1 for reserve" heuristic show N+1/N which looks wrong.
+                        completeXch.textContent = xt ? `${xt} / ${xt}` : `${xc || 0}`;
                     }
                     if (completeCat) {
                         const cc = status.cat_coins;
                         const ct = status.cat_target;
-                        completeCat.textContent = ct ? `${cc || ct} / ${ct}` : `${cc || 0}`;
+                        completeCat.textContent = ct ? `${ct} / ${ct}` : `${cc || 0}`;
                     }
                     
                     // Show complete view
