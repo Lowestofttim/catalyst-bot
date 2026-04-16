@@ -70,11 +70,12 @@ from win_subprocess import hidden_subprocess_kwargs
 
 
 # Cooldowns
-_TOPUP_COOLDOWN = 600            # 10 minutes between topups (normal)
+_TOPUP_COOLDOWN = 600            # 10 minutes between emergency topups (normal)
 _TOPUP_BACKOFF_BASE = 300        # 5 minutes — first retry when nothing available
 _TOPUP_BACKOFF_MAX = 3600        # 60 minutes — ceiling for exponential backoff
 # Old fixed 2-hour constant removed. Backoff is now exponential:
 # attempt 0 → 5 min, 1 → 10 min, 2 → 20 min, 3 → 40 min, 4+ → 60 min (capped)
+_TOPUP_DRIP_INTERVAL = 90        # 90 seconds between proactive drip checks
 
 
 class _TopupWalletDegraded(Exception):
@@ -874,6 +875,8 @@ class CoinManager:
         self._no_coins_backoff: bool = False
         self._no_coins_backoff_count: int = 0   # consecutive "nothing to work with" hits
         self._last_topup_time: float = 0
+        self._last_drip_time: float = 0          # last proactive drip check timestamp
+        self._topup_is_drip: bool = False        # current run was drip-triggered (not emergency)
 
         # Warning throttle
         self._last_low_coin_warning: float = 0
@@ -3091,6 +3094,24 @@ class CoinManager:
             sniper_target = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
             sniper_xch_have = len(self._xch_inventory.get("sniper", []))
             sniper_cat_have = len(self._cat_inventory.get("sniper", []))
+            # F67: Count locked sniper coins too — a sniper coin locked in an
+            # active offer is still part of the pool (just doing its job). The
+            # old check only counted FREE coins, so firing 1 probe dropped the
+            # count to SNIPER_PREP_COUNT-1 and triggered a false LOW_SPARES.
+            try:
+                from database import get_connection as _get_conn
+                _conn = _get_conn()
+                _locked_sniper_xch = _conn.execute(
+                    "SELECT COUNT(*) FROM coins WHERE status='locked' AND assigned_tier='sniper' AND wallet_type='xch'"
+                ).fetchone()[0]
+                _locked_sniper_cat = _conn.execute(
+                    "SELECT COUNT(*) FROM coins WHERE status='locked' AND assigned_tier='sniper' AND wallet_type='cat'"
+                ).fetchone()[0]
+            except Exception:
+                _locked_sniper_xch = 0
+                _locked_sniper_cat = 0
+            sniper_xch_have += int(_locked_sniper_xch or 0)
+            sniper_cat_have += int(_locked_sniper_cat or 0)
             sniper_xch_needed = sniper_target if cfg.ENABLE_BUY else 0
             # Snipers are XCH-only (opportunistic buys) — no CAT sniper coins needed
             sniper_cat_needed = 0
@@ -3123,6 +3144,16 @@ class CoinManager:
         if self._fee_pool_enabled():
             fee_target = get_fee_pool_count()
             fee_have = len(self._xch_inventory.get("fees", []))
+            # F67: Count locked fee coins too — same as snipers, a fee coin
+            # locked in an active offer is still part of the pool.
+            try:
+                from database import get_connection as _get_conn
+                _locked_fees = _get_conn().execute(
+                    "SELECT COUNT(*) FROM coins WHERE status='locked' AND assigned_tier='fees' AND wallet_type='xch'"
+                ).fetchone()[0]
+            except Exception:
+                _locked_fees = 0
+            fee_have += int(_locked_fees or 0)
             fee_status = "READY" if fee_have >= fee_target else ("LOW" if fee_have > 0 else "EMPTY")
             report["tiers"]["fees"] = {
                 "slots_per_side": 0,
@@ -3395,7 +3426,9 @@ class CoinManager:
             )
         else:
             cooldown = _TOPUP_COOLDOWN
-        if time.time() - self._last_topup_time < cooldown:
+        _emergency_ready = (time.time() - self._last_topup_time >= cooldown)
+        _drip_ready = (time.time() - self._last_drip_time >= _TOPUP_DRIP_INTERVAL)
+        if not _emergency_ready and not _drip_ready:
             return False
 
         # V4: Per-tier trigger percentages (source of truth = final settings).
@@ -3544,7 +3577,66 @@ class CoinManager:
                 log_event("info", "low_coins_adaptive",
                           f"Per-tier trigger fired (pace={pace}, scale={pace_scale:.2f}x). "
                           f"Trips: {'; '.join(trigger_log) if trigger_log else 'n/a'}")
-            return needs_any
+                self._topup_is_drip = False
+                return True
+
+            # Drip check — proactively replenish tiers trending toward emergency.
+            # Uses its own _TOPUP_DRIP_INTERVAL cooldown (90s) independent of
+            # the emergency gate. Only runs if emergency check found nothing.
+            if _drip_ready:
+                drip_pct = max(0.05, min(0.95, getattr(cfg, "TIER_DRIP_PCT", 75) / 100.0))
+                for tier_name in ("inner", "mid", "outer", "extreme"):
+                    _xch_slots = int(xch_dist.get(tier_name, 0) or 0)
+                    _cat_slots = int(cat_dist.get(tier_name, 0) or 0)
+                    _xch_sp_tgt = max(0, int(prepared_xch.get(tier_name, 0) or 0) - _xch_slots)
+                    _cat_sp_tgt = max(0, int(prepared_cat.get(tier_name, 0) or 0) - _cat_slots)
+                    _xch_sp = self._tier_spares.get("xch", {}).get(tier_name, 0)
+                    _cat_sp = self._tier_spares.get("cat", {}).get(tier_name, 0)
+                    _xch_drip = int(round(_xch_sp_tgt * drip_pct)) if _xch_sp_tgt > 0 else 0
+                    _cat_drip = int(round(_cat_sp_tgt * drip_pct)) if _cat_sp_tgt > 0 else 0
+                    if ((_xch_drip > 0 and _xch_sp < _xch_drip and cfg.ENABLE_BUY) or
+                            (_cat_drip > 0 and _cat_sp < _cat_drip and cfg.ENABLE_SELL)):
+                        self._last_drip_time = time.time()
+                        self._topup_is_drip = True
+                        log_event("info", "drip_trigger",
+                                  f"Proactive drip: {tier_name} "
+                                  f"xch={_xch_sp}/{_xch_drip} (tgt {_xch_sp_tgt}) "
+                                  f"cat={_cat_sp}/{_cat_drip} (tgt {_cat_sp_tgt})")
+                        return True
+                # Sniper pool drip (XCH + CAT, separate from trading tiers).
+                if self._sniper_pool_enabled():
+                    _sniper_target = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
+                    if _sniper_target > 0:
+                        _sniper_drip_tgt = int(round(_sniper_target * drip_pct))
+                        _sniper_xch_sp = self._tier_spares.get("xch", {}).get("sniper", 0)
+                        _sniper_cat_sp = self._tier_spares.get("cat", {}).get("sniper", 0)
+                        if _sniper_drip_tgt > 0 and (
+                            (cfg.ENABLE_BUY and _sniper_xch_sp < _sniper_drip_tgt) or
+                            (cfg.ENABLE_SELL and _sniper_cat_sp < _sniper_drip_tgt)
+                        ):
+                            self._last_drip_time = time.time()
+                            self._topup_is_drip = True
+                            log_event("info", "drip_trigger",
+                                      f"Proactive drip: sniper "
+                                      f"xch={_sniper_xch_sp}/{_sniper_drip_tgt} "
+                                      f"cat={_sniper_cat_sp}/{_sniper_drip_tgt} "
+                                      f"(tgt {_sniper_target})")
+                            return True
+                # Fee pool drip (XCH-only pool, separate from trading tiers).
+                if self._fee_pool_enabled():
+                    _fee_target = get_fee_pool_count()
+                    if _fee_target > 0:
+                        _fee_drip_tgt = int(round(_fee_target * drip_pct))
+                        _fee_sp = self._tier_spares.get("xch", {}).get("fees", 0)
+                        if _fee_drip_tgt > 0 and _fee_sp < _fee_drip_tgt:
+                            self._last_drip_time = time.time()
+                            self._topup_is_drip = True
+                            log_event("info", "drip_trigger",
+                                      f"Proactive drip: fees "
+                                      f"xch={_fee_sp}/{_fee_drip_tgt} (tgt {_fee_target})")
+                            return True
+                self._last_drip_time = time.time()  # nothing to drip — reset timer
+            return False
         else:
             # Non-tiered: original logic with adaptive threshold
             free_xch = max(0, self._xch_coins - active_buy_count)
@@ -3622,7 +3714,11 @@ class CoinManager:
                 return False
             self._topup_running = True
             self._topup_stop_requested = False
-        self._last_topup_time = time.time()
+        # Emergency runs stamp _last_topup_time to enforce the full cooldown.
+        # Drip runs already stamped _last_drip_time in needs_topup() — leave
+        # _last_topup_time unchanged so the emergency gate is unaffected.
+        if not self._topup_is_drip:
+            self._last_topup_time = time.time()
 
         self._topup_thread = threading.Thread(
             target=self._topup_worker,
@@ -3808,12 +3904,29 @@ class CoinManager:
                     if cfg.ENABLE_SELL
                     else False
                 )
-                if _xch_absorbed or _cat_absorbed:
+                if _xch_absorbed:
+                    # XCH reserve consumed — block ALL further ops this cycle.
+                    # Sage returns pending coins as selectable, so without this
+                    # gate a drip 40s later would pick the same (pending) reserve
+                    # and submit a second TX → double-spend → one TX fails
+                    # → misfits return → infinite absorb-defer loop.
                     did_anything = True
+                    self._last_drip_time = time.time()
                     log_event("info", "topup_absorb_defer",
-                              "Misfit coins absorbed into reserve — tier splits "
+                              "XCH misfits absorbed into reserve — tier splits "
                               "deferred to next cycle (awaiting on-chain confirmation)")
                     return
+                if _cat_absorbed:
+                    # CAT reserve consumed — CAT tier splits are deferred this
+                    # cycle (the pending absorption coin must confirm first).
+                    # XCH is unaffected (separate reserve coin), so fall through
+                    # to the XCH tier split section below rather than returning.
+                    # The CAT split section will find no valid reserve and skip
+                    # gracefully without double-spending the pending coin.
+                    did_anything = True
+                    log_event("info", "topup_cat_absorb_continue_xch",
+                              "CAT misfits absorbed into reserve — proceeding with "
+                              "XCH tier splits this cycle (CAT splits deferred)")
 
             if cfg.TIER_ENABLED:
                 # ---- Tier-aware topup: check each tier ----
@@ -3896,7 +4009,16 @@ class CoinManager:
                     side="cat",
                 )
 
-                for tier_name in ["inner", "mid", "outer", "extreme"]:
+                # Floor-nearest positions first: on a reversed buy ladder the
+                # extreme coin pool serves the inner (near-mid, highest-traffic)
+                # positions and should be replenished before outer/mid/inner pools.
+                # Sell side is never reversed so always inner → extreme.
+                _buy_reversed = getattr(cfg, "BUY_LADDER_REVERSED", False)
+                _tier_order = (["extreme", "outer", "mid", "inner"]
+                               if _buy_reversed else
+                               ["inner", "mid", "outer", "extreme"])
+                _xch_split_done = False  # True only for real splits, not pool rebuilds
+                for tier_name in _tier_order:
                     if self._topup_should_stop():
                         log_event("info", "topup_stopped", "Coin top-up stopped during tier replenishment")
                         return
@@ -3932,14 +4054,29 @@ class CoinManager:
                             xch_inv, xch_tier_size, deficit,
                             is_cat=False
                         )
-                        if result:
+                        if result is True:
                             did_anything = True
-                        # Always re-fetch after a split attempt (success or fail).
-                        # Prevents next tier from trying the same locked coin.
-                        time.sleep(3)
-                        fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
-                        fresh_records = _extract_coin_records(fresh)
-                        xch_inv = self._classify_coins_by_designation(fresh_records, "xch", self._get_tier_sizes_mojos(is_cat=False))
+                            _xch_split_done = True
+                            # SINGLE-ACTION: one split per cycle keeps is_busy() short.
+                            # The drip timer (90s) gives the TX time to confirm before
+                            # the next cycle re-evaluates. Break out of the tier loop.
+                            break
+                        elif result:
+                            # Pool rebuild submitted (not a tier split) — mark activity
+                            # but do NOT break. Pool rebuilds only consolidate coins;
+                            # the new reserve won't be available until next cycle.
+                            # CAT still needs its turn this cycle, so fall through.
+                            did_anything = True
+                        else:
+                            # Split failed — re-fetch before trying the next tier so we
+                            # don't hit the same locked coin again.
+                            time.sleep(3)
+                            fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
+                            fresh_records = _extract_coin_records(fresh)
+                            xch_inv = self._classify_coins_by_designation(fresh_records, "xch", self._get_tier_sizes_mojos(is_cat=False))
+
+                    if _xch_split_done:
+                        break  # propagate single-action exit only for real XCH splits
 
                     # CAT: check if this tier needs coins (CAT = sell side)
                     cat_have = len(cat_inv.get(tier_name, []))
@@ -3976,16 +4113,16 @@ class CoinManager:
                             )
                             if result:
                                 did_anything = True
-                            # Always re-fetch after a split attempt (success or fail).
-                            # If it failed, the reserve coin may be locked from the
-                            # attempt — without refreshing, the next tier would try
-                            # the same locked coin and fail again.
+                                # SINGLE-ACTION: one split per cycle.
+                                break
+                            # Split failed — re-fetch before trying next tier.
                             time.sleep(3)
                             fresh = _get_free_coins_rpc(cfg.CAT_WALLET_ID)
                             fresh_records = _extract_coin_records(fresh)
                             cat_inv = self._classify_coins_by_designation(fresh_records, "cat", self._get_tier_sizes_mojos(is_cat=True))
 
-                if self._sniper_pool_enabled():
+                # SINGLE-ACTION: skip sniper/fee checks if a tier split already ran.
+                if not did_anything and self._sniper_pool_enabled():
                     if self._topup_should_stop():
                         log_event("info", "topup_stopped", "Coin top-up stopped during sniper replenishment")
                         return
@@ -4009,42 +4146,41 @@ class CoinManager:
                         )
                         if result:
                             did_anything = True
-                        time.sleep(3)
-                        fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
-                        fresh_records = _extract_coin_records(fresh)
-                        xch_inv = self._classify_coins_by_designation(fresh_records, "xch", self._get_tier_sizes_mojos(is_cat=False))
+                        if not did_anything:
+                            time.sleep(3)
+                            fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
+                            fresh_records = _extract_coin_records(fresh)
+                            xch_inv = self._classify_coins_by_designation(fresh_records, "xch", self._get_tier_sizes_mojos(is_cat=False))
 
-                    sniper_cat_have = len(cat_inv.get("sniper", []))
-                    if sniper_cat_have < sniper_threshold and cfg.ENABLE_SELL and sniper_cat_mojos_val > 0:
-                        any_tier_needed = True
-                        deficit = (sniper_target - sniper_cat_have) + 2
-                        sniper_cat_display = _format_amount_cat(sniper_cat_mojos_val, cfg.CAT_DECIMALS)
-                        log_event("info", "topup_cat_sniper",
-                                  f"CAT sniper pool low: {sniper_cat_have}/{sniper_threshold} threshold "
-                                  f"(target {sniper_target}) — need {deficit} at {sniper_cat_display} each")
-                        price = self._get_current_price()
-                        if price and price > 0 and sniper_xch_size_dec > 0:
-                            cat_token_size = int((
-                                sniper_xch_size_dec
-                                / price
-                                * self._get_coin_prep_headroom_multiplier()
-                            ).quantize(Decimal("1")))
-                        else:
-                            cat_token_size = int(cfg.CAT_COIN_SIZE)
+                    if not did_anything:
+                        sniper_cat_have = len(cat_inv.get("sniper", []))
+                        if sniper_cat_have < sniper_threshold and cfg.ENABLE_SELL and sniper_cat_mojos_val > 0:
+                            any_tier_needed = True
+                            deficit = (sniper_target - sniper_cat_have) + 2
+                            sniper_cat_display = _format_amount_cat(sniper_cat_mojos_val, cfg.CAT_DECIMALS)
+                            log_event("info", "topup_cat_sniper",
+                                      f"CAT sniper pool low: {sniper_cat_have}/{sniper_threshold} threshold "
+                                      f"(target {sniper_target}) — need {deficit} at {sniper_cat_display} each")
+                            price = self._get_current_price()
+                            if price and price > 0 and sniper_xch_size_dec > 0:
+                                cat_token_size = int((
+                                    sniper_xch_size_dec
+                                    / price
+                                    * self._get_coin_prep_headroom_multiplier()
+                                ).quantize(Decimal("1")))
+                            else:
+                                cat_token_size = int(cfg.CAT_COIN_SIZE)
 
-                        result = self._smart_topup_wallet(
-                            "CAT-sniper", cfg.CAT_WALLET_ID,
-                            cat_inv, sniper_cat_mojos_val, deficit,
-                            is_cat=True, cat_token_amount=cat_token_size
-                        )
-                        if result:
-                            did_anything = True
-                        time.sleep(3)
-                        fresh = _get_free_coins_rpc(cfg.CAT_WALLET_ID)
-                        fresh_records = _extract_coin_records(fresh)
-                        cat_inv = self._classify_coins_by_designation(fresh_records, "cat", self._get_tier_sizes_mojos(is_cat=True))
+                            result = self._smart_topup_wallet(
+                                "CAT-sniper", cfg.CAT_WALLET_ID,
+                                cat_inv, sniper_cat_mojos_val, deficit,
+                                is_cat=True, cat_token_amount=cat_token_size
+                            )
+                            if result:
+                                did_anything = True
 
-                if self._fee_pool_enabled():
+                # SINGLE-ACTION: skip fee check if a split already ran.
+                if not did_anything and self._fee_pool_enabled():
                     if self._topup_should_stop():
                         log_event("info", "topup_stopped", "Coin top-up stopped during fee replenishment")
                         return
@@ -4068,14 +4204,6 @@ class CoinManager:
                         )
                         if result:
                             did_anything = True
-                        time.sleep(3)
-                        fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
-                        fresh_records = _extract_coin_records(fresh)
-                        xch_inv = self._classify_coins_by_designation(
-                            fresh_records,
-                            "xch",
-                            self._get_tier_sizes_mojos(is_cat=False),
-                        )
 
             else:
                 # ---- Non-tiered: original uniform topup ----
@@ -4138,46 +4266,88 @@ class CoinManager:
                 except Exception:
                     xch_total = Decimal("0")
 
+                _is_drip = self._topup_is_drip
                 if any_tier_needed:
                     # Tier was low but the split either timed out, was refused by the
                     # XCH_RESERVE/budget guard, or had no suitable source coin this cycle.
                     # The specific reason was already logged inside _smart_topup_wallet.
                     # Coins may have landed on chain anyway (slow block) — next cycle will
                     # re-evaluate and skip if tiers are now adequate.
-                    self._last_topup_time = time.time()
+                    if _is_drip:
+                        self._last_drip_time = time.time()
+                    else:
+                        self._last_topup_time = time.time()
                     log_event("info", "topup_split_blocked",
-                              f"Topup needed but split did not complete this cycle "
-                              f"({xch_total:.4f} XCH in wallet) — will re-evaluate next cycle")
+                              f"{'Drip' if _is_drip else 'Topup'} needed but split did not complete "
+                              f"this cycle ({xch_total:.4f} XCH in wallet) — will re-evaluate next cycle")
                     return
                 elif xch_total > cfg.XCH_RESERVE + Decimal("1"):
-                    # All tiers above action threshold — this is normal steady-state
-                    self._last_topup_time = time.time()
-                    log_event("info", "topup_tiers_adequate",
-                              f"All tiers above action threshold ({xch_total:.4f} XCH in wallet) "
-                              f"— coins deployed in active offers (normal state)")
+                    # All tiers above action threshold — normal steady-state
+                    if _is_drip:
+                        self._last_drip_time = time.time()
+                        log_event("info", "drip_adequate",
+                                  f"Drip: all tiers above action threshold ({xch_total:.4f} XCH) "
+                                  f"— next drip in {_TOPUP_DRIP_INTERVAL}s")
+                    else:
+                        self._last_topup_time = time.time()
+                        log_event("info", "topup_tiers_adequate",
+                                  f"All tiers above action threshold ({xch_total:.4f} XCH in wallet) "
+                                  f"— coins deployed in active offers (normal state)")
                     return
                 else:
-                    self._no_coins_backoff = True
-                    self._no_coins_backoff_count += 1
-                    self._last_topup_time = time.time()
-                    backoff_secs = min(
-                        _TOPUP_BACKOFF_MAX,
-                        _TOPUP_BACKOFF_BASE * (2 ** self._no_coins_backoff_count),
-                    )
-                    log_event("info", "topup_no_action",
-                              f"No coins available to split or consolidate — "
-                              f"backing off {backoff_secs//60:.0f} min "
-                              f"(attempt {self._no_coins_backoff_count}, "
-                              f"resets on fills or successful topup)")
+                    if _is_drip:
+                        # Drip found no reserve coins — back off the drip interval,
+                        # don't set emergency backoff (reserve shortage is expected during
+                        # a full ladder; emergency topup handles it when truly needed).
+                        self._last_drip_time = time.time()
+                        log_event("info", "drip_no_coins",
+                                  f"Drip: no reserve coins available to split "
+                                  f"— next drip in {_TOPUP_DRIP_INTERVAL}s")
+                    else:
+                        self._no_coins_backoff = True
+                        self._no_coins_backoff_count += 1
+                        self._last_topup_time = time.time()
+                        backoff_secs = min(
+                            _TOPUP_BACKOFF_MAX,
+                            _TOPUP_BACKOFF_BASE * (2 ** self._no_coins_backoff_count),
+                        )
+                        log_event("info", "topup_no_action",
+                                  f"No coins available to split or consolidate — "
+                                  f"backing off {backoff_secs//60:.0f} min "
+                                  f"(attempt {self._no_coins_backoff_count}, "
+                                  f"resets on fills or successful topup)")
                     return
 
-            # Poll for confirmation
+            # SINGLE-ACTION success path: skip the long confirmation poll.
+            # Set the drip timer to now so the next cycle fires in ~90s —
+            # enough time for the TX to confirm on-chain. If confirmation
+            # doesn't arrive in 90s, the next cycle will re-evaluate:
+            # either the tier is satisfied (coins arrived) or the locked
+            # source coin means _smart_topup_wallet returns False again
+            # (handled gracefully by the "split blocked" path above).
+            if did_anything:
+                if self._topup_is_drip:
+                    self._last_drip_time = time.time()
+                else:
+                    self._last_topup_time = time.time()
+                self._no_coins_backoff = False
+                self._no_coins_backoff_count = 0
+                log_event("info", "topup_single_action_done",
+                          f"Single-action topup complete — "
+                          f"next check in ~{_TOPUP_DRIP_INTERVAL}s for TX confirmation")
+                return
+
+            # No split happened — run the confirmation poll in case a previous
+            # split is still pending (this path should be rare with single-action).
             pre_xch = len(xch_records)
             pre_cat = len(cat_records)
             self._poll_for_confirmation(pre_xch, pre_cat)
 
-            # Success — reset cooldown and backoff counter
-            self._last_topup_time = 0
+            # Success — reset appropriate cooldown timer and backoff counter
+            if self._topup_is_drip:
+                self._last_drip_time = 0   # check again soon for more drip work
+            else:
+                self._last_topup_time = 0  # immediate re-evaluation next cycle
             self._no_coins_backoff = False
             self._no_coins_backoff_count = 0
 
@@ -4425,7 +4595,11 @@ class CoinManager:
         _POOL_REBUILD_MIN  = 2   # minimum excess coins required to attempt rebuild
 
         _pool_candidates = []
-        for _tname in ["inner", "mid", "outer", "extreme", "sniper"]:
+        # Deliberately exclude "sniper" and "fees" from rebuild candidates:
+        # those tiers use different coin sizes and won't be replenished by the
+        # trading-tier split that follows. Consuming them here destroys the
+        # sniper/fee pools with no recovery path.
+        for _tname in ["inner", "mid", "outer", "extreme"]:
             _bucket = inventory.get(_tname, [])
             if not _bucket:
                 continue
@@ -4464,7 +4638,12 @@ class CoinManager:
                     log_event("success", f"topup_{name.lower()}_pool_rebuild_ok",
                               f"{name} topup pool rebuild submitted — new reserve coin "
                               f"will be classified and split on the next topup cycle.")
-                    return True
+                    # Return "rebuild" (not True) so the caller can distinguish a
+                    # pool consolidation from an actual tier split. Pool rebuilds
+                    # should NOT consume the single-action slot — the opposite side
+                    # (CAT vs XCH) may still have splits to do this cycle, and
+                    # blocking it for a consolidation causes CAT inner to starve.
+                    return "rebuild"
                 else:
                     log_event("warning", f"topup_{name.lower()}_pool_rebuild_fail",
                               f"{name} topup pool rebuild consolidation failed")
@@ -5393,64 +5572,115 @@ class CoinManager:
     def _consolidate_coins(self, name: str, wallet_id: int,
                             total_amount: int, is_cat: bool,
                             source_coin_ids: Optional[List[str]] = None) -> bool:
-        """Consolidate specific coins into one large coin by sending to self.
+        """Consolidate specific coins into one large coin using Sage's /combine.
 
-        This creates one large coin from many small ones.
+        F68 FIX: switched from send_xch/send_cat (which silently ignore coin_ids
+        and let Sage pick additional coins at will — including draining the
+        sniper pool) to /combine (which respects coin_ids as a strict whitelist
+        — same endpoint coin_prep uses for its splits/combines).
 
         Args:
-            source_coin_ids: If provided, Sage will ONLY spend these coins (passed
-                as the coin_ids hint to send_xch/send_cat).  This prevents Sage
-                from "helpfully" picking freshly-created tier coins from other
-                topup runs when building the total.  Pass None to let Sage pick
-                freely (original behaviour, used only when no coin list is known).
+            source_coin_ids: REQUIRED — the exact coins to combine. /combine
+                will spend only these. Pass None returns False (use a
+                different code path if you genuinely want Sage to pick).
         """
         try:
-            # Get address
-            addr_result = get_next_address(wallet_id=wallet_id, new_address=False)
-            if not addr_result or not addr_result.get("success"):
-                log_event("warning", f"consolidate_{name.lower()}_addr_fail",
-                          "Could not get wallet address for consolidation")
+            if not source_coin_ids:
+                log_event("warning", f"consolidate_{name.lower()}_no_ids",
+                          "Consolidation aborted: no source_coin_ids provided. "
+                          "Caller must specify exact coins to combine.")
                 return False
 
-            address = addr_result.get("address", "")
-            if not address:
+            # Defensive filter: NEVER combine sniper or fee coins. The sniper and
+            # fee pools are dedicated pools with distinct sizes and should never
+            # be cannibalised to fund trading-tier topups. If upstream logic ever
+            # leaks a sniper/fee coin ID into source_coin_ids, we strip it here.
+            filtered_ids = self._filter_out_protected_coin_ids(source_coin_ids)
+            if len(filtered_ids) < len(source_coin_ids):
+                log_event("warning", f"consolidate_{name.lower()}_filtered_protected",
+                          f"Stripped {len(source_coin_ids) - len(filtered_ids)} "
+                          f"sniper/fees coin(s) from consolidation input "
+                          f"(defensive guard — should not normally fire)")
+            if len(filtered_ids) < 2:
+                log_event("info", f"consolidate_{name.lower()}_too_few_after_filter",
+                          f"Consolidation skipped: only {len(filtered_ids)} "
+                          f"coin(s) remain after protected-pool filter")
+                return False
+
+            if get_wallet_type() != "sage":
+                log_event("info", f"consolidate_{name.lower()}_skip_non_sage",
+                          "Consolidation skipped: /combine is Sage-only. "
+                          "Chia wallet path not supported for targeted combine.")
                 return False
 
             fee = self._tx_fee_mojos()
-            if is_cat:
-                # CAT: fee is paid in XCH from XCH balance — send full CAT amount
-                send_amount = total_amount
-            else:
-                # XCH: fee comes from the same XCH balance — subtract to avoid overspend
-                send_amount = max(0, total_amount - fee)
-                if send_amount <= 0:
-                    log_event("warning", f"consolidate_{name.lower()}_skip",
-                              f"Consolidation skipped: total_amount {total_amount} mojos "
-                              f"insufficient to cover fee {fee} mojos")
-                    return False
-            result = send_transaction(
-                wallet_id=wallet_id,
-                amount_mojos=send_amount,
-                address=address,
-                fee_mojos=fee,
-                source_coin_ids=source_coin_ids or [],
-            )
+            from wallet_sage import combine_coins
+            result = combine_coins(coin_ids=filtered_ids, fee_mojos=fee)
 
-            # Sage's send_xch/send_cat returns {summary, coin_spends} on success
-            # (no "success" key in that response format). Accept either form.
+            # /combine returns {summary, coin_spends} on success — same shape
+            # as send_xch/send_cat.
             if result and (result.get("success") is True
                            or result.get("coin_spends") is not None):
+                n_spends = len(result.get("coin_spends") or [])
+                log_event("info", f"consolidate_{name.lower()}_combine_ok",
+                          f"Combined {len(filtered_ids)} coin(s) via /combine "
+                          f"(Sage spent {n_spends} input coin(s))")
                 return True
             else:
                 error = (result or {}).get("error", "Unknown")
                 log_event("warning", f"consolidate_{name.lower()}_fail",
-                          f"Consolidation send failed: {error}")
+                          f"/combine failed: {error}")
                 return False
 
         except Exception as e:
             log_event("error", f"consolidate_{name.lower()}_error",
                       f"Consolidation error: {e}")
             return False
+
+    def _filter_out_protected_coin_ids(self, coin_ids: List[str]) -> List[str]:
+        """Strip sniper/fees coin IDs from a list — defensive guard for combines.
+
+        Topup consolidation paths should never pass sniper/fees IDs (upstream
+        tier filters exclude them), but defence-in-depth: if a leak occurs, we
+        refuse to combine those coins. They remain untouched in their dedicated
+        pools.
+        """
+        try:
+            from database import get_connection
+            normalised = []
+            for cid in coin_ids or []:
+                if not cid:
+                    continue
+                c = str(cid).lower()
+                if c.startswith("0x"):
+                    c = c[2:]
+                normalised.append(c)
+            if not normalised:
+                return []
+            placeholders = ",".join(["?"] * len(normalised))
+            rows = get_connection().execute(
+                f"SELECT coin_id, assigned_tier FROM coins WHERE coin_id IN ({placeholders})",
+                normalised,
+            ).fetchall()
+            protected = {
+                str(r["coin_id"]).lower()
+                for r in rows
+                if (r["assigned_tier"] or "").lower() in ("sniper", "fees")
+            }
+            if not protected:
+                return list(coin_ids or [])
+            # Preserve caller's original formatting (with/without 0x) for matched IDs
+            out = []
+            for original in (coin_ids or []):
+                c = str(original).lower()
+                if c.startswith("0x"):
+                    c = c[2:]
+                if c not in protected:
+                    out.append(original)
+            return out
+        except Exception:
+            # On any DB error, fail open — return original list (don't block topup)
+            return list(coin_ids or [])
 
     # ------------------------------------------------------------------
     # Misfit coin detection and absorption
@@ -5558,12 +5788,18 @@ class CoinManager:
             else:
                 base_tier_mojos = tier_sizes_mojos
 
-            # Scan every tier bucket for coins that can't fund any tier offer.
+            # Scan trading tier buckets for coins that can't fund any tier offer.
             # Uses a 2% floor tolerance so coins that are a handful of mojos
             # below the exact tier floor (fee-rounding artefacts from splits)
             # are not incorrectly flagged as misfits.
+            # NOTE: sniper coins are intentionally excluded. The sniper tier is
+            # not included in tier_sizes_mojos (its size is price-derived at offer
+            # creation time), so every sniper coin would be falsely flagged as a
+            # misfit and absorbed on each topup cycle, blocking tier splits forever.
+            # Stranded sniper coins are harmless — they sit idle until the next
+            # coin prep or a future cleanup pass.
             misfit_records = []
-            for tier_name in ("inner", "mid", "outer", "extreme", "sniper"):
+            for tier_name in ("inner", "mid", "outer", "extreme"):
                 bucket = inventory.get(tier_name, [])
                 for rec in bucket:
                     amt = _coin_amount(rec)
@@ -5642,22 +5878,27 @@ class CoinManager:
                       f"misfit coin(s) ({mis_str}) into reserve "
                       f"[{reserve_id[:12]}...] — new reserve will be {amt_str}")
 
-            addr_result = get_next_address(wallet_id=wallet_id, new_address=False)
-            if not addr_result or not addr_result.get("success"):
-                log_event("warning", f"topup_{name.lower()}_absorb_addr_fail",
-                          "Could not obtain wallet address for misfit absorption")
-                return False
-            address = addr_result.get("address", "")
-            if not address:
+            # F68 FIX: use Sage's /combine endpoint (which respects coin_ids as
+            # a strict whitelist) instead of send_xch/send_cat (which silently
+            # ignored coin_ids and let Sage pull in arbitrary wallet coins —
+            # including the sniper pool). This mirrors the pattern coin_prep
+            # uses for its splits/combines.
+            combine_ids = [reserve_id] + misfit_ids
+            # Defensive filter: strip any sniper/fees coin IDs that leaked in
+            filtered_ids = self._filter_out_protected_coin_ids(combine_ids)
+            if len(filtered_ids) < len(combine_ids):
+                log_event("warning", f"topup_{name.lower()}_absorb_filtered_protected",
+                          f"Stripped {len(combine_ids) - len(filtered_ids)} "
+                          f"sniper/fees coin(s) from misfit absorption input "
+                          f"(defensive guard — should not normally fire)")
+            if len(filtered_ids) < 2:
+                log_event("info", f"topup_{name.lower()}_absorb_too_few_after_filter",
+                          f"Absorption aborted: only {len(filtered_ids)} "
+                          f"coin(s) remain after protected-pool filter")
                 return False
 
-            result = send_transaction(
-                wallet_id=wallet_id,
-                amount_mojos=send_amount,
-                address=address,
-                fee_mojos=fee,
-                source_coin_ids=[reserve_id] + misfit_ids,
-            )
+            from wallet_sage import combine_coins
+            result = combine_coins(coin_ids=filtered_ids, fee_mojos=fee)
 
             # Sage's send_xch/send_cat returns {summary, coin_spends} on success
             # (no "success" key in that response format). Accept either form.
@@ -6156,8 +6397,11 @@ class CoinManager:
         """Reset no-coins backoff (called after fills bring new coins)."""
         if self._no_coins_backoff:
             self._no_coins_backoff = False
+            self._no_coins_backoff_count = 0
+            self._last_topup_time = 0  # clear emergency cooldown
+            self._last_drip_time = 0   # clear drip cooldown too
             log_event("debug", "topup_backoff_reset",
-                      "Topup backoff reset — fills brought new coins")
+                      "Topup backoff reset — fills brought new coins, cooldown cleared")
 
     def get_status(self) -> Dict:
         """Get current coin manager status for GUI/API."""

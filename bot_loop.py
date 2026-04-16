@@ -219,6 +219,11 @@ class BotLoop:
 
         # ---- Price tracking ----
         self._last_quoted_price: Dict[str, Decimal] = {"buy": Decimal("0"), "sell": Decimal("0")}
+        # F67: Un-anchored (plain) mid captured alongside probe-anchored
+        # _last_quoted_price at ladder creation. When probes expire and
+        # _clear_probe_side fires, the baseline snaps to this value to prevent
+        # the dead probe offset from triggering a spurious requote.
+        self._last_quoted_plain_mid: Dict[str, Decimal] = {"buy": Decimal("0"), "sell": Decimal("0")}
         self._force_requote: Dict[str, bool] = {"buy": False, "sell": False}
         self._current_mid_price: Decimal = Decimal("0")
         self._requoted_this_cycle: set = set()   # sides requoted in current cycle
@@ -867,6 +872,26 @@ class BotLoop:
         probe[tid_key] = None
         probe[price_key] = Decimal("0")
 
+        # F67: snap requote baseline from probe-anchored mid → plain mid.
+        # At ladder creation we stored the probe-offset mid in
+        # _last_quoted_price and the un-anchored mid in _last_quoted_plain_mid.
+        # Once the probe is gone, the offset is irrelevant — keeping the
+        # probe-anchored baseline would make the next requote cycle see
+        # ~2% drift and trigger a pointless requote of 6+6 offers.
+        try:
+            plain_mid = self._last_quoted_plain_mid.get(side, Decimal("0"))
+            current_baseline = self._last_quoted_price.get(side, Decimal("0"))
+            if plain_mid > 0 and current_baseline != plain_mid:
+                self._last_quoted_price[side] = plain_mid
+                # Consumed — next creation/requote will set a fresh pair
+                self._last_quoted_plain_mid[side] = Decimal("0")
+                log_event("debug", "probe_baseline_snap",
+                          f"{side} baseline snapped to plain mid "
+                          f"({current_baseline:.8f} -> {plain_mid:.8f}) on probe clear")
+        except Exception as _e:
+            log_event("debug", "probe_baseline_snap_failed",
+                      f"Could not snap {side} baseline on probe clear: {_e}")
+
     def _remember_probe_market_snapshot(self, mid_price: Decimal, arb_gap: Decimal,
                                         tibet_price: Decimal = Decimal("0"),
                                         reason: str = ""):
@@ -1508,6 +1533,7 @@ class BotLoop:
                 "last_discovery_at": 0,
             }
         self._last_quoted_price = {"buy": Decimal("0"), "sell": Decimal("0")}
+        self._last_quoted_plain_mid = {"buy": Decimal("0"), "sell": Decimal("0")}
         self._watcher_data = {
             "last_xch_reserve": 0,
             "last_token_reserve": 0,
@@ -1765,6 +1791,13 @@ class BotLoop:
             except Exception as _amm_err:
                 log_event("warning", "amm_monitor_start_failed",
                           f"AMM Monitor could not start: {_amm_err}")
+
+        # Runtime monitor — tracks fill activity, conditions, diagnostics
+        try:
+            self.runtime_monitor.start()
+        except Exception as _rm_err:
+            log_event("warning", "runtime_monitor_start_failed",
+                      f"Runtime monitor could not start: {_rm_err}")
 
         log_event("info", "bot_started",
                   "Bot loop started (with health, price, coin, AMM, and runtime monitors)")
@@ -2538,7 +2571,7 @@ class BotLoop:
                 if _tier_low_msgs:
                     _context = "resumed session" if resumed_live_book else "cold start"
                     log_event(
-                        "warning",
+                        "info",
                         "startup_spare_deficit",
                         f"Startup spare deficit ({_context}) — topup will fire for: "
                         + "; ".join(_tier_low_msgs)
@@ -2895,6 +2928,9 @@ class BotLoop:
                 if startup_mid > 0:
                     self._last_quoted_price["buy"] = startup_mid
                     self._last_quoted_price["sell"] = startup_mid
+                    # F67: plain mid == startup mid at this point (no probe yet)
+                    self._last_quoted_plain_mid["buy"] = startup_mid
+                    self._last_quoted_plain_mid["sell"] = startup_mid
                     self.amm_monitor.notify_quoted_price(startup_mid, startup_mid)
                     self._current_mid_price = startup_mid
                     with self._probe_lock:
@@ -3282,16 +3318,30 @@ class BotLoop:
         # Compute DB-open subsets for cap check (wallet set may include zombie
         # offers: cancelled in DB but still active in Sage after a failed cancel
         # attempt).  Fill detection and requote still use the full wallet sets.
+        # Sniper-tier offers are excluded from cap counts (mirroring trim_excess_offers),
+        # so snipers never inflate the main ladder count and trigger a false trim-create cycle.
         try:
             from database import get_open_offers as _db_get_open
+            _db_buy_all  = [o for o in _db_get_open(side="buy")  if o.get("trade_id")]
+            _db_sell_all = [o for o in _db_get_open(side="sell") if o.get("trade_id")]
             _db_open_buy_ids = {
-                o["trade_id"] for o in _db_get_open(side="buy") if o.get("trade_id")
+                o["trade_id"] for o in _db_buy_all
+                if (o.get("tier") or "").lower() != "sniper"
             }
             _db_open_sell_ids = {
-                o["trade_id"] for o in _db_get_open(side="sell") if o.get("trade_id")
+                o["trade_id"] for o in _db_sell_all
+                if (o.get("tier") or "").lower() != "sniper"
             }
-            _zombie_buys = len(current_buy_ids) - len(_db_open_buy_ids & current_buy_ids)
-            _zombie_sells = len(current_sell_ids) - len(_db_open_sell_ids & current_sell_ids)
+            # Sniper offer IDs (DB-tracked) — exclude from wallet sets so snipers
+            # don't appear as zombies and don't consume main-ladder cap slots.
+            _db_sniper_ids = {
+                o["trade_id"] for o in _db_buy_all + _db_sell_all
+                if (o.get("tier") or "").lower() == "sniper"
+            }
+            _main_wallet_buy_ids  = current_buy_ids  - _db_sniper_ids
+            _main_wallet_sell_ids = current_sell_ids - _db_sniper_ids
+            _zombie_buys  = len(_main_wallet_buy_ids)  - len(_db_open_buy_ids  & _main_wallet_buy_ids)
+            _zombie_sells = len(_main_wallet_sell_ids) - len(_db_open_sell_ids & _main_wallet_sell_ids)
             if _zombie_buys > 0 or _zombie_sells > 0:
                 log_event("info", "zombie_wallet_offers",
                           f"Wallet has {_zombie_buys} zombie buy / {_zombie_sells} zombie sell "
@@ -4224,6 +4274,7 @@ class BotLoop:
                         new_offers = requote_result.get("offers", [])
                         if requote_result.get("fully_replaced"):
                             self._last_quoted_price[eq_side] = requote_mid
+                            self._last_quoted_plain_mid[eq_side] = mid_price  # F67
                         else:
                             log_event("info", "requote_incomplete",
                                       f"Did not advance {eq_side} quote baseline: replaced "
@@ -4231,14 +4282,17 @@ class BotLoop:
                                       f"{requote_result.get('target_count', 0)} offers")
                             # Fix 4: advance baseline on attempt — see _do_requote_side
                             self._last_quoted_price[eq_side] = requote_mid
+                            self._last_quoted_plain_mid[eq_side] = mid_price  # F67
                     else:
                         # Legacy return format (list)
                         new_offers = requote_result if isinstance(requote_result, list) else []
                         if new_offers:
                             self._last_quoted_price[eq_side] = requote_mid
+                            self._last_quoted_plain_mid[eq_side] = mid_price  # F67
                         else:
                             # Fix 4: advance baseline on attempt
                             self._last_quoted_price[eq_side] = requote_mid
+                            self._last_quoted_plain_mid[eq_side] = mid_price  # F67
                     buy_q = self._last_quoted_price.get("buy")
                     sell_q = self._last_quoted_price.get("sell")
                     self.amm_monitor.notify_quoted_price(buy_q, sell_q)
@@ -4261,10 +4315,22 @@ class BotLoop:
         # Once discovery is done, the main ladder should take over. If an edge
         # probe gets consumed, clear that side and wait for a fresh market move
         # before probing again.
+        #
+        # F67 note: do NOT gate this on `self.sniper._active_snipe_ids` —
+        # `prune_active_snipes()` in step 3 runs BEFORE this block and removes
+        # expired probe TIDs from that list. Gating on it means on-chain probe
+        # expirations slip past without `_clear_probe_side` firing, the
+        # baseline snap never runs, and the next cycle triggers a spurious
+        # requote once `_get_probe_anchored_mid` falls through to plain mid.
+        # Gate on the probe state directly — if a probe TID is recorded, we
+        # need to reconcile its wallet status regardless of sniper tracking.
+        _has_probe_tid = bool(
+            self._probe_state.get("buy_tid") or self._probe_state.get("sell_tid")
+        )
         if (not recovery_active_now
                 and not self._probe_state.get("active", False)
                 and self._probe_state.get("confirmed_price")
-                and self.sniper._active_snipe_ids
+                and _has_probe_tid
                 and self._loop_count >= 3):
             # Check if any probe was taken (disappeared from wallet)
             all_open = current_buy_ids | current_sell_ids
@@ -4288,8 +4354,9 @@ class BotLoop:
                 log_event(
                     "info",
                     "probe_consumed",
-                    f"Confirmed probe {'+'.join(taken_sides)} was consumed — main ladder "
-                    f"stays live and sniper will wait for a fresh market move",
+                    f"Confirmed probe {'+'.join(taken_sides)} was gone from wallet "
+                    f"(filled, expired, or cancelled) — main ladder stays live and "
+                    f"sniper will wait for a fresh market move",
                 )
 
         # ---- Step 8c: Clean up sniper offers once their edge window expires ----
@@ -4594,6 +4661,8 @@ class BotLoop:
             arb_gap=arb_gap,
             skip_buy=_skip_buy,
             skip_sell=_skip_sell,
+            zombie_buy_count=_zombie_buys,
+            zombie_sell_count=_zombie_sells,
         )
 
         # ---- Step 11: Direct post to Dexie first ----
@@ -5101,15 +5170,11 @@ class BotLoop:
                     allowed_tiers=_allowed_tiers if severity not in (
                         RequoteSeverity.FULL, RequoteSeverity.EMERGENCY) else None,
                 )
-                # Mark this side as requoted so step 10 skips
-                # redundant creation (requote already used the
-                # spare coins — step 10 would just fail and
-                # suspend slots).
-                self._requoted_this_cycle.add(side)
                 if isinstance(requote_result, dict):
                     new_offers = requote_result.get("offers", [])
                     if requote_result.get("fully_replaced"):
                         self._last_quoted_price[side] = requote_mid
+                        self._last_quoted_plain_mid[side] = mid_price  # F67
                     else:
                         log_event("info", "requote_incomplete",
                                   f"Did not advance {side} quote baseline: replaced "
@@ -5124,14 +5189,27 @@ class BotLoop:
                         # to quote at", not "what we last successfully
                         # quoted at".
                         self._last_quoted_price[side] = requote_mid
+                        self._last_quoted_plain_mid[side] = mid_price  # F67
                 else:
                     # Legacy return format (list)
                     new_offers = requote_result if isinstance(requote_result, list) else []
                     if new_offers:
                         self._last_quoted_price[side] = requote_mid
+                        self._last_quoted_plain_mid[side] = mid_price  # F67
                     else:
                         # Fix 4: same baseline-advance even when nothing replaced
                         self._last_quoted_price[side] = requote_mid
+                        self._last_quoted_plain_mid[side] = mid_price  # F67
+                # Block step 10 expansion only when the requote actually consumed
+                # spare coins.  If create_ladder returned 0 (all coin selections
+                # failed — e.g. only large-tier coins are spare but inner-tier
+                # offers were requested), the coins are untouched and step 10
+                # must still run so it can fill the empty non-inner slots that
+                # the requote never touched.  Marking the side "requoted" on a
+                # zero-offer result would pin the ladder at its current depth
+                # until the next price move.
+                if new_offers:
+                    self._requoted_this_cycle.add(side)
                 # Splash broadcast — requote_side queues to Dexie internally,
                 # but does NOT know about splash. Mirror the bot_loop create
                 # path (line ~4844) so requoted offers are also broadcast over
@@ -5166,7 +5244,9 @@ class BotLoop:
                                   current_buy_ids=None, current_sell_ids=None,
                                   arb_gap: Decimal = Decimal("0"),
                                   skip_buy: bool = False,
-                                  skip_sell: bool = False):
+                                  skip_sell: bool = False,
+                                  zombie_buy_count: int = 0,
+                                  zombie_sell_count: int = 0):
         """Create new offers if we're below target count."""
         recovery_active = self._recovery_is_active()
 
@@ -5325,6 +5405,10 @@ class BotLoop:
         work_items = []
         if buy_enabled:
             buy_target = max(0, cfg.MAX_ACTIVE_BUY_OFFERS - buy_suspended)
+            # Zombies are excluded from cap counting (they reference spent coins
+            # and can't be filled), so they must also be excluded here.  Counting
+            # them against buy_needed would prevent the bot from filling empty
+            # real slots whenever zombie count ≥ (MAX - active).
             buy_needed = max(0, buy_target - effective_buy_count)
             buy_spread = self.risk_manager.get_adjusted_spread("buy")
             if buy_needed > 0:
@@ -5413,6 +5497,11 @@ class BotLoop:
                 created_any = True
                 _notify_amm_after_create = True
                 self._last_quoted_price[side] = _parallel_mid.get(side, mid_price)
+                # F67: remember the un-anchored mid that was current when this
+                # ladder was built. When the probe expires/clears, the baseline
+                # snaps to this value (in _clear_probe_side) to prevent the
+                # dead probe offset from triggering a spurious requote.
+                self._last_quoted_plain_mid[side] = mid_price
                 for offer in new_offers:
                     bech32 = offer.get("offer_bech32", "")
                     trade_id = offer.get("trade_id", "")
@@ -6056,7 +6145,7 @@ class BotLoop:
                         repeated = anomalies - new_anomalies
                         if new_anomalies > 0:
                             log_event(
-                                "warning",
+                                "info",
                                 "sage_cleanup_anomalies_summary",
                                 f"Skipped {anomalies} Sage cleanup candidates "
                                 f"({new_anomalies} new, {repeated} already seen) "
