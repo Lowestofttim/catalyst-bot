@@ -207,14 +207,23 @@ class CoinPrepWorker:
         # Detect wallet type (chia or sage)
         self.wallet_type = os.getenv("WALLET_TYPE", "sage").lower().strip()
         self.is_sage = (self.wallet_type == "sage")
+        # Only start the HTTP log-forwarder when running as the real worker
+        # subprocess (main() sets _CLI_WORKER_SUBPROCESS=1 before instantiating).
+        # When unit tests instantiate CoinPrepWorker, the api-log loop must NOT
+        # POST to localhost:5000 — it would push test-generated messages into
+        # a running bot's live log feed and look like a rogue prep run.
+        self._is_subprocess = os.getenv("_CLI_WORKER_SUBPROCESS") == "1"
         self._api_log_queue = Queue(maxsize=_API_LOG_QUEUE_MAX)
         self._api_log_drop_count = 0
-        self._api_log_worker = threading.Thread(
-            target=self._api_log_loop,
-            name="coin-prep-api-log",
-            daemon=True,
-        )
-        self._api_log_worker.start()
+        if self._is_subprocess:
+            self._api_log_worker = threading.Thread(
+                target=self._api_log_loop,
+                name="coin-prep-api-log",
+                daemon=True,
+            )
+            self._api_log_worker.start()
+        else:
+            self._api_log_worker = None
 
         # Configuration from env
         env_fp = os.getenv("WALLET_FINGERPRINT")
@@ -1298,6 +1307,11 @@ class CoinPrepWorker:
 
     def _enqueue_api_log(self, severity: str, event_type: str, message: str):
         """Queue API log delivery so coin prep never blocks on GUI logging."""
+        # Skip entirely when not running as the real subprocess — no consumer
+        # thread means items would pile up forever, and in tests there's no
+        # api_server that should receive them anyway.
+        if not self._is_subprocess:
+            return
         payload = {
             "severity": severity,
             "event_type": event_type,
@@ -5661,6 +5675,12 @@ def main():
     GUI config (DEFAULT_TRADE_XCH, MAX_ACTIVE_BUY_OFFERS etc.).
     CLI args only override when explicitly passed by the caller.
     """
+    # Mark this process as the real worker subprocess so CoinPrepWorker
+    # enables its HTTP log-forwarder. Without this flag, tests that
+    # instantiate CoinPrepWorker directly would also start the forwarder
+    # and spam a running bot's live log feed.
+    os.environ["_CLI_WORKER_SUBPROCESS"] = "1"
+
     sys.stdout = ApiMirrorStream(sys.__stdout__, "coin_prep_raw", "info")
     sys.stderr = ApiMirrorStream(sys.__stderr__, "coin_prep_raw", "warning")
 
