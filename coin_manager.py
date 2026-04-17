@@ -1493,6 +1493,16 @@ class CoinManager:
             # Rebalance duplicate-size tiers like XCH sniper/fees. If the DB
             # lost the distinction across a restart, stale designations can put
             # every same-sized free coin into the first matching tier.
+            #
+            # Tolerance MUST be tight (~1%) — the original ±20% window was wide
+            # enough to chain asymmetric sell tiers (inner=19.5k, mid=16.25k,
+            # outer=13.65k CAT) into one "duplicate group", then reassign coins
+            # by coin_id order, which scrambles prep's amount-based assignment.
+            # Example symptom: prep made 9 outer CAT coins at 13,650 CAT each,
+            # but they landed in inner (26 inner, 0 outer) because inner/mid/
+            # outer were 20%-adjacent and got grouped. We only want to dedupe
+            # TRULY identical sizes here (sniper/fees when both are 0.001 XCH).
+            _DUPLICATE_TIER_TOLERANCE = Decimal("0.01")  # ±1%
             expected_counts = self._configured_prep_counts(wallet_type)
             locked_by_tier = {}
             for locked in get_locked_coins(wallet_type):
@@ -1510,9 +1520,8 @@ class CoinManager:
                 matched_group = None
                 for group in duplicate_tier_groups:
                     ref_amount = group["amount"]
-                    low = int(ref_amount * 0.8)
-                    high = int(ref_amount * 1.2)
-                    if low <= amount_int <= high:
+                    slack = max(1, int(ref_amount * _DUPLICATE_TIER_TOLERANCE))
+                    if abs(amount_int - ref_amount) <= slack:
                         matched_group = group
                         break
 
@@ -1540,9 +1549,11 @@ class CoinManager:
                         tier_amount = int(tier_sizes_mojos.get(tier_name, 0) or 0)
                         if tier_amount <= 0:
                             continue
-                        low = int(tier_amount * 0.8)
-                        high = int(tier_amount * 1.2)
-                        if low <= amt <= high:
+                        # Same tight tolerance as the tier-grouping above —
+                        # a loose window here would also sweep in non-matching
+                        # coins and scramble amount-based assignments.
+                        slack = max(1, int(tier_amount * _DUPLICATE_TIER_TOLERANCE))
+                        if abs(amt - tier_amount) <= slack:
                             matching_coin_ids.append(cid)
                             break
                 if not matching_coin_ids:
@@ -6450,10 +6461,19 @@ class CoinManager:
     def _get_current_price(self) -> Optional[Decimal]:
         """Get current mid price for CAT size derivation.
 
-        Tries the price engine's cached price first (fast, no API call).
-        Falls back to a direct Dexie API fetch if no cached price.
+        Priority:
+          1. price_engine cached `last_price` (fast, no API call).
+          2. price_engine `get_price()` for a fresh weighted Tibet+Dexie mid
+             when the cache is empty — happens at startup before any bot
+             cycle has run. This is what the live bot trades against.
+          3. Direct Dexie `last_price` ticker — last-resort fallback for
+             environments without a price_engine (e.g. topup worker run
+             standalone). NOTE: Dexie's last_price can lag the live mid
+             significantly on thin markets. Using it to classify CAT coins
+             was the root cause of outer CAT coins being re-labeled as
+             inner at startup (13.65M-mojo coins fell inside the wrong-
+             price "inner" range and got reassigned by the rebalancer).
         """
-        # Method 1: Use price engine's cached price (set by bot_loop)
         if hasattr(self, '_price_engine') and self._price_engine:
             try:
                 last = self._price_engine.get_last_price()
@@ -6461,10 +6481,27 @@ class CoinManager:
                     return last
             except Exception as e:
                 log_event("debug", "price_engine_cache_fetch_failed",
-                          f"Price engine cache fetch failed (will try Dexie): {e}")
+                          f"Price engine cache fetch failed (will try fresh fetch): {e}")
 
-        # Method 2: Direct Dexie API call (for topup worker, which runs
-        # in a thread and may not have access to price engine)
+            # Cache empty (e.g. startup before first cycle). Force a fresh
+            # weighted-mid fetch so classification agrees with what the bot
+            # trades against.
+            try:
+                fresh = self._price_engine.get_price()
+                if isinstance(fresh, dict):
+                    p = fresh.get("mid_price") or fresh.get("mid") or fresh.get("price")
+                else:
+                    p = fresh
+                if p:
+                    p_dec = Decimal(str(p))
+                    if p_dec > 0:
+                        return p_dec
+            except Exception as e:
+                log_event("debug", "price_engine_fresh_fetch_failed",
+                          f"Price engine fresh fetch failed (will try Dexie): {e}")
+
+        # Last resort: Dexie last_price ticker. Can lag the live mid —
+        # avoid when possible.
         try:
             import requests
             cat_asset_id = cfg.CAT_ASSET_ID
@@ -6480,6 +6517,9 @@ class CoinManager:
                     if tickers and tickers[0].get("last_price"):
                         price = Decimal(str(tickers[0]["last_price"]))
                         if price > 0:
+                            log_event("debug", "price_dexie_last_fallback",
+                                      f"Using Dexie last_price {price} for CAT sizing "
+                                      f"(may lag live mid)")
                             return price
         except Exception as e:
             log_event("debug", "dexie_price_fetch_failed",
