@@ -24709,28 +24709,34 @@
                 updateTokenIcons(resumeCat.asset_id);
             }
 
-            // Keep the modal visible but transform it into a loading state
+            // Keep the modal visible but transform it into a loading state.
+            // IMPORTANT: wrap the new content in `.v4-modal-inner` so it
+            // picks up the standard modal padding/spacing. Replacing the
+            // shell's innerHTML directly (without the inner wrapper) makes
+            // the loading view sit flush against the shell edge.
             const modalContent = document.querySelector('#resumeSessionModal > div');
             modalContent.innerHTML = `
-                <div class="v4-modal-hero" style="margin-bottom: 18px;">
-                    <div class="v4-modal-icon">⏳</div>
-                    <div>
-                        <div class="v4-modal-kicker">Session Recovery</div>
-                        <h3 class="v4-modal-title">Loading previous session</h3>
-                        <p class="v4-modal-copy" id="resumeLoadingStatus">Restoring previous session. Please wait.</p>
+                <div class="v4-modal-inner">
+                    <div class="v4-modal-hero" style="margin-bottom: 18px;">
+                        <div class="v4-modal-icon">⏳</div>
+                        <div>
+                            <div class="v4-modal-kicker">Session Recovery</div>
+                            <h3 class="v4-modal-title">Loading previous session</h3>
+                            <p class="v4-modal-copy" id="resumeLoadingStatus">Restoring previous session. Please wait.</p>
+                        </div>
                     </div>
-                </div>
-                <div class="v4-modal-panel" style="padding: 14px 16px;">
-                    <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
-                        <div id="resumeProgressBar" style="height: 100%; width: 10%; background: linear-gradient(90deg, var(--status-warning), #fb7185); border-radius: 999px; transition: width 0.3s ease;"></div>
+                    <div class="v4-modal-panel" style="padding: 14px 16px; margin-bottom: 12px;">
+                        <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
+                            <div id="resumeProgressBar" style="height: 100%; width: 10%; background: linear-gradient(90deg, var(--status-warning), #fb7185); border-radius: 999px; transition: width 0.3s ease;"></div>
+                        </div>
                     </div>
-                </div>
-                <div class="v4-modal-note" style="margin-top: 0;">
-                    <span class="v4-modal-note-icon">ⓘ</span>
-                    <span>This step re-syncs the CAT selection, wallet dropdown, and backend session state before the bot is allowed to continue.</span>
-                </div>
-                <div id="resumeSkipBtn" style="display: none; margin-top: 18px;" class="v4-modal-actions v4-modal-actions--center">
-                    <button class="btn" onclick="resumeSkip()" style="background: var(--slate-600); color: white; border: none; padding: 8px 24px; border-radius: 8px; cursor: pointer; font-size: 0.85em;">Skip — continue anyway</button>
+                    <div class="v4-modal-note" style="margin-top: 0;">
+                        <span class="v4-modal-note-icon">ⓘ</span>
+                        <span>This step re-syncs the CAT selection, wallet dropdown, and backend session state before the bot is allowed to continue.</span>
+                    </div>
+                    <div id="resumeSkipBtn" style="display: none; margin-top: 18px;" class="v4-modal-actions v4-modal-actions--center">
+                        <button class="btn" onclick="resumeSkip()" style="background: var(--slate-600); color: white; border: none; padding: 8px 24px; border-radius: 8px; cursor: pointer; font-size: 0.85em;">Skip — continue anyway</button>
+                    </div>
                 </div>
             `;
 
