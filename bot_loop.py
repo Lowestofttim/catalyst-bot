@@ -1503,6 +1503,151 @@ class BotLoop:
             log_event("debug", "coin_update_event_failed",
                       f"Coin update GUI event failed (non-critical): {e}")
 
+    def _run_ladder_watchdog(self) -> None:
+        """F72: Periodic ladder + coin-accounting integrity audit.
+
+        Detects drift without fixing it. The scheduled overnight monitors
+        (catalyst-log-healthcheck etc.) pick up violations from the log
+        and apply corrective actions. Running this inline keeps the loop
+        lean and avoids cascading "fix triggers more fixes" storms.
+
+        Called every 10 cycles. Any exception here is swallowed by the
+        caller (trading is never blocked by watchdog failure).
+        """
+        try:
+            from ladder_watchdog import run_periodic_audit, Severity
+            from database import get_open_offers, get_locked_coins
+        except Exception as _imp_err:
+            log_event("debug", "watchdog_import_failed",
+                      f"Watchdog import failed (non-fatal): {_imp_err}")
+            return
+
+        # Pull current open offers from DB (authoritative for live book).
+        try:
+            db_buys = get_open_offers(side="buy", cat_asset_id=cfg.CAT_ASSET_ID)
+            db_sells = get_open_offers(side="sell", cat_asset_id=cfg.CAT_ASSET_ID)
+        except Exception:
+            return
+
+        # Map DB rows into the {price, size_xch} shape the watchdog expects.
+        def _offer_rows(rows):
+            out = []
+            for r in rows or []:
+                try:
+                    p = r.get("price_xch") or r.get("price")
+                    s = r.get("size_xch")
+                    if p is None or s is None:
+                        continue
+                    out.append({"price": p, "size_xch": Decimal(str(s))})
+                except Exception:
+                    continue
+            return out
+
+        offers_buy = _offer_rows(db_buys)
+        offers_sell = _offer_rows(db_sells)
+
+        # Build per-side tier config from cfg.
+        try:
+            from config import (
+                get_buy_tier_size_xch, get_sell_tier_size_xch,
+            )
+        except Exception:
+            return
+
+        def _tier_sizes(side: str):
+            getter = get_sell_tier_size_xch if side == "sell" else get_buy_tier_size_xch
+            return {
+                t: Decimal(str(getter(t)))
+                for t in ("inner", "mid", "outer", "extreme")
+                if Decimal(str(getter(t))) > 0
+            }
+
+        buy_sizes = _tier_sizes("buy")
+        sell_sizes = _tier_sizes("sell")
+        buy_counts = {
+            "inner": int(getattr(cfg, "BUY_INNER_TIER_COUNT", 0) or 0),
+            "mid":   int(getattr(cfg, "BUY_MID_TIER_COUNT", 0) or 0),
+            "outer": int(getattr(cfg, "BUY_OUTER_TIER_COUNT", 0) or 0),
+            "extreme": int(getattr(cfg, "BUY_EXTREME_TIER_COUNT", 0) or 0),
+        }
+        sell_counts = {
+            "inner": int(getattr(cfg, "SELL_INNER_TIER_COUNT", 0) or 0),
+            "mid":   int(getattr(cfg, "SELL_MID_TIER_COUNT", 0) or 0),
+            "outer": int(getattr(cfg, "SELL_OUTER_TIER_COUNT", 0) or 0),
+            "extreme": int(getattr(cfg, "SELL_EXTREME_TIER_COUNT", 0) or 0),
+        }
+        # Fall back to legacy shared counts if per-side counts are all 0.
+        if sum(buy_counts.values()) == 0:
+            buy_counts = {
+                "inner": int(getattr(cfg, "INNER_TIER_COUNT", 10) or 0),
+                "mid":   int(getattr(cfg, "MID_TIER_COUNT", 5) or 0),
+                "outer": int(getattr(cfg, "OUTER_TIER_COUNT", 3) or 0),
+                "extreme": int(getattr(cfg, "EXTREME_TIER_COUNT", 2) or 0),
+            }
+            sell_counts = dict(buy_counts)
+
+        # Wallet + inventory totals (for the invariant checks).
+        try:
+            inv = self.coin_manager
+            wallet_totals = {
+                "xch_total": int(inv._xch_total_coins or 0),
+                "cat_total": int(inv._cat_total_coins or 0),
+            }
+            inventory_dict = {
+                "xch": {
+                    "free": int(inv._xch_coins or 0),
+                    "locked": int(inv._xch_locked_coins or 0),
+                },
+                "cat": {
+                    "free": int(inv._cat_coins or 0),
+                    "locked": int(inv._cat_locked_coins or 0),
+                },
+            }
+        except Exception:
+            return
+
+        # Count DB-locked coins per wallet type.
+        try:
+            xch_locked = len(get_locked_coins("xch") or [])
+            cat_locked = len(get_locked_coins("cat") or [])
+        except Exception:
+            xch_locked = cat_locked = 0
+
+        # Reverse-ladder config: when toggle ON, both sides taper large→small
+        # from inner to extreme. When OFF, small→large. BUY_LADDER_REVERSED
+        # env var is the authoritative flag (GUI toggle writes it).
+        reversed_flag = bool(getattr(cfg, "BUY_LADDER_REVERSED", False))
+
+        issues = run_periodic_audit(
+            offers_buy=offers_buy,
+            offers_sell=offers_sell,
+            buy_tier_sizes_xch=buy_sizes,
+            sell_tier_sizes_xch=sell_sizes,
+            buy_tier_counts=buy_counts,
+            sell_tier_counts=sell_counts,
+            buy_reversed=reversed_flag,
+            sell_reversed=reversed_flag,
+            wallet_totals=wallet_totals,
+            inventory=inventory_dict,
+            db_locked_count={"xch": xch_locked, "cat": cat_locked},
+        )
+
+        # Log each issue at the appropriate severity. The overnight
+        # monitors grep for these codes and follow up.
+        for issue in issues:
+            sev = "error" if issue.severity == Severity.ERROR else "warning"
+            log_event(sev, f"watchdog_{issue.code}",
+                      f"{issue.message} — {issue.suggested_action}",
+                      data=issue.details)
+
+        if not issues:
+            # All clear — log at debug so we can confirm the watchdog is
+            # running, without spamming info-level logs every 10 cycles.
+            log_event("debug", "watchdog_clean",
+                      f"Watchdog audit clean "
+                      f"(cycle={self._loop_count}, "
+                      f"buys={len(offers_buy)}, sells={len(offers_sell)})")
+
     def _reset_runtime_state(self) -> None:
         """Reset all per-session runtime state before (re)starting.
 
@@ -5614,6 +5759,18 @@ class BotLoop:
         # Log coin inventory every 10 loops (gives a running picture)
         if self._loop_count % 10 == 0:
             self.coin_manager.log_inventory(reason="periodic")
+
+        # F72: Ladder + coin-accounting integrity watchdog.
+        # Runs every 10 cycles (same cadence as inventory log). Produces
+        # no actions — only WARN/ERROR log events for drift. Scheduled
+        # overnight monitors pick up violations and apply fixes.
+        # Safe to fail silently — watchdog errors mustn't break trading.
+        if self._loop_count % 10 == 0:
+            try:
+                self._run_ladder_watchdog()
+            except Exception as _wd_err:
+                log_event("debug", "watchdog_failed",
+                          f"Ladder watchdog raised (non-fatal): {_wd_err}")
 
         # Skip coin operations for first 2 loops — wallet needs time to settle
         # after startup. Sage especially returns incomplete coin data initially.
