@@ -19830,12 +19830,16 @@
                         startBtn.innerHTML = '◎ Starting up...';
                         // Don't clear _botStarting or fire toast until fully running
                     } else {
-                        // Fully running — centre badge handles the "● Running" indicator
+                        // Fully running — reflect the state on the button too so
+                        // the user can see at a glance that the bot is live
+                        // (previously stayed as "Start Bot" and relied only on
+                        // the centre-badge indicator, which was confusing on
+                        // restart-and-continue flows).
                         if (_botStarting) {
                             showToast('Bot is running!', 'success');
                         }
                         _botStarting = false;
-                        startBtn.innerHTML = '▶ Start Bot';  // Passive — badge is the status
+                        startBtn.innerHTML = '● Running';
                     }
                 } else {
                     startBtn.disabled = !canAttemptBotStart();
