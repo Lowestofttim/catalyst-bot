@@ -142,13 +142,27 @@ def _coinset_fee_estimate(target_seconds: int, cost: int) -> Optional[Dict]:
         import requests as _requests
         api_url = str(getattr(cfg, "COINSET_API_URL", "https://api.coinset.org") or "https://api.coinset.org").rstrip("/")
         timeout = int(getattr(cfg, "COINSET_TIMEOUT", 5) or 5)
-        r = _requests.post(
-            f"{api_url}/get_fee_estimate",
-            json={"cost": cost, "target_times": [target_seconds]},
-            headers={"content-type": "application/json", "User-Agent": "ChiaMarketMaker/2.0"},
-            timeout=(3, timeout),
-        )
-        if r.status_code != 200:
+        # F77 (2026-04-17): retry on 429/5xx with exponential backoff.
+        # Coinset occasionally rate-limits during congestion; a silent
+        # failure caused Smart Settings to fall back to a flat manual
+        # fee, which is less accurate for the current network conditions.
+        r = None
+        data = None
+        for _attempt in range(3):
+            r = _requests.post(
+                f"{api_url}/get_fee_estimate",
+                json={"cost": cost, "target_times": [target_seconds]},
+                headers={"content-type": "application/json", "User-Agent": "ChiaMarketMaker/2.0"},
+                timeout=(3, timeout),
+            )
+            if r.status_code == 200:
+                break
+            # 429/500/502/503/504 → retry; other 4xx → give up immediately
+            if r.status_code not in (429, 500, 502, 503, 504):
+                return None
+            if _attempt < 2:
+                time.sleep(1 + _attempt * 2)  # 1s, 3s
+        if r is None or r.status_code != 200:
             return None
         data = r.json()
         if not data.get("success"):

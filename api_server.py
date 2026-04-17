@@ -6466,6 +6466,15 @@ def _fetch_dexie_orderbook_standalone(asset_id: str) -> dict:
     """Fetch Dexie orderbook and calculate competitor spread/depth.
 
     Standalone version (no bot/market_intel needed) for Smart Defaults.
+
+    F77 (2026-04-17): returned dict now distinguishes three cases
+    previously conflated:
+      - ``api_ok=True, has_data=True``  — API worked, competitors present
+      - ``api_ok=True, has_data=False`` — API worked, no competitors
+      - ``api_ok=False, error=...``     — API call failed; caller can warn
+    Previously both of the latter two returned identical zeroed results,
+    so the smart-defaults algorithm couldn't tell "we're alone on the
+    book" from "Dexie returned a 500".
     """
     import requests as _req
     result = {
@@ -6473,8 +6482,11 @@ def _fetch_dexie_orderbook_standalone(asset_id: str) -> dict:
         "buy_depth_xch": 0, "sell_depth_xch": 0,
         "num_buy_offers": 0, "num_sell_offers": 0,
         "has_data": False,
+        "api_ok": False,
+        "error": "",
     }
     if not asset_id:
+        result["error"] = "no asset_id"
         return result
 
     dexie_base = getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
@@ -6487,14 +6499,27 @@ def _fetch_dexie_orderbook_standalone(asset_id: str) -> dict:
             "offered_asset_id": asset_id,
             "status": 0, "page_size": 20, "sort": "price_asc"
         }, timeout=8)
-        sell_offers = sell_resp.json().get("offers", []) if sell_resp.status_code == 200 else []
+        sell_ok = sell_resp.status_code == 200
+        sell_offers = sell_resp.json().get("offers", []) if sell_ok else []
 
         # Buy side: XCH offered for CAT (descending = highest first = best bid)
         buy_resp = _req.get(f"{dexie_base}/v1/offers", params={
             "requested_asset_id": asset_id,
             "status": 0, "page_size": 20, "sort": "price_desc"
         }, timeout=8)
-        buy_offers = buy_resp.json().get("offers", []) if buy_resp.status_code == 200 else []
+        buy_ok = buy_resp.status_code == 200
+        buy_offers = buy_resp.json().get("offers", []) if buy_ok else []
+
+        # F77: if EITHER leg of the orderbook failed, mark the call as
+        # not-OK — we don't have a reliable snapshot of the competitor
+        # book. Caller is expected to check `api_ok` before consuming
+        # `best_bid` / `best_ask` / competitor metrics.
+        if not sell_ok or not buy_ok:
+            result["error"] = (
+                f"sell HTTP {sell_resp.status_code}, buy HTTP {buy_resp.status_code}"
+            )
+            return result
+        result["api_ok"] = True
 
         # Filter out our own offers (by tag)
         def is_ours(offer):
@@ -6559,12 +6584,24 @@ def _fetch_dexie_orderbook_standalone(asset_id: str) -> dict:
             if mid > 0:
                 result["competitor_spread_bps"] = (result["best_ask"] - result["best_bid"]) / mid * 10000
 
-        result["has_data"] = result["num_buy_offers"] > 0 or result["num_sell_offers"] > 0
-        print(f"[SMART_DEFAULTS] Orderbook: bid={result['best_bid']:.8f}, "
-              f"ask={result['best_ask']:.8f}, spread={_bps_to_pct(result['competitor_spread_bps'])}, "
-              f"buys={result['num_buy_offers']}, sells={result['num_sell_offers']}")
+        # has_data means "API succeeded AND competitors were found".
+        # api_ok alone distinguishes "no competitors" from "API broken".
+        result["has_data"] = (
+            result["api_ok"]
+            and (result["num_buy_offers"] > 0 or result["num_sell_offers"] > 0)
+        )
+        _state_tag = (
+            "ok" if result["api_ok"] and (result["num_buy_offers"] or result["num_sell_offers"])
+            else ("empty-book" if result["api_ok"] else "api-failed")
+        )
+        print(f"[SMART_DEFAULTS] Orderbook [{_state_tag}]: "
+              f"bid={result['best_bid']:.8f}, ask={result['best_ask']:.8f}, "
+              f"spread={_bps_to_pct(result['competitor_spread_bps'])}, "
+              f"buys={result['num_buy_offers']}, sells={result['num_sell_offers']}"
+              + (f" — {result['error']}" if result['error'] else ""))
         return result
     except Exception as e:
+        result["error"] = f"exception: {e}"
         print(f"[SMART_DEFAULTS] Orderbook fetch failed: {e}")
         return result
 
@@ -7355,6 +7392,19 @@ def _calculate_smart_defaults(xch_reserve=0.0, cat_reserve=0.0, risk_profile="ba
     # ═══ V2 Data Quality Messages ═══
     quality_score = quality.get("score", 0)
     quality_label = quality.get("quality", "unknown")
+    # F77 (2026-04-17): fold the orderbook API status into the quality
+    # label. The orderbook is fetched in this function (not inside
+    # market_data_collector), so _assess_data_quality doesn't see it —
+    # we splice its status in here. If the API failed, add it to the
+    # existing "(partial: ...)" caveat; otherwise leave the label alone.
+    if not orderbook.get("api_ok", True):
+        if "(partial:" in quality_label:
+            # Merge with existing caveat
+            quality_label = quality_label.replace(
+                "(partial:", "(partial: dexie_orderbook,"
+            )
+        else:
+            quality_label = f"{quality_label} (partial: dexie_orderbook)"
     messages.append(f"Data quality: {quality_score}% ({quality_label})")
 
     # Volatility info

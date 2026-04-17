@@ -870,8 +870,18 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
     # ---- Activity ----
     # F39 (2026-04-08): fixed indentation — was previously nested INSIDE
     # the holders loop, so it ran once per holder attempt and only ever
-    # used the pro URL (ignoring the free fallback). Now it runs ONCE
-    # and tries pro then free, like the holders block above.
+    # used the pro URL (ignoring the free fallback).
+    #
+    # F77 (2026-04-17): reordered attempts and tightened retry:
+    #   1. pro-legacy — `/token/activity?asset_id=X` — proven working
+    #   2. free       — `/token/activities/X` — community endpoint
+    #   3. pro-plural — `/token/activities/X` — pro endpoint, often 404s
+    #                   for many tokens (observed on MZ); keep as last
+    #                   resort so the preceding tiers get first crack.
+    # Retries bumped from 1→2 (3 attempts per endpoint) and we
+    # interject a 3s sleep between endpoints when the previous attempt
+    # hit HTTP 429 — gives the free rate-limit a chance to clear before
+    # we waste another attempt on it.
     time.sleep(1)
     activity_errors: List[str] = []
     activity_attempts: List[tuple] = []
@@ -881,18 +891,25 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
              {"asset_id": asset_id, "type": "transfer", "count": 100},
              pro_headers, "pro-legacy")
         )
-        activity_attempts.append(
-            (pro_url, f"/token/activities/{asset_id}",
-             {"count": 100}, pro_headers, "pro-plural")
-        )
     activity_attempts.append(
         (free_url, f"/token/activities/{asset_id}",
          {"count": 100}, free_headers, "free")
     )
-    for base_url, endpoint, params, headers, label in activity_attempts:
-        data, err = _spacescan_smart_get(
-            base_url, endpoint, params=params, headers=headers, retries=1,
+    if api_key:
+        activity_attempts.append(
+            (pro_url, f"/token/activities/{asset_id}",
+             {"count": 100}, pro_headers, "pro-plural")
         )
+    last_was_rate_limited = False
+    for base_url, endpoint, params, headers, label in activity_attempts:
+        if last_was_rate_limited:
+            # Rate-limit cooldown — 3s is empirically enough for the
+            # Spacescan free tier's sliding window to reset.
+            time.sleep(3)
+        data, err = _spacescan_smart_get(
+            base_url, endpoint, params=params, headers=headers, retries=2,
+        )
+        last_was_rate_limited = bool(err and "429" in err)
         if data:
             result["activity_count"] = _spacescan_count_from_payload(
                 data,
@@ -906,6 +923,10 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
 
     if result["activity_count"] == 0 and activity_errors:
         print(f"[MARKET_DATA] Spacescan activity failed: {' | '.join(activity_errors)}")
+        # F77: surface the failure to the data-quality layer. Previously
+        # the score ignored activity altogether; now set a flag so the
+        # quality label can note "token health partial".
+        result["activity_fetch_failed"] = True
 
     # F40 (2026-04-08): supply data lives inside /token/info/{id}'s
     # `supply.{total_supply, circulating_supply}` block — verified live
@@ -1405,6 +1426,18 @@ def _assess_data_quality(raw: Dict) -> Dict:
         holders = raw["spacescan"].get("holder_count", 0)
         sources["spacescan"]["confidence"] = "high" if holders > 0 else "medium"
 
+    # F77 (2026-04-17): record partial-fetch failures separately so the
+    # label can warn the user even when the weighted score stays high.
+    # Spacescan activity 404/429 and Dexie orderbook API errors would
+    # otherwise be silently masked by a "100% excellent" score.
+    partial_failures: List[str] = []
+    spacescan_raw = raw.get("spacescan") or {}
+    if spacescan_raw.get("activity_fetch_failed"):
+        partial_failures.append("spacescan_activity")
+    orderbook_raw = raw.get("dexie_orderbook") or {}
+    if orderbook_raw and not orderbook_raw.get("api_ok", True):
+        partial_failures.append("dexie_orderbook")
+
     db = raw.get("internal_db") or {}
     if db.get("fill_count", 0) > 0 or db.get("price_count", 0) > 0:
         sources["internal_db"]["available"] = True
@@ -1415,7 +1448,8 @@ def _assess_data_quality(raw: Dict) -> Dict:
     available_weight = sum(s["weight"] for s in sources.values() if s["available"])
     score = round((available_weight / total_weight) * 100) if total_weight > 0 else 0
 
-    # Overall quality label
+    # Overall quality label — with F77 "limited" caveat when something
+    # partially failed even if the weighted score remains high.
     if score >= 80:
         quality = "excellent"
     elif score >= 60:
@@ -1424,18 +1458,28 @@ def _assess_data_quality(raw: Dict) -> Dict:
         quality = "fair"
     else:
         quality = "limited"
+    if partial_failures:
+        # Append a caveat that won't break existing equality checks
+        # ("excellent" → "excellent (partial data)"). UI can display
+        # this verbatim.
+        quality = f"{quality} (partial: {', '.join(partial_failures)})"
 
+    # F77: use startswith() so the "(partial: ...)" caveat added above
+    # doesn't knock the recommendation into "Limited data" when the core
+    # score is still high.
+    _base_label = quality.split(" ", 1)[0]  # "excellent (partial...)" → "excellent"
     return {
         "score": score,
         "quality": quality,
         "sources": sources,
+        "partial_failures": partial_failures,
         "recommendation": (
             "All key data available — high confidence in calculated settings"
-            if quality == "excellent"
+            if _base_label == "excellent"
             else "Good data coverage — settings should be reliable"
-            if quality == "good"
+            if _base_label == "good"
             else "Some data missing — settings will use conservative fallbacks where needed"
-            if quality == "fair"
+            if _base_label == "fair"
             else "Limited data — settings will be conservative. Run the bot to build history."
         ),
     }

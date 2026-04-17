@@ -136,22 +136,33 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertTrue(result["has_data"])
         self.assertEqual(result["name"], "Monkeyzoo")
         self.assertEqual(result["holder_count"], 321)
-        # F39 (2026-04-08): activity fetching runs AFTER the holders block,
-        # not inside it. Pro-legacy (/token/activity) times out, pro-plural
-        # (/token/activities/asset123) returns 3 items → activity_count=3.
+        # F39 (2026-04-08): activity fetching runs AFTER the holders block.
+        # F77 (2026-04-17): endpoint order reworked to pro-legacy → free →
+        # pro-plural so the free tier (community endpoint) gets first crack
+        # before we hit the often-404'ing pro-plural. Retries bumped from
+        # 1 → 2 for better transient-failure resilience.
+        # In this test: pro-legacy (/token/activity) times out 3× (retries=2),
+        # then free (/token/activities/asset123) succeeds on first try with
+        # 3 items → activity_count=3. Pro-plural is never reached.
         self.assertEqual(result["activity_count"], 3)
         self.assertEqual(calls[0]["url"], f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123")
         # Holders endpoint uses count=1 to minimise response size (only total_count needed)
         holders_calls = [c for c in calls if "/token/holders/" in c["url"]]
         self.assertTrue(len(holders_calls) > 0)
         self.assertEqual(holders_calls[0]["params"], {"count": 1})
-        # Activity is always fetched (F39 fix): pro-legacy times out twice (retries=1)
-        # then pro-plural succeeds — 3 activity HTTP calls total.
+        # Activity calls: 3 pro-legacy timeouts (retries=2) + 1 free success = 4 total.
         activity_calls = [
             c for c in calls
             if "/token/activity" in c["url"] or "/token/activities/" in c["url"]
         ]
-        self.assertEqual(len(activity_calls), 3)
+        self.assertEqual(len(activity_calls), 4)
+        # Free tier succeeded, so pro-plural should NOT appear in the call log
+        pro_plural_calls = [
+            c for c in activity_calls
+            if mdc.cfg.SPACESCAN_PRO_URL in c["url"]
+            and c["url"].endswith("/token/activities/asset123")
+        ]
+        self.assertEqual(len(pro_plural_calls), 0)
         self.assertEqual(calls[0]["headers"]["x-api-key"], "test-key")
         self.assertEqual(calls[0]["headers"]["version"], "v1")
         self.assertEqual(calls[0]["headers"]["network"], "xch")
