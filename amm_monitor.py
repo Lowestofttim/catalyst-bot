@@ -371,22 +371,48 @@ class AMMMonitor:
         self._inject_into_tibet_cache(state, pair_id)
 
     def _fetch_pair(self, pair_id: str) -> Optional[Dict]:
-        """Fetch single pair from TibetSwap API. Returns state dict or None."""
+        """Fetch single pair from TibetSwap API. Returns state dict or None.
+
+        Implementation note: uses the `/pairs` list endpoint and filters
+        for the target pair_id locally, rather than the `/pair/{id}`
+        singular endpoint. TibetSwap's singular endpoint has been observed
+        to time out even when the plural endpoint serves the same data
+        fine; consolidating on `/pairs` (which is also what the rest of
+        the codebase uses) gives us a consistent failure mode and fewer
+        endpoints to worry about.
+        """
         from config import cfg
-        base = getattr(cfg, "TIBET_API_BASE", "https://api2.tibetswap.io")
+        base = getattr(cfg, "TIBET_API_BASE", "https://api.v2.tibetswap.io")
         timeout = int(getattr(cfg, "TIBET_TIMEOUT", 10))
         decimals = int(getattr(cfg, "CAT_DECIMALS", 3))
 
-        url = f"{base.rstrip('/')}/pair/{pair_id}"
+        url = f"{base.rstrip('/')}/pairs"
         try:
-            resp = self._session.get(url, timeout=timeout)
+            resp = self._session.get(url, params={"skip": 0, "limit": 2000},
+                                     timeout=timeout)
             resp.raise_for_status()
-            data = resp.json()
+            all_pairs = resp.json()
         except Exception as e:
             log_event("debug", "amm_monitor_fetch_error",
                       f"AMM Monitor fetch failed for pair {pair_id[:16]}...: {e}")
             return None
 
+        if not isinstance(all_pairs, list):
+            return None
+
+        # Find the target pair in the list. Normalise both sides to plain
+        # hex (strip 0x, lowercase) so an accidental prefix difference
+        # doesn't cause a silent miss.
+        def _norm(h: str) -> str:
+            s = str(h or "").strip().lower()
+            return s[2:] if s.startswith("0x") else s
+
+        target = _norm(pair_id)
+        data = None
+        for entry in all_pairs:
+            if isinstance(entry, dict) and _norm(entry.get("launcher_id") or entry.get("pair_id") or "") == target:
+                data = entry
+                break
         if not isinstance(data, dict):
             return None
 

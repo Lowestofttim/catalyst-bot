@@ -60,13 +60,27 @@ else:
 # Helpers
 # --------------------------------------------------------------------------
 
-def _make_pair_response(xch_reserve: int, token_reserve: int) -> dict:
-    """Build the response dict that TibetSwap /pair/{id} returns."""
-    return {
-        "xch_reserve": xch_reserve,
-        "token_reserve": token_reserve,
-        "liquidity": 1_000_000,
-    }
+def _make_pair_response(xch_reserve: int, token_reserve: int) -> list:
+    """Build the response list that TibetSwap /pairs returns.
+
+    The list contains the target pair (matching _FakeCfg.TIBET_PAIR_ID)
+    plus one extra decoy so the pair-filtering logic is exercised.
+    """
+    return [
+        {
+            "pair_id": "other-pair-decoy",
+            "xch_reserve": 999,
+            "token_reserve": 999,
+            "liquidity": 1,
+        },
+        {
+            "pair_id": _FakeCfg.TIBET_PAIR_ID,
+            "launcher_id": _FakeCfg.TIBET_PAIR_ID,
+            "xch_reserve": xch_reserve,
+            "token_reserve": token_reserve,
+            "liquidity": 1_000_000,
+        },
+    ]
 
 
 def _mock_session_get(response_data: dict, status_code: int = 200):
