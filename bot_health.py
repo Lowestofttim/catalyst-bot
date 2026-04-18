@@ -576,9 +576,25 @@ def check_ladder_overbuild(auto_repair: bool = True) -> HealthCheck:
     from config import cfg as _cfg
     from database import get_connection
 
+    # F82 fix (2026-04-18): the effective ladder cap is the SUM of per-tier
+    # counts (BUY_INNER_TIER_COUNT + BUY_MID_TIER_COUNT + ...) when those
+    # are set by smart-defaults, NOT the legacy MAX_ACTIVE_BUY/SELL knobs
+    # which often stay at the .env default (12) even when the live ladder
+    # cap is 24. Without this, every healthy 24-offer ladder fired this
+    # warning. Use the larger of the two to avoid false positives.
+    def _effective_cap(prefix: str, fallback: int) -> int:
+        try:
+            tier_sum = sum(
+                int(getattr(_cfg, f"{prefix}_{t}_TIER_COUNT", 0) or 0)
+                for t in ("INNER", "MID", "OUTER", "EXTREME")
+            )
+        except Exception:
+            tier_sum = 0
+        return max(tier_sum, int(fallback or 0)) or fallback
+
     try:
-        max_buy = int(getattr(_cfg, "MAX_ACTIVE_BUY", 12) or 12)
-        max_sell = int(getattr(_cfg, "MAX_ACTIVE_SELL", 12) or 12)
+        max_buy = _effective_cap("BUY", int(getattr(_cfg, "MAX_ACTIVE_BUY", 12) or 12))
+        max_sell = _effective_cap("SELL", int(getattr(_cfg, "MAX_ACTIVE_SELL", 12) or 12))
     except Exception:
         max_buy = max_sell = 12
 
