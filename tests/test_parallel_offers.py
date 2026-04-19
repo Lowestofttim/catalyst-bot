@@ -177,7 +177,7 @@ NUM_TEST = 10  # Offers per side per test
 
 if len(xch_coins) < NUM_TEST or len(cat_coins) < NUM_TEST:
     print(f"  [SKIP] Need at least {NUM_TEST} coins per side, have {len(xch_coins)} XCH + {len(cat_coins)} CAT")
-    print(f"  Run coin prep first.")
+    print("  Run coin prep first.")
     sys.exit(0)
 
 # Get current price for offer creation
@@ -200,7 +200,7 @@ try:
     if tibet_price:
         print(f"  [OK] Tibet price: {tibet_price:.8f} XCH per MZ")
     else:
-        print(f"  [WARN] No Tibet price, using 0.00012")
+        print("  [WARN] No Tibet price, using 0.00012")
         tibet_price = 0.00012
 except Exception as e:
     print(f"  [WARN] Price fetch failed: {e}, using 0.00012")
@@ -253,7 +253,7 @@ for oid in sequential_ids:
     except Exception:
         pass
     time.sleep(0.5)
-print(f"  Cancelled. Waiting 10s for wallet to settle...")
+print("  Cancelled. Waiting 10s for wallet to settle...")
 time.sleep(10)
 
 # Step 5: Parallel test (10 buy + 10 sell simultaneously)
@@ -267,7 +267,7 @@ print(f"  XCH coins: {len(xch_coins)}, CAT coins: {len(cat_coins)}")
 
 if len(xch_coins) < NUM_TEST or len(cat_coins) < NUM_TEST:
     print(f"  [SKIP] Not enough coins after cancel — need {NUM_TEST} per side")
-    print(f"  Try again after coins settle.")
+    print("  Try again after coins settle.")
 else:
     parallel_ids = []
     parallel_lock = threading.Lock()
@@ -333,7 +333,7 @@ else:
         except Exception:
             pass
         time.sleep(0.5)
-    print(f"  Cancelled.")
+    print("  Cancelled.")
 
     # Step 6: Results
     print()
@@ -354,17 +354,17 @@ else:
         elif par_created == NUM_TEST * 2 and speedup > 1.3:
             print()
             print(f"  [OK] Parallel works, modest {speedup:.1f}x speedup.")
-            print(f"  Sage may partially serialize. Still worth using.")
+            print("  Sage may partially serialize. Still worth using.")
         elif par_created < NUM_TEST * 2:
             fail_rate = ((NUM_TEST * 2) - par_created) / (NUM_TEST * 2) * 100
             print()
             print(f"  [WARN] {fail_rate:.0f}% failure rate in parallel mode.")
             if fail_rate > 30:
-                print(f"  Reduce concurrency (try max_workers=2 or 3).")
+                print("  Reduce concurrency (try max_workers=2 or 3).")
             else:
-                print(f"  Acceptable — some coin conflicts expected. Retry handles them.")
+                print("  Acceptable — some coin conflicts expected. Retry handles them.")
         else:
             print()
-            print(f"  [OK] Parallel works but minimal speedup. Sage serializes internally.")
+            print("  [OK] Parallel works but minimal speedup. Sage serializes internally.")
 
     print("=" * 70)

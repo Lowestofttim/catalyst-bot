@@ -25,7 +25,6 @@ import threading
 import subprocess
 import requests
 from typing import Dict, Optional
-from urllib.parse import urlencode
 
 from config import cfg
 from database import log_event

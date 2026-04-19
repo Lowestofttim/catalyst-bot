@@ -2,7 +2,6 @@ import importlib
 import sys
 import types
 import unittest
-import importlib
 
 
 class _FakeCfg:

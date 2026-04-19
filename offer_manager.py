@@ -18,7 +18,6 @@ the lock, and any coin reservation crosses through shared state guarded here.
 
 import time
 import threading
-import traceback
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional, Dict, List, Tuple, Callable, Any
 
@@ -26,7 +25,7 @@ from config import cfg
 from database import (
     add_offer, update_offer_status,
     transition_offer, mark_cancel_attempted,
-    get_open_offers, get_offer, log_event, lock_coin
+    get_open_offers, log_event, lock_coin
 )
 from wallet import (
     create_offer, cancel_offer, cancel_offers_batch,
@@ -1096,7 +1095,7 @@ class OfferManager:
                     }
                 else:
                     log_event("debug", "coin_ids_fallback",
-                              f"Coin selection returned None — falling back to polling mode")
+                              "Coin selection returned None — falling back to polling mode")
 
         # Track which coin was claimed for inflight cleanup
         _inflight_claimed = selected_coin_id if use_coin_ids_mode else None
@@ -1248,8 +1247,8 @@ class OfferManager:
                 # Don't retry with same coins, re-snapshot and try once more.
                 if "MEMPOOL_CONFLICT" in error_msg:
                     log_event("warning", "offer_mempool_conflict",
-                              f"MEMPOOL_CONFLICT: another tx spent one of the coins we tried to use. "
-                              f"Re-snapshotting coins...")
+                              "MEMPOOL_CONFLICT: another tx spent one of the coins we tried to use. "
+                              "Re-snapshotting coins...")
                     if spend_wallet_id is not None and attempt < max_retries:
                         time.sleep(3)
                         try:

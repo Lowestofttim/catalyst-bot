@@ -24,8 +24,7 @@ from urllib3 import Retry
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
-import hashlib
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional
 from decimal import Decimal, ROUND_DOWN
 from tx_fees import get_effective_transaction_fee_mojos
 
@@ -500,7 +499,7 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
     # Debug: Show what we got
     print(f"   🔍 DEBUG: Got {len(coin_records)} coin records from wallet")
     if coin_records:
-        print(f"   🔍 DEBUG: First coin record structure:")
+        print("   🔍 DEBUG: First coin record structure:")
         import json
         print(json.dumps(coin_records[0], indent=4))
     
@@ -528,7 +527,7 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
     amount = largest_coin["coin"]["amount"]
 
     # DEBUG: Show the exact coin we're trying to split
-    print(f"   🎯 Selected coin to split:")
+    print("   🎯 Selected coin to split:")
     print(f"      parent: {parent}")
     print(f"      puzzle: {puzzle}")
     print(f"      amount: {amount}")
@@ -581,7 +580,7 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
         if coin_amount_tokens >= reserve_amount:
             print(f"   💎 Will keep {coin_amount_tokens - needed:.2f} tokens as reserve for future offers!")
         else:
-            print(f"   ⚠️  Using all available tokens (no reserve possible)")
+            print("   ⚠️  Using all available tokens (no reserve possible)")
         
         amount_per_coin = token_amount
         
@@ -608,12 +607,12 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
             reserve_xch = (coin_amount - total_needed_mojos) / 1e12
             print(f"   💎 Will keep {reserve_xch:.4f} XCH as reserve for future offers!")
         else:
-            print(f"   ⚠️  Using all available XCH (no reserve possible)")
+            print("   ⚠️  Using all available XCH (no reserve possible)")
         
         amount_per_coin = coin_size_mojos
     
     print(f"   🎲 Splitting coin {coin_id[:18]}...")
-    print(f"   📦 Trying split_coins RPC (fast method)...")
+    print("   📦 Trying split_coins RPC (fast method)...")
     
     # Call split_coins RPC
     result = split_coins_rpc(
@@ -626,8 +625,8 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
     )
     
     if result and result.get("success"):
-        print(f"   ✅ Split transaction submitted!")
-        print(f"   ⏳ Waiting for blockchain confirmation...")
+        print("   ✅ Split transaction submitted!")
+        print("   ⏳ Waiting for blockchain confirmation...")
         return {
             "success": True,
             "coins_created": num_coins,
@@ -636,7 +635,7 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
     else:
         error = result.get("error", "Unknown error") if result else "RPC call failed"
         print(f"   ⚠️  split_coins failed: {error}")
-        print(f"   🔄 Falling back to sequential send_transaction method...")
+        print("   🔄 Falling back to sequential send_transaction method...")
         
         # FALLBACK: Use send_transaction to create coins sequentially
         # This is slower but more reliable when split_coins can't find the coin
@@ -676,7 +675,7 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
                 if batch_end < num_coins:
                     import time
                     time.sleep(0.5)
-                    print(f"   ⏳ Waiting 60s for change coin to confirm...")
+                    print("   ⏳ Waiting 60s for change coin to confirm...")
                     time.sleep(60)  # Wait for blockchain confirmation
                     print(f"   ⏳ Progress: {success_count}/{num_coins} coins created...")
             

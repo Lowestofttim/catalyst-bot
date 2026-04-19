@@ -24,7 +24,6 @@ import os
 import time
 import json
 import requests
-from decimal import Decimal
 
 # Add project root to path so we can import config
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -35,7 +34,7 @@ try:
 except Exception as e:
     CONFIG_LOADED = False
     print(f"  WARNING: Could not load config: {e}")
-    print(f"  Will use defaults / environment variables")
+    print("  Will use defaults / environment variables")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

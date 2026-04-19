@@ -25,7 +25,6 @@ Usage:
 import sys
 import os
 import time
-import json
 from datetime import datetime
 from decimal import Decimal
 
@@ -85,7 +84,7 @@ class TestResult:
         self.log(f"\n{'='*60}")
         self.log(f"  Results: {passed} passed, {failed} failed, {skipped} skipped / {total} total")
         if failed == 0:
-            self.log(f"  🎉 ALL TESTS PASSED!")
+            self.log("  🎉 ALL TESTS PASSED!")
         else:
             self.log(f"  ⚠️  {failed} TEST(S) FAILED — see above")
         self.log(f"{'='*60}")
@@ -211,7 +210,7 @@ def main():
             T.log(f"  Already have {len(small_xch)} small XCH coin(s) — smallest usable: {small_xch_mojos} XCH")
             T.pass_test("XCH coin prep", f"small coin exists ({small_xch_mojos} XCH)")
         else:
-            T.log(f"  No small XCH coins found — need to split")
+            T.log("  No small XCH coins found — need to split")
 
             # Find the largest XCH coin to split
             xch_coins_sorted = sorted(xch_coins,
@@ -237,7 +236,7 @@ def main():
                     is_cat=False
                 )
                 if split_result:
-                    T.log(f"  Split submitted, waiting for confirmation...")
+                    T.log("  Split submitted, waiting for confirmation...")
 
                     # Poll for coin count change
                     success, new_count = poll_for_coin_change(
@@ -269,7 +268,7 @@ def main():
             T.log(f"  Already have {len(small_cat)} small CAT coin(s) — smallest usable: {small_amt} mojos")
             T.pass_test("CAT coin prep", f"small coin exists ({small_amt} mojos)")
         else:
-            T.log(f"  No small CAT coins found — need to split")
+            T.log("  No small CAT coins found — need to split")
 
             cat_coins_sorted = sorted(cat_coins,
                                       key=lambda r: r.get("coin", {}).get("amount", 0),
@@ -293,7 +292,7 @@ def main():
                     is_cat=True
                 )
                 if split_result:
-                    T.log(f"  Split submitted, waiting for confirmation...")
+                    T.log("  Split submitted, waiting for confirmation...")
 
                     success, new_count = poll_for_coin_change(
                         ws, CAT_WALLET_ID, cat_count, "increase", T=T
@@ -323,7 +322,7 @@ def main():
         if len(offers) > 0:
             # Show the raw status of each offer
             T.log(f"\n  {'─'*50}")
-            T.log(f"  Raw status values from Sage:")
+            T.log("  Raw status values from Sage:")
             status_counts = {}
             for i, o in enumerate(offers[:10]):
                 raw_status = o.get("status")
@@ -354,7 +353,7 @@ def main():
             T.log(f"  _is_open_status says: {open_count} open, {closed_count} closed")
             T.pass_test("Fetch and inspect offers", f"{len(offers)} offers, {open_count} open")
         else:
-            T.log(f"  No existing offers to inspect (that's OK)")
+            T.log("  No existing offers to inspect (that's OK)")
             T.pass_test("Fetch offers", "0 offers returned (clean slate)")
 
     except Exception as e:
@@ -377,7 +376,7 @@ def main():
                 CAT_WALLET_ID: TEST_BUY_CAT_AMOUNT,     # Requesting 10 MZ
             }
             T.log(f"  Offer dict: {buy_dict}")
-            T.log(f"  max_time=0 (should NOT send expires_at_second)")
+            T.log("  max_time=0 (should NOT send expires_at_second)")
 
             result = ws.create_offer(buy_dict, validate_only=False, max_time=0)
 
@@ -426,7 +425,7 @@ def main():
                 XCH_WALLET_ID: TEST_SELL_XCH_MOJOS,      # Requesting 100 XCH (absurd!)
             }
             T.log(f"  Offer dict: {sell_dict}")
-            T.log(f"  max_time=0 (should NOT send expires_at_second)")
+            T.log("  max_time=0 (should NOT send expires_at_second)")
 
             result = ws.create_offer(sell_dict, validate_only=False, max_time=0)
 
@@ -488,7 +487,7 @@ def main():
                         valid_times = found_buy.get("valid_times", {})
                         expires = found_buy.get("expires_at_second", "not set")
 
-                        T.log(f"  BUY offer found!")
+                        T.log("  BUY offer found!")
                         T.log(f"    raw status: {repr(raw_status)}")
                         T.log(f"    _is_open_status: {is_open}")
                         T.log(f"    valid_times: {valid_times}")
@@ -517,7 +516,7 @@ def main():
                         valid_times = found_sell.get("valid_times", {})
                         expires = found_sell.get("expires_at_second", "not set")
 
-                        T.log(f"  SELL offer found!")
+                        T.log("  SELL offer found!")
                         T.log(f"    raw status: {repr(raw_status)}")
                         T.log(f"    _is_open_status: {is_open}")
                         T.log(f"    valid_times: {valid_times}")
@@ -550,7 +549,7 @@ def main():
                 open_buys, open_sells, closed = ws.classify_offers_from_list(
                     offers, CAT_ASSET_ID
                 )
-                T.log(f"  classify_offers_from_list result:")
+                T.log("  classify_offers_from_list result:")
                 T.log(f"    open buys:  {len(open_buys)}")
                 T.log(f"    open sells: {len(open_sells)}")
                 T.log(f"    closed:     {len(closed)}")
@@ -591,7 +590,7 @@ def main():
         T.log(f"  BUY:  {buy_trade_id}")
     if sell_trade_id:
         T.log(f"  SELL: {sell_trade_id}")
-    T.log(f"  Cancel them manually when done checking.")
+    T.log("  Cancel them manually when done checking.")
 
     # ── Summary ─────────────────────────────────────────────────
     return T.summary()

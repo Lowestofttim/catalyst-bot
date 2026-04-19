@@ -13,9 +13,7 @@ have been fully restored before we attempt the api_server import.
 
 import os
 import sys
-import types
 import unittest
-import importlib
 import tempfile
 from unittest.mock import patch
 

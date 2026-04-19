@@ -20,8 +20,6 @@ classifier bug or missing upstream data.
 
 from __future__ import annotations
 
-import threading
-import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 

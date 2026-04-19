@@ -323,7 +323,7 @@ class PriceEngine:
             resp = self._session.get(url, params={"ticker_id": ticker_id}, timeout=10)
             if resp.status_code == 429:
                 log_event("warning", "dexie_rate_limited",
-                          f"Dexie price API returned 429 — skipping this cycle")
+                          "Dexie price API returned 429 — skipping this cycle")
                 return None
             resp.raise_for_status()
             data = resp.json()
@@ -493,7 +493,7 @@ class PriceEngine:
                                       timeout=cfg.TIBET_TIMEOUT)
             if resp.status_code == 429:
                 log_event("warning", "tibet_rate_limited",
-                          f"TibetSwap returned 429 — will use cached price if available")
+                          "TibetSwap returned 429 — will use cached price if available")
                 # Fall through to stale cache logic below
                 raise requests.RequestException("HTTP 429 rate limited")
             resp.raise_for_status()

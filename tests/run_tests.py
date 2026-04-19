@@ -480,7 +480,7 @@ def main():
     if failed_batches:
         print(f"  Failed batches: {', '.join(failed_batches)}")
     else:
-        print(f"  All batches passed!")
+        print("  All batches passed!")
     print(f"{'=' * 50}")
 
     sys.exit(1 if (total_failed + total_errors) > 0 else 0)

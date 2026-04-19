@@ -520,7 +520,6 @@ class DexieManager:
             high_low_pct: float (full range as %)
         """
         from decimal import Decimal as _D
-        import math as _math
         from statistics import stdev as _stdev
 
         trades = self.fetch_v3_historical_trades(ticker_id) or []

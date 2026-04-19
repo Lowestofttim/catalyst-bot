@@ -23,9 +23,7 @@ Usage:
 import sys
 import os
 import time
-import json
 from datetime import datetime
-from decimal import Decimal
 
 # Add project dir to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +60,7 @@ class TestResult:
         self.log(f"\n{'='*60}")
         self.log(f"  RESULTS: {passed}/{total} passed, {failed} failed")
         if failed:
-            self.log(f"  FAILED TESTS:")
+            self.log("  FAILED TESTS:")
             for status, name in self.tests:
                 if status == "FAIL":
                     self.log(f"    ❌ {name}")
@@ -149,7 +147,7 @@ def main():
     t = TestResult()
 
     t.log(f"{'='*60}")
-    t.log(f"  MINI COIN PREP TEST")
+    t.log("  MINI COIN PREP TEST")
     t.log(f"  Test amount: {TEST_XCH_MOJOS / 1e12:.4f} XCH ({TEST_XCH_MOJOS:,} mojos)")
     t.log(f"  Split into: {TEST_SPLIT_COUNT} pieces")
     t.log(f"  Mode: {'DRY RUN (no transactions)' if DRY_RUN else 'LIVE (real transactions)'}")
@@ -158,14 +156,14 @@ def main():
     # ── TEST 1: Query coins ─────────────────────────────────
     t.log("TEST 1: Can we query XCH coins from Sage?")
     try:
-        from wallet_sage import get_spendable_coins_rpc, get_pending_transactions, are_coins_spendable
+        from wallet_sage import get_pending_transactions, are_coins_spendable
         coins = get_all_coins(XCH_WALLET_ID)
         if coins:
             total = sum(c["amount"] for c in coins)
             t.pass_test("Query coins", f"{len(coins)} coins, total {total/1e12:.6f} XCH")
 
             # Show what we have
-            t.log(f"      Coins:")
+            t.log("      Coins:")
             for i, c in enumerate(sorted(coins, key=lambda x: x["amount"], reverse=True)[:5]):
                 cid = c["coin_id"]
                 cid_short = cid[:16] + "..." if len(cid) > 16 else cid
@@ -259,7 +257,7 @@ def main():
         t.pass_test("Send submitted")
 
         # Wait for on-chain confirmation
-        t.log(f"      ⏳ Waiting for on-chain confirmation...")
+        t.log("      ⏳ Waiting for on-chain confirmation...")
         if wait_for_pending_clear(t, "send"):
             t.pass_test("Send confirmed on-chain")
         else:
@@ -289,7 +287,7 @@ def main():
         return
 
     # ── TEST 6: Find CHANGE coin (the critical test!) ────────
-    t.log(f"\nTEST 6: Can we find the CHANGE coin? (biggest non-pool coin)")
+    t.log("\nTEST 6: Can we find the CHANGE coin? (biggest non-pool coin)")
     change_coin = find_biggest_non_tier_coin(XCH_WALLET_ID, TEST_XCH_MOJOS, t)
     if change_coin:
         t.pass_test("Change coin found",
@@ -298,7 +296,7 @@ def main():
         t.fail_test("Change coin NOT found!")
 
     # ── TEST 7: Is change coin spendable? ────────────────────
-    t.log(f"\nTEST 7: Is the change coin spendable?")
+    t.log("\nTEST 7: Is the change coin spendable?")
     if change_coin:
         change_id = change_coin["coin_id"].replace("0x", "")
         for attempt in range(30):
@@ -318,7 +316,7 @@ def main():
     pool_id = pool_coin["coin_id"].replace("0x", "")
 
     # First confirm pool is spendable
-    t.log(f"      Confirming pool coin is spendable...")
+    t.log("      Confirming pool coin is spendable...")
     for attempt in range(30):
         if are_coins_spendable([pool_id]):
             t.log(f"      Pool spendable after {attempt * 5}s")
@@ -346,7 +344,7 @@ def main():
 
         t.pass_test("Split submitted")
 
-        t.log(f"      ⏳ Waiting for split confirmation...")
+        t.log("      ⏳ Waiting for split confirmation...")
         if wait_for_pending_clear(t, "split"):
             t.pass_test("Split confirmed on-chain")
         else:
@@ -359,7 +357,7 @@ def main():
         return
 
     # ── TEST 9: Verify split created correct coins ───────────
-    t.log(f"\nTEST 9: Did the split create the right coins?")
+    t.log("\nTEST 9: Did the split create the right coins?")
     expected_piece = TEST_XCH_MOJOS // TEST_SPLIT_COUNT
     found_pieces = 0
     for attempt in range(20):
@@ -374,7 +372,7 @@ def main():
         t.fail_test("Split coins", f"Found {found_pieces}/{TEST_SPLIT_COUNT}")
 
     # ── TEST 10: Change coin survived the split? ─────────────
-    t.log(f"\nTEST 10: Did the change coin survive the split?")
+    t.log("\nTEST 10: Did the change coin survive the split?")
     coins_after = get_all_coins(XCH_WALLET_ID)
     change_after = None
     for c in sorted(coins_after, key=lambda x: x["amount"], reverse=True):
@@ -392,9 +390,9 @@ def main():
         t.fail_test("Change coin MISSING after split!")
 
     # ── TEST 11: DB recording ────────────────────────────────
-    t.log(f"\nTEST 11: Can we record coins to DB?")
+    t.log("\nTEST 11: Can we record coins to DB?")
     try:
-        from database import upsert_coin, set_coin_designation, get_connection
+        from database import upsert_coin, get_connection
         test_coin_id = "0xTEST_" + datetime.now().strftime("%H%M%S")
         result = upsert_coin(test_coin_id, "xch", expected_piece)
         if result:
@@ -409,7 +407,7 @@ def main():
         t.fail_test("DB recording", str(e))
 
     # ── FINAL: Show all coins ────────────────────────────────
-    t.log(f"\n--- Final coin state ---")
+    t.log("\n--- Final coin state ---")
     final_coins = get_all_coins(XCH_WALLET_ID)
     final_coins.sort(key=lambda c: c["amount"], reverse=True)
     for i, c in enumerate(final_coins[:10]):
@@ -418,9 +416,9 @@ def main():
     t.log(f"   Total: {len(final_coins)} coins = {sum(c['amount'] for c in final_coins)/1e12:.6f} XCH")
 
     # ── CLEANUP: Reconsolidate ───────────────────────────────
-    t.log(f"\n--- Cleanup: reconsolidating test coins ---")
-    t.log(f"   (The next real coin prep will consolidate anyway)")
-    t.log(f"   No cleanup needed — test coins are tiny and harmless")
+    t.log("\n--- Cleanup: reconsolidating test coins ---")
+    t.log("   (The next real coin prep will consolidate anyway)")
+    t.log("   No cleanup needed — test coins are tiny and harmless")
 
     # ── SUMMARY ──────────────────────────────────────────────
     all_passed = t.summary()

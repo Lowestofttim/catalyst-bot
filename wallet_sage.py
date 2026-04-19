@@ -22,9 +22,6 @@ offer is already gone from the wallet's view.
 """
 
 import os
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3 import Retry
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
@@ -56,7 +53,6 @@ KEY_PATH = os.getenv("SAGE_KEY_PATH", "")
 # --- Auto-detect or generate client certificates ---
 # Sage RPC requires mutual TLS. Clients must present a self-signed cert.
 # Priority: SAGE_CERT_PATH env → auto-generated cert in bot directory.
-import pathlib
 
 def _generate_self_signed_cert(cert_path, key_path):
     """Generate a self-signed certificate for Sage RPC client auth.
@@ -565,7 +561,7 @@ def _require_signing_capability() -> bool:
         if key and isinstance(key, dict):
             has_secrets = key.get("has_secrets", False)  # Default False — watch-only wallets must be blocked from signing by default
             if not has_secrets:
-                print(f"  [Sage] BLOCKED: wallet is watch-only (no secrets) — cannot sign", flush=True)
+                print("  [Sage] BLOCKED: wallet is watch-only (no secrets) — cannot sign", flush=True)
                 return False
             return True
         print("  [Sage] BLOCKED: active key unavailable — refusing signing operation", flush=True)
@@ -658,7 +654,7 @@ def sage_login(fingerprint: int, force_resync: bool = False) -> bool:
             pass
         return False
     else:
-        print(f"  [Sage] Login appeared to succeed but get_key returned null")
+        print("  [Sage] Login appeared to succeed but get_key returned null")
         return False
 
 
@@ -1597,7 +1593,7 @@ def split_coins_bulk(wallet_id: int, num_coins: int, coin_size_mojos: int,
     )
 
     if result and result.get("success"):
-        print(f"   ✅ [Sage] Split transaction submitted!")
+        print("   ✅ [Sage] Split transaction submitted!")
         return {
             "success": True,
             "coins_created": num_coins,
@@ -2176,7 +2172,7 @@ def create_offer(offer_dict: dict, validate_only: bool = False, max_time: int = 
     # The parameter exists for Chia wallet compatibility but Sage's make_offer
     # always creates and submits. Reject explicitly rather than silently ignoring.
     if validate_only:
-        print(f"  [Sage] create_offer: validate_only=True is not supported by Sage adapter")
+        print("  [Sage] create_offer: validate_only=True is not supported by Sage adapter")
         return {"success": False, "error": "validate_only not supported by Sage — offers are always submitted"}
 
     offered_assets = []
@@ -2187,7 +2183,7 @@ def create_offer(offer_dict: dict, validate_only: bool = False, max_time: int = 
     # Block them early since we hardcode fee="0".
     has_offered = any(int(v) < 0 for v in offer_dict.values())
     if not has_offered:
-        print(f"  [Sage] create_offer: request-only offers require a fee (currently hardcoded to 0)")
+        print("  [Sage] create_offer: request-only offers require a fee (currently hardcoded to 0)")
         return {"success": False, "error": "Request-only offers require a fee — not supported"}
 
     # ── GUARDRAIL: Verify CAT asset_id matches configured token ──────
@@ -2298,7 +2294,7 @@ def create_offer(offer_dict: dict, validate_only: bool = False, max_time: int = 
             print(f"  [Sage] ✅ trade_id extracted: {offer_id[:16]}...", flush=True)
         else:
             # CRITICAL: offer was created but we can't track it!
-            print(f"  ⚠️  [Sage] make_offer succeeded but NO offer_id found!", flush=True)
+            print("  ⚠️  [Sage] make_offer succeeded but NO offer_id found!", flush=True)
             print(f"  ⚠️  [Sage] Response (first 500 chars): {str(result)[:500]}", flush=True)
 
         # Ensure success flag is set — but only if no error field is present.
@@ -2521,7 +2517,7 @@ def get_all_offers(include_completed: bool = True, start: int = 0, end: int = 50
     get_all_offers._last_error = ""
     if not res:
         get_all_offers._last_error = "get_offers returned None/empty"
-        print(f"  [Sage] get_offers returned None/empty!", flush=True)
+        print("  [Sage] get_offers returned None/empty!", flush=True)
         return None
     if isinstance(res, dict) and res.get("success") is False and res.get("error"):
         get_all_offers._last_error = str(res.get("error") or "wallet get_offers failed")
@@ -3031,7 +3027,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
     if pre_coins is not None:
         print(f"   📸 [Sage] Pre-cancel: {pre_coins} spendable coins")
     else:
-        print(f"   ⚠️ [Sage] Could not snapshot pre-cancel coins")
+        print("   ⚠️ [Sage] Could not snapshot pre-cancel coins")
 
     # ── 2. Bulk cancel (GUI-identical 3-step path) with sequential fallback ──
     #
@@ -3047,7 +3043,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
         try:
             bulk_ok = _cancel_offers_bulk_proper(trade_ids, fee_mojos=0)
             if bulk_ok:
-                print(f"   ✅ [Sage] Bulk cancel submitted successfully")
+                print("   ✅ [Sage] Bulk cancel submitted successfully")
                 cancel_submitted = True
                 # NOTE: bulk_3step only means submit_transaction returned HTTP 200
                 # — the cancel TX is in the mempool but NOT yet confirmed on-chain.
@@ -3064,7 +3060,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                                     "method": "submitted_pending_confirm",
                                     "submission_path": "bulk_3step"}
             else:
-                print(f"   ⚠️ [Sage] Bulk cancel failed — falling back to sequential")
+                print("   ⚠️ [Sage] Bulk cancel failed — falling back to sequential")
         except Exception as e:
             print(f"   ⚠️ [Sage] Bulk cancel error: {e} — falling back to sequential")
 
@@ -3094,12 +3090,12 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
                 results[tid] = {"success": False, "error": str(e)}
 
     if not cancel_submitted:
-        print(f"   ❌ [Sage] No cancel RPCs succeeded — aborting")
+        print("   ❌ [Sage] No cancel RPCs succeeded — aborting")
         return results
 
     # ── 3. Skip confirmation if requested (requote fire-and-forget) ──
     if skip_confirmation:
-        print(f"   📨 [Sage] Skipping confirmation (fire-and-forget mode)")
+        print("   📨 [Sage] Skipping confirmation (fire-and-forget mode)")
         return results
 
     # ── 4. Wait for coins to return ──

@@ -4,7 +4,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from config_validator import validate_config, ConfigIssue, ValidationReport
+from config_validator import validate_config
 
 
 def _make_cfg(**overrides):

@@ -6,7 +6,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from decimal import Decimal
 
 from ladder_watchdog import (
-    Severity,
     audit_ladder_shape,
     check_coin_invariants,
     run_periodic_audit,

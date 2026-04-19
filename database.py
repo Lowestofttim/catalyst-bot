@@ -24,7 +24,7 @@ import threading
 import time
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 
 
 # ---------------------------------------------------------------------------
@@ -1208,7 +1208,7 @@ def update_offer_lifecycle_state(trade_id: str, lifecycle_state: str) -> bool:
         )
         conn.commit()
         return True
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
@@ -1337,7 +1337,6 @@ def batch_cancel_stale_offers(stale_trade_ids: list) -> int:
     if not stale_trade_ids:
         return 0
 
-    import time as _time
     try:
         from super_log import slog
         slog("DB_WRITE", f"batch_cancel_stale_offers: {len(stale_trade_ids)} offers")
@@ -1430,7 +1429,7 @@ def update_offer_bech32(trade_id: str, offer_bech32: str) -> bool:
         )
         conn.commit()
         return True
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
@@ -3333,7 +3332,7 @@ def record_price(cat_asset_id: str, combined_price: Decimal,
         )
         conn.commit()
         return True
-    except Exception as e:
+    except Exception:
         # CRITICAL: rollback on failure to release the write lock.
         # Without this, a failed commit leaves an open transaction on the
         # thread-local connection, holding a RESERVED lock that blocks
@@ -3534,7 +3533,7 @@ def record_config_change(key: str, old_value: str, new_value: str) -> bool:
         )
         conn.commit()
         return True
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
@@ -4031,7 +4030,7 @@ def set_setting(key: str, value: str):
             (key, value, _sqlite_ts(datetime.now(timezone.utc)))
         )
         conn.commit()
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:
@@ -4253,7 +4252,7 @@ def record_pool_snapshot(asset_id: str, xch_reserve: float,
         )
         conn.commit()
         return True
-    except Exception as e:
+    except Exception:
         try:
             conn.rollback()
         except Exception:

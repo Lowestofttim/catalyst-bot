@@ -69,7 +69,7 @@ def _safe(func):
             result = func(*args, **kwargs)
             # Recursively convert any Decimals in the result
             return json.loads(json.dumps(result, cls=DecimalEncoder))
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
             # Never leak raw exception messages (may contain paths, SQL, RPC URLs)
             # to the frontend — log the detail server-side only.
@@ -408,7 +408,6 @@ class AppBridge:
             resp = api_server.api_fills_export()
         # If it's a file response, encode as data URL for JS download
         try:
-            from flask import Response
             if hasattr(resp, 'data'):
                 b64 = base64.b64encode(resp.data).decode('utf-8')
                 ct = resp.content_type or 'text/csv'
@@ -1174,7 +1173,6 @@ def _unwrap_flask_response(resp):
       - tuple: (Response, status_code)
       - tuple: (Response, status_code, headers)
     """
-    from flask import Response
     import json as _json
 
     # Unwrap tuples

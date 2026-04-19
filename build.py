@@ -108,7 +108,7 @@ def _post_build():
 
     # Confirm HTML files are bundled (quick sanity check)
     if not os.path.isfile(os.path.join(OUTPUT_DIR, 'bot_gui.html')):
-        print(f"\n  WARNING: bot_gui.html not found in the bundle.")
+        print("\n  WARNING: bot_gui.html not found in the bundle.")
         print("  The app may fail to load the GUI. Check the .spec datas list.")
     else:
         print("  HTML assets verified in bundle.")

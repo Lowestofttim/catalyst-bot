@@ -14,7 +14,7 @@ the bot_health verifier confirms via Dexie.
 import sys
 import types
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 # Stubs (same shape as other wallet_sage tests)

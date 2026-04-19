@@ -19,7 +19,7 @@ import time
 import requests
 import threading
 from decimal import Decimal, InvalidOperation
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from config import cfg
 from database import get_trade_dexie_map, log_event

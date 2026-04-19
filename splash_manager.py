@@ -20,7 +20,7 @@ import time
 import hashlib
 import requests
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from config import cfg
 from database import log_event

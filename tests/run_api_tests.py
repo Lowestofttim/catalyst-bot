@@ -3,10 +3,7 @@ Live external API test script.
 Tests all external API call sites to verify correct data is returned.
 Run: python run_api_tests.py
 """
-import os
 import sys
-import json
-import time
 import requests
 from dotenv import dotenv_values
 

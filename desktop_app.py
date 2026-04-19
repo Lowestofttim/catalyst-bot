@@ -489,13 +489,13 @@ def run_desktop_mode(dev_mode: bool = False):
     flask_thread.start()
 
     # Wait for Flask to be ready
-    print(f"  Waiting for Flask to accept connections...")
+    print("  Waiting for Flask to accept connections...")
     if not wait_for_flask(timeout=20.0):
-        print(f"\n  ERROR: Flask didn't start within 20 seconds.")
-        print(f"  Check the console output above for errors.")
+        print("\n  ERROR: Flask didn't start within 20 seconds.")
+        print("  Check the console output above for errors.")
         sys.exit(1)
 
-    print(f"  Flask is ready.")
+    print("  Flask is ready.")
 
     # Start system tray in background
     tray_thread = None
@@ -504,9 +504,9 @@ def run_desktop_mode(dev_mode: bool = False):
         tray = TrayManager(app_name=APP_NAME, app_version=APP_VERSION)
         tray_thread = threading.Thread(target=tray.run, daemon=True, name="SystemTray")
         tray_thread.start()
-        print(f"  System tray icon active.")
+        print("  System tray icon active.")
     except ImportError:
-        print(f"  System tray disabled (pystray not installed).")
+        print("  System tray disabled (pystray not installed).")
         tray = None
     except Exception as e:
         print(f"  System tray failed: {e}")
@@ -516,9 +516,9 @@ def run_desktop_mode(dev_mode: bool = False):
     try:
         from notification_manager import NotificationManager
         notifier = NotificationManager(app_name=APP_NAME)
-        print(f"  Notifications enabled.")
+        print("  Notifications enabled.")
     except ImportError:
-        print(f"  Notifications disabled (plyer not installed).")
+        print("  Notifications disabled (plyer not installed).")
         notifier = None
     except Exception as e:
         print(f"  Notifications failed: {e}")
@@ -593,7 +593,7 @@ def run_desktop_mode(dev_mode: bool = False):
         )
         tray_poll_thread.start()
 
-    print(f"\n  Launching desktop window...")
+    print("\n  Launching desktop window...")
     if dev_mode:
         print(f"  Dev mode: also accessible at http://{FLASK_HOST}:{FLASK_PORT}/")
 
@@ -601,7 +601,7 @@ def run_desktop_mode(dev_mode: bool = False):
     try:
         from app_bridge import AppBridge
         bridge = AppBridge()
-        print(f"  JS bridge ready (AppBridge).")
+        print("  JS bridge ready (AppBridge).")
     except Exception as e:
         print(f"  Warning: JS bridge failed to load: {e}")
         bridge = None
@@ -766,7 +766,7 @@ def run_flask_mode():
     print(f"\n  {APP_NAME} v{APP_VERSION} â€” Flask Mode")
     print(f"  {'=' * 40}")
     print(f"  Open http://{FLASK_HOST}:{FLASK_PORT}/ in your browser")
-    print(f"  Press Ctrl+C to stop\n")
+    print("  Press Ctrl+C to stop\n")
 
     if not check_port_free(FLASK_PORT):
         print(f"  Port {FLASK_PORT} is already in use!")

@@ -26,7 +26,6 @@ import threading
 import sqlite3
 import collections
 from datetime import datetime, timezone
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Log levels (lower number = more verbose)

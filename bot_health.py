@@ -26,7 +26,6 @@ import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import List, Optional
 
 from config import cfg
@@ -161,8 +160,7 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
         the single-offer path with a priority fee (no aggregate-sig bug)
     """
     from database import (
-        get_open_offers, get_connection,
-        update_offer_status, transition_offer, mark_cancel_attempted,
+        get_open_offers, update_offer_status, transition_offer, mark_cancel_attempted,
     )
 
     pending = get_open_offers(include_pending_cancel=True)

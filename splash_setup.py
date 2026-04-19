@@ -17,7 +17,6 @@ SPLASH_AUTO_START is enabled and no binary is found.
 """
 
 import os
-import sys
 import stat
 import hashlib
 import platform

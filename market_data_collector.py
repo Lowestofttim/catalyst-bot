@@ -18,14 +18,12 @@ Key responsibilities:
 import time
 import math
 import requests
-from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List, Any
 
 from config import cfg
 from database import (
-    get_connection, get_recent_prices, log_event,
-    get_market_analysis_cache, set_market_analysis_cache,
+    get_connection, get_market_analysis_cache, set_market_analysis_cache,
     get_pool_snapshots, record_pool_snapshot
 )
 

@@ -19,8 +19,8 @@ called from anywhere without threading concerns.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Set, Tuple
+from dataclasses import dataclass
+from typing import Dict, Set, Tuple
 
 
 # -------------------------------------------------------------------------

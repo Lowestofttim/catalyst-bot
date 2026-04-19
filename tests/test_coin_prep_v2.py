@@ -46,7 +46,6 @@ REQUIRES: Sage wallet running on localhost:9257 with sufficient XCH and CAT bala
 import sys
 import os
 import time
-import json
 import traceback
 from datetime import datetime
 from decimal import Decimal
@@ -144,7 +143,7 @@ class TestRunner:
         if failed > 0:
             self.log(f"\n⚠️  {failed} test(s) FAILED — review output above")
         else:
-            self.log(f"\n🎉 All tests passed!")
+            self.log("\n🎉 All tests passed!")
 
         return failed == 0
 
@@ -298,7 +297,7 @@ def poll_for_split(runner, wallet_id, pool_coin_id, num_pieces, piece_size, labe
 def phase1_prerequisites(runner):
     """Test 1-3: Sage connectivity, XCH + CAT coin queries, balance checks."""
     runner.log(f"\n{'='*60}")
-    runner.log(f"PHASE 1: Prerequisites")
+    runner.log("PHASE 1: Prerequisites")
     runner.log(f"{'='*60}")
 
     # Test 1: Sage wallet connectivity
@@ -360,7 +359,7 @@ def phase1_prerequisites(runner):
 def phase2_multi_send(runner):
     """Test 4-7: Multi-send creates pool coins for BOTH XCH and CAT."""
     runner.log(f"\n{'='*60}")
-    runner.log(f"PHASE 2: Multi-Send (XCH + CAT pool coins in two transactions)")
+    runner.log("PHASE 2: Multi-Send (XCH + CAT pool coins in two transactions)")
     runner.log(f"{'='*60}")
 
     if DRY_RUN:
@@ -420,7 +419,7 @@ def phase2_multi_send(runner):
         return False
 
     # ── Test 6+7: Poll for BOTH XCH and CAT pool coins simultaneously ──
-    runner.log(f"\n   🔍 Polling for XCH + CAT pool coins simultaneously (up to 180s)...")
+    runner.log("\n   🔍 Polling for XCH + CAT pool coins simultaneously (up to 180s)...")
     xch_confirmed = False
     cat_confirmed = False
     timeout_s = 180
@@ -500,7 +499,7 @@ def phase2_multi_send(runner):
 def phase3_split_all(runner):
     """Test 8-11: Submit ALL 4 splits at once, then poll for all to confirm."""
     runner.log(f"\n{'='*60}")
-    runner.log(f"PHASE 3: Split All Pool Coins — PARALLEL (2 XCH + 2 CAT)")
+    runner.log("PHASE 3: Split All Pool Coins — PARALLEL (2 XCH + 2 CAT)")
     runner.log(f"{'='*60}")
 
     if DRY_RUN:
@@ -519,7 +518,7 @@ def phase3_split_all(runner):
     ]
 
     # ── Step 1: Submit ALL splits first ──
-    runner.log(f"\n   📤 Submitting all 4 splits...")
+    runner.log("\n   📤 Submitting all 4 splits...")
     pending_splits = []  # (test_num, wallet_id, pool_coin_id, num_pieces, piece_size, label)
 
     for test_num, wallet_id, pool_coin_id, num_pieces, pool_mojos, label in splits:
@@ -549,7 +548,7 @@ def phase3_split_all(runner):
             continue
 
     if not pending_splits:
-        runner.log(f"   ❌ No splits were submitted successfully")
+        runner.log("   ❌ No splits were submitted successfully")
         return False
 
     runner.log(f"\n   ✅ {len(pending_splits)} splits submitted — now polling for ALL to confirm...")
@@ -613,7 +612,7 @@ def phase3_split_all(runner):
 def phase4_verify(runner):
     """Test 12-13: Verify all expected split coins are present."""
     runner.log(f"\n{'='*60}")
-    runner.log(f"PHASE 4: Final Verification")
+    runner.log("PHASE 4: Final Verification")
     runner.log(f"{'='*60}")
 
     if DRY_RUN:
@@ -673,15 +672,15 @@ def phase4_verify(runner):
 def phase5_cleanup(runner):
     """Test 14: Reconsolidate test coins."""
     runner.log(f"\n{'='*60}")
-    runner.log(f"PHASE 5: Cleanup")
+    runner.log("PHASE 5: Cleanup")
     runner.log(f"{'='*60}")
 
     if DRY_RUN or SKIP_CLEANUP:
         runner.skip_test(14, "Cleanup", "dry-run or --skip-cleanup flag")
         return True
 
-    runner.log(f"   ℹ️ Test coins left in wallet (XCH: 5 × 0.01 pieces, CAT: 5 × 10 mojos)")
-    runner.log(f"   ℹ️ Use --skip-cleanup to inspect, or run coin prep to consolidate")
+    runner.log("   ℹ️ Test coins left in wallet (XCH: 5 × 0.01 pieces, CAT: 5 × 10 mojos)")
+    runner.log("   ℹ️ Use --skip-cleanup to inspect, or run coin prep to consolidate")
     runner.pass_test(14, "Cleanup noted — small test coins left for inspection")
     return True
 
@@ -691,7 +690,7 @@ def main():
     runner = TestRunner()
 
     runner.log(f"{'='*60}")
-    runner.log(f"🧪 COIN PREP V2 TEST — XCH + CAT Multi-Send Approach")
+    runner.log("🧪 COIN PREP V2 TEST — XCH + CAT Multi-Send Approach")
     runner.log(f"{'='*60}")
     runner.log(f"   XCH Pool A: {XCH_POOL_A_MOJOS:,} mojos → {XCH_POOL_A_SPLIT} pieces")
     runner.log(f"   XCH Pool B: {XCH_POOL_B_MOJOS:,} mojos → {XCH_POOL_B_SPLIT} pieces")
@@ -699,17 +698,17 @@ def main():
     runner.log(f"   CAT Pool B: {CAT_POOL_B_MOJOS:,} mojos → {CAT_POOL_B_SPLIT} pieces")
     runner.log(f"   CAT wallet ID: {CAT_WALLET_ID}")
     if DRY_RUN:
-        runner.log(f"   MODE: DRY RUN (no transactions)")
+        runner.log("   MODE: DRY RUN (no transactions)")
     runner.log(f"{'='*60}")
 
     try:
         if not phase1_prerequisites(runner):
-            runner.log(f"\n⛔ Phase 1 failed — cannot continue")
+            runner.log("\n⛔ Phase 1 failed — cannot continue")
             runner.summary()
             return 1
 
         if not phase2_multi_send(runner):
-            runner.log(f"\n⛔ Phase 2 failed — cannot split without pool coins")
+            runner.log("\n⛔ Phase 2 failed — cannot split without pool coins")
             runner.summary()
             return 1
 
@@ -718,7 +717,7 @@ def main():
         phase5_cleanup(runner)
 
     except KeyboardInterrupt:
-        runner.log(f"\n⛔ Interrupted by user!")
+        runner.log("\n⛔ Interrupted by user!")
     except Exception as e:
         runner.log(f"\n⛔ Unexpected error: {e}")
         traceback.print_exc()

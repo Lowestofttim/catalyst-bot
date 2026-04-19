@@ -1803,7 +1803,7 @@ def api_events():
                     yield f"data: {json.dumps(serialized, default=str)}\n\n"
                 except queue.Empty:
                     # Send keepalive every 30 seconds
-                    yield f": keepalive\n\n"
+                    yield ": keepalive\n\n"
         except GeneratorExit:
             pass
         finally:
@@ -1948,7 +1948,7 @@ def api_shutdown():
                 except Exception:
                     _coin_prep_proc.kill()
                     _coin_prep_proc.wait(timeout=3)
-                print(f"   ✅ Coin prep worker stopped", flush=True)
+                print("   ✅ Coin prep worker stopped", flush=True)
                 _coin_prep_proc = None
                 _coin_prep_state["running"] = False
                 _coin_prep_state["error"] = "Stopped by shutdown"
@@ -2584,8 +2584,8 @@ def api_status():
                     print(f"  [DEXIE] DB has {len(db_offers)} open offers, "
                           f"{has_dexie} have dexie_id", flush=True)
                     if db_offers and not has_dexie:
-                        print(f"  [DEXIE] ⚠️ NO offers have dexie_id in DB — "
-                              f"Dexie posting may have failed in previous sessions", flush=True)
+                        print("  [DEXIE] ⚠️ NO offers have dexie_id in DB — "
+                              "Dexie posting may have failed in previous sessions", flush=True)
                 for o in offers_buy + offers_sell:
                     tid = o.get("trade_id", "")
                     if tid and tid in db_map:
@@ -2881,7 +2881,7 @@ def api_status():
 
                 if not hasattr(api_status, '_coin_diag_logged'):
                     api_status._coin_diag_logged = True
-                    print(f"[STATUS] Coin tracking (Sage RPC):", flush=True)
+                    print("[STATUS] Coin tracking (Sage RPC):", flush=True)
                     print(f"  XCH: {xch_free} selectable, {xch_locked} locked "
                           f"({len(offers_buy)} buy offers)", flush=True)
                     print(f"  CAT: {cat_free} selectable, {cat_locked} locked "
@@ -4491,7 +4491,6 @@ def api_market_fill_intel():
     """
     try:
         from database import get_connection
-        import math
 
         days = min(int(request.args.get("days", 7)), 90)
         tz_offset = float(request.args.get("tz_offset_hours", 0))
@@ -4543,7 +4542,7 @@ def api_market_fill_intel():
             # Bucket by hour-of-day with optional tz shift
             if row["filled_at"]:
                 try:
-                    from datetime import datetime, timezone, timedelta
+                    from datetime import datetime, timedelta
                     dt_utc = datetime.fromisoformat(str(row["filled_at"]).replace("Z", "+00:00"))
                     dt_local = dt_utc + timedelta(hours=tz_offset)
                     hour_key = dt_local.hour
@@ -6686,7 +6685,7 @@ def _fetch_price_standalone(asset_id, decimals):
                 break
 
         if not price:
-            print(f"[PRICE_STANDALONE] CAT not found on TibetSwap, trying Dexie...")
+            print("[PRICE_STANDALONE] CAT not found on TibetSwap, trying Dexie...")
     except Exception as e:
         print(f"[PRICE_STANDALONE] TibetSwap failed ({e}), trying Dexie...")
 
@@ -7041,7 +7040,7 @@ def _calculate_smart_defaults(xch_reserve=0.0, cat_reserve=0.0, risk_profile="ba
     if not asset_id:
         return jsonify({"error": "No trading pair selected"})
 
-    print(f"\n[SMART_DEFAULTS v2] === Gathering 30 days of market data ===")
+    print("\n[SMART_DEFAULTS v2] === Gathering 30 days of market data ===")
     log_event("info", "smart_defaults", "Smart Settings: gathering 30 days of market data")
     messages = []
 
@@ -7521,7 +7520,7 @@ def _calculate_smart_defaults(xch_reserve=0.0, cat_reserve=0.0, risk_profile="ba
     dynamic_limit_pct = min(dynamic_limit_pct, 200)   # Hard ceiling 200%
     if dynamic_limit_pct == 0:
         dynamic_limit_pct = 50   # Fallback if no data
-    _band_note = f" (using 90d range — quiet phase)" if (quiet_phase and range_90d_pct > range_30d_pct) else ""
+    _band_note = " (using 90d range — quiet phase)" if (quiet_phase and range_90d_pct > range_30d_pct) else ""
     if _pool_band_bump:
         _band_note += f" (+{_pool_band_bump}% thin-pool shock buffer)"
     messages.append(f"Dynamic band: ±{dynamic_limit_pct}% ({regime} regime){_band_note}")
@@ -12796,10 +12795,10 @@ if __name__ == "__main__":
         _sock.close()
         # Port is in use — another instance is running
         print(f"\n  ⚠️  Port {_port} is already in use!")
-        print(f"  Another bot instance appears to be running.")
-        print(f"  Please close the other instance first (Ctrl+C in its terminal),")
-        print(f"  or kill it via Task Manager (look for 'python api_server.py').")
-        print(f"\n  Exiting to avoid running multiple instances.\n")
+        print("  Another bot instance appears to be running.")
+        print("  Please close the other instance first (Ctrl+C in its terminal),")
+        print("  or kill it via Task Manager (look for 'python api_server.py').")
+        print("\n  Exiting to avoid running multiple instances.\n")
         sys.exit(1)
     except (ConnectionRefusedError, OSError, _socket.timeout):
         pass  # Port is free — good to go

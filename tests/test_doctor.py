@@ -2,11 +2,9 @@
 
 import unittest
 from unittest.mock import patch, MagicMock
-from decimal import Decimal
 
 from doctor import (
-    DoctorCheck, DoctorReport, run_preflight,
-    _check_db_health, _check_config_sanity, _check_cat_config,
+    DoctorCheck, DoctorReport, _check_db_health, _check_config_sanity, _check_cat_config,
 )
 
 

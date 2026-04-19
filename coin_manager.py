@@ -23,7 +23,6 @@ coin state.
 
 import time
 import threading
-import traceback
 import subprocess
 import json
 import os
@@ -98,8 +97,7 @@ from tx_fees import (
 )
 from wallet import (
     get_exact_spendable_coins_rpc,
-    get_all_coins_for_wallet,
-    get_wallet_balance, get_next_address, send_transaction,
+    get_next_address, send_transaction,
     split_coins_rpc,
     get_wallet_type,
     WALLET_ID_XCH,
@@ -2633,7 +2631,7 @@ class CoinManager:
                 )
                 if result is None:
                     log_event("warning", f"split_sage_{name}_fail",
-                              f"Sage /split returned None")
+                              "Sage /split returned None")
                     return False
                 # Check for error in response
                 if isinstance(result, dict) and result.get("error"):
@@ -2641,7 +2639,7 @@ class CoinManager:
                               f"Sage /split error: {result['error']}")
                     return False
                 log_event("info", f"split_sage_{name}",
-                          f"Sage /split submitted successfully")
+                          "Sage /split submitted successfully")
             except Exception as e:
                 log_event("warning", f"split_sage_{name}_error",
                           f"Sage /split error: {e}")
@@ -2679,7 +2677,7 @@ class CoinManager:
 
                 if "submitted to" in output.lower() or "transaction" in output.lower():
                     log_event("info", f"split_cli_{name}",
-                              f"CLI split submitted successfully")
+                              "CLI split submitted successfully")
                 else:
                     log_event("warning", f"split_cli_{name}_fail",
                               f"CLI split failed: {output[:200]}")
@@ -5249,7 +5247,7 @@ class CoinManager:
 
         tx_ids = self._extract_sage_transaction_ids(result or {})
         log_event("info", f"{tag}_osstep_submitted",
-                  f"One-step split submitted"
+                  "One-step split submitted"
                   + (f" (tx: {tx_ids[0][:16]}...)" if tx_ids else ""))
 
         def _amount_matches_target(amount: int, target: int) -> bool:
@@ -5478,7 +5476,7 @@ class CoinManager:
                     log_event("info", f"{tag}_send_tx_info",
                               f"Transaction has {len(coin_spends)} coin spends")
 
-            send_info = f"Pool coin creation submitted"
+            send_info = "Pool coin creation submitted"
             if tx_ids:
                 send_info += f" (tx: {tx_ids[0][:16]}...)"
             send_info += f" [source: {source_coin_id[:12]}..., amount: {pool_amount_mojos}]"

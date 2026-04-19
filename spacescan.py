@@ -535,7 +535,6 @@ def record_external_call(count: int = 1) -> None:
 
 def get_api_stats() -> Dict:
     """Return current API usage stats for monitoring/GUI display."""
-    import datetime
     uptime_hours = (time.time() - _session_start_time) / 3600
     return {
         "tier": "paid" if is_pro_tier() else "free",

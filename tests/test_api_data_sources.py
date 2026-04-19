@@ -11,12 +11,9 @@ Usage:
 
 import sys
 import os
-import json
 import time
 import logging
 import requests
-from datetime import datetime, timedelta
-from decimal import Decimal
 
 # ─── Configuration ────────────────────────────────────────────────────
 try:

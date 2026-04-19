@@ -1,6 +1,5 @@
 import ast
 import time
-import types
 import unittest
 from pathlib import Path
 

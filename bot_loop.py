@@ -3753,7 +3753,7 @@ class BotLoop:
               flush=True)
 
         # ---- Step 1b: Refresh market intelligence (NEW — ecosystem) ----
-        print(f"   [1b] Market intel...", end="", flush=True)
+        print("   [1b] Market intel...", end="", flush=True)
         # Step-by-step debug logs removed — console print provides same info
         # without cluttering the system log panel during price adjustments.
         try:
@@ -3799,7 +3799,7 @@ class BotLoop:
             log_event("debug", "intel_error", f"Market intel refresh failed: {e}")
 
         # ---- Step 2: Check circuit breakers ----
-        print(f"   [2] Circuit breakers...", end="", flush=True)
+        print("   [2] Circuit breakers...", end="", flush=True)
         if self.risk_manager.check_circuit_breakers(mid_price):
             self._set_state(status="circuit_breaker")
             reason = (
@@ -3844,7 +3844,7 @@ class BotLoop:
 
         # ---- Step 3: Get current offers from wallet ----
         self._set_cycle_step("step3_wallet_sync")
-        print(f"   [3] Syncing offers from wallet...", end="", flush=True)
+        print("   [3] Syncing offers from wallet...", end="", flush=True)
         # step3_sync log removed — console print covers this
         open_buys, open_sells, closed = self.offer_manager.sync_from_wallet()
         wallet_sync_meta = self.offer_manager.get_wallet_sync_meta()
@@ -4036,7 +4036,7 @@ class BotLoop:
             self._drain_mempool_signals(in_cycle=True)
         except Exception:
             pass  # Non-critical
-        print(f"   [4] Checking fills...", end="", flush=True)
+        print("   [4] Checking fills...", end="", flush=True)
         fill_result = self.fill_tracker.detect_fills(
             current_buy_ids, current_sell_ids,
             self.offer_manager._offer_details_cache
@@ -4165,7 +4165,7 @@ class BotLoop:
                       f"total PnL: {total_pnl:+.8f} XCH")
 
         # ---- Step 6: Update inventory ----
-        print(f"   [6] Updating inventory...", end="", flush=True)
+        print("   [6] Updating inventory...", end="", flush=True)
         self.risk_manager.update_inventory()
         inv = self.risk_manager.get_inventory_state()
         net_pos = inv.get("net_position_cat", "0")
@@ -4986,7 +4986,7 @@ class BotLoop:
             if self.boost_manager.consume_inner_vulnerability_flag():
                 log_event("warning", "inner_vulnerability_check",
                           "Gap closer probe arbed — checking inner-tier offers for exposure")
-                print(f"   [8d] ⚠️ Probe arbed — triggering EMERGENCY inner check", flush=True)
+                print("   [8d] ⚠️ Probe arbed — triggering EMERGENCY inner check", flush=True)
                 # Force an emergency requote of inner tiers on the next step 9
                 self._force_requote["buy"] = True
                 self._force_requote["sell"] = True
@@ -5053,7 +5053,7 @@ class BotLoop:
         self._set_cycle_step("step9_requote")
         force_buy = self._force_requote.get("buy", False)
         force_sell = self._force_requote.get("sell", False)
-        force_tag = f" FORCED!" if (force_buy or force_sell) else ""
+        force_tag = " FORCED!" if (force_buy or force_sell) else ""
         print(f"   [9] Requote check...{force_tag}", end="", flush=True)
         # step9 detail log removed — the actual requoting info log fires when needed
         self._handle_requoting(mid_price, current_buy_ids, current_sell_ids)
@@ -5216,9 +5216,9 @@ class BotLoop:
                 log_event("info", "dexie_flush_result",
                           f"Dexie flush: {result}")
             else:
-                print(f"   [11] Dexie queue empty", flush=True)
+                print("   [11] Dexie queue empty", flush=True)
         else:
-            print(f"   [11] Dexie auto-post OFF", flush=True)
+            print("   [11] Dexie auto-post OFF", flush=True)
             log_event("debug", "dexie_disabled", "DEXIE_AUTO_POST is off")
 
         # ---- Step 11b: Broadcast to Splash after Dexie visibility is live ----
@@ -5235,15 +5235,15 @@ class BotLoop:
                     log_event("info", "splash_flush_result",
                               f"Splash broadcast: {result}")
                 else:
-                    print(f"   [11b] Splash queue empty", flush=True)
+                    print("   [11b] Splash queue empty", flush=True)
             except Exception as e:
                 print(f"   [11b] Splash broadcast error: {e}", flush=True)
                 log_event("debug", "splash_error", f"Splash flush failed: {e}")
         else:
-            print(f"   [11b] Splash OFF", flush=True)
+            print("   [11b] Splash OFF", flush=True)
 
         # ---- Step 12: Coin management ----
-        print(f"   [12] Coin health...", end="", flush=True)
+        print("   [12] Coin health...", end="", flush=True)
         self._handle_coins(len(current_buy_ids), len(current_sell_ids))
         print(" done", flush=True)
         # step12 log removed
@@ -5315,7 +5315,7 @@ class BotLoop:
         )
 
         # ---- Step 13: Housekeeping ----
-        print(f"   [13-15] Housekeeping + inventory + GUI push...", end="", flush=True)
+        print("   [13-15] Housekeeping + inventory + GUI push...", end="", flush=True)
         self._handle_housekeeping()
 
         # ---- Step 14: Record inventory snapshot ----
@@ -5380,7 +5380,7 @@ class BotLoop:
         except Exception as e:
             print(f"   [15] Dashboard emit error: {e}", flush=True)
 
-        print(f" done [OK]", flush=True)
+        print(" done [OK]", flush=True)
         # step15 log removed
 
         # Console cycle summary — one clean line showing the cycle result
@@ -5630,7 +5630,7 @@ class BotLoop:
 
             # Check if requote needed — graduated severity check
             from reaction_strategy import (
-                RequoteSeverity, tiers_for_severity, CycleBudget as _CB,
+                RequoteSeverity, tiers_for_severity,
             )
             severity = RequoteSeverity.NONE
 

@@ -1,7 +1,6 @@
 """Tests for reservation_manager.py — persistent capacity leases."""
 
 import os
-import sqlite3
 import tempfile
 import threading
 import unittest
@@ -30,7 +29,7 @@ def _setup_test_db():
 
 _setup_test_db()
 
-from reservation_manager import ReservationManager, init_reservation_table, ReservationResult
+from reservation_manager import ReservationManager, init_reservation_table
 
 
 class TestReservationManager(unittest.TestCase):

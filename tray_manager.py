@@ -19,8 +19,6 @@ app still starts in headless or reduced-dependency environments.
 """
 
 import threading
-import time
-import sys
 
 # Attempt imports — graceful fail if not installed
 try:

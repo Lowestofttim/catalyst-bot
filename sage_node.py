@@ -23,8 +23,8 @@ import time
 import subprocess
 import threading
 import hashlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from decimal import Decimal, ROUND_DOWN
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 from database import log_event
 from win_subprocess import hidden_subprocess_kwargs

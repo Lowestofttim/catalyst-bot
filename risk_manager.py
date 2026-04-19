@@ -21,12 +21,12 @@ is supplied via the constructor rather than imported at module scope.
 import threading
 import time
 from decimal import Decimal
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 from config import cfg
 from database import (
     record_inventory_snapshot, get_net_position,
-    get_recent_prices, log_event
+    log_event
 )
 
 

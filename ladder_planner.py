@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 class SlotStatus(Enum):
@@ -143,7 +143,7 @@ def plan_ladder(
     Returns:
         :class:`LadderPlan`.
     """
-    from coin_classifier import classify_coin, CoinFit
+    from coin_classifier import classify_coin
 
     plan = LadderPlan(side=side, mid_price=mid_price)
 

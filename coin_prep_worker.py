@@ -33,7 +33,6 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 from enum import Enum
-import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from win_subprocess import hidden_subprocess_kwargs
 
@@ -43,7 +42,6 @@ from wallet import (
     cancel_offers_batch,
     get_wallet_sync_status,
     get_spendable_coins_rpc,
-    split_coins_rpc,
     get_transaction,
 )
 from coin_prep_utils import (
@@ -437,7 +435,7 @@ class CoinPrepWorker:
             self.xch_target_coins = sum(self.xch_tier_counts.values())
             self.cat_target_coins = sum(self.cat_tier_counts.values())
 
-            self.log(f"\n   🏗️ TIER MODE:")
+            self.log("\n   🏗️ TIER MODE:")
             for tn in self.tier_order:
                 xcnt = int(self.xch_tier_counts.get(tn, 0) or 0)
                 ccnt = int(self.cat_tier_counts.get(tn, 0) or 0)
@@ -507,7 +505,7 @@ class CoinPrepWorker:
         self.log("🪙 Coin Prep Worker initialized (PARALLEL MODE)")
         self.log(f"   XCH: {self.xch_target_coins} coins @ {self.xch_coin_size} each")
         self.log(f"   CAT: {self.cat_target_coins} coins @ {self.cat_coin_size} each")
-        self.log(f"   ⚡ Parallel optimization enabled!")
+        self.log("   ⚡ Parallel optimization enabled!")
 
     def _fee_pool_enabled(self) -> bool:
         return fee_pool_enabled()
@@ -908,7 +906,7 @@ class CoinPrepWorker:
         self.log(f"XCH fee cleanup: merging {len(extra_ids)} extra coin(s) ({extra_total:,} mojos) back into reserve")
         result = combine_coins([reserve_id] + extra_ids, fee_mojos=self._tx_fee_mojos())
         if not self._sage_submit_succeeded(result):
-            self.log(f"XCH fee cleanup combine was not accepted by Sage")
+            self.log("XCH fee cleanup combine was not accepted by Sage")
             return False
 
         expected_after = len(coins) - len(extra_ids)
@@ -924,16 +922,16 @@ class CoinPrepWorker:
                 self.log(f"XCH fee cleanup still pending after {poll * 5}s")
             time.sleep(5)
 
-        self.log(f"XCH fee cleanup did not confirm within 300s")
+        self.log("XCH fee cleanup did not confirm within 300s")
         return False
 
     def _designate_final_sweep(self):
         """Final pass after all splits complete."""
         if not self._db_ready:
-            self.log(f"   DB: final sweep SKIPPED - DB not ready")
+            self.log("   DB: final sweep SKIPPED - DB not ready")
             return
 
-        self.log(f"\n   DB: Final designation sweep...")
+        self.log("\n   DB: Final designation sweep...")
 
         try:
             from database import get_connection
@@ -1040,7 +1038,7 @@ class CoinPrepWorker:
                         desig_ok += 1
                     else:
                         desig_fail += 1
-                        self.log(f"   DB: reserve designation returned False")
+                        self.log("   DB: reserve designation returned False")
                 except Exception as e:
                     desig_fail += 1
                     self.log(f"   DB: reserve designation EXCEPTION: {e}")
@@ -1085,7 +1083,7 @@ class CoinPrepWorker:
                 debug_data[wt] = {dict(r)["designation"]: dict(r)["cnt"] for r in rows}
             with open(debug_path, "w") as f:
                 json.dump(debug_data, f, indent=2)
-            self.log(f"   DB: debug summary written to designation_debug.json")
+            self.log("   DB: debug summary written to designation_debug.json")
         except Exception as de:
             self.log(f"   DB: debug file write failed: {de}")
 
@@ -1229,7 +1227,7 @@ class CoinPrepWorker:
                     return fp
             except Exception as e:
                 self.log(f"⚠️ Sage fingerprint detection failed: {e}")
-            self.log(f"⚠️ Could not detect Sage fingerprint — using placeholder")
+            self.log("⚠️ Could not detect Sage fingerprint — using placeholder")
             return "0"
 
         # Chia: Method 1: RPC via wallet.py (fast, ~1 second)
@@ -1684,14 +1682,14 @@ class CoinPrepWorker:
         """
         try:
             self.log(f"\n{'='*60}")
-            self.log(f"CANCELLING OPEN OFFERS (sequential -- wallet-safe)")
+            self.log("CANCELLING OPEN OFFERS (sequential -- wallet-safe)")
             self.log(f"{'='*60}")
             
             # Get all open offers
             open_offers = self.get_all_open_offers_rpc()
             
             if not open_offers:
-                self.log(f"No open offers found")
+                self.log("No open offers found")
                 return True
             
             initial_count = len(open_offers)
@@ -1730,7 +1728,7 @@ class CoinPrepWorker:
                 trade_ids = [o["id"] for o in open_offers]
             
             if not trade_ids:
-                self.log(f"  All offers are protected — skipping cancellation")
+                self.log("  All offers are protected — skipping cancellation")
                 return True
             
             cancel_count = len(trade_ids)
@@ -1810,14 +1808,14 @@ class CoinPrepWorker:
                     self.log(f"\n{len(permanently_failed)} offers could not be cancelled after {max_retries} retries -- skipping them")
             
             if cancelled == 0:
-                self.log(f"No offers were cancelled")
+                self.log("No offers were cancelled")
                 return False
             
             # Build list of IDs we expect to be cancelled (exclude permanently failed)
             expected_cancelled_ids = [tid for tid in trade_ids if tid not in permanently_failed]
             
             if not expected_cancelled_ids:
-                self.log(f"No offers to verify")
+                self.log("No offers to verify")
                 return True
             
             # VERIFICATION LOOP — poll RPC until expected offers are gone.
@@ -1891,9 +1889,9 @@ class CoinPrepWorker:
             # All rounds exhausted — log final state and proceed
             if still_open:
                 self.log(f"\nTIMEOUT: {len(still_open)} offers still open after {max_rounds} rounds")
-                self.log(f"Proceeding anyway — consolidation will skip their locked coins")
+                self.log("Proceeding anyway — consolidation will skip their locked coins")
             else:
-                self.log(f"\nAll cancellable offers confirmed!")
+                self.log("\nAll cancellable offers confirmed!")
 
             return True
             
@@ -1920,7 +1918,7 @@ class CoinPrepWorker:
 
         success, output = self.run_command(cmd)
         if not success:
-            self.log(f"❌ Could not get address")
+            self.log("❌ Could not get address")
             return False
 
         # Parse address
@@ -1932,7 +1930,7 @@ class CoinPrepWorker:
                 break
 
         if not address:
-            self.log(f"❌ Could not find address")
+            self.log("❌ Could not find address")
             return False
 
         self.log(f"Target address: {address[:20]}...")
@@ -1956,7 +1954,7 @@ class CoinPrepWorker:
             "-m", "0"  # No fee
         ]
 
-        self.log(f"Submitting consolidation transaction...")
+        self.log("Submitting consolidation transaction...")
 
         try:
             process = subprocess.Popen(
@@ -1972,7 +1970,7 @@ class CoinPrepWorker:
             output = stdout + stderr
 
             if "submitted to" in output.lower() or "transaction sent" in output.lower():
-                self.log(f"✅ Consolidation submitted")
+                self.log("✅ Consolidation submitted")
                 return True
             else:
                 self.log(f"❌ Consolidation failed: {output[:200]}")
@@ -2051,7 +2049,7 @@ class CoinPrepWorker:
                 self.log(f"✅ {name} auto-combine submitted via Sage (was {coin_count} coins)")
                 return True
             else:
-                self.log(f"⚠️ Sage auto-combine returned None — trying /combine endpoint...")
+                self.log("⚠️ Sage auto-combine returned None — trying /combine endpoint...")
                 return self._consolidate_wallet_sage_combine(wallet_id, name)
 
         except Exception as e:
@@ -2070,7 +2068,7 @@ class CoinPrepWorker:
             # Get all spendable coins to extract their IDs
             coins_result = get_spendable_coins_rpc(wallet_id)
             if not coins_result or not coins_result.get("success"):
-                self.log(f"❌ Could not get coins for /combine — falling back to send-to-self")
+                self.log("❌ Could not get coins for /combine — falling back to send-to-self")
                 return self._consolidate_wallet_sage_fallback(wallet_id, name)
 
             records = coins_result.get("confirmed_records", [])
@@ -2092,7 +2090,7 @@ class CoinPrepWorker:
                     coin_ids.append(cid)
 
             if len(coin_ids) < 2:
-                self.log(f"❌ Not enough coin IDs found for /combine")
+                self.log("❌ Not enough coin IDs found for /combine")
                 return self._consolidate_wallet_sage_fallback(wallet_id, name)
 
             # F61: scaled priority fee for large combines (same as the
@@ -2107,7 +2105,7 @@ class CoinPrepWorker:
                 self.log(f"✅ {name} /combine submitted (was {len(coin_ids)} coins)")
                 return True
             else:
-                self.log(f"❌ /combine returned None — falling back to send-to-self")
+                self.log("❌ /combine returned None — falling back to send-to-self")
                 return self._consolidate_wallet_sage_fallback(wallet_id, name)
 
         except Exception as e:
@@ -2124,14 +2122,14 @@ class CoinPrepWorker:
             # Get receive address
             addr_result = get_next_address(wallet_id, new_address=False)
             if not addr_result or not addr_result.get("address"):
-                self.log(f"❌ Could not get Sage address for fallback")
+                self.log("❌ Could not get Sage address for fallback")
                 return False
             address = addr_result["address"]
 
             # Get balance in mojos
             bal_result = get_wallet_balance(wallet_id)
             if not bal_result or not bal_result.get("success"):
-                self.log(f"❌ Could not get Sage balance for fallback")
+                self.log("❌ Could not get Sage balance for fallback")
                 return False
             wb = bal_result.get("wallet_balance", {})
             mojos = wb.get("spendable_balance", wb.get("confirmed_wallet_balance", 0))
@@ -2140,14 +2138,14 @@ class CoinPrepWorker:
                 self.log(f"⚠️ {name} balance is 0 — coins may still be locked. Skipping.")
                 return False
 
-            self.log(f"Submitting send-to-self consolidation...")
+            self.log("Submitting send-to-self consolidation...")
             result = send_transaction(wallet_id, mojos, address, fee_mojos=self._tx_fee_mojos())
 
             if self._sage_submit_succeeded(result):
-                self.log(f"✅ Fallback consolidation submitted via Sage RPC")
+                self.log("✅ Fallback consolidation submitted via Sage RPC")
                 return True
             else:
-                self.log(f"❌ Sage fallback consolidation returned None")
+                self.log("❌ Sage fallback consolidation returned None")
                 return False
 
         except Exception as e:
@@ -2174,7 +2172,7 @@ class CoinPrepWorker:
 
         success, output = self.run_command(cmd)
         if not success:
-            self.log(f"❌ Could not get address")
+            self.log("❌ Could not get address")
             return False
 
         # Parse address
@@ -2186,7 +2184,7 @@ class CoinPrepWorker:
                 break
 
         if not address:
-            self.log(f"❌ Could not find address")
+            self.log("❌ Could not find address")
             return False
 
         # Send exact amount to self
@@ -2199,7 +2197,7 @@ class CoinPrepWorker:
             "-m", "0"
         ]
 
-        self.log(f"Submitting pool creation transaction...")
+        self.log("Submitting pool creation transaction...")
 
         try:
             process = subprocess.Popen(
@@ -2233,7 +2231,7 @@ class CoinPrepWorker:
             # Get receive address
             addr_result = get_next_address(wallet_id, new_address=False)
             if not addr_result or not addr_result.get("address"):
-                self.log(f"❌ Could not get Sage address for pool creation")
+                self.log("❌ Could not get Sage address for pool creation")
                 return False
             address = addr_result["address"]
 
@@ -2251,7 +2249,7 @@ class CoinPrepWorker:
                 self.log(f"✅ {name} pool creation submitted via Sage RPC")
                 return True
             else:
-                self.log(f"❌ Sage pool creation returned None")
+                self.log("❌ Sage pool creation returned None")
                 return False
 
         except Exception as e:
@@ -2360,13 +2358,12 @@ class CoinPrepWorker:
         """
         from wallet_sage import (get_next_address, send_transaction,
                                  send_transaction_multi, send_cat_multi,
-                                 split_coins_rpc, get_spendable_coin_count,
-                                 get_pending_transactions)
+                                 split_coins_rpc, get_pending_transactions)
 
         self.log(f"\n{'='*60}")
-        self.log(f"⚡ SAGE MULTI-SEND TIERED SPLITTING")
-        self.log(f"   (multi_send ALL pools → confirm → split each → confirm)")
-        self.log(f"   Eliminates tier coin consumption via atomic pool creation")
+        self.log("⚡ SAGE MULTI-SEND TIERED SPLITTING")
+        self.log("   (multi_send ALL pools → confirm → split each → confirm)")
+        self.log("   Eliminates tier coin consumption via atomic pool creation")
         self.log(f"{'='*60}")
 
         # Sort tiers largest-first (biggest coins first, change feeds smaller tiers)
@@ -2379,7 +2376,7 @@ class CoinPrepWorker:
         # Get receive address for send-to-self operations
         addr_result = get_next_address(self.xch_wallet_id, new_address=False)
         if not addr_result or not addr_result.get("address"):
-            self.log(f"❌ Could not get Sage address")
+            self.log("❌ Could not get Sage address")
             return False
         address = addr_result["address"]
         self.log(f"   Receive address: {address[:20]}...")
@@ -2409,7 +2406,7 @@ class CoinPrepWorker:
                 cat_tier_info.append((tier_name, cat_count, 0, cat_mojos_total, Decimal("0"), cat_size))
 
         if not tier_info:
-            self.log(f"❌ No tiers configured!")
+            self.log("❌ No tiers configured!")
             return False
 
         # Total steps = all side-specific tier operations × 2 (pool + split)
@@ -2576,7 +2573,7 @@ class CoinPrepWorker:
                         # CONFIRM: wait for any pending to clear before retrying
                         _wait_for_pending_clear(f"{side_label} {tier_name} send-error-retry-{attempt + 1}", timeout_s=60)
                         continue
-                    self.log(f"      ✅ Send submitted")
+                    self.log("      ✅ Send submitted")
                     send_ok = True
                     break
                 except Exception as e:
@@ -2588,9 +2585,9 @@ class CoinPrepWorker:
                 return False
 
             # CONFIRM GATE A: pending transactions must be empty (= on-chain)
-            self.log(f"      ⏳ Waiting for on-chain confirmation...")
+            self.log("      ⏳ Waiting for on-chain confirmation...")
             if not _wait_for_pending_clear(f"{side_label} {tier_name} send", timeout_s=300):
-                self.log(f"      ❌ Send never confirmed on-chain after 300s!")
+                self.log("      ❌ Send never confirmed on-chain after 300s!")
                 return False
             step_done += 1
 
@@ -2665,13 +2662,13 @@ class CoinPrepWorker:
                     if isinstance(result, dict) and result.get("error") == "UNKNOWN_UNSPENT":
                         self.log(f"      ⚠️ UNKNOWN_UNSPENT (attempt {attempt + 1}/3)")
                         # CONFIRM: re-check spendable before retrying
-                        self.log(f"         Re-confirming coin is spendable...")
+                        self.log("         Re-confirming coin is spendable...")
                         for recheck in range(12):
                             time.sleep(5)
                             if self._are_coin_ids_selectable(
                                 wallet_id, [coin_id], f"{side_label}-{tier_name}-retry-selectable"
                             ):
-                                self.log(f"         ✅ Coin confirmed spendable — retrying split")
+                                self.log("         ✅ Coin confirmed spendable — retrying split")
                                 break
                         continue
                     if isinstance(result, dict) and result.get("error"):
@@ -2691,9 +2688,9 @@ class CoinPrepWorker:
                 return False
 
             # CONFIRM GATE D: pending transactions must be empty (= split on-chain)
-            self.log(f"      ⏳ Waiting for split on-chain confirmation...")
+            self.log("      ⏳ Waiting for split on-chain confirmation...")
             if not _wait_for_pending_clear(f"{side_label} {tier_name} split", timeout_s=300):
-                self.log(f"      ❌ Split never confirmed on-chain after 300s!")
+                self.log("      ❌ Split never confirmed on-chain after 300s!")
                 return False
 
             # ═══════════════════════════════════════════════════════════
@@ -2701,7 +2698,7 @@ class CoinPrepWorker:
             # ═══════════════════════════════════════════════════════════
             # The pool coin should be GONE (consumed by the split).
             # Poll until it disappears — this proves the split was real.
-            self.log(f"      🔍 Confirming pool coin was consumed by split...")
+            self.log("      🔍 Confirming pool coin was consumed by split...")
             for verify_attempt in range(24):  # Up to 120s
                 check_coin = _find_coin_by_amount(wallet_id, pool_mojos, f"{side_label}-{tier_name}-verify")
                 if check_coin is None:
@@ -2712,8 +2709,8 @@ class CoinPrepWorker:
                 time.sleep(5)
             else:
                 # Pool coin still visible after 120s — split may have failed silently
-                self.log(f"      ⚠️ Pool coin still visible after 120s — split may not have taken effect")
-                self.log(f"         Proceeding cautiously but this tier may have failed")
+                self.log("      ⚠️ Pool coin still visible after 120s — split may not have taken effect")
+                self.log("         Proceeding cautiously but this tier may have failed")
 
             # ═══════════════════════════════════════════════════════════
             # STEP F: Record new tier coins to DB immediately at birth
@@ -2746,7 +2743,7 @@ class CoinPrepWorker:
                 except Exception as dbe:
                     self.log(f"      ⚠️ DB recording failed: {dbe}")
             else:
-                self.log(f"      ⚠️ DB not ready — skipping coin recording")
+                self.log("      ⚠️ DB not ready — skipping coin recording")
 
             # ═══════════════════════════════════════════════════════════
             # CONFIRM GATE G: Change coin exists and is spendable
@@ -2768,7 +2765,7 @@ class CoinPrepWorker:
                     if sz > 0:
                         tier_sizes.add(sz)
 
-                self.log(f"      🔍 GATE G: Confirming change coin is spendable for next tier...")
+                self.log("      🔍 GATE G: Confirming change coin is spendable for next tier...")
                 change_confirmed = False
                 for change_poll in range(60):  # Up to 300s
                     all_coins = self._get_coins_via_rpc(wallet_id, f"{side_label}-{tier_name}-change")
@@ -2793,8 +2790,8 @@ class CoinPrepWorker:
                     time.sleep(5)
 
                 if not change_confirmed:
-                    self.log(f"      ⚠️ Change coin not confirmed after 300s — "
-                             f"next tier may use wrong coins!")
+                    self.log("      ⚠️ Change coin not confirmed after 300s — "
+                             "next tier may use wrong coins!")
 
             step_done += 1
 
@@ -2912,7 +2909,7 @@ class CoinPrepWorker:
                     tx_state = self._get_transaction_confirmation_state(xch_tx_ids)
                     if tx_state["confirmed"] and not xch_tx_logged:
                         self.log(
-                            f"      ✅ XCH pool transaction confirmed"
+                            "      ✅ XCH pool transaction confirmed"
                             + (f" at height {tx_state['height']}" if tx_state["height"] else "")
                         )
                         xch_tx_logged = True
@@ -2925,7 +2922,7 @@ class CoinPrepWorker:
                         assigned_map = _assign_pool_coins_to_tiers(owned_coins, xch_tiers)
                         if assigned_map:
                             if not xch_owned_logged:
-                                self.log(f"      ✅ XCH pool outputs are present in owned wallet view")
+                                self.log("      ✅ XCH pool outputs are present in owned wallet view")
                                 xch_owned_logged = True
                             pool_ids = [
                                 assigned_map[tn].get("coin_id", "").replace("0x", "")
@@ -2947,7 +2944,7 @@ class CoinPrepWorker:
                     tx_state = self._get_transaction_confirmation_state(cat_tx_ids)
                     if tx_state["confirmed"] and not cat_tx_logged:
                         self.log(
-                            f"      ✅ CAT pool transaction confirmed"
+                            "      ✅ CAT pool transaction confirmed"
                             + (f" at height {tx_state['height']}" if tx_state["height"] else "")
                         )
                         cat_tx_logged = True
@@ -2960,7 +2957,7 @@ class CoinPrepWorker:
                         assigned_map = _assign_pool_coins_to_tiers(owned_coins, cat_tiers)
                         if assigned_map:
                             if not cat_owned_logged:
-                                self.log(f"      ✅ CAT pool outputs are present in owned wallet view")
+                                self.log("      ✅ CAT pool outputs are present in owned wallet view")
                                 cat_owned_logged = True
                             pool_ids = [
                                 assigned_map[tn].get("coin_id", "").replace("0x", "")
@@ -3032,7 +3029,7 @@ class CoinPrepWorker:
                     poll_interval_s=5,
                 )
                 if not pool_coin:
-                    self.log(f"      Confirmed pool coin never became selectable after 300s!")
+                    self.log("      Confirmed pool coin never became selectable after 300s!")
                     return None
             else:
                 self.log(f"      Finding {side_label} {tier_name} pool coin ({pool_mojos:,} mojos)...")
@@ -3058,7 +3055,7 @@ class CoinPrepWorker:
                     self.log(f"      {spend_attempt * 5}s - not yet spendable...")
                 time.sleep(5)
             else:
-                self.log(f"      Coin never became spendable after 300s!")
+                self.log("      Coin never became spendable after 300s!")
                 return None
 
             self.log(f"   Splitting {side_label} {tier_name}: {coin_id[:16]}... into {count} pieces")
@@ -3077,7 +3074,7 @@ class CoinPrepWorker:
                         _wait_for_pending_clear(f"{side_label} {tier_name} split-retry", timeout_s=60)
                         continue
                     if isinstance(result, dict) and result.get("error") == "UNKNOWN_UNSPENT":
-                        self.log(f"      UNKNOWN_UNSPENT - re-confirming spendable...")
+                        self.log("      UNKNOWN_UNSPENT - re-confirming spendable...")
                         for recheck in range(12):
                             time.sleep(5)
                             if self._are_coin_ids_selectable(
@@ -3573,7 +3570,7 @@ class CoinPrepWorker:
             self.log(f"\n   ⚠️ Pre-flight peer check failed: {_pf_err} — continuing anyway")
 
         self.log(f"\n{'='*40}")
-        self.log(f"📦 STEP 1a: Submit XCH multi_send")
+        self.log("📦 STEP 1a: Submit XCH multi_send")
         self.log(f"{'='*40}")
         self.update_status(PrepPhase.SPLITTING, 0.25, "📦 Step 1/4: Submitting XCH multi_send...")
 
@@ -3584,21 +3581,21 @@ class CoinPrepWorker:
             is_cat=False,
         )
         if xch_submit is None:
-            self.log(f"   ❌ XCH multi_send failed!")
+            self.log("   ❌ XCH multi_send failed!")
             return False
         xch_tier_details = xch_submit.get("tier_details", [])
         self.update_status(PrepPhase.SPLITTING, 0.30, "🔍 Step 1/4: Waiting for XCH pool coins...")
 
         # Poll for XCH pool coins BEFORE submitting CAT
-        self.log(f"\n   🔍 Waiting for XCH pool coins to confirm before CAT submission...")
+        self.log("\n   🔍 Waiting for XCH pool coins to confirm before CAT submission...")
         if not _poll_all_pool_coins(xch_submit, {"tier_details": [], "tx_ids": []}, timeout_s=300):
-            self.log(f"   ❌ XCH pool coins not confirmed!")
+            self.log("   ❌ XCH pool coins not confirmed!")
             return False
-        self.log(f"   ✅ XCH pool coins confirmed — safe to submit CAT multi_send")
+        self.log("   ✅ XCH pool coins confirmed — safe to submit CAT multi_send")
         self.update_status(PrepPhase.SPLITTING, 0.40, "📦 Step 1/4: Submitting CAT multi_send...")
 
         self.log(f"\n{'='*40}")
-        self.log(f"📦 STEP 1b: Submit CAT multi_send")
+        self.log("📦 STEP 1b: Submit CAT multi_send")
         self.log(f"{'='*40}")
 
         cat_submit = _submit_multi_send(
@@ -3608,24 +3605,24 @@ class CoinPrepWorker:
             is_cat=True,
         )
         if cat_submit is None:
-            self.log(f"   ❌ CAT multi_send failed!")
+            self.log("   ❌ CAT multi_send failed!")
             return False
         cat_tier_details = cat_submit.get("tier_details", [])
         self.update_status(PrepPhase.SPLITTING, 0.45, "🔍 Step 2/4: Waiting for CAT pool coins...")
 
         # Step 2: Poll for CAT pool coins (XCH already confirmed above)
         self.log(f"\n{'='*40}")
-        self.log(f"🔍 STEP 2: Poll for CAT pool coins")
+        self.log("🔍 STEP 2: Poll for CAT pool coins")
         self.log(f"{'='*40}")
 
         if not _poll_all_pool_coins({"tier_details": [], "tx_ids": []}, cat_submit, timeout_s=300):
-            self.log(f"   ❌ CAT pool coins not confirmed!")
+            self.log("   ❌ CAT pool coins not confirmed!")
             return False
         self.update_status(PrepPhase.SPLITTING, 0.55, "✅ Step 2/4: All pool coins confirmed")
 
         # Step 3: Submit ALL splits at once
         self.log(f"\n{'='*40}")
-        self.log(f"✂️ STEP 3: Submit ALL splits (XCH + CAT)")
+        self.log("✂️ STEP 3: Submit ALL splits (XCH + CAT)")
         self.log(f"{'='*40}")
         self.update_status(PrepPhase.SPLITTING, 0.56, "✂️ Step 3/4: Submitting splits...")
 
@@ -3717,7 +3714,7 @@ class CoinPrepWorker:
                 self.log("   ❌ Split confirmation failed within 300s — aborting coin prep")
                 return False
 
-        self.log(f"\n   ✅ All XCH + CAT splits complete!")
+        self.log("\n   ✅ All XCH + CAT splits complete!")
 
         # ================================================================
         # FINAL VERIFICATION — confirmation-based, not single-shot
@@ -3727,7 +3724,7 @@ class CoinPrepWorker:
         # This handles Sage's coin sync lag after the last split.
         # ================================================================
         self.update_status(PrepPhase.SPLITTING, 0.92, "🔍 Verifying final coin counts...")
-        self.log(f"\n--- Final Verification (confirmation-based) ---")
+        self.log("\n--- Final Verification (confirmation-based) ---")
 
         total_xch_target = self.xch_target_coins
         total_cat_target = self.cat_target_coins
@@ -3757,7 +3754,7 @@ class CoinPrepWorker:
         self.log(f"   XCH: {xch_final} coins (target: {total_xch_target} + reserve)")
         self.log(f"   CAT: {cat_final} coins (target: {total_cat_target} + reserve)")
 
-        self.log(f"✅ Sage multi-send tiered coin prep complete!")
+        self.log("✅ Sage multi-send tiered coin prep complete!")
 
         return True
 
@@ -3800,13 +3797,13 @@ class CoinPrepWorker:
                 # Check if it actually worked despite the error (common with timeouts).
                 # Poll the wallet repeatedly instead of a fixed wait.
                 expected_so_far = num_coins - remaining + batch_size
-                self.log(f"⏳ Split reported failure — polling wallet to check if coins appeared...")
+                self.log("⏳ Split reported failure — polling wallet to check if coins appeared...")
                 coins_appeared = self._poll_for_coin_count(
                     wallet_id, name, expected_so_far, max_polls=12, poll_secs=5
                 )
 
                 if coins_appeared:
-                    self.log(f"✅ Coins appeared despite error! Continuing...")
+                    self.log("✅ Coins appeared despite error! Continuing...")
                     success = True
                 else:
                     # Real failure — wait for wallet to be healthy, then retry
@@ -3820,7 +3817,7 @@ class CoinPrepWorker:
                             wallet_id, name, expected_so_far, max_polls=12, poll_secs=5
                         )
                         if coins_appeared:
-                            self.log(f"✅ Retry succeeded (coins appeared)!")
+                            self.log("✅ Retry succeeded (coins appeared)!")
                             success = True
                         else:
                             current_count = self.get_coin_count(wallet_id)
@@ -4355,9 +4352,9 @@ class CoinPrepWorker:
                     is_cat=is_cat,
                 )
                 if self._sage_submit_succeeded(result):
-                    self.log(f"   ✅ Sage split submitted")
+                    self.log("   ✅ Sage split submitted")
                 else:
-                    self.log(f"   ❌ Sage split returned None")
+                    self.log("   ❌ Sage split returned None")
                     return False
             except Exception as e:
                 self.log(f"   ❌ Sage split error: {e}")
@@ -4391,13 +4388,13 @@ class CoinPrepWorker:
                 output = stdout + stderr
 
                 if "submitted to" in output.lower() or "transaction" in output.lower():
-                    self.log(f"   ✅ CLI split submitted and broadcast")
+                    self.log("   ✅ CLI split submitted and broadcast")
                 else:
                     self.log(f"   ❌ CLI split failed: {output[:300]}")
                     return False
 
             except subprocess.TimeoutExpired:
-                self.log(f"   ❌ CLI split timed out after 60s")
+                self.log("   ❌ CLI split timed out after 60s")
                 try:
                     process.kill()
                 except Exception:
@@ -4471,7 +4468,7 @@ class CoinPrepWorker:
         Time savings: ~45 seconds!
         """
         self.log(f"\n{'='*60}")
-        self.log(f"⚡ PARALLEL POOL CREATION")
+        self.log("⚡ PARALLEL POOL CREATION")
         self.log(f"{'='*60}")
         
         results = {'xch': False, 'cat': False}
@@ -4481,11 +4478,11 @@ class CoinPrepWorker:
         results['xch'] = self.create_trading_pool(self.xch_wallet_id, "XCH", xch_pool_amount)
         
         if not results['xch']:
-            self.log(f"❌ XCH pool submission failed")
+            self.log("❌ XCH pool submission failed")
             return False
         
         # Stagger: Wait 5 seconds before CAT submission
-        self.log(f"⏳ Staggering 5 seconds before CAT submission...")
+        self.log("⏳ Staggering 5 seconds before CAT submission...")
         time.sleep(5)
         
         # Phase 2: Submit CAT pool (35%)
@@ -4493,15 +4490,15 @@ class CoinPrepWorker:
         results['cat'] = self.create_trading_pool(self.cat_wallet_id, "CAT", cat_pool_amount)
         
         if not results['cat']:
-            self.log(f"❌ CAT pool submission failed")
+            self.log("❌ CAT pool submission failed")
             return False
         
         # Phase 3: Wait for both to confirm in parallel (45-55%)
-        self.log(f"\n⚡ Both transactions submitted! Waiting for confirmations...")
+        self.log("\n⚡ Both transactions submitted! Waiting for confirmations...")
         self.update_status(PrepPhase.CREATING_POOL, 0.45, "⏳ Waiting for blockchain confirmation... (checking every 3s)")
         
         # Poll wallet for confirmed pool coins (no fixed wait — verify via wallet)
-        self.log(f"⏳ Polling wallet for confirmed pool coins...")
+        self.log("⏳ Polling wallet for confirmed pool coins...")
         coin_check_interval = 3
         elapsed_coin_wait = 0
         
@@ -4537,7 +4534,7 @@ class CoinPrepWorker:
             
             # Both confirmed?
             if xch_confirmed and cat_confirmed:
-                self.log(f"✅ Both pools confirmed on blockchain!")
+                self.log("✅ Both pools confirmed on blockchain!")
                 self.update_status(
                     PrepPhase.CREATING_POOL,
                     0.55,
@@ -4548,9 +4545,9 @@ class CoinPrepWorker:
             # Show progress
             status = []
             if not xch_confirmed:
-                status.append(f"XCH: waiting")
+                status.append("XCH: waiting")
             if not cat_confirmed:
-                status.append(f"CAT: waiting")
+                status.append("CAT: waiting")
             
             if status:
                 self.log(f"   ⏳ {', '.join(status)} ({elapsed_coin_wait}s)")
@@ -4598,7 +4595,7 @@ class CoinPrepWorker:
         Each split_coin_cli() call creates uniform coins — we call it once per tier.
         """
         self.log(f"\n{'='*60}")
-        self.log(f"🏗️ TIERED SPLITTING")
+        self.log("🏗️ TIERED SPLITTING")
         self.log(f"{'='*60}")
 
         # Sort tiers largest-first (split big coins first, remainder for smaller tiers)
@@ -4617,7 +4614,7 @@ class CoinPrepWorker:
         # plus a CHANGE coin. The next tier MUST wait for confirmation so the
         # change coin exists — otherwise it tries to split an already-spent coin
         # and the transaction silently fails on-chain.
-        self.log(f"\n--- XCH Tier Splits ---")
+        self.log("\n--- XCH Tier Splits ---")
         xch_coins_created = 0
         xch_tier_results = {}  # Track success/failure per tier for retry logic
 
@@ -4647,7 +4644,7 @@ class CoinPrepWorker:
                 xch_tier_results[tier_name] = "failed"
                 # Stop immediately: Sage may have submitted the tx without confirming.
                 # Attempting the next tier risks a double-spend on the same change coin.
-                self.log(f"   ⚠️ Stopping XCH tier splits after failure (next tiers need the change coin)")
+                self.log("   ⚠️ Stopping XCH tier splits after failure (next tiers need the change coin)")
                 break
 
             xch_tier_results[tier_name] = "submitted"
@@ -4672,7 +4669,7 @@ class CoinPrepWorker:
                 # The next tier will fail too if we proceed.
                 # Log it and mark as unconfirmed — the retry logic will handle it.
                 self.log(f"   ⚠️ XCH {tier_name} not confirmed after 10 min!")
-                self.log(f"   ⚠️ Stopping XCH tier splits — next tiers need the change coin")
+                self.log("   ⚠️ Stopping XCH tier splits — next tiers need the change coin")
                 xch_tier_results[tier_name] = "unconfirmed"
                 break  # Don't attempt more XCH tiers — they'll all fail
 
@@ -4682,7 +4679,7 @@ class CoinPrepWorker:
 
         # ---- Phase 2: CAT tier splits (75% → 85%) ----
         # Same CRITICAL rule: must wait for each tier to confirm before next.
-        self.log(f"\n--- CAT Tier Splits ---")
+        self.log("\n--- CAT Tier Splits ---")
         cat_coins_created = 0
         cat_tier_results = {}
 
@@ -4720,7 +4717,7 @@ class CoinPrepWorker:
                 else:
                     self.log(f"   ❌ CAT {tier_name} split failed — will retry later")
                     cat_tier_results[tier_name] = "failed"
-                    self.log(f"   ⏳ Waiting 15s for wallet to settle after failure...")
+                    self.log("   ⏳ Waiting 15s for wallet to settle after failure...")
                     time.sleep(15)
                     continue
             else:
@@ -4740,7 +4737,7 @@ class CoinPrepWorker:
                 cat_tier_results[tier_name] = "confirmed"
             else:
                 self.log(f"   ⚠️ CAT {tier_name} not confirmed after 10 min!")
-                self.log(f"   ⚠️ Stopping CAT tier splits — next tiers need the change coin")
+                self.log("   ⚠️ Stopping CAT tier splits — next tiers need the change coin")
                 cat_tier_results[tier_name] = "unconfirmed"
                 break
 
@@ -4749,7 +4746,7 @@ class CoinPrepWorker:
         self._log_coin_snapshot(self.cat_wallet_id, "CAT", "AFTER CAT TIERS")
 
         # ---- Phase 3: Check totals + retry if short (85% → 94%) ----
-        self.log(f"\n⚡ Tier splitting complete! Checking totals...")
+        self.log("\n⚡ Tier splitting complete! Checking totals...")
         self.update_status(PrepPhase.SPLITTING, 0.85, "Checking coin totals...")
 
         # ---- Phase 3b: Retry any short tiers (up to 2 rounds) ----
@@ -4774,7 +4771,7 @@ class CoinPrepWorker:
 
             # First: wait for wallet to be fully synced and healthy.
             # Stale transactions may still be confirming in the background.
-            self.log(f"⏳ Checking wallet sync before retry...")
+            self.log("⏳ Checking wallet sync before retry...")
             self.check_wallet_sync("pre-retry")
             time.sleep(10)  # Extra settle time for any in-flight transactions
 
@@ -4817,9 +4814,9 @@ class CoinPrepWorker:
                         expected_count=total_xch_coins, max_wait=300
                     )
                 else:
-                    self.log(f"   ❌ XCH retry split failed — will try again" if
+                    self.log("   ❌ XCH retry split failed — will try again" if
                              retry_round < MAX_RETRY_ROUNDS else
-                             f"   ❌ XCH retry split failed — giving up")
+                             "   ❌ XCH retry split failed — giving up")
 
             # Retry CAT shortfall
             if cat_short > 0:
@@ -4832,7 +4829,7 @@ class CoinPrepWorker:
 
                 # Stagger after XCH retry if we just did one
                 if xch_short > 0:
-                    self.log(f"   ⏳ Staggering 5s after XCH retry...")
+                    self.log("   ⏳ Staggering 5s after XCH retry...")
                     time.sleep(5)
 
                 success = self.split_coin_cli(
@@ -4847,16 +4844,16 @@ class CoinPrepWorker:
                         expected_count=total_cat_coins, max_wait=300
                     )
                 else:
-                    self.log(f"   ❌ CAT retry split failed — will try again" if
+                    self.log("   ❌ CAT retry split failed — will try again" if
                              retry_round < MAX_RETRY_ROUNDS else
-                             f"   ❌ CAT retry split failed — giving up")
+                             "   ❌ CAT retry split failed — giving up")
         else:
             # Only runs if we exhausted all retry rounds without breaking
             xch_count = self.get_coin_count(self.xch_wallet_id)
             cat_count = self.get_coin_count(self.cat_wallet_id)
             self.log(f"⚠️ Tier splits still incomplete after {MAX_RETRY_ROUNDS} retries: "
                      f"XCH: {xch_count}/{total_xch_coins}, CAT: {cat_count}/{total_cat_coins}")
-            self.log(f"   The bot can still run with fewer coins — it will just have fewer offers")
+            self.log("   The bot can still run with fewer coins — it will just have fewer offers")
 
         self._log_coin_snapshot(self.xch_wallet_id, "XCH", "FINAL TIER CHECK")
         self._log_coin_snapshot(self.cat_wallet_id, "CAT", "FINAL TIER CHECK")
@@ -4875,7 +4872,7 @@ class CoinPrepWorker:
         Time savings: ~40 seconds!
         """
         self.log(f"\n{'='*60}")
-        self.log(f"⚡ PARALLEL SPLITTING")
+        self.log("⚡ PARALLEL SPLITTING")
         self.log(f"{'='*60}")
         
         # Phase 1: Submit XCH split (65%)
@@ -4886,7 +4883,7 @@ class CoinPrepWorker:
         )
         
         if not xch_success:
-            self.log(f"❌ XCH split failed")
+            self.log("❌ XCH split failed")
             return False
 
         # Wait for XCH split to confirm before starting CAT split.
@@ -4898,10 +4895,10 @@ class CoinPrepWorker:
             expected_count=self.xch_target_coins, max_wait=600
         )
         if xch_confirmed:
-            self.log(f"✅ XCH split confirmed! Starting CAT split...")
+            self.log("✅ XCH split confirmed! Starting CAT split...")
             self._log_coin_snapshot(self.xch_wallet_id, "XCH", "AFTER XCH SPLIT")
         else:
-            self.log(f"⚠️ XCH split not confirmed after 10 min — proceeding with CAT split anyway")
+            self.log("⚠️ XCH split not confirmed after 10 min — proceeding with CAT split anyway")
 
         # Phase 2: Submit CAT split (75%)
         self.update_status(PrepPhase.SPLITTING, 0.75, f"✂️ Splitting {self.cat_target_coins * self.cat_coin_size:,.0f} tokens → {self.cat_target_coins} coins of {self.cat_coin_size:,.0f} each...")
@@ -4913,7 +4910,7 @@ class CoinPrepWorker:
         if not cat_success:
             # Don't give up — the wallet may have submitted despite the timeout.
             # Poll the wallet to check if CAT coins appeared.
-            self.log(f"⚠️ CAT split reported failure — polling wallet for coins...")
+            self.log("⚠️ CAT split reported failure — polling wallet for coins...")
             coins_appeared = self._poll_for_coin_count(
                 self.cat_wallet_id, "CAT", self.cat_target_coins,
                 max_polls=12, poll_secs=5
@@ -4928,7 +4925,7 @@ class CoinPrepWorker:
                 # The confirmation loop below will keep watching
 
         # Phase 3: Wait for CAT split to confirm (85%)
-        self.log(f"\n⚡ Both splits submitted! Waiting for blockchain confirmation...")
+        self.log("\n⚡ Both splits submitted! Waiting for blockchain confirmation...")
         self.update_status(PrepPhase.SPLITTING, 0.85, "Both splits submitted! Waiting for confirmation...")
 
         cat_tx_id = ""  # tx-ID-based confirmation not yet implemented; uses coin-count polling
@@ -4945,7 +4942,7 @@ class CoinPrepWorker:
         final_cat = self.get_coin_count(self.cat_wallet_id)
         
         if final_xch >= self.xch_target_coins and final_cat >= self.cat_target_coins:
-            self.log(f"✅ Both splits completed in parallel!")
+            self.log("✅ Both splits completed in parallel!")
             return True
         else:
             self.log(f"⚠️ Splits may still be processing: XCH={final_xch}/{self.xch_target_coins}, CAT={final_cat}/{self.cat_target_coins}")
@@ -4975,7 +4972,7 @@ class CoinPrepWorker:
             cat_balance = self.get_balance(self.cat_wallet_id)
             
             self.log(f"\n{'='*60}")
-            self.log(f"📊 INITIAL STATE")
+            self.log("📊 INITIAL STATE")
             self.log(f"{'='*60}")
             self.log(f"XCH: {xch_coins} coins, {xch_balance} balance")
             self.log(f"CAT: {cat_coins} coins, {cat_balance} balance")
@@ -5016,7 +5013,7 @@ class CoinPrepWorker:
                     Decimal(str(self.cat_tier_counts.get(t, 0) or 0)) * self.tier_cat_sizes.get(t, Decimal("0"))
                     for t in self.tier_cat_sizes
                 )
-                self.log(f"\nTarget (TIERED):")
+                self.log("\nTarget (TIERED):")
                 for tn in self.tier_order:
                     xcnt = int(self.xch_tier_counts.get(tn, 0) or 0)
                     ccnt = int(self.cat_tier_counts.get(tn, 0) or 0)
@@ -5028,7 +5025,7 @@ class CoinPrepWorker:
             else:
                 xch_pool_amount = self.xch_target_coins * self.xch_coin_size
                 cat_pool_amount = self.cat_target_coins * self.cat_coin_size
-                self.log(f"\nTarget:")
+                self.log("\nTarget:")
                 self.log(f"XCH: {self.xch_target_coins} × {self.xch_coin_size} = {xch_pool_amount} pool")
                 self.log(f"CAT: {self.cat_target_coins} × {self.cat_coin_size} = {cat_pool_amount} pool")
 
@@ -5113,12 +5110,12 @@ class CoinPrepWorker:
             cancel_success = self.cancel_all_offers()
             
             if not cancel_success:
-                self.log(f"⚠️ Offer cancellation failed - coin prep may fail")
+                self.log("⚠️ Offer cancellation failed - coin prep may fail")
                 # Continue anyway - user can manually cancel
             
             # Re-count coins AFTER cancellation — cancelled offers release locked coins
             # The initial coin count (before cancellation) is stale and unreliable
-            self.log(f"\n📊 Re-counting coins after cancellation...")
+            self.log("\n📊 Re-counting coins after cancellation...")
             time.sleep(5)  # Brief pause for wallet to update
             xch_coins = self.get_coin_count(self.xch_wallet_id)
             cat_coins = self.get_coin_count(self.cat_wallet_id)
@@ -5130,7 +5127,7 @@ class CoinPrepWorker:
             self.update_status(message=f"Post-cancel: XCH={xch_coins}, CAT={cat_coins}")
 
             self.log(f"\n{'='*60}")
-            self.log(f"⚡ PARALLEL CONSOLIDATION")
+            self.log("⚡ PARALLEL CONSOLIDATION")
             self.log(f"{'='*60}")
 
             # ALWAYS consolidate after cancellation (cancels release locked coins)
@@ -5143,7 +5140,7 @@ class CoinPrepWorker:
 
             fee_enabled = self._tx_fee_mojos() > 0
             if fee_enabled and cat_needs_consolidation:
-                self.log(f"Fee-enabled consolidation: CAT first so XCH fee liquidity stays available.")
+                self.log("Fee-enabled consolidation: CAT first so XCH fee liquidity stays available.")
 
             def _run_consolidation_step(name: str, wallet_id: int, coin_count: int,
                                         needs_consolidation: bool, progress: float):
@@ -5173,22 +5170,22 @@ class CoinPrepWorker:
             if fee_enabled and cat_needs_consolidation:
                 _run_consolidation_step("CAT", self.cat_wallet_id, cat_coins, cat_needs_consolidation, 0.10)
                 if xch_needs_consolidation:
-                    self.log(f"Staggering 5 seconds before XCH consolidation...")
+                    self.log("Staggering 5 seconds before XCH consolidation...")
                     time.sleep(5)
                 _run_consolidation_step("XCH", self.xch_wallet_id, xch_coins, xch_needs_consolidation, 0.12)
             else:
                 _run_consolidation_step("XCH", self.xch_wallet_id, xch_coins, xch_needs_consolidation, 0.10)
                 if cat_needs_consolidation:
-                    self.log(f"Staggering 5 seconds before CAT consolidation...")
+                    self.log("Staggering 5 seconds before CAT consolidation...")
                     time.sleep(5)
                 _run_consolidation_step("CAT", self.cat_wallet_id, cat_coins, cat_needs_consolidation, 0.12)
 
             # Log parallel status
             if xch_needs_consolidation or cat_needs_consolidation:
-                self.log(f"\n⚡ Both consolidations submitted! Waiting for confirmations...")
+                self.log("\n⚡ Both consolidations submitted! Waiting for confirmations...")
             
             # Verify BOTH wallets are consolidated before proceeding
-            self.log(f"\nVerifying consolidation complete...")
+            self.log("\nVerifying consolidation complete...")
             self.update_status(PrepPhase.CONSOLIDATING, 0.20, "Verifying both wallets consolidated...")
 
             max_verify_wait = 300  # 5 minute timeout - don't wait forever
@@ -5205,7 +5202,7 @@ class CoinPrepWorker:
                 if max_verify_wait and elapsed_verify >= max_verify_wait:
                     self.log(f"Consolidation verification timeout after {elapsed_verify}s")
                     self.log(f"   XCH: {self.get_coin_count(self.xch_wallet_id)} coins, CAT: {self.get_coin_count(self.cat_wallet_id)} coins")
-                    self.log(f"   Continuing anyway - transactions may still be pending")
+                    self.log("   Continuing anyway - transactions may still be pending")
                     break
 
                 xch_check = self.get_coin_count(self.xch_wallet_id)
@@ -5231,27 +5228,27 @@ class CoinPrepWorker:
                 if stuck_count >= 12:
                     if xch_check > (2 if allow_extra_xch_fee_coin else 1) and not xch_consolidation_submitted:
                         self.log(f"\nXCH has {xch_check} coins but no consolidation was submitted!")
-                        self.log(f"   Submitting XCH consolidation now...")
+                        self.log("   Submitting XCH consolidation now...")
                         if self.consolidate_wallet(self.xch_wallet_id, "XCH"):
                             xch_consolidation_submitted = True
                             stuck_count = 0
                         else:
-                            self.log(f"   XCH consolidation failed - will retry")
+                            self.log("   XCH consolidation failed - will retry")
 
                     if cat_check > 1 and not cat_consolidation_submitted:
                         self.log(f"\nCAT has {cat_check} coins but no consolidation was submitted!")
-                        self.log(f"   Submitting CAT consolidation now...")
+                        self.log("   Submitting CAT consolidation now...")
                         if xch_consolidation_submitted:
                             time.sleep(5)
                         if self.consolidate_wallet(self.cat_wallet_id, "CAT"):
                             cat_consolidation_submitted = True
                             stuck_count = 0
                         else:
-                            self.log(f"   CAT consolidation failed - will retry")
+                            self.log("   CAT consolidation failed - will retry")
 
                     if stuck_count >= 12:
                         if xch_consolidation_submitted and cat_consolidation_submitted:
-                            self.log(f"   Both consolidations submitted - still waiting for blockchain confirmation...")
+                            self.log("   Both consolidations submitted - still waiting for blockchain confirmation...")
                         stuck_count = 0
 
                 if elapsed_verify > 0:
@@ -5291,7 +5288,7 @@ class CoinPrepWorker:
             xch_final_ready = (1 <= final_xch <= 2) if self._tx_fee_mojos() > 0 else (final_xch == 1)
             if not xch_final_ready or final_cat != 1:
                 self.log(f"⚠️ Consolidation verification timeout: XCH={final_xch}, CAT={final_cat}")
-                self.log(f"   Continuing anyway - transactions may still be pending")
+                self.log("   Continuing anyway - transactions may still be pending")
 
             # Designate consolidated coins as reserve in DB
             # (they'll get consumed by pool creation, but this establishes the DB record)
@@ -5306,7 +5303,7 @@ class CoinPrepWorker:
             # coin count so the next split does not hit
             # "Coin selection error: no spendable coins".
             # ---------------------------------------------------------------
-            self.log(f"\n🔍 Waiting for consolidated coins to become spendable...")
+            self.log("\n🔍 Waiting for consolidated coins to become spendable...")
             self.update_status(PrepPhase.CONSOLIDATING, 0.22,
                              "🔍 Waiting for spendable balance...")
 
@@ -5368,7 +5365,7 @@ class CoinPrepWorker:
             # After consolidation we have all coins unlocked, so re-check balance
             post_xch_balance = self.get_balance(self.xch_wallet_id)
             post_cat_balance = self.get_balance(self.cat_wallet_id)
-            self.log(f"\n📊 Post-consolidation balances:")
+            self.log("\n📊 Post-consolidation balances:")
             self.log(f"   XCH: {post_xch_balance}  |  Pool target: {xch_pool_amount}")
             self.log(f"   CAT: {post_cat_balance:,.0f}  |  Pool target: {cat_pool_amount:,.0f}")
 
@@ -5482,7 +5479,7 @@ class CoinPrepWorker:
                 # This gate adds ~0-30s but prevents the "no spendable coins"
                 # failure that occurs when multi_send races consolidation.
                 # ─────────────────────────────────────────────────────────
-                self.log(f"\n⏳ Spendability gate: waiting for consolidated coins to become selectable...")
+                self.log("\n⏳ Spendability gate: waiting for consolidated coins to become selectable...")
                 from wallet_sage import get_pending_transactions, get_selectable_coins_only
                 gate_timeout = 120  # 2 minutes max
                 gate_poll = 5
@@ -5562,7 +5559,7 @@ class CoinPrepWorker:
             self._designate_final_sweep()
 
             self.log(f"\n{'='*60}")
-            self.log(f"🎉 COIN PREPARATION COMPLETE!")
+            self.log("🎉 COIN PREPARATION COMPLETE!")
             self.log(f"{'='*60}")
             self.log(
                 f"XCH: {xch_final} total coins "
@@ -5628,7 +5625,7 @@ class CoinPrepWorker:
                     prep_json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coin_prep_last.json")
                 with open(prep_json_path, "w", encoding="utf-8") as f:
                     json.dump(last_prep, f, indent=2)
-                self.log(f"💾 Saved prep settings to coin_prep_last.json")
+                self.log("💾 Saved prep settings to coin_prep_last.json")
             except Exception as e:
                 self.log(f"⚠️ Could not save prep settings: {e}")
 
@@ -5775,7 +5772,7 @@ def main():
     if overrides:
         print(f"📊 CLI Overrides: {', '.join(overrides)}")
     else:
-        print(f"📊 No CLI overrides — deriving from GUI config")
+        print("📊 No CLI overrides — deriving from GUI config")
     print()
     
     # Initialize worker — __init__ derives settings from GUI config
@@ -5786,9 +5783,9 @@ def main():
         worker.status.run_id = args.run_id
         print(f"🔗 Run ID: {args.run_id}")
 
-    print(f"🎯 Final Configuration:")
+    print("🎯 Final Configuration:")
     if worker.tier_enabled:
-        print(f"   TIER MODE ENABLED")
+        print("   TIER MODE ENABLED")
         total_xch_coins = sum(worker.xch_tier_counts.values())
         total_cat_coins = sum(worker.cat_tier_counts.values())
         for tier_name in worker.tier_order:

@@ -110,18 +110,21 @@ class TierSizesReverseBuyTests(unittest.TestCase):
             sys.path.insert(0, os.getcwd())
 
     def setUp(self):
-        import config, coin_manager
+        import config
+        import coin_manager
         self._real_cfg = config.cfg
         self._real_cm_cfg = getattr(coin_manager, 'cfg', None)
 
     def tearDown(self):
-        import config, coin_manager
+        import config
+        import coin_manager
         config.cfg = self._real_cfg
         if self._real_cm_cfg is not None:
             coin_manager.cfg = self._real_cm_cfg
 
     def _patch_cfg(self, stub):
-        import config, coin_manager
+        import config
+        import coin_manager
         config.cfg = stub
         coin_manager.cfg = stub
 

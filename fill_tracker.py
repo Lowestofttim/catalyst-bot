@@ -20,13 +20,13 @@ good poll so isolated anomalies don't accumulate.
 import time
 import datetime as _dt
 from decimal import Decimal
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import cfg
 from database import (
     record_fill, get_unmatched_fills, match_round_trip,
-    get_open_offers, log_event, update_offer_lifecycle_state, transition_offer
+    log_event, transition_offer
 )
 
 

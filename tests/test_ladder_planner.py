@@ -8,7 +8,6 @@ from decimal import Decimal
 from ladder_planner import (
     plan_ladder,
     SlotStatus,
-    LadderPlan,
 )
 
 
@@ -22,7 +21,7 @@ MZ_TIER_SIZES = {
 MZ_TIER_COUNTS = {"inner": 10, "mid": 5, "outer": 3, "extreme": 2}
 
 # Slot prices (20 total, ascending for sell side, one per slot in inner→extreme order)
-MZ_SELL_PRICES = [Decimal("0.000127") + Decimal(f"0.00000001") * i for i in range(20)]
+MZ_SELL_PRICES = [Decimal("0.000127") + Decimal("0.00000001") * i for i in range(20)]
 
 
 def _coin(coin_id: str, amount: int, tier: str = "inner",

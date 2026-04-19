@@ -10,7 +10,6 @@ Regression test for the 2026-04-17 ladder bug:
 import sys
 import types
 import unittest
-from decimal import Decimal
 from unittest.mock import patch
 
 # ---------------------------------------------------------------

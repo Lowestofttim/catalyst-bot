@@ -22,7 +22,6 @@ must combine this signal with their own pre-flight checks.
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 import uuid
 from dataclasses import dataclass

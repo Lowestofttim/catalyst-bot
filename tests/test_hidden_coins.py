@@ -26,7 +26,6 @@ import os
 import sys
 import time
 from datetime import datetime
-from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -36,8 +35,7 @@ load_dotenv()
 import wallet_sage as ws
 from wallet_sage import (
     rpc, get_all_offers, split_coins_rpc, cancel_offer, create_offer,
-    get_selectable_coins_only, get_pending_transactions, _is_open_status,
-    classify_offers_from_list,
+    get_selectable_coins_only, get_pending_transactions,
 )
 
 CAT_ASSET_ID = os.getenv("CAT_ASSET_ID", "")
@@ -285,7 +283,7 @@ def compare_owned_vs_selectable(stage, asset_label, asset_id, expect_hidden=0):
 
 def main():
     T.log(f"\n{'='*60}")
-    T.log(f"  SAGE HIDDEN COIN TEST — DEFINITIVE")
+    T.log("  SAGE HIDDEN COIN TEST — DEFINITIVE")
     T.log(f"{'='*60}")
 
     if not CAT_ASSET_ID:
@@ -297,16 +295,16 @@ def main():
     T.log(f"  CAT asset:  {CAT_ASSET_ID[:20]}...")
 
     # ── PRE-CHECK: pending transactions? ─────────────────────
-    T.log(f"\n  Pre-check: any pending transactions?")
+    T.log("\n  Pre-check: any pending transactions?")
     pending = get_pending_transactions()
     if pending and len(pending) > 0:
         T.log(f"  ⚠️  {len(pending)} pending tx(s) — waiting for them to clear first...")
         wait_for_pending_clear("Pre-check", timeout=POLL_TIMEOUT)
     else:
-        T.log(f"  ✅ No pending transactions.")
+        T.log("  ✅ No pending transactions.")
 
     # ── PRE-CHECK: open offers? ──────────────────────────────
-    T.log(f"\n  Pre-check: any open offers?")
+    T.log("\n  Pre-check: any open offers?")
     offers = get_all_offers(include_completed=True, start=0, end=500)
     open_count = 0
     if offers:
@@ -321,16 +319,16 @@ def main():
 
     if open_count > 0:
         T.log(f"  ⚠️  {open_count} open offers — they lock coins legitimately.")
-        T.log(f"     Cancel them and re-run for a clean baseline.")
-        T.log(f"     Continuing but Stage 1 results may show expected diffs.\n")
+        T.log("     Cancel them and re-run for a clean baseline.")
+        T.log("     Continuing but Stage 1 results may show expected diffs.\n")
     else:
-        T.log(f"  ✅ No open offers — clean starting state.\n")
+        T.log("  ✅ No open offers — clean starting state.\n")
 
     # ══════════════════════════════════════════════════════════
     # STAGE 1: BASELINE
     # ══════════════════════════════════════════════════════════
     T.log(f"{'─'*60}")
-    T.log(f"  STAGE 1: BASELINE (no splits, no offers)")
+    T.log("  STAGE 1: BASELINE (no splits, no offers)")
     T.log(f"{'─'*60}")
 
     xch_h1, _ = compare_owned_vs_selectable("Stage 1:", "XCH", None, expect_hidden=0)
@@ -340,7 +338,7 @@ def main():
     # STAGE 2: SPLIT XCH 1 → 3
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'─'*60}")
-    T.log(f"  STAGE 2: SPLIT XCH (1 coin → 3 coins)")
+    T.log("  STAGE 2: SPLIT XCH (1 coin → 3 coins)")
     T.log(f"{'─'*60}")
 
     xch_count_before, xch_records = get_spendable_records(XCH_WALLET_ID)
@@ -377,14 +375,14 @@ def main():
 
             if confirmed:
                 # Also verify owned == selectable before comparing
-                T.log(f"  Verifying XCH owned == selectable (fully settled)...")
+                T.log("  Verifying XCH owned == selectable (fully settled)...")
                 wait_for_owned_equals_selectable(None, "Stage 2")
-                T.log(f"  Comparing owned vs selectable after XCH split:")
+                T.log("  Comparing owned vs selectable after XCH split:")
                 xch_h2, _ = compare_owned_vs_selectable("Stage 2:", "XCH", None, expect_hidden=0)
             else:
-                T.log(f"  ⚠️  Split not confirmed — waiting for owned == selectable...")
+                T.log("  ⚠️  Split not confirmed — waiting for owned == selectable...")
                 wait_for_owned_equals_selectable(None, "Stage 2")
-                T.log(f"  Comparing after wait:")
+                T.log("  Comparing after wait:")
                 compare_owned_vs_selectable("Stage 2:", "XCH", None, expect_hidden=0)
         else:
             T.fail("XCH split", f"Failed: {result}")
@@ -393,7 +391,7 @@ def main():
     # STAGE 3: SPLIT CAT 1 → 3
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'─'*60}")
-    T.log(f"  STAGE 3: SPLIT CAT (1 coin → 3 coins)")
+    T.log("  STAGE 3: SPLIT CAT (1 coin → 3 coins)")
     T.log(f"{'─'*60}")
 
     cat_count_before, cat_records = get_spendable_records(CAT_WALLET_ID)
@@ -427,14 +425,14 @@ def main():
             )
 
             if confirmed:
-                T.log(f"  Verifying CAT owned == selectable (fully settled)...")
+                T.log("  Verifying CAT owned == selectable (fully settled)...")
                 wait_for_owned_equals_selectable(CAT_ASSET_ID, "Stage 3")
-                T.log(f"  Comparing owned vs selectable after CAT split:")
+                T.log("  Comparing owned vs selectable after CAT split:")
                 cat_h3, _ = compare_owned_vs_selectable("Stage 3:", "CAT", CAT_ASSET_ID, expect_hidden=0)
             else:
-                T.log(f"  ⚠️  Split not confirmed — waiting for owned == selectable...")
+                T.log("  ⚠️  Split not confirmed — waiting for owned == selectable...")
                 wait_for_owned_equals_selectable(CAT_ASSET_ID, "Stage 3")
-                T.log(f"  Comparing after wait:")
+                T.log("  Comparing after wait:")
                 compare_owned_vs_selectable("Stage 3:", "CAT", CAT_ASSET_ID, expect_hidden=0)
         else:
             T.fail("CAT split", f"Failed: {result}")
@@ -443,15 +441,15 @@ def main():
     # PRE-STAGE-4: ENSURE EVERYTHING IS FULLY SETTLED
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'─'*60}")
-    T.log(f"  PRE-STAGE 4: SETTLING CHECK")
-    T.log(f"  Making sure ALL prior splits are fully confirmed")
+    T.log("  PRE-STAGE 4: SETTLING CHECK")
+    T.log("  Making sure ALL prior splits are fully confirmed")
     T.log(f"{'─'*60}")
 
     # Wait for both XCH and CAT to have owned == selectable
     # This catches any lingering unconfirmed coins from Stages 2+3
-    T.log(f"  Waiting for XCH to fully settle...")
+    T.log("  Waiting for XCH to fully settle...")
     xch_settled = wait_for_owned_equals_selectable(None, "Pre-Stage-4")
-    T.log(f"  Waiting for CAT to fully settle...")
+    T.log("  Waiting for CAT to fully settle...")
     cat_settled = wait_for_owned_equals_selectable(CAT_ASSET_ID, "Pre-Stage-4")
 
     if xch_settled and cat_settled:
@@ -463,8 +461,8 @@ def main():
     # STAGE 4: CREATE BUY + SELL OFFERS
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'─'*60}")
-    T.log(f"  STAGE 4: CREATE OFFERS (BUY + SELL)")
-    T.log(f"  Then check: does the OTHER side also lose coins?")
+    T.log("  STAGE 4: CREATE OFFERS (BUY + SELL)")
+    T.log("  Then check: does the OTHER side also lose coins?")
     T.log(f"{'─'*60}")
 
     # Get current selectable coins (NO workaround)
@@ -482,7 +480,7 @@ def main():
         XCH_WALLET_ID: -sm_xch_amt,
         CAT_WALLET_ID: 999_999_999,  # absurd — never fills
     }
-    T.log(f"  Creating BUY offer...")
+    T.log("  Creating BUY offer...")
     buy_result = create_offer(buy_dict, validate_only=False, max_time=0, coin_ids=[sm_xch_id])
     buy_trade_id = None
     if buy_result and isinstance(buy_result, dict) and not buy_result.get("error"):
@@ -509,7 +507,7 @@ def main():
         CAT_WALLET_ID: -sm_cat_amt,
         XCH_WALLET_ID: 999_000_000_000_000,  # 999 XCH — absurd
     }
-    T.log(f"  Creating SELL offer...")
+    T.log("  Creating SELL offer...")
     sell_result = create_offer(sell_dict, validate_only=False, max_time=0, coin_ids=[sm_cat_id])
     sell_trade_id = None
     if sell_result and isinstance(sell_result, dict) and not sell_result.get("error"):
@@ -523,11 +521,11 @@ def main():
         confirm_transaction("SELL offer")
 
     # ── KEY COMPARISON ────────────────────────────────────────
-    T.log(f"\n  ═══ KEY TEST ═══")
-    T.log(f"  BUY offer locked 1 XCH coin → expect exactly 1 hidden XCH")
-    T.log(f"  SELL offer locked 1 CAT coin → expect exactly 1 hidden CAT")
-    T.log(f"  IF MORE than 1 hidden per side → SAGE BUG IS REAL")
-    T.log(f"  ═════════════════")
+    T.log("\n  ═══ KEY TEST ═══")
+    T.log("  BUY offer locked 1 XCH coin → expect exactly 1 hidden XCH")
+    T.log("  SELL offer locked 1 CAT coin → expect exactly 1 hidden CAT")
+    T.log("  IF MORE than 1 hidden per side → SAGE BUG IS REAL")
+    T.log("  ═════════════════")
 
     xch_h4, xch_hidden_ids = compare_owned_vs_selectable(
         "Stage 4:", "XCH", None, expect_hidden=1)
@@ -545,8 +543,8 @@ def main():
     # STAGE 5: SPLIT MORE COINS WHILE OFFERS ARE OPEN
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'─'*60}")
-    T.log(f"  STAGE 5: SPLIT WHILE OFFERS OPEN")
-    T.log(f"  Tests if new coins from splits also get hidden")
+    T.log("  STAGE 5: SPLIT WHILE OFFERS OPEN")
+    T.log("  Tests if new coins from splits also get hidden")
     T.log(f"{'─'*60}")
 
     # ── Split one more XCH coin ──────────────────────────────
@@ -617,15 +615,15 @@ def main():
     # We can't use wait_for_owned_equals_selectable here because
     # the offers legitimately lock 1 coin per side. Instead we
     # check that selectable count matches what we expect.
-    T.log(f"\n  Waiting for Stage 5 splits to fully settle...")
+    T.log("\n  Waiting for Stage 5 splits to fully settle...")
     xch_expected_free, _ = get_spendable_records(XCH_WALLET_ID)
     cat_expected_free, _ = get_spendable_records(CAT_WALLET_ID)
     # Give extra time for any pending coins to land
     wait_for_selectable_count(XCH_WALLET_ID, xch_expected_free, "Stage 5 XCH settle", timeout=POLL_TIMEOUT)
     wait_for_selectable_count(CAT_WALLET_ID, cat_expected_free, "Stage 5 CAT settle", timeout=POLL_TIMEOUT)
 
-    T.log(f"\n  Comparing after splits with offers still open:")
-    T.log(f"  (expect 1 hidden per side = the offer-locked coin)")
+    T.log("\n  Comparing after splits with offers still open:")
+    T.log("  (expect 1 hidden per side = the offer-locked coin)")
     xch_h5, _ = compare_owned_vs_selectable("Stage 5:", "XCH", None, expect_hidden=1)
     cat_h5, _ = compare_owned_vs_selectable("Stage 5:", "CAT", CAT_ASSET_ID, expect_hidden=1)
 
@@ -633,7 +631,7 @@ def main():
     # STAGE 6: CANCEL OFFERS — EVERYTHING SHOULD BE FREE
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'─'*60}")
-    T.log(f"  STAGE 6: CANCEL OFFERS (all coins should be free)")
+    T.log("  STAGE 6: CANCEL OFFERS (all coins should be free)")
     T.log(f"{'─'*60}")
 
     if buy_trade_id:
@@ -656,14 +654,14 @@ def main():
             T.fail("SELL cancel", "cancel_offer returned None")
 
     # Wait for both cancels to fully confirm on chain
-    T.log(f"  Waiting for cancels to confirm on chain...")
+    T.log("  Waiting for cancels to confirm on chain...")
     confirm_transaction("Cancel offers")
 
     # Wait for all coins to be free — owned must equal selectable
-    T.log(f"  Verifying all coins are free (owned == selectable)...")
-    T.log(f"  Waiting for XCH...")
+    T.log("  Verifying all coins are free (owned == selectable)...")
+    T.log("  Waiting for XCH...")
     wait_for_owned_equals_selectable(None, "Stage 6")
-    T.log(f"  Waiting for CAT...")
+    T.log("  Waiting for CAT...")
     wait_for_owned_equals_selectable(CAT_ASSET_ID, "Stage 6")
 
     xch_h6, _ = compare_owned_vs_selectable("Stage 6:", "XCH", None, expect_hidden=0)
@@ -673,15 +671,15 @@ def main():
     # VERDICT
     # ══════════════════════════════════════════════════════════
     T.log(f"\n{'='*60}")
-    T.log(f"  VERDICT")
+    T.log("  VERDICT")
     T.log(f"{'='*60}")
     T.log(f"  Results: {T.passed} passed, {T.failed} failed")
 
     if T.failed == 0:
-        T.log(f"\n  ✅ ALL STAGES PASSED — NO BUG FOUND")
-        T.log(f"     owned == selectable at every stage where it should.")
-        T.log(f"     → Safe to close the GitHub issue.")
-        T.log(f"     → The workaround in wallet_sage.py can be removed.")
+        T.log("\n  ✅ ALL STAGES PASSED — NO BUG FOUND")
+        T.log("     owned == selectable at every stage where it should.")
+        T.log("     → Safe to close the GitHub issue.")
+        T.log("     → The workaround in wallet_sage.py can be removed.")
     else:
         # Check specifically for the "both sides" bug
         bug_confirmed = False
@@ -692,12 +690,12 @@ def main():
             pass
 
         if bug_confirmed:
-            T.log(f"\n  ❌ BUG CONFIRMED")
-            T.log(f"     Sage hides coins on BOTH sides of an offer.")
-            T.log(f"     → GitHub issue is valid — keep the workaround.")
+            T.log("\n  ❌ BUG CONFIRMED")
+            T.log("     Sage hides coins on BOTH sides of an offer.")
+            T.log("     → GitHub issue is valid — keep the workaround.")
         else:
-            T.log(f"\n  ⚠️  Some tests failed — see details above.")
-            T.log(f"     May need manual investigation.")
+            T.log("\n  ⚠️  Some tests failed — see details above.")
+            T.log("     May need manual investigation.")
 
     T.log(f"{'='*60}\n")
 

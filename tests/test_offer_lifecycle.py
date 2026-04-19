@@ -3,8 +3,7 @@
 import unittest
 
 from offer_lifecycle import (
-    OfferState, OfferSignal, OfferTransition,
-    apply_signal, apply_fill_verification,
+    OfferState, OfferSignal, apply_signal, apply_fill_verification,
     coarse_status, is_terminal,
 )
 

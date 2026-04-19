@@ -164,7 +164,7 @@ def install_all_hooks():
                         "requote_side"]:
             _wrap_method(cls, method, "OFFER", slow_ms=SLOW_NETWORK_MS)
             hooked += 1
-        slog("HOOKS", f"  offer_manager: hooked", level="debug")
+        slog("HOOKS", "  offer_manager: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  offer_manager: FAILED — {e}", level="warn")
 
@@ -177,7 +177,7 @@ def install_all_hooks():
             _wrap_method(FillTracker, method, "FILL")
             count += 1
         hooked += count
-        slog("HOOKS", f"  fill_tracker: hooked", level="debug")
+        slog("HOOKS", "  fill_tracker: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  fill_tracker: FAILED — {e}", level="warn")
 
@@ -190,7 +190,7 @@ def install_all_hooks():
             _wrap_method(DexieManager, method, "DEXIE", slow_ms=SLOW_NETWORK_MS)
             count += 1
         hooked += count
-        slog("HOOKS", f"  dexie_manager: hooked", level="debug")
+        slog("HOOKS", "  dexie_manager: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  dexie_manager: FAILED — {e}", level="warn")
 
@@ -206,7 +206,7 @@ def install_all_hooks():
             _wrap_method(CoinManager, method, "COIN")
             count += 1
         hooked += count
-        slog("HOOKS", f"  coin_manager: hooked", level="debug")
+        slog("HOOKS", "  coin_manager: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  coin_manager: FAILED — {e}", level="warn")
 
@@ -220,7 +220,7 @@ def install_all_hooks():
             _wrap_method(RiskManager, method, "RISK")
             count += 1
         hooked += count
-        slog("HOOKS", f"  risk_manager: hooked", level="debug")
+        slog("HOOKS", "  risk_manager: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  risk_manager: FAILED — {e}", level="warn")
 
@@ -233,7 +233,7 @@ def install_all_hooks():
             _wrap_method(Sniper, method, "SNIPER")
             count += 1
         hooked += count
-        slog("HOOKS", f"  sniper: hooked", level="debug")
+        slog("HOOKS", "  sniper: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  sniper: FAILED — {e}", level="warn")
 
@@ -247,7 +247,7 @@ def install_all_hooks():
             _wrap_method(PriceEngine, method, "PRICE", slow_ms=SLOW_NETWORK_MS)
             count += 1
         hooked += count
-        slog("HOOKS", f"  price_engine: hooked", level="debug")
+        slog("HOOKS", "  price_engine: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  price_engine: FAILED — {e}", level="warn")
 
@@ -263,7 +263,7 @@ def install_all_hooks():
             _wrap_function(db, func, "DB_FUNC")
             count += 1
         hooked += count
-        slog("HOOKS", f"  database: hooked", level="debug")
+        slog("HOOKS", "  database: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  database: FAILED — {e}", level="warn")
 
@@ -278,7 +278,7 @@ def install_all_hooks():
                 _wrap_function(wallet, func, "WALLET", slow_ms=SLOW_WALLET_MS)
                 count += 1
         hooked += count
-        slog("HOOKS", f"  wallet: hooked", level="debug")
+        slog("HOOKS", "  wallet: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  wallet: FAILED — {e}", level="warn")
 
@@ -291,7 +291,7 @@ def install_all_hooks():
                 _wrap_method(SplashNode, method, "SPLASH")
                 count += 1
         hooked += count
-        slog("HOOKS", f"  splash_node: hooked", level="debug")
+        slog("HOOKS", "  splash_node: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  splash_node: FAILED — {e}", level="warn")
 
@@ -310,7 +310,7 @@ def install_all_hooks():
             _wrap_method(BotLoop, method, "LOOP", slow_ms=SLOW_NETWORK_MS)
             count += 1
         hooked += count
-        slog("HOOKS", f"  bot_loop: hooked", level="debug")
+        slog("HOOKS", "  bot_loop: hooked", level="debug")
     except Exception as e:
         slog("HOOKS", f"  bot_loop: FAILED — {e}", level="warn")
 

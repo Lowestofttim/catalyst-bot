@@ -21,7 +21,6 @@ import threading
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------

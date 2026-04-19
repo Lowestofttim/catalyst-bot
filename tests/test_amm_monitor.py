@@ -8,7 +8,7 @@ import types
 import threading
 import unittest
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # --------------------------------------------------------------------------
 # Minimal stubs so amm_monitor can be imported without the full app env.
@@ -40,10 +40,8 @@ sys.modules["config"] = fake_config_mod
 # Use a real (but in-memory) database so log_event calls don't fail.
 # Import the real module BEFORE installing our fake config so it doesn't
 # get contaminated.  We let log_event fail silently if DB is not set up.
-import database as _real_database  # noqa: E402
 
 try:
-    import amm_monitor as _amm_mod  # noqa: E402
     from amm_monitor import AMMMonitor  # noqa: E402
 except Exception:
     raise

@@ -30,8 +30,7 @@ import time
 import json
 import requests
 import urllib3
-from decimal import Decimal
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict
 
 # Suppress TLS warnings for localhost self-signed certs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -157,7 +156,7 @@ def sage_rpc(endpoint: str, payload: dict = None, timeout: int = 5) -> Tuple[Opt
             return json.loads(data), elapsed
         else:
             return {"_http_status": resp.status, "_body": data[:200]}, elapsed
-    except Exception as e:
+    except Exception:
         elapsed = (time.time() - start) * 1000
         return None, elapsed
 
@@ -655,7 +654,7 @@ for test_name, params in quote_tests:
             except json.JSONDecodeError:
                 test(test_name, FAIL, "Response not valid JSON")
         elif resp and resp.status_code == 404:
-            test(test_name, WARN, f"404 -- pair may not exist")
+            test(test_name, WARN, "404 -- pair may not exist")
         else:
             test(test_name, FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
     except Exception as e:
@@ -677,7 +676,7 @@ api_key = spacescan_headers.get("x-api-key", "")
 
 print(f"  Base URL: {spacescan_url}")
 print(f"  Tier: {'PRO' if api_key else 'FREE'}")
-print(f"  NOTE: Spacescan responses are slow (8-14s) — bot timeout is ~20s")
+print("  NOTE: Spacescan responses are slow (8-14s) — bot timeout is ~20s")
 print()
 
 # Test basic connectivity
@@ -1380,7 +1379,7 @@ print()
 print("--- SPLASH P2P (localhost:4000) --- OPTIONAL ---")
 print()
 
-print(f"  Base URL: http://localhost:4000")
+print("  Base URL: http://localhost:4000")
 print(f"  Status: {'running' if CONFIG_LOADED and getattr(cfg, 'SPLASH_ENABLED', False) else 'not required'}")
 print()
 
@@ -1417,7 +1416,7 @@ print()
 try:
     from wallet_chia import get_chia_health
 
-    print(f"  Full Node RPC: localhost:8555 (Chia)")
+    print("  Full Node RPC: localhost:8555 (Chia)")
     print()
 
     try:
@@ -1491,15 +1490,15 @@ total = len(results)
 
 print(f"  Results: {passes} PASS, {fails} FAIL, {warns} WARN, {skips} SKIP / {total} total tests")
 print()
-print(f"  Test Categories:")
-print(f"    - Sage Wallet RPC (30+ endpoints)")
-print(f"    - Dexie API (v1 basic + v1 advanced offers + v1 swap + v2 pricing + v3 latest)")
-print(f"    - TibetSwap API (pairs, quotes, slippage)")
-print(f"    - Spacescan API (basic + advanced address + token + offers + utility)")
-print(f"    - Offerpool (cross-posting)")
-print(f"    - Splash P2P (optional)")
-print(f"    - Chia Blockchain Health")
-print(f"    - Bot Configuration Validation")
+print("  Test Categories:")
+print("    - Sage Wallet RPC (30+ endpoints)")
+print("    - Dexie API (v1 basic + v1 advanced offers + v1 swap + v2 pricing + v3 latest)")
+print("    - TibetSwap API (pairs, quotes, slippage)")
+print("    - Spacescan API (basic + advanced address + token + offers + utility)")
+print("    - Offerpool (cross-posting)")
+print("    - Splash P2P (optional)")
+print("    - Chia Blockchain Health")
+print("    - Bot Configuration Validation")
 print()
 
 # Group by service
