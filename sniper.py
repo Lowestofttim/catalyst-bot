@@ -83,6 +83,14 @@ class Sniper:
 
         Returns list of created sniper offers (may be empty).
         """
+        # Liquidity mode gate — arb discovery requires both sides of the
+        # book, so sniper is a no-op in single-sided modes. Silent early
+        # return so we don't clutter the skip counter with configs that
+        # could never fire.
+        _mode = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
+        if _mode in ("buy_only", "sell_only"):
+            return []
+
         now = time.time()
 
         # Cooldown check
@@ -193,6 +201,11 @@ class Sniper:
 
         Returns list with 0 or 1 created sniper offers.
         """
+        # Liquidity mode gate — see try_snipe for rationale.
+        _mode = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
+        if _mode in ("buy_only", "sell_only"):
+            return []
+
         now = time.time()
 
         # Cooldown check

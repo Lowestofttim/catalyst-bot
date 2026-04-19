@@ -192,8 +192,32 @@ class Config:
 
         # ----- Trading Core -----
         self.DRY_RUN = _bool("DRY_RUN", False)
-        self.ENABLE_BUY = _bool("ENABLE_BUY", True)
-        self.ENABLE_SELL = _bool("ENABLE_SELL", True)
+        # LIQUIDITY_MODE is the source of truth for single vs two-sided mode.
+        # Valid values: "two_sided", "buy_only", "sell_only". ENABLE_BUY /
+        # ENABLE_SELL below are derived from it for backward compatibility —
+        # older code paths read the ENABLE_* flags directly and we don't
+        # want to chase every call site. New code should prefer
+        # ``cfg.LIQUIDITY_MODE`` / ``cfg.is_buy_enabled()`` /
+        # ``cfg.is_sell_enabled()`` so the semantics are explicit.
+        _liquidity_mode_raw = _str("LIQUIDITY_MODE", "two_sided").strip().lower()
+        if _liquidity_mode_raw not in ("two_sided", "buy_only", "sell_only"):
+            _liquidity_mode_raw = "two_sided"
+        self.LIQUIDITY_MODE = _liquidity_mode_raw
+        # Read the raw ENABLE flags, then override if LIQUIDITY_MODE pins
+        # a single side. A misconfigured env (e.g. mode=buy_only with
+        # ENABLE_BUY=False) always resolves in favour of LIQUIDITY_MODE
+        # — the user picked the mode explicitly in the GUI.
+        _raw_enable_buy = _bool("ENABLE_BUY", True)
+        _raw_enable_sell = _bool("ENABLE_SELL", True)
+        if self.LIQUIDITY_MODE == "buy_only":
+            self.ENABLE_BUY = True
+            self.ENABLE_SELL = False
+        elif self.LIQUIDITY_MODE == "sell_only":
+            self.ENABLE_BUY = False
+            self.ENABLE_SELL = True
+        else:  # two_sided
+            self.ENABLE_BUY = _raw_enable_buy
+            self.ENABLE_SELL = _raw_enable_sell
         self.LOOP_SECONDS = _int("LOOP_SECONDS", 90)
         self.MIN_TRADE_XCH = _decimal("MIN_TRADE_XCH", "0.005")
         self.MAX_TRADE_XCH = _decimal("MAX_TRADE_XCH", "0.050")
@@ -655,7 +679,7 @@ class Config:
     # an attacker with API access from redirecting wallet RPC.
     _UPDATABLE_KEYS = {
         # Trading core
-        "DRY_RUN", "ENABLE_BUY", "ENABLE_SELL", "LOOP_SECONDS",
+        "DRY_RUN", "ENABLE_BUY", "ENABLE_SELL", "LIQUIDITY_MODE", "LOOP_SECONDS",
         "MIN_TRADE_XCH", "MAX_TRADE_XCH", "DEFAULT_TRADE_XCH",
         # Spread & pricing
         "SPREAD_BPS", "MIN_EDGE_BPS", "PRICE_STRATEGY", "TIBET_WEIGHT",
@@ -993,6 +1017,30 @@ class Config:
     def get_requote_fraction(self) -> Decimal:
         """Convert REQUOTE_BPS to a fraction."""
         return self.REQUOTE_BPS / Decimal("10000")
+
+    def is_two_sided(self) -> bool:
+        """True when the bot should quote BOTH buy and sell ladders."""
+        return (getattr(self, "LIQUIDITY_MODE", "two_sided") == "two_sided"
+                and bool(self.ENABLE_BUY) and bool(self.ENABLE_SELL))
+
+    def is_single_sided(self) -> bool:
+        """True when LIQUIDITY_MODE pins the bot to one side."""
+        return getattr(self, "LIQUIDITY_MODE", "two_sided") in ("buy_only", "sell_only")
+
+    def active_side(self) -> str:
+        """Return ``"buy"``, ``"sell"``, or ``"both"`` based on the mode.
+
+        New callers should prefer this over reading ENABLE_BUY / ENABLE_SELL
+        directly — the naming is explicit about the single-sided invariant
+        (exactly one side active) and the helper keeps the tri-state logic
+        in one place.
+        """
+        mode = getattr(self, "LIQUIDITY_MODE", "two_sided")
+        if mode == "buy_only":
+            return "buy"
+        if mode == "sell_only":
+            return "sell"
+        return "both"
 
     def to_dict(self) -> dict:
         """Export all settings as a dictionary (for API responses).

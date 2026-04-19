@@ -2275,6 +2275,44 @@
         .v4-settings-amber  { border-left: 3px solid rgba(251,191,36,0.4); }
         .v4-settings-blue   { border-left: 3px solid rgba(59,130,246,0.4); }
         .v4-settings-orange { border-left: 3px solid rgba(234,88,12,0.4); }
+        /* Liquidity mode picker: highlight the selected card and dim the others */
+        .liquidity-mode-card.selected {
+            border-color: rgba(96,165,250,0.85) !important;
+            background: rgba(96,165,250,0.18) !important;
+            box-shadow: 0 0 0 1px rgba(96,165,250,0.5), 0 4px 12px rgba(0,0,0,0.25);
+        }
+        .liquidity-mode-card[data-mode="buy_only"].selected {
+            border-color: rgba(16,185,129,0.85) !important;
+            background: rgba(16,185,129,0.18) !important;
+            box-shadow: 0 0 0 1px rgba(16,185,129,0.5), 0 4px 12px rgba(0,0,0,0.25);
+        }
+        .liquidity-mode-card[data-mode="sell_only"].selected {
+            border-color: rgba(239,68,68,0.85) !important;
+            background: rgba(239,68,68,0.18) !important;
+            box-shadow: 0 0 0 1px rgba(239,68,68,0.5), 0 4px 12px rgba(0,0,0,0.25);
+        }
+        .liquidity-mode-card:hover:not(.selected):not(.disabled) {
+            border-color: rgba(255,255,255,0.30) !important;
+            background: rgba(255,255,255,0.04) !important;
+        }
+        .liquidity-mode-card.disabled {
+            opacity: 0.55;
+            cursor: not-allowed !important;
+            pointer-events: none;
+        }
+        /* Hide side-specific sections when the matching mode flag is set on the body */
+        body.liquidity-mode-buy-only .mode-hide-on-buy-only,
+        body.liquidity-mode-sell-only .mode-hide-on-sell-only,
+        body.liquidity-mode-two-sided .mode-hide-on-two-sided {
+            display: none !important;
+        }
+        /* Banners that should only appear in a SINGLE-sided mode — hidden
+           by default inline styles; we clear the display when the body is
+           in one of the single-sided modes. */
+        body.liquidity-mode-buy-only .mode-hide-on-two-sided,
+        body.liquidity-mode-sell-only .mode-hide-on-two-sided {
+            display: block !important;
+        }
         .v4-settings-hint {
             font-size: var(--text-xs);
             color: var(--text-tertiary);
@@ -7905,6 +7943,23 @@
                         <div id="dataFreshnessIndicator" class="data-freshness-warn" style="display:none;"></div>
                     </div>
 
+                    <!-- Liquidity-mode strip: surfaces the current mode and a parked-state
+                         banner when a single-sided bot has exhausted its fuel. Hidden in
+                         two-sided mode so the default MM flow stays visually clean. -->
+                    <div id="liquidityModeStrip" style="display:none; margin-bottom: var(--space-4);">
+                        <div id="liquidityModeBadge" style="display:inline-flex; align-items:center; gap:8px; padding: 6px 12px; background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.35); border-radius: 999px; font-size: var(--text-xs); font-weight: 600; color: var(--info-300);">
+                            <span id="liquidityModeBadgeIcon">📈📉</span>
+                            <span id="liquidityModeBadgeText">Two-Sided</span>
+                        </div>
+                        <div id="liquidityModeParkedBanner" style="display:none; margin-top: 10px; padding: 12px 16px; background: rgba(251,191,36,0.10); border: 1px solid rgba(251,191,36,0.35); border-radius: 8px; color: var(--warning-300); font-size: var(--text-sm); line-height: 1.55; display:flex; align-items:flex-start; gap:10px;">
+                            <span style="font-size: 18px; line-height: 1;">⏸</span>
+                            <div style="flex:1;">
+                                <div style="font-weight: 700; margin-bottom: 2px;" id="liquidityModeParkedTitle">Parked</div>
+                                <div id="liquidityModeParkedText" style="color: var(--text-secondary);">The active side has run out of fuel.</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="dashboard-startup-guide" id="startupGuide">
                         <div class="dashboard-startup-header">
                             <div>
@@ -9230,6 +9285,47 @@
                         </div>
                     </div>
 
+                    <!-- ══ SECTION: Liquidity Mode ══
+                         Top-level strategy choice. Drives which side (buy / sell / both)
+                         the bot quotes, which fields are shown below, and how Smart
+                         Settings sizes the plan. Change is stop-required — the radio
+                         cards are disabled while the bot is running. -->
+                    <div class="v4-settings-section v4-settings-blue" id="liquidityModeSection">
+                        <div class="v4-settings-section-title" style="color: var(--info-300);">
+                            Liquidity Mode
+                            <span class="cc-help">?<span class="cc-tooltip" style="min-width:320px; text-align:left;">
+                                Pick the shape of your market presence before anything else. Two-sided runs a full market maker quoting both buy and sell. One-sided modes place only buy OR only sell orders — useful for accumulation (buy at ladder prices) or distribution (sell at ladder prices) without needing inventory on both sides.<br><br>
+                                Changing the mode requires stopping the bot. Existing offers on the opposite side will be cancelled when the new mode takes effect.
+                            </span></span>
+                        </div>
+                        <div class="v4-settings-hint" style="margin-bottom: 12px;">
+                            Which side of the market should the bot provide?
+                        </div>
+                        <div id="liquidityModeGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                            <label class="liquidity-mode-card" data-mode="two_sided" style="cursor:pointer; padding: 14px; background: rgba(96,165,250,0.08); border: 2px solid rgba(96,165,250,0.30); border-radius: 10px; transition: all 0.15s; display: flex; flex-direction: column; gap: 6px; position: relative;">
+                                <input type="radio" name="liquidityMode" value="two_sided" onchange="handleLiquidityModeChange(this.value)" style="position: absolute; top: 12px; right: 12px;">
+                                <div style="font-size: 1.5em;">📈📉</div>
+                                <div style="font-weight: 700; font-size: 0.95em; color: var(--info-300);">Two-Sided</div>
+                                <div style="font-size: 0.78em; color: var(--slate-400); line-height: 1.45;">Market maker — quote both buy and sell around mid price. Profits from spread and inventory mean-reversion. Needs balanced XCH and token inventory.</div>
+                            </label>
+                            <label class="liquidity-mode-card" data-mode="buy_only" style="cursor:pointer; padding: 14px; background: rgba(16,185,129,0.05); border: 2px solid rgba(16,185,129,0.25); border-radius: 10px; transition: all 0.15s; display: flex; flex-direction: column; gap: 6px; position: relative;">
+                                <input type="radio" name="liquidityMode" value="buy_only" onchange="handleLiquidityModeChange(this.value)" style="position: absolute; top: 12px; right: 12px;">
+                                <div style="font-size: 1.5em;">📈</div>
+                                <div style="font-weight: 700; font-size: 0.95em; color: var(--status-success);">Buy Only <span style="opacity:0.7; font-weight: 500;">(Accumulate)</span></div>
+                                <div style="font-size: 0.78em; color: var(--slate-400); line-height: 1.45;">Buy the token at a ladder of prices below mid. Fills convert XCH into token. Bot parks itself when XCH runs out.</div>
+                            </label>
+                            <label class="liquidity-mode-card" data-mode="sell_only" style="cursor:pointer; padding: 14px; background: rgba(239,68,68,0.05); border: 2px solid rgba(239,68,68,0.25); border-radius: 10px; transition: all 0.15s; display: flex; flex-direction: column; gap: 6px; position: relative;">
+                                <input type="radio" name="liquidityMode" value="sell_only" onchange="handleLiquidityModeChange(this.value)" style="position: absolute; top: 12px; right: 12px;">
+                                <div style="font-size: 1.5em;">📉</div>
+                                <div style="font-weight: 700; font-size: 0.95em; color: var(--status-danger);">Sell Only <span style="opacity:0.7; font-weight: 500;">(Distribute)</span></div>
+                                <div style="font-size: 0.78em; color: var(--slate-400); line-height: 1.45;">Sell the token at a ladder of prices above mid. Fills convert token into XCH. Bot parks itself when tokens run out.</div>
+                            </label>
+                        </div>
+                        <div id="liquidityModeLockedHint" style="display:none; margin-top: 10px; padding: 8px 12px; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; font-size: 0.82em; color: var(--warning-300); line-height: 1.5;">
+                            🔒 Stop the bot to change the liquidity mode. Existing offers on the opposite side will be cancelled when the new mode starts.
+                        </div>
+                    </div>
+
                     <!-- ══ SECTION: Reserves ══ -->
                     <div class="v4-settings-section v4-settings-green">
                         <div class="v4-settings-section-title" style="color: var(--status-success);">Reserves <span class="cc-help">?<span class="cc-tooltip">Percentage of your balance to hold back from trading. Reserved funds won't be used for offers — acts as a safety buffer.</span></span></div>
@@ -9449,12 +9545,12 @@
 
                         <!-- Max Offers -->
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <div class="form-group">
+                            <div class="form-group mode-hide-on-sell-only">
                                 <label>Max Buy Offers <span class="cc-help">?<span class="cc-tooltip">Maximum number of buy offers to keep open at once. Each needs its own coin.</span></span></label>
                                 <input type="number" min="1" max="50" id="configMaxBuy" value="" placeholder="e.g. 3" oninput="handleMaxOfferLimitInput()">
                                 <div id="maxBuyWarning" style="display: none; margin-top: 4px; padding: 4px 8px; border-radius: 4px; font-size: 0.82em;"></div>
                             </div>
-                            <div class="form-group">
+                            <div class="form-group mode-hide-on-buy-only">
                                 <label>Max Sell Offers <span class="cc-help">?<span class="cc-tooltip">Maximum number of sell offers to keep open at once. Each needs its own coin.</span></span></label>
                                 <input type="number" min="1" max="50" id="configMaxSell" value="" placeholder="e.g. 3" oninput="handleMaxOfferLimitInput()">
                                 <div id="maxSellWarning" style="display: none; margin-top: 4px; padding: 4px 8px; border-radius: 4px; font-size: 0.82em;"></div>
@@ -9476,7 +9572,10 @@
                                     <span>Enable Tiered Sizing <span class="cc-help">?<span class="cc-tooltip">Places larger offers near the mid-price (inner tier) and smaller ones further away (extreme tier). Concentrates liquidity where it matters most.</span></span></span>
                                 </label>
                             </div>
-                            <div class="form-group" style="margin-bottom: 8px;">
+                            <!-- Reverse Buy Ladder only relevant in modes that quote a buy
+                                 side. Hide in sell-only (inner SLOT doesn't exist for the
+                                 buy side when buys are off). -->
+                            <div class="form-group mode-hide-on-sell-only" style="margin-bottom: 8px;">
                                 <label style="display: flex; align-items: center; gap: 10px;">
                                     <input type="checkbox" id="configBuyLadderReversed" style="width: auto; margin: 0;" checked onchange="handleReverseLadderToggle();">
                                     <span>Reverse Buy Ladder <span class="cc-help">?<span class="cc-tooltip">When on: buy side places the SMALLEST offers closest to price and the LARGEST offers furthest away. This limits your XCH exposure when sellers hit the top of the book — a large commitment only gets filled on a genuine support-level drop. Sell side is unaffected (large sells stay closest to price, where buyers find them). Requires Tiered Sizing to be enabled.</span></span></span>
@@ -9495,42 +9594,46 @@
                                      at position inner (tight) and largest at
                                      position extreme (wide) — opposite of
                                      the sell row. -->
-                                <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">Buy ladder sizes (XCH per offer) — XCH committed per buy offer at each position</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Buy Inner</label>
-                                        <input type="number" id="configBuyInnerSizeXch" value="1.0" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Buy Mid</label>
-                                        <input type="number" id="configBuyMidSizeXch" value="0.5" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Buy Outer</label>
-                                        <input type="number" id="configBuyOuterSizeXch" value="0.25" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Buy Extreme</label>
-                                        <input type="number" id="configBuyExtremeSizeXch" value="0.1" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
+                                <div class="mode-hide-on-sell-only">
+                                    <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">Buy ladder sizes (XCH per offer) — XCH committed per buy offer at each position</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Buy Inner</label>
+                                            <input type="number" id="configBuyInnerSizeXch" value="1.0" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Buy Mid</label>
+                                            <input type="number" id="configBuyMidSizeXch" value="0.5" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Buy Outer</label>
+                                            <input type="number" id="configBuyOuterSizeXch" value="0.25" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Buy Extreme</label>
+                                            <input type="number" id="configBuyExtremeSizeXch" value="0.1" step="0.01" min="0.001" oninput="handleBuyTierSizeInputChange()">
+                                        </div>
                                     </div>
                                 </div>
-                                <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">Sell ladder sizes (XCH-equiv per offer) — CAT committed per sell offer at each position</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Sell Inner</label>
-                                        <input type="number" id="configInnerSizeXch" value="1.0" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Sell Mid</label>
-                                        <input type="number" id="configMidSizeXch" value="0.5" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Sell Outer</label>
-                                        <input type="number" id="configOuterSizeXch" value="0.25" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0;">
-                                        <label style="font-size: 0.85em;">Sell Extreme</label>
-                                        <input type="number" id="configExtremeSizeXch" value="0.1" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
+                                <div class="mode-hide-on-buy-only">
+                                    <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">Sell ladder sizes (XCH-equiv per offer) — CAT committed per sell offer at each position</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Sell Inner</label>
+                                            <input type="number" id="configInnerSizeXch" value="1.0" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Sell Mid</label>
+                                            <input type="number" id="configMidSizeXch" value="0.5" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Sell Outer</label>
+                                            <input type="number" id="configOuterSizeXch" value="0.25" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-size: 0.85em;">Sell Extreme</label>
+                                            <input type="number" id="configExtremeSizeXch" value="0.1" step="0.01" min="0.001" oninput="handleTierSizeInputChange()">
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -9552,6 +9655,7 @@
                                 <div class="v4-settings-hint" id="tierCountTemplateHint" style="margin-bottom: 8px; color: var(--slate-400);">Automatic distribution is active until you set custom tier counts.</div>
                                 <!-- XCH (buy-side) tier count row — maps to BUY_*_TIER_COUNT env keys.
                                      Columns are by POSITION on the ladder (inner = closest to mid). -->
+                                <div class="mode-hide-on-sell-only">
                                 <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">XCH counts (buy side)</div>
                                 <div id="tierCountGridXch" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                                     <div class="form-group" style="margin-bottom: 0;">
@@ -9571,8 +9675,10 @@
                                         <input type="number" id="configExtremeTierCountXch" value="0" step="1" min="0" oninput="handleXchTierCountInputChange('extreme')">
                                     </div>
                                 </div>
+                                </div><!-- /mode-hide-on-sell-only XCH count row -->
                                 <!-- CAT (sell-side) tier count row — maps to SELL_*_TIER_COUNT env keys.
                                      Columns are by POSITION = SIZE (sell ladder is never reversed). -->
+                                <div class="mode-hide-on-buy-only">
                                 <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">CAT counts (sell side)</div>
                                 <div id="tierCountGrid" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
                                     <div class="form-group" style="margin-bottom: 0;">
@@ -9592,6 +9698,7 @@
                                         <input type="number" id="configExtremeTierCount" value="0" step="1" min="0" oninput="handleTierCountInputChange()">
                                     </div>
                                 </div>
+                                </div><!-- /mode-hide-on-buy-only CAT count row -->
                             </div>
                             <div id="tierSpareSection" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px;">
@@ -9605,6 +9712,7 @@
                                      (low fill rate → low count) and extreme SIZE serves the inner POSITION
                                      (high fill rate → high count). The Recommended button computes the
                                      reverse-aware values automatically. -->
+                                <div class="mode-hide-on-sell-only">
                                 <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">XCH spares (buy side)</div>
                                 <div id="tierSpareGridXch" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                                     <div class="form-group" style="margin-bottom: 0;">
@@ -9624,9 +9732,11 @@
                                         <input type="number" id="configExtremeTierSpareCountXch" value="0" step="1" min="0" oninput="handleXchTierSpareInputChange('extreme')">
                                     </div>
                                 </div>
+                                </div><!-- /mode-hide-on-sell-only XCH spare row -->
                                 <!-- CAT (sell-side) spare row — independent storage from XCH row.
                                      Maps to SELL_*_TIER_SPARE_COUNT env keys. Columns are by SIZE
                                      (which equals POSITION on the sell side — no reversal). -->
+                                <div class="mode-hide-on-buy-only">
                                 <div style="font-size: 0.78em; font-weight: 600; color: var(--slate-400); margin-bottom: 4px;">CAT spares (sell side)</div>
                                 <div id="tierSpareGrid" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px;">
                                     <div class="form-group" style="margin-bottom: 0;">
@@ -9646,6 +9756,7 @@
                                         <input type="number" id="configExtremeTierSpareCount" value="0" step="1" min="0" oninput="handleTierSpareInputChange()">
                                     </div>
                                 </div>
+                                </div><!-- /mode-hide-on-buy-only CAT spare row -->
                             </div>
                         </div>
 
@@ -9655,8 +9766,8 @@
                                 <span style="color: var(--text-tertiary); font-weight: normal; font-size: 0.82em; margin-left: 4px;">by coin size</span>
                                 <span id="coinPrepCatName" style="color: var(--text-tertiary); font-weight: normal; font-size: 0.9em;"></span>
                             </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
-                                <div>
+                            <div id="coinPrepPreviewColumns" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+                                <div class="mode-hide-on-sell-only">
                                     <div style="font-weight: bold; margin-bottom: 4px; font-size: 0.9em; color: var(--status-success);">Buy (XCH):</div>
                                     <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: baseline;">
                                         <div style="font-size: 0.82em; opacity: 0.7;">Coins:</div><div style="font-weight: bold;" id="prepXchCoins">-</div>
@@ -9664,7 +9775,7 @@
                                         <div style="font-size: 0.82em; opacity: 0.7;">Total:</div><div style="font-weight: bold; color: var(--warning-300);" id="prepXchTotal">-</div>
                                     </div>
                                 </div>
-                                <div>
+                                <div class="mode-hide-on-buy-only">
                                     <div style="font-weight: bold; margin-bottom: 4px; font-size: 0.9em; color: var(--sell-color);">Sell (Tokens):</div>
                                     <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: baseline;">
                                         <div style="font-size: 0.82em; opacity: 0.7;">Coins:</div><div style="font-weight: bold;" id="prepCatCoins">-</div>
@@ -9716,8 +9827,14 @@
                             </div>
                         </div>
 
-                        <!-- Inventory Management -->
-                        <div style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                        <!-- Inventory Management — hidden in single-sided modes.
+                             Inventory skew adjusts quotes based on how far net
+                             position has drifted from the balanced target, but
+                             in buy-only / sell-only the position deliberately
+                             drifts in one direction so the skew concept doesn't
+                             apply. Max position is still tracked implicitly via
+                             wallet balance + reserves in single-sided. -->
+                        <div class="mode-hide-on-buy-only mode-hide-on-sell-only" style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
                             <div class="form-group" style="margin-bottom: 8px;">
                                 <label style="display: flex; align-items: center; gap: 10px;">
                                     <input type="checkbox" id="configInventoryEnabled" style="width: auto; margin: 0;">
@@ -9798,21 +9915,31 @@
                     <div class="v4-settings-section v4-settings-purple">
                         <div class="v4-settings-section-title" style="color: var(--accent-secondary);">Bot Operations <span class="cc-help">?<span class="cc-tooltip">Core bot features that control how the bot operates. Some of these are critical for normal operation — disabling them may reduce performance or break trading flows.</span></span></div>
 
-                        <div class="form-group" style="margin-bottom: 8px;">
-                            <label style="display: flex; align-items: center; gap: 10px;">
-                                <input type="checkbox" id="configSniperEnabled" style="width: auto; margin: 0;">
-                                <span>Sniper <span class="cc-help">?<span class="cc-tooltip">Sniper is an edge-discovery tool, not a second ladder. It places tiny top-of-book probes to find safe prices, then lets the main ladder sit behind them. It only re-arms after a meaningful market move.</span></span></span>
-                            </label>
+                        <!-- Sniper is an arb discovery tool that places buys AND
+                             sells simultaneously — it needs both sides of the
+                             book to work. In single-sided modes we hide the
+                             controls and surface a small "unavailable" hint in
+                             place of the sniper config. -->
+                        <div class="mode-hide-on-buy-only mode-hide-on-sell-only">
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" id="configSniperEnabled" style="width: auto; margin: 0;">
+                                    <span>Sniper <span class="cc-help">?<span class="cc-tooltip">Sniper is an edge-discovery tool, not a second ladder. It places tiny top-of-book probes to find safe prices, then lets the main ladder sit behind them. It only re-arms after a meaningful market move.</span></span></span>
+                                </label>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Sniper Size (XCH) <span class="cc-help">?<span class="cc-tooltip">Size of each tiny discovery probe. Keep this small so a taken probe reveals the edge cheaply.</span></span></label>
+                                    <input type="number" id="configSniperSizeXch" value="0.001" step="0.0001" min="0.00000001" oninput="updateCoinPrepPreview()">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Sniper Prep Count <span class="cc-help">?<span class="cc-tooltip">How many dedicated sniper coins to prepare. These are reserved for probe offers so the main ladder does not borrow them.</span></span></label>
+                                    <input type="number" id="configSniperPrepCount" value="20" step="1" min="0" oninput="updateCoinPrepPreview()">
+                                </div>
+                            </div>
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.85em;">Sniper Size (XCH) <span class="cc-help">?<span class="cc-tooltip">Size of each tiny discovery probe. Keep this small so a taken probe reveals the edge cheaply.</span></span></label>
-                                <input type="number" id="configSniperSizeXch" value="0.001" step="0.0001" min="0.00000001" oninput="updateCoinPrepPreview()">
-                            </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 0.85em;">Sniper Prep Count <span class="cc-help">?<span class="cc-tooltip">How many dedicated sniper coins to prepare. These are reserved for probe offers so the main ladder does not borrow them.</span></span></label>
-                                <input type="number" id="configSniperPrepCount" value="20" step="1" min="0" oninput="updateCoinPrepPreview()">
-                            </div>
+                        <div class="mode-hide-on-two-sided" style="display: none; margin-bottom: 10px; padding: 8px 12px; background: rgba(100,116,139,0.08); border: 1px solid rgba(100,116,139,0.2); border-radius: 6px; font-size: 0.82em; color: var(--text-tertiary); line-height: 1.5;">
+                            🎯 <strong>Sniper unavailable</strong> in single-sided mode — the arb-discovery probe places buy AND sell orders simultaneously, which requires both sides of the book. It will re-enable automatically if you switch back to Two-Sided.
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                             <div class="form-group" style="margin-bottom: 0;">
@@ -11637,6 +11764,18 @@
                             const si = g('SKEW_INTENSITY'); if (si !== null) document.getElementById('configSkewIntensity').value = si;
                             const mp = g('MAX_POSITION_XCH'); if (mp !== null) document.getElementById('configMaxPositionXch').value = mp;
                         }
+
+                        // Liquidity mode — load before tier-related sections so
+                        // the mode-hide CSS classes are set before any conditional
+                        // sections render, avoiding a single-frame flash of the
+                        // wrong layout.
+                        try {
+                            const _lm = g('LIQUIDITY_MODE');
+                            const _lmNorm = (typeof _lm === 'string' ? _lm : '').trim().toLowerCase();
+                            const _lmResolved = (_lmNorm === 'buy_only' || _lmNorm === 'sell_only')
+                                ? _lmNorm : 'two_sided';
+                            setLiquidityMode(_lmResolved, { silent: true });
+                        } catch (_) { setLiquidityMode('two_sided', { silent: true }); }
 
                         const te = g('TIER_ENABLED');
                         const tierEnabledOn = te === true || te === 'true' || te === '1' || te === 'True';
@@ -13797,6 +13936,15 @@
                 if (banner) banner.style.display = 'none';
                 if (liveSection) liveSection.style.display = 'block';
             }
+
+            // Liquidity-mode cards: changing mode is a capital-allocation
+            // change, so we refuse clicks while the bot is running and
+            // also show a small inline hint under the picker.
+            try {
+                if (typeof refreshLiquidityModeLockState === 'function') {
+                    refreshLiquidityModeLockState(isRunning);
+                }
+            } catch (_) {}
         }
 
         // =================================================================
@@ -16166,7 +16314,13 @@
                 const params = new URLSearchParams({
                     xch_reserve: xchReserve,
                     cat_reserve: catReserve,
-                    risk_profile: getSelectedRiskProfile()
+                    risk_profile: getSelectedRiskProfile(),
+                    // Scope the plan to the selected Liquidity Mode so the
+                    // backend zeroes the disabled side's fields before we
+                    // load them into the form. Defaults to two_sided if the
+                    // picker helper isn't loaded yet.
+                    liquidity_mode: (typeof getLiquidityMode === 'function')
+                        ? getLiquidityMode() : 'two_sided',
                 });
                 if (sdStatus) sdStatus.textContent = 'Analysing market data + calculating capital allocation...';
                 const resp = await apiFetch(`${API_URL}/smart-defaults?${params}`);
@@ -16319,6 +16473,13 @@
                 // true state: checked ⇔ Reverse Buy Ladder IS on. (Previously
                 // inverted, which hid the tick even when reverse was active.)
                 if (data.buy_ladder_reversed !== undefined) document.getElementById('configBuyLadderReversed').checked = !!data.buy_ladder_reversed;
+                // Liquidity mode — adopt whatever mode Smart Settings was
+                // called with so repeat-runs or a backend override stay in
+                // sync with the form. Uses setLiquidityMode so the body
+                // classes and card highlight update immediately.
+                if (typeof data.liquidity_mode === 'string' && typeof setLiquidityMode === 'function') {
+                    setLiquidityMode(data.liquidity_mode, { silent: true });
+                }
                 // Snapshot taken AFTER the buy-size auto-swap below (see end of
                 // this block) so it reflects the final displayed toggle state.
 
@@ -18207,6 +18368,121 @@
         // Expose for oninput handlers that want the debounced path.
         window.scheduleSettingsUpdate = scheduleSettingsUpdate;
 
+        // ── Liquidity Mode picker ─────────────────────────────────────
+        // Three-way selector (two_sided / buy_only / sell_only). Drives:
+        //   * which form sections are visible (mode-hide-on-buy-only etc.)
+        //   * which side Smart Settings plans for
+        //   * which coin pool coin prep builds
+        // Change is stop-required — the cards are marked .disabled while
+        // the bot is running so a click can't accidentally swap the mode
+        // out from under live offers.
+        function getLiquidityMode() {
+            const checked = document.querySelector('input[name="liquidityMode"]:checked');
+            return checked ? checked.value : 'two_sided';
+        }
+
+        function applyLiquidityModeToBody(mode) {
+            const body = document.body;
+            body.classList.remove('liquidity-mode-two-sided', 'liquidity-mode-buy-only', 'liquidity-mode-sell-only');
+            const map = {
+                two_sided: 'liquidity-mode-two-sided',
+                buy_only:  'liquidity-mode-buy-only',
+                sell_only: 'liquidity-mode-sell-only',
+            };
+            body.classList.add(map[mode] || map.two_sided);
+        }
+
+        function applyLiquidityModeSelectionUI(mode) {
+            const cards = document.querySelectorAll('#liquidityModeGrid .liquidity-mode-card');
+            cards.forEach((card) => {
+                const isSelected = card.getAttribute('data-mode') === mode;
+                card.classList.toggle('selected', isSelected);
+                const radio = card.querySelector('input[type="radio"]');
+                if (radio) radio.checked = isSelected;
+            });
+        }
+
+        function setLiquidityMode(mode, { silent = false } = {}) {
+            const valid = ['two_sided', 'buy_only', 'sell_only'];
+            const resolved = valid.includes(mode) ? mode : 'two_sided';
+            applyLiquidityModeSelectionUI(resolved);
+            applyLiquidityModeToBody(resolved);
+            // Smart Settings expects to know the mode on its next run.
+            window._liquidityMode = resolved;
+            if (!silent) {
+                try { scheduleSettingsUpdate(); } catch (_) {}
+            }
+            return resolved;
+        }
+
+        function handleLiquidityModeChange(mode) {
+            // Reject clicks while locked (belt-and-braces — the cards are
+            // also marked .disabled with pointer-events:none).
+            if (document.body.classList.contains('settings-locked')) {
+                try { showToast('Stop the bot to change liquidity mode.', 'warning', 4000); } catch (_) {}
+                // Revert radio selection to whatever the body class says.
+                const current = (document.body.className.match(/liquidity-mode-([a-z-]+)/) || [])[1];
+                const revert = current === 'buy-only' ? 'buy_only'
+                             : current === 'sell-only' ? 'sell_only'
+                             : 'two_sided';
+                applyLiquidityModeSelectionUI(revert);
+                return;
+            }
+            setLiquidityMode(mode);
+        }
+
+        function refreshLiquidityModeLockState(locked) {
+            const cards = document.querySelectorAll('#liquidityModeGrid .liquidity-mode-card');
+            cards.forEach((card) => card.classList.toggle('disabled', !!locked));
+            const hint = document.getElementById('liquidityModeLockedHint');
+            if (hint) hint.style.display = locked ? 'block' : 'none';
+        }
+
+        // Dashboard-level banner update from the /api/status liquidity block.
+        // Hidden in two-sided mode; badge + parked banner shown otherwise.
+        function updateLiquidityModeBanner(liquidity) {
+            const strip = document.getElementById('liquidityModeStrip');
+            if (!strip) return;
+            if (!liquidity || !liquidity.mode || liquidity.mode === 'two_sided') {
+                strip.style.display = 'none';
+                return;
+            }
+            strip.style.display = 'block';
+            const icon = document.getElementById('liquidityModeBadgeIcon');
+            const text = document.getElementById('liquidityModeBadgeText');
+            const badge = document.getElementById('liquidityModeBadge');
+            if (liquidity.mode === 'buy_only') {
+                if (icon) icon.textContent = '📈';
+                if (text) text.textContent = 'Buy Only (Accumulate)';
+                if (badge) {
+                    badge.style.background = 'rgba(16,185,129,0.12)';
+                    badge.style.borderColor = 'rgba(16,185,129,0.35)';
+                    badge.style.color = 'var(--status-success)';
+                }
+            } else if (liquidity.mode === 'sell_only') {
+                if (icon) icon.textContent = '📉';
+                if (text) text.textContent = 'Sell Only (Distribute)';
+                if (badge) {
+                    badge.style.background = 'rgba(239,68,68,0.10)';
+                    badge.style.borderColor = 'rgba(239,68,68,0.35)';
+                    badge.style.color = 'var(--status-danger)';
+                }
+            }
+            const parkedBanner = document.getElementById('liquidityModeParkedBanner');
+            const parkedText = document.getElementById('liquidityModeParkedText');
+            const parkedTitle = document.getElementById('liquidityModeParkedTitle');
+            if (liquidity.parked) {
+                if (parkedBanner) parkedBanner.style.display = 'flex';
+                if (parkedTitle) parkedTitle.textContent =
+                    (liquidity.mode === 'buy_only' ? 'Accumulation parked — add XCH to resume'
+                                                    : 'Distribution parked — add tokens to resume');
+                if (parkedText) parkedText.textContent = liquidity.parked_message
+                    || 'The active side no longer has enough fuel to place another offer.';
+            } else {
+                if (parkedBanner) parkedBanner.style.display = 'none';
+            }
+        }
+
         function updateCoinPrepPreview() {
             const settingsCAT = getSettingsSelectedCAT();
             syncSettingsPairLabels(settingsCAT);
@@ -19839,6 +20115,12 @@
                 cat_ticker: data.cat_ticker || (typeof CAT_TICKER !== 'undefined' ? CAT_TICKER : ''),
                 error: data.error
             });
+
+            // Liquidity mode indicator: syncs the settings-picker body class
+            // with whatever the server says the mode is, and banner-notifies
+            // the dashboard when a single-sided mode has parked due to fuel
+            // exhaustion.
+            try { updateLiquidityModeBanner(data && data.liquidity); } catch (_) {}
 
             // Status badge — handle running, stopped, blocked, and starting states
             const isRunning = data.running;
@@ -27281,6 +27563,12 @@
 
                 // V2: Tiered Orders
                 tier_enabled: document.getElementById('configTierEnabled').checked,
+                // Liquidity mode (two_sided / buy_only / sell_only) — source
+                // of truth for single vs two-sided. Written back to
+                // LIQUIDITY_MODE on the server; ENABLE_BUY / ENABLE_SELL
+                // are derived from it in config.py reload.
+                liquidity_mode: (typeof getLiquidityMode === 'function')
+                    ? getLiquidityMode() : 'two_sided',
                 // Checkbox checked ⇔ reverse-buy ON. Direct mapping (no invert)
                 // so the saved flag matches the visual tick state.
                 buy_ladder_reversed: document.getElementById('configBuyLadderReversed').checked,

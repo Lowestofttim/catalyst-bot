@@ -1132,7 +1132,18 @@ class CoinManager:
             pass  # non-fatal — keep existing pool
 
     def _sniper_pool_enabled(self) -> bool:
-        """Whether the dedicated sniper pool should be prepared and maintained."""
+        """Whether the dedicated sniper pool should be prepared and maintained.
+
+        The sniper is an arb-discovery tool that fires a simultaneous buy +
+        sell probe, so it only works in two-sided mode. Under any single-
+        sided ``LIQUIDITY_MODE`` the sniper pool is forced off even if the
+        ``SNIPER_ENABLED`` flag is still set — stops stale config from
+        preparing coins the bot will never use.
+        """
+        # Single-sided mode → arb snipe cannot operate; skip pool entirely.
+        _mode = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
+        if _mode in ("buy_only", "sell_only"):
+            return False
         try:
             sniper_size = Decimal(str(getattr(cfg, "SNIPER_SIZE_XCH", "0") or "0"))
         except Exception:
@@ -6320,6 +6331,18 @@ class CoinManager:
             max_buy = getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25)
             max_sell = getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25)
 
+            # Liquidity mode scopes the pool — in buy_only we zero the CAT
+            # side so no sell coins get prepared (and vice versa). The fee
+            # pool is kept in both single-sided modes because buying AND
+            # selling both require fee coins.
+            _liquidity_mode = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
+            _is_buy_only = (_liquidity_mode == "buy_only")
+            _is_sell_only = (_liquidity_mode == "sell_only")
+            if _is_buy_only:
+                max_sell = 0
+            if _is_sell_only:
+                max_buy = 0
+
             # Coin prep multiplier: prep up to N× coins for spare capacity
             multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
             prep_headroom_pct = getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))
@@ -6338,7 +6361,18 @@ class CoinManager:
                 cat_tier_counts = get_weighted_tier_prep_counts(
                     max_per_side, multiplier,
                     tier_sizes_xch=sell_tier_sizes, side="cat")
-                if self._sniper_pool_enabled():
+                # Liquidity mode overrides — zero the disabled side's tier
+                # counts so coin prep doesn't build a pool that won't be used.
+                if _is_buy_only:
+                    cat_tier_counts = {k: 0 for k in cat_tier_counts}
+                if _is_sell_only:
+                    # Keep size-bucket keys so downstream loops still iterate,
+                    # but zero the trading counts. Fee pool is added below
+                    # regardless and survives this clear.
+                    xch_tier_counts = {k: 0 for k in xch_tier_counts}
+                # Sniper arb requires both sides; skip the sniper pool entirely
+                # when the mode pins us to a single side.
+                if self._sniper_pool_enabled() and not (_is_buy_only or _is_sell_only):
                     sniper_count = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
                     xch_tier_counts["sniper"] = sniper_count
                     cat_tier_counts["sniper"] = sniper_count

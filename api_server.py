@@ -2947,11 +2947,115 @@ def api_status():
                 "decimals": _active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3),
                 "ticker_id": _active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", None),
             },
+            # Liquidity mode block — used by the GUI to show the mode badge
+            # and, in single-sided modes, a "fuel parked" banner when the
+            # active side can no longer fund a single offer at the smallest
+            # tier size. Two-sided mode reports parked=False.
+            "liquidity": _build_liquidity_status_block(raw),
         }
 
         return jsonify(_serialize_dict(result))
     except Exception as e:
         return _api_error(e, request.path)
+
+
+def _build_liquidity_status_block(raw_status: dict) -> dict:
+    """Build the ``liquidity`` payload for /api/status.
+
+    Returns::
+
+        {
+          "mode": "two_sided" | "buy_only" | "sell_only",
+          "active_side": "both" | "buy" | "sell",
+          "parked": bool,
+          "parked_reason": str | None,      # short code for the banner
+          "parked_message": str | None,     # user-visible detail
+        }
+
+    Parked = the active side can't fund another offer. In buy_only that's
+    "XCH balance below the smallest buy tier size"; in sell_only that's
+    "CAT balance below the smallest sell tier size". Two-sided never
+    parks (the bot's existing inventory logic handles exhaustion
+    differently).
+    """
+    block = {
+        "mode": (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower(),
+        "active_side": "both",
+        "parked": False,
+        "parked_reason": None,
+        "parked_message": None,
+    }
+    if block["mode"] not in ("two_sided", "buy_only", "sell_only"):
+        block["mode"] = "two_sided"
+    try:
+        block["active_side"] = cfg.active_side()
+    except Exception:
+        pass
+    if block["mode"] == "two_sided":
+        return block
+
+    # Compute parked-state for the single-sided modes. We use "smallest
+    # prep tier size" as the floor — if the wallet can't cover even one
+    # offer at the smallest tier (with a 10% headroom margin) there's
+    # nothing useful to do and the bot is effectively parked.
+    try:
+        _bal = raw_status.get("balances") or {}
+        if block["mode"] == "buy_only":
+            xch_avail = float(_bal.get("xch", {}).get("spendable") or 0)
+            # Smallest buy-side offer size — prefer per-side fields,
+            # fall back to shared legacy. Under reverse-buy the smallest
+            # position size is still the inner POSITION (not bucket).
+            try:
+                from config import get_buy_tier_size_xch
+                _sizes = [float(get_buy_tier_size_xch(t) or 0) for t in ("inner", "mid", "outer", "extreme")]
+                _sizes = [s for s in _sizes if s > 0]
+                floor = min(_sizes) if _sizes else float(getattr(cfg, "DEFAULT_TRADE_XCH", 0.01) or 0.01)
+            except Exception:
+                floor = float(getattr(cfg, "DEFAULT_TRADE_XCH", 0.01) or 0.01)
+            reserve = float(getattr(cfg, "XCH_RESERVE", 0) or 0)
+            usable = max(0.0, xch_avail - reserve)
+            if floor > 0 and usable < floor * 1.02:
+                block["parked"] = True
+                block["parked_reason"] = "xch_exhausted"
+                block["parked_message"] = (
+                    f"Accumulation parked: {usable:.4f} XCH available "
+                    f"(below smallest buy tier {floor:.4f} XCH). "
+                    f"Add XCH to resume, or switch to Two-Sided to recycle "
+                    f"the CAT you've accumulated."
+                )
+        elif block["mode"] == "sell_only":
+            cat_avail = float(_bal.get("cat", {}).get("spendable") or 0)
+            try:
+                from config import get_sell_tier_size_xch
+                mid = None
+                try:
+                    pricing = raw_status.get("pricing") or {}
+                    if pricing.get("mid"):
+                        mid = float(pricing.get("mid") or 0)
+                except Exception:
+                    mid = None
+                _xch_sizes = [float(get_sell_tier_size_xch(t) or 0) for t in ("inner", "mid", "outer", "extreme")]
+                _xch_sizes = [s for s in _xch_sizes if s > 0]
+                xch_floor = min(_xch_sizes) if _xch_sizes else 0.0
+                cat_floor = (xch_floor / mid) if (mid and mid > 0 and xch_floor > 0) else 0.0
+            except Exception:
+                cat_floor = 0.0
+            reserve = float(getattr(cfg, "CAT_RESERVE", 0) or 0)
+            usable = max(0.0, cat_avail - reserve)
+            if cat_floor > 0 and usable < cat_floor * 1.02:
+                block["parked"] = True
+                block["parked_reason"] = "cat_exhausted"
+                cat_name = getattr(cfg, "CAT_NAME", None) or "tokens"
+                block["parked_message"] = (
+                    f"Distribution parked: {usable:,.0f} {cat_name} available "
+                    f"(below smallest sell tier {cat_floor:,.0f}). "
+                    f"Top up {cat_name} to resume, or switch to Two-Sided "
+                    f"to buy more back."
+                )
+    except Exception:
+        # Never let a parked-state computation break /api/status
+        pass
+    return block
 
 
 def _safe_float(val) -> float:
@@ -3344,6 +3448,10 @@ def api_config_update():
             "inventory_enabled": "INVENTORY_ENABLED",
             "skew_intensity": "SKEW_INTENSITY",
             "max_position_xch": "MAX_POSITION_XCH",
+            # Liquidity mode — single vs two-sided. Source of truth; the
+            # ENABLE_BUY / ENABLE_SELL env keys are derived from this in
+            # config.reload(), so we don't need to map them separately.
+            "liquidity_mode": "LIQUIDITY_MODE",
             # V2: Tiered Orders
             "tier_enabled": "TIER_ENABLED",
             "buy_ladder_reversed": "BUY_LADDER_REVERSED",
@@ -6802,12 +6910,25 @@ def api_smart_defaults():
     Gathers wallet balances, prices from both exchanges, pool depth,
     competitor orderbook, and volatility history — then calculates
     every setting from real data. Works even when bot is stopped.
+
+    ``liquidity_mode`` (query arg, default "two_sided") scopes the plan
+    to one side of the book. In single-sided modes the disabled side's
+    size / count / spare fields are returned as None / 0 so the save
+    layer writes a clean config without stale SELL_* or BUY_* residue.
     """
     try:
         xch_res = request.args.get("xch_reserve", 0)
         cat_res = request.args.get("cat_reserve", 0)
         risk_profile = request.args.get("risk_profile", "balanced")
-        return _calculate_smart_defaults(xch_reserve=xch_res, cat_reserve=cat_res, risk_profile=risk_profile)
+        liquidity_mode = (request.args.get("liquidity_mode", "two_sided") or "two_sided").strip().lower()
+        if liquidity_mode not in ("two_sided", "buy_only", "sell_only"):
+            liquidity_mode = "two_sided"
+        return _calculate_smart_defaults(
+            xch_reserve=xch_res,
+            cat_reserve=cat_res,
+            risk_profile=risk_profile,
+            liquidity_mode=liquidity_mode,
+        )
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
@@ -6816,7 +6937,7 @@ def api_smart_defaults():
         return jsonify({"error": "Smart Settings calculation failed", "code": "SERVER_ERROR"}), 500
 
 
-def _calculate_smart_defaults(xch_reserve=0.0, cat_reserve=0.0, risk_profile="balanced"):
+def _calculate_smart_defaults(xch_reserve=0.0, cat_reserve=0.0, risk_profile="balanced", liquidity_mode="two_sided"):
     """Smart Defaults v2 — data-driven settings from 30 days of market data.
 
     Replaces v1's snapshot-only approach with deep analysis:
@@ -9424,6 +9545,66 @@ def _calculate_smart_defaults(xch_reserve=0.0, cat_reserve=0.0, risk_profile="ba
                "quality_score": quality_score,
                "regime": regime, "fills_per_day": fills_per_day,
                "mid_price": mid_price, "arb_gap_bps": round(arb_gap_bps, 1)})
+
+    # ── LIQUIDITY MODE POST-PROCESS ──────────────────────────────────────
+    # The capital-plan solver always computes a two-sided plan. When the
+    # caller pinned a single side via `liquidity_mode`, scrub the
+    # disabled side's fields so the save layer writes a clean config
+    # without stale SELL_* or BUY_* residue.
+    #
+    # Buy-only: zero MAX_ACTIVE_SELL, null out sell_*_size_xch and all
+    # sell-side tier counts / spares. Keep buy_* intact. Sniper off
+    # (arb needs both sides). Reverse-buy respected.
+    #
+    # Sell-only: mirror — zero buy side, keep sell. Sniper off.
+    # Reverse-buy flag becomes a no-op (no buy ladder to reverse).
+    result["liquidity_mode"] = liquidity_mode
+    if liquidity_mode == "buy_only":
+        _zero_fields = [
+            "max_active_sell",
+            "sell_inner_size_xch", "sell_mid_size_xch",
+            "sell_outer_size_xch", "sell_extreme_size_xch",
+            "sell_inner_tier_count", "sell_mid_tier_count",
+            "sell_outer_tier_count", "sell_extreme_tier_count",
+            "sell_inner_tier_spare_count", "sell_mid_tier_spare_count",
+            "sell_outer_tier_spare_count", "sell_extreme_tier_spare_count",
+            # Topup and reserve CAT are the token side — in buy-only
+            # we DO still keep CAT reserve (it protects any existing
+            # CAT balance from being treated as spendable) but the
+            # bot-side topup CAT pool is meaningless.
+            "topup_pool_cat",
+        ]
+        for k in _zero_fields:
+            result[k] = 0 if k in ("max_active_sell", "topup_pool_cat") else None
+        # Sniper arb needs both sides
+        result["sniper_enabled"] = False
+        result["sniper_prep_count"] = 0
+        result["messages"] = (result.get("messages") or []) + [
+            "Buy-only mode: sell ladder disabled, sniper off."
+        ]
+        print("[SMART_DEFAULTS] liquidity_mode=buy_only — zeroed sell-side fields")
+    elif liquidity_mode == "sell_only":
+        _zero_fields = [
+            "max_active_buy",
+            "buy_inner_size_xch", "buy_mid_size_xch",
+            "buy_outer_size_xch", "buy_extreme_size_xch",
+            "buy_inner_tier_count", "buy_mid_tier_count",
+            "buy_outer_tier_count", "buy_extreme_tier_count",
+            "buy_inner_tier_spare_count", "buy_mid_tier_spare_count",
+            "buy_outer_tier_spare_count", "buy_extreme_tier_spare_count",
+            "topup_pool_xch",
+        ]
+        for k in _zero_fields:
+            result[k] = 0 if k in ("max_active_buy", "topup_pool_xch") else None
+        # Reverse-buy is a buy-ladder concept — force off in sell-only.
+        result["buy_ladder_reversed"] = False
+        # Sniper arb needs both sides
+        result["sniper_enabled"] = False
+        result["sniper_prep_count"] = 0
+        result["messages"] = (result.get("messages") or []) + [
+            "Sell-only mode: buy ladder disabled, sniper off."
+        ]
+        print("[SMART_DEFAULTS] liquidity_mode=sell_only — zeroed buy-side fields")
 
     return jsonify(result)
 
