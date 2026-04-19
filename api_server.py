@@ -1292,12 +1292,26 @@ def _reset_fresh_run_session(clear_coins: bool = False,
                              clear_price_history: bool = False,
                              clear_inventory: bool = False,
                              cancel_open_offers: bool = False,
+                             preserve_history: bool = False,
                              reason: str = "fresh_start") -> Dict:
-    """Reset session-facing bot state for a brand new run.
+    """Reset session-facing bot state.
 
-    This intentionally clears fill/PnL state immediately when the operator
-    chooses Start Fresh, so the Offers history and PnL panels do not carry the
-    previous run forward while the user prepares a new setup.
+    Two modes controlled by ``preserve_history``:
+
+    * ``preserve_history=False`` (default / legacy / "Start Fresh"):
+        Clears fills, round-trips, position baseline, and runtime stats
+        in addition to anything the caller opted into via the other flags.
+        Equivalent to "wipe everything and start over" — used when the
+        operator explicitly picks Start Fresh or when switching CATs.
+
+    * ``preserve_history=True`` (coin-prep re-run):
+        Keeps the fills / round-trips tables and the position baseline.
+        Coin prep can still opt into ``clear_coins`` and
+        ``cancel_open_offers`` because those records refer to coin IDs
+        that are about to be destroyed by the re-split — but the user's
+        trading history survives the re-prep. This is the 2026-04-19
+        default for the Prepare Coins flow; users who actually want a
+        full wipe can pick the explicit Start Fresh button.
     """
     global _run_history_cutoff, _session_start_time
 
@@ -1305,6 +1319,7 @@ def _reset_fresh_run_session(clear_coins: bool = False,
     reset_at = _sqlite_ts(datetime.now(timezone.utc))
     summary = {
         "reset_at": reset_at,
+        "preserve_history": bool(preserve_history),
         "fills_cleared": 0,
         "round_trips_cleared": 0,
         "coins_cleared": 0,
@@ -1315,26 +1330,29 @@ def _reset_fresh_run_session(clear_coins: bool = False,
 
     conn = get_connection()
     try:
-        summary["fills_cleared"] = int(
-            (conn.execute("SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"]) or 0
-        )
-
         has_round_trips = bool(conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
         ).fetchone())
-        if has_round_trips:
-            summary["round_trips_cleared"] = int(
-                (conn.execute("SELECT COUNT(*) as cnt FROM round_trips").fetchone()["cnt"]) or 0
+
+        if not preserve_history:
+            # Only count rows we're actually going to delete.
+            summary["fills_cleared"] = int(
+                (conn.execute("SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"]) or 0
             )
+            if has_round_trips:
+                summary["round_trips_cleared"] = int(
+                    (conn.execute("SELECT COUNT(*) as cnt FROM round_trips").fetchone()["cnt"]) or 0
+                )
 
         if clear_coins:
             summary["coins_cleared"] = int(
                 (conn.execute("SELECT COUNT(*) as cnt FROM coins").fetchone()["cnt"]) or 0
             )
 
-        conn.execute("DELETE FROM fills")
-        if has_round_trips:
-            conn.execute("DELETE FROM round_trips")
+        if not preserve_history:
+            conn.execute("DELETE FROM fills")
+            if has_round_trips:
+                conn.execute("DELETE FROM round_trips")
         if clear_coins:
             conn.execute("DELETE FROM coins")
         if cancel_open_offers:
@@ -1360,32 +1378,57 @@ def _reset_fresh_run_session(clear_coins: bool = False,
             pass
         raise
 
-    _run_history_cutoff = reset_at
-    cfg.RUN_HISTORY_CUTOFF = reset_at
-    # Also advance the session-start cutoff so /api/logs and the dashboard
-    # logs section only show events from THIS fresh run, not the original
-    # server startup.
-    _session_start_time = reset_at
+    if not preserve_history:
+        # Advance the run-history cutoff so dashboard queries (/api/logs,
+        # offer history, etc.) stop surfacing pre-reset entries. Under
+        # preserve-history mode we keep the existing cutoff so the user's
+        # own history stays visible after a coin-prep re-run.
+        _run_history_cutoff = reset_at
+        cfg.RUN_HISTORY_CUTOFF = reset_at
+        _session_start_time = reset_at
 
-    if bot and getattr(bot, "risk_manager", None):
+    if not preserve_history and bot and getattr(bot, "risk_manager", None):
+        # Only zero the position baseline on a full reset. A coin-prep
+        # re-run doesn't change the on-chain position, so the accumulated
+        # net_position_cat must remain intact (otherwise the next cycle
+        # believes it's starting from zero and will happily rebuild
+        # exposure past MAX_POSITION_XCH).
         try:
             bot.risk_manager.reset_position()
         except Exception:
             pass
 
-    stats_reset = _reset_runtime_session_stats()
-    summary.update(stats_reset)
+    if not preserve_history:
+        stats_reset = _reset_runtime_session_stats()
+        summary.update(stats_reset)
+    else:
+        # Always drain Splash incoming (those offers reference the old
+        # coin IDs) but DON'T reset market_intel / splash session stats
+        # under preserve_history.
+        try:
+            from database import clear_splash_incoming
+            summary["splash_incoming_cleared"] = int(clear_splash_incoming() or 0)
+        except Exception:
+            summary["splash_incoming_cleared"] = 0
 
     if reason:
-        details = (
-            f"Fresh run reset at {reset_at}: cleared {summary['fills_cleared']} fills, "
-            f"{summary['round_trips_cleared']} round-trips, "
-            f"{summary['splash_incoming_cleared']} Splash incoming offers"
-        )
-        if clear_coins:
-            details += f", {summary['coins_cleared']} coins"
-        if cancel_open_offers:
-            details += f", cancelled {summary['open_offers_cancelled']} open offers"
+        if preserve_history:
+            details = (
+                f"Coin-prep re-run at {reset_at}: preserved fills / round-trips / "
+                f"position baseline, cleared {summary['coins_cleared']} coin rows"
+            )
+            if cancel_open_offers:
+                details += f", cancelled {summary['open_offers_cancelled']} open offers"
+        else:
+            details = (
+                f"Fresh run reset at {reset_at}: cleared {summary['fills_cleared']} fills, "
+                f"{summary['round_trips_cleared']} round-trips, "
+                f"{summary.get('splash_incoming_cleared', 0)} Splash incoming offers"
+            )
+            if clear_coins:
+                details += f", {summary['coins_cleared']} coins"
+            if cancel_open_offers:
+                details += f", cancelled {summary['open_offers_cancelled']} open offers"
         log_event("info", reason, details)
 
     return summary
@@ -4624,6 +4667,111 @@ def api_purge_fills():
             "message": f"Purged {fill_count} fills — position reset to 0"
         })
     except Exception as e:
+        return _api_error(e, request.path)
+
+
+@app.route("/api/pnl/reset-preview", methods=["GET"])
+def api_pnl_reset_preview():
+    """Peek at what a Reset Stats / Start Fresh action would clear.
+
+    Used by the pre-prep confirm modal and the PnL Reset button to decide
+    whether to SHOW the confirm (there's data to lose) or skip straight to
+    the destructive action (nothing to preserve anyway). Returns zero
+    counts instead of erroring if the tables don't exist yet.
+    """
+    try:
+        from database import get_connection
+        conn = get_connection()
+        fills = 0
+        round_trips = 0
+        try:
+            fills = int((conn.execute(
+                "SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"]) or 0)
+        except Exception:
+            fills = 0
+        try:
+            if conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
+            ).fetchone():
+                round_trips = int((conn.execute(
+                    "SELECT COUNT(*) as cnt FROM round_trips").fetchone()["cnt"]) or 0)
+        except Exception:
+            round_trips = 0
+
+        realised_pnl_xch = Decimal("0")
+        net_position_cat = Decimal("0")
+        try:
+            # Same data sources as /api/pnl — get_stats aggregates fills
+            # to realised_pnl, risk_manager.get_inventory_state reports
+            # the live net position.
+            stats = get_stats(cfg.CAT_ASSET_ID, since=_get_run_history_cutoff())
+            realised_pnl_xch = Decimal(str(stats.get("realised_pnl_xch", 0) or 0))
+        except Exception:
+            realised_pnl_xch = Decimal("0")
+        try:
+            if bot and getattr(bot, "risk_manager", None):
+                inv = bot.risk_manager.get_inventory_state() or {}
+                net_position_cat = Decimal(str(inv.get("net_position_cat", 0) or 0))
+        except Exception:
+            net_position_cat = Decimal("0")
+
+        has_data = (fills > 0 or round_trips > 0
+                    or realised_pnl_xch != 0 or net_position_cat != 0)
+        return jsonify({
+            "success": True,
+            "has_data": bool(has_data),
+            "fills": fills,
+            "round_trips": round_trips,
+            "realised_pnl_xch": str(realised_pnl_xch),
+            "net_position_cat": str(net_position_cat),
+        })
+    except Exception as e:
+        return _api_error(e, request.path)
+
+
+@app.route("/api/pnl/reset", methods=["POST"])
+def api_pnl_reset():
+    """Explicit user-initiated full reset of trading stats.
+
+    Equivalent to the "Start Fresh" path without touching coin prep — used
+    by the Reset Stats button on the PnL tab. Requires a confirmation
+    token in the request body so a stray curl / mis-clicked fetch can't
+    wipe history. The token is just a correctness gate, not security —
+    the whole API is bound to 127.0.0.1.
+
+    Clears: fills, round_trips, price_history, inventory_snapshots,
+            position baseline, runtime session stats.
+    Preserves: coins, open offers, prepped pool — nothing on-chain is
+               touched.
+    """
+    slog("GUI_ACTION", ">>> BUTTON: Reset Trading Stats")
+    try:
+        payload = request.get_json(silent=True) or {}
+        if (payload.get("confirm") or "").strip().upper() != "RESET":
+            return jsonify({
+                "success": False,
+                "error": "confirmation_required",
+                "message": "Send {confirm: 'RESET'} to confirm the wipe.",
+            }), 400
+
+        summary = _reset_fresh_run_session(
+            clear_coins=False,
+            clear_price_history=True,
+            clear_inventory=True,
+            cancel_open_offers=False,
+            preserve_history=False,
+            reason="pnl_reset_stats",
+        )
+        return jsonify({
+            "success": True,
+            "message": (f"Cleared {summary.get('fills_cleared', 0)} fills "
+                        f"and {summary.get('round_trips_cleared', 0)} round-trips. "
+                        f"Position baseline reset to zero."),
+            **_serialize_dict(summary),
+        })
+    except Exception as e:
+        log_event("warning", "pnl_reset_failed",
+                  f"Explicit PnL reset failed: {e}")
         return _api_error(e, request.path)
 
 
@@ -10907,17 +11055,24 @@ def api_coin_prep_trigger():
     try:
         global _coin_prep_proc
 
-        # Read coin_multiplier from request body NOW, while we're still
-        # inside the Flask request context. The do_prep() thread runs AFTER
-        # the HTTP response is sent, so request.get_json() won't work there.
+        # Read coin_multiplier and full_reset flag from request body NOW,
+        # while we're still inside the Flask request context. The do_prep()
+        # thread runs AFTER the HTTP response is sent, so request.get_json()
+        # won't work there.
         try:
             _prep_req_data = request.get_json(silent=True) or {}
             _prep_coin_multiplier = float(_prep_req_data.get("coin_multiplier", 1))
             _prep_coin_multiplier = max(0.5, min(3.0, _prep_coin_multiplier))
         except Exception:
+            _prep_req_data = {}
             _prep_coin_multiplier = 1.0
+        # full_reset=True means "Start Fresh" — clear fills / round-trips /
+        # position baseline alongside the coin-shape reset. Default False
+        # (2026-04-19) so a routine re-prep keeps the user's trading history.
+        _prep_full_reset = bool(_prep_req_data.get("full_reset", False))
         log_event("info", "coin_prep_multiplier",
-                  f"Coin prep multiplier from GUI: {_prep_coin_multiplier}×")
+                  f"Coin prep multiplier from GUI: {_prep_coin_multiplier}× "
+                  f"(full_reset={_prep_full_reset})")
 
         # If a previous worker is still running, kill it first.
         # Two workers operating on the same wallet simultaneously causes
@@ -10960,17 +11115,26 @@ def api_coin_prep_trigger():
                 bot.coin_manager._prep_process = None
                 bot.coin_manager._prep_running = False
 
-        # ---- FRESH START: Clear old session data ----
-        # Coin prep means a full reset — cancel all, re-split, start fresh.
-        # Old fills, offers, and coin records are stale and would cause the
-        # bot to inherit wrong position limits and phantom fill history.
+        # ---- Clear session data before the coin_prep_worker runs ----
+        # Under the default preserve_history path we only wipe state that
+        # directly refers to the coin IDs / offers about to be replaced:
+        # coin rows, inventory snapshots, cancelled offers. Fills, round
+        # trips, position baseline, and market-intel stats all survive so
+        # a routine re-prep doesn't destroy the user's trading record.
+        #
+        # Under full_reset=True the call mirrors the pre-2026-04-19
+        # behaviour — fills and round-trips are deleted too. That path is
+        # opt-in, triggered from the GUI's "Start Fresh" button in the
+        # pre-prep confirm modal or the PnL tab's Reset Stats action.
         try:
             _reset_fresh_run_session(
                 clear_coins=True,
-                clear_price_history=True,
+                clear_price_history=_prep_full_reset,
                 clear_inventory=True,
                 cancel_open_offers=True,
-                reason="fresh_start_cleanup",
+                preserve_history=(not _prep_full_reset),
+                reason=("fresh_start_cleanup" if _prep_full_reset
+                        else "coin_prep_reprep_cleanup"),
             )
         except Exception as _clean_err:
             log_event("warning", "fresh_start_cleanup_failed",

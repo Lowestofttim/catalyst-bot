@@ -8867,8 +8867,9 @@
                         <span style="color: var(--text-secondary); font-weight: 500;">Neutral</span>
                         <span>+MAX (Long)</span>
                     </div>
-                    <div style="margin-top: var(--space-3); text-align: center;">
+                    <div style="margin-top: var(--space-3); text-align: center; display: flex; gap: var(--space-2); justify-content: center; flex-wrap: wrap;">
                         <button class="btn" onclick="resetPosition()" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-tertiary); font-size: var(--text-xs); padding: 4px 12px; cursor: pointer; border-radius: var(--radius-md);" title="Clear all fill history and reset position to zero. Use after a fresh start or if the inherited position is stale.">Reset Position</button>
+                        <button class="btn" onclick="resetAllTradingStats()" style="background: transparent; border: 1px solid rgba(239,68,68,0.35); color: var(--status-danger); font-size: var(--text-xs); padding: 4px 12px; cursor: pointer; border-radius: var(--radius-md);" title="Full wipe: fills, round-trips, price history, inventory snapshots, position baseline, and runtime stats. Coins and open offers are NOT touched.">⚠ Reset All Stats</button>
                     </div>
 
                     <!-- Position history chart — shows inventory drift over session -->
@@ -10141,6 +10142,35 @@
                 <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                     <button class="btn btn-stop btn-danger" onclick="closeCoinPrepConfirm()" style="padding: 12px 20px; font-size: 1em;">Close</button>
                     <button class="btn btn-start btn-primary" onclick="retryCoinPrep()" style="padding: 12px 25px; font-size: 1.1em;">🔄 Try Again</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keep-history vs Start-fresh confirmation, shown ONLY when the user
+         has existing fills / round-trips / non-zero realised PnL before a
+         coin-prep run. For a clean wallet this overlay never appears and
+         coin prep starts straight away. -->
+    <div class="modal" id="prepHistoryChoiceModal">
+        <div class="v4-modal-shell v4-modal-shell--warning">
+            <div class="v4-modal-inner">
+                <div class="v4-modal-hero">
+                    <div class="v4-modal-icon">📊</div>
+                    <div class="v4-modal-title">Keep your trading history?</div>
+                    <div class="v4-modal-body" id="prepHistoryChoiceDetails" style="text-align: left; font-size: 0.95em; line-height: 1.55;">
+                        Coin prep will rebuild your coin pool.
+                    </div>
+                </div>
+                <div class="v4-modal-actions" style="display: flex; flex-direction: column; gap: 10px; padding: 0 24px 20px;">
+                    <button id="prepHistoryKeepBtn" class="btn btn-start btn-primary" style="padding: 12px; font-size: 1em; font-weight: 700;">
+                        📒 Keep history <span style="opacity: 0.7; font-weight: 500;">(recommended)</span>
+                    </button>
+                    <button id="prepHistoryFreshBtn" class="btn btn-stop btn-danger" style="padding: 12px; font-size: 1em; font-weight: 700;">
+                        🗑️ Start fresh — clear fills &amp; PnL
+                    </button>
+                    <button id="prepHistoryCancelBtn" class="btn btn-config btn-secondary" style="padding: 10px; font-size: 0.95em;">
+                        Cancel
+                    </button>
                 </div>
             </div>
         </div>
@@ -25276,6 +25306,72 @@
             }
         }
 
+        // Full wipe via /api/pnl/reset — clears fills, round-trips, price
+        // history, inventory snapshots, position baseline, and runtime
+        // session stats. Does NOT touch coins or live offers.
+        //
+        // Double-gated so it can't be triggered by a stray click:
+        //   1. showStyledConfirm shows the intent + actual counts up-front
+        //   2. The backend requires {confirm: "RESET"} in the POST body
+        async function resetAllTradingStats() {
+            let summaryText = 'Clear all fills, round-trips, price history, inventory snapshots, and reset position baseline to zero?';
+            try {
+                const r = await apiFetch(`${API_URL}/pnl/reset-preview`, { cache: 'no-store' });
+                const preview = await r.json();
+                if (preview && preview.success && preview.has_data) {
+                    const fills = Number(preview.fills || 0).toLocaleString();
+                    const trips = Number(preview.round_trips || 0).toLocaleString();
+                    const pnl = parseFloat(preview.realised_pnl_xch || 0).toFixed(4);
+                    const pos = parseFloat(preview.net_position_cat || 0);
+                    const posTxt = Math.abs(pos) >= 1
+                        ? pos.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                        : pos.toFixed(3);
+                    summaryText = [
+                        'This will PERMANENTLY clear:',
+                        `• ${fills} fills`,
+                        `• ${trips} round trips`,
+                        `• ${pnl} XCH realised PnL`,
+                        `• Net position (${posTxt}) reset to zero`,
+                        '',
+                        'Coins and open offers are NOT touched — only historical stats.',
+                        '',
+                        'This cannot be undone. Continue?'
+                    ].join('\n');
+                }
+            } catch (_) { /* ignore — use generic message */ }
+
+            const ok = await showStyledConfirm({
+                icon: '⚠',
+                title: 'Reset All Trading Stats?',
+                message: summaryText,
+                confirmText: 'Reset Everything',
+                cancelText: 'Cancel',
+                style: 'danger'
+            });
+            if (!ok) return;
+
+            try {
+                const res = await apiFetch(`${API_URL}/pnl/reset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: 'RESET' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Trading stats reset — fills, round-trips, and position cleared.', 'success', 5000);
+                    addLogEntry('success', data.message || 'Trading stats reset');
+                    try { if (typeof updateDashboard === 'function') updateDashboard(); } catch (_) {}
+                } else {
+                    const err = data.error || data.message || 'Unknown error';
+                    showToast(`Reset failed: ${err}`, 'error');
+                    addLogEntry('error', `PnL reset failed: ${err}`);
+                }
+            } catch (e) {
+                showToast(`Reset failed: ${formatError(e)}`, 'error');
+                addLogEntry('error', `PnL reset failed: ${formatError(e)}`);
+            }
+        }
+
         async function cancelAllOffers() {
             if (bot_state?.running) {
                 showToast('Stop the bot before cancelling all offers', 'warning');
@@ -27812,20 +27908,96 @@ function closeCtgErrorModal() {
             openConfig();
         }
         
+        // Resolves to "keep" | "fresh" | "cancel". When the user has no data
+        // to lose (fresh install / just reset) resolves to "keep" silently
+        // without showing any UI — coin prep proceeds immediately.
+        async function askPrepHistoryChoice() {
+            let preview = null;
+            try {
+                const r = await apiFetch(`${API_URL}/pnl/reset-preview`, { cache: 'no-store' });
+                preview = await r.json();
+            } catch (_) {
+                preview = null;
+            }
+            // If the probe fails OR the user has nothing worth preserving,
+            // skip the modal so the old zero-friction flow is unchanged.
+            if (!preview || !preview.success || !preview.has_data) {
+                return 'keep';
+            }
+            const detailsEl = document.getElementById('prepHistoryChoiceDetails');
+            if (detailsEl) {
+                const fills = Number(preview.fills || 0);
+                const trips = Number(preview.round_trips || 0);
+                const pnlRaw = parseFloat(preview.realised_pnl_xch || 0) || 0;
+                const pos = parseFloat(preview.net_position_cat || 0) || 0;
+                const pnl = pnlRaw.toFixed(4);
+                const posTxt = Math.abs(pos) >= 1
+                    ? pos.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                    : pos.toFixed(3);
+                detailsEl.innerHTML = [
+                    `<p style="margin: 0 0 8px 0;">You have existing trading data from this run:</p>`,
+                    `<ul style="margin: 0 0 10px 18px; padding: 0;">`,
+                    `<li><strong>${fills.toLocaleString()}</strong> fills</li>`,
+                    `<li><strong>${trips.toLocaleString()}</strong> round trips</li>`,
+                    `<li><strong>${pnl}</strong> XCH realised PnL</li>`,
+                    `<li>Net position: <strong>${posTxt}</strong> ${escapeHtml((settingsCAT?.name || currentCAT?.name || 'CAT'))}</li>`,
+                    `</ul>`,
+                    `<p style="margin: 0 0 6px 0;"><strong>Keep history</strong> — re-prep coins only; fills, PnL, and position survive. Pick this for a routine re-run after Smart Settings.</p>`,
+                    `<p style="margin: 0;"><strong>Start fresh</strong> — wipe all fills, round-trips, price history, and reset position to zero. Pick this when switching CAT or rebasing after a bad run.</p>`,
+                ].join('');
+            }
+            return new Promise((resolve) => {
+                const modal = document.getElementById('prepHistoryChoiceModal');
+                const keepBtn = document.getElementById('prepHistoryKeepBtn');
+                const freshBtn = document.getElementById('prepHistoryFreshBtn');
+                const cancelBtn = document.getElementById('prepHistoryCancelBtn');
+                const cleanup = (choice) => {
+                    if (modal) modal.classList.remove('active');
+                    keepBtn.onclick = null;
+                    freshBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    resolve(choice);
+                };
+                keepBtn.onclick = () => cleanup('keep');
+                freshBtn.onclick = () => cleanup('fresh');
+                cancelBtn.onclick = () => cleanup('cancel');
+                if (modal) modal.classList.add('active');
+                // Auto-focus the safe default so Enter picks "keep".
+                setTimeout(() => { try { keepBtn.focus(); } catch (_) {} }, 50);
+            });
+        }
+
         async function startCoinPrepFromModal() {
             const btn = document.getElementById('cpConfirmBtn');
             if (btn) {
                 btn.disabled = true;
-                btn.textContent = 'Starting...';
+                btn.textContent = 'Checking history…';
             }
-            
+
+            // Pre-prep: ask the user whether to preserve or wipe their
+            // trading history. Returns immediately with 'keep' when there's
+            // no data to protect, so first-run UX stays frictionless.
+            const historyChoice = await askPrepHistoryChoice();
+            if (historyChoice === 'cancel') {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Yes, Prepare Coins';
+                }
+                return;
+            }
+            const fullReset = (historyChoice === 'fresh');
+            if (btn) btn.textContent = 'Starting...';
+
             try {
                 // Send the spare coin multiplier from the GUI to the API
                 const coinMultiplier = parseFloat(document.getElementById('configCoinPrepMultiplier')?.value) || 2;
                 const response = await apiFetch(`${API_URL}/coin-prep/trigger`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ coin_multiplier: coinMultiplier })
+                    body: JSON.stringify({
+                        coin_multiplier: coinMultiplier,
+                        full_reset: fullReset,
+                    })
                 });
                 const data = await response.json();
 
