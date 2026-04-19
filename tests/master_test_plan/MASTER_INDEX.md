@@ -60,6 +60,8 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | 2026-04-19 | 02-07 | `[x]` | 3538423 | spacescan: 47 tests — tier, budget, verify_fill tree, is_coin_spent; 1 bug fixed (InvalidOperation in get_xch_balance) |
 | 2026-04-19 | 02-08 | `[x]` | e11480a | market_data_collector: 40 tests — safe_float, count_from_payload, all 5 analysis functions |
 | 2026-04-19 | 02-10 | `[x]` | fdfa1bb | coinset_client: 35 tests — extract_ph, format_response, stats, guards, verify_spent, spendable |
+| 2026-04-19 | 02-11 | `[x]` | e83e5b9 | offer_manager: 63 tests — conversions, slot suspension, requote, classify_tier, detect_expiring |
+| 2026-04-19 | 02-12 | `[x]` | (pending) | offer_lifecycle: 55 tests — full state machine, all transitions, coarse_status, is_terminal |
 
 ## Layer 2 — Unit test expansion (32 slices)
 
@@ -87,8 +89,8 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 ### Offers (3)
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
-| 02-11 | offer_manager.py — create_ladder, requote, cancel | `[x]` | (pending commit) |
-| 02-12 | offer_lifecycle.py — state machine transitions | `[ ]` | |
+| 02-11 | offer_manager.py — create_ladder, requote, cancel | `[x]` | commit e83e5b9 |
+| 02-12 | offer_lifecycle.py — state machine transitions | `[x]` | (pending commit) |
 | 02-13 | ladder_planner.py + ladder_watchdog.py — shape + taper checks | `[ ]` | |
 
 ### Coins (5)
