@@ -18,6 +18,7 @@ Slice ID format: `NN-MM-description` where `NN` is the layer (01-05),
 |------|-------|--------|--------|-------|
 | _—_ | _—_ | _—_ | _—_ | seed / scaffold |
 | 2026-04-19 | 01-01 | `[x]` | 5b16ab1 | ruff auto-fix + 5 F821/F811 bugs fixed, 10 regression tests |
+| 2026-04-19 | 01-02 | `[~]` | — | bandit security scan started |
 
 ---
 
@@ -29,7 +30,7 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
 | 01-01 | ruff lint sweep — top findings + auto-fix | `[x]` | commit 5b16ab1 |
-| 01-02 | bandit security scan — secrets, injection, paths | `[ ]` | |
+| 01-02 | bandit security scan — secrets, injection, paths | `[~]` | 2026-04-19 in-progress |
 | 01-03 | dead code — vulture + manual unused-function check | `[ ]` | |
 | 01-04 | TODO/FIXME/XXX sweep — triage + file as issues or fix | `[ ]` | |
 | 01-05 | type annotation audit — mypy on public APIs of core modules | `[ ]` | |
