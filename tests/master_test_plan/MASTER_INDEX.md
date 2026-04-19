@@ -47,7 +47,8 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | 2026-04-19 | 02-02 | `[x]` | a7977c2 | api_server pure helpers + endpoint shapes: 32 new tests |
 | 2026-04-19 | 02-03 | `[x]` | (pending) | app_bridge: delegation-only layer, skipped — Layer 3 territory |
 | 2026-04-19 | 02-04 | `[x]` | (pending) | desktop_app: launcher code, skipped — Layer 3 territory |
-| 2026-04-19 | 02-05 | `[x]` | (pending) | price_engine: 37 tests — EMA, guards, strategy, AMM math |
+| 2026-04-19 | 02-05 | `[x]` | 26f9c99 | price_engine: 37 tests — EMA, guards, strategy, AMM math |
+| 2026-04-19 | 02-23 | `[x]` | (pending) | risk_manager: 40 tests — CB trip/clear/hysteresis, position limits, spreads |
 
 ## Layer 2 — Unit test expansion (32 slices)
 
@@ -103,7 +104,7 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 ### Risk & safety (3)
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
-| 02-23 | risk_manager.py — circuit breaker, position, spreads | `[ ]` | |
+| 02-23 | risk_manager.py — circuit breaker, position, spreads | `[x]` | (pending commit) |
 | 02-24 | amm_monitor.py + mempool_watcher.py — move detection | `[ ]` | |
 | 02-25 | dynamic_amm_buffer.py + reaction_strategy.py | `[ ]` | |
 
