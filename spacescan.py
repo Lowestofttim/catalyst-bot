@@ -19,7 +19,7 @@ Key responsibilities:
 import re
 import time
 from pathlib import Path
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Optional, Dict, Set
 
 import requests
@@ -473,7 +473,7 @@ def get_xch_balance(address: str) -> Optional[Decimal]:
 
     try:
         return Decimal(str(data["xch"]))
-    except (KeyError, ValueError) as e:
+    except (KeyError, ValueError, InvalidOperation) as e:
         log_event("warning", "spacescan_balance_parse_error",
                   f"Could not parse XCH balance: {e}")
         return None

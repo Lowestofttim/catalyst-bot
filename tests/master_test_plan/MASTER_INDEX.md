@@ -55,8 +55,9 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | 2026-04-19 | 02-31 | `[x]` | ea05830 | super_log: 29 tests — ring buffer, levels, cycle stats, db helpers |
 | 2026-04-19 | 02-32 | `[x]` | bf24cf8 | tx_fees+event_taxonomy+notif_mgr: 46 tests |
 | 2026-04-19 | 02-16 | `[x]` | b92d92a | coin_classifier: 29 tests — dust/reserve/exact/oversize/misfit |
-| 2026-04-19 | 02-19 | `[x]` | (pending) | fill_tracker+classifier: 37 tests — arb detection, mass disappearance |
-| 2026-04-19 | 02-09 | `[x]` | (pending) | market_intel: 43 tests — _bps_to_pct, parse_offer, analyse_orderbook, state queries, spread reco, DBX eligibility |
+| 2026-04-19 | 02-19 | `[x]` | e4a485b | fill_tracker+classifier: 37 tests — arb detection, mass disappearance |
+| 2026-04-19 | 02-09 | `[x]` | 1aba045 | market_intel: 43 tests — _bps_to_pct, parse_offer, analyse_orderbook, state queries, spread reco, DBX eligibility |
+| 2026-04-19 | 02-07 | `[x]` | (pending) | spacescan: 47 tests — tier, budget, verify_fill tree, is_coin_spent; 1 bug fixed (InvalidOperation in get_xch_balance) |
 
 ## Layer 2 — Unit test expansion (32 slices)
 
@@ -76,9 +77,9 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 |-------|-------|--------|------|
 | 02-05 | price_engine.py — weighted mid, fallback chain | `[x]` | commit 26f9c99 |
 | 02-06 | dexie_manager.py — post, delist, queue, rate-limit | `[x]` | commit e21dd96 |
-| 02-07 | spacescan.py — activity + tier lookups | `[ ]` | |
+| 02-07 | spacescan.py — activity + tier lookups | `[x]` | (pending commit) |
 | 02-08 | market_data_collector.py — 30-day gather pipeline | `[ ]` | |
-| 02-09 | market_intel.py — regime detection, stats | `[x]` | (pending commit) |
+| 02-09 | market_intel.py — regime detection, stats | `[x]` | commit 1aba045 |
 | 02-10 | coinset_client.py — mempool + block record calls | `[ ]` | |
 
 ### Offers (3)
@@ -100,7 +101,7 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 ### Fills (1)
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
-| 02-19 | fill_tracker.py + fill_classifier.py — detection + classification | `[x]` | (pending commit) |
+| 02-19 | fill_tracker.py + fill_classifier.py — detection + classification | `[x]` | commit e4a485b |
 
 ### Wallet adapters (3)
 | Slice | Title | Status | Note |
@@ -127,7 +128,7 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
 | 02-29 | config.py + config_live.py + config_validator.py | `[x]` | commit 6921d0a |
-| 02-30 | database.py — every public function | `[x]` | (pending commit) |
+| 02-30 | database.py — every public function | `[x]` | commit 68ea170 |
 
 ### Utilities (2)
 | Slice | Title | Status | Note |
