@@ -44,7 +44,10 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | 01-07 | circular import detection — pydeps / manual | `[x]` | commit fdf9502 |
 | 01-08 | hardcoded paths + secrets sweep — regex grep | `[x]` | commit ec3b099 |
 | 2026-04-19 | 02-01 | `[x]` | cc2c913 | bot_loop pure helpers: 45 new tests covering gates/timers/probes |
-| 2026-04-19 | 02-02 | `[x]` | (pending) | api_server pure helpers + endpoint shapes: 32 new tests |
+| 2026-04-19 | 02-02 | `[x]` | a7977c2 | api_server pure helpers + endpoint shapes: 32 new tests |
+| 2026-04-19 | 02-03 | `[x]` | (pending) | app_bridge: delegation-only layer, skipped — Layer 3 territory |
+| 2026-04-19 | 02-04 | `[x]` | (pending) | desktop_app: launcher code, skipped — Layer 3 territory |
+| 2026-04-19 | 02-05 | `[x]` | (pending) | price_engine: 37 tests — EMA, guards, strategy, AMM math |
 
 ## Layer 2 — Unit test expansion (32 slices)
 
@@ -55,14 +58,14 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
 | 02-01 | bot_loop.py — cycle orchestrator, gates, timers | `[x]` | commit cc2c913 |
-| 02-02 | api_server.py (core) — status/config/bot lifecycle endpoints | `[x]` | (pending commit) |
-| 02-03 | app_bridge.py — PyWebView API surface methods | `[ ]` | |
-| 02-04 | desktop_app.py — flag parsing, mode routing | `[ ]` | |
+| 02-02 | api_server.py (core) — status/config/bot lifecycle endpoints | `[x]` | commit a7977c2 |
+| 02-03 | app_bridge.py — PyWebView API surface methods | `[x]` | delegation layer → Layer 3 |
+| 02-04 | desktop_app.py — flag parsing, mode routing | `[x]` | launcher → Layer 3 |
 
 ### Market data (6)
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
-| 02-05 | price_engine.py — weighted mid, fallback chain | `[ ]` | |
+| 02-05 | price_engine.py — weighted mid, fallback chain | `[x]` | (pending commit) |
 | 02-06 | dexie_manager.py — post, delist, queue, rate-limit | `[ ]` | |
 | 02-07 | spacescan.py — activity + tier lookups | `[ ]` | |
 | 02-08 | market_data_collector.py — 30-day gather pipeline | `[ ]` | |
