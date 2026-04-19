@@ -87,6 +87,7 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | 2026-04-19 | 03-17 | `[x]` | 0b72934 | topup worker: 19 tests — needs_topup gates/thresholds, pool spend DB accumulation, cooldown state |
 | 2026-04-19 | 04-01 | `[x]` | dbf5368 | status endpoints: 29 tests — /api/status /api/bot/state /api/bot/price contracts; 401-vs-405 discovery |
 | 2026-04-19 | 04-02 | `[x]` | 68138cc | config endpoints: 27 tests — GET public, POST token+blocked-keys, reload/apply/live contracts |
+| 2026-04-19 | 04-03 | `[x]` | 9728df6 | bot lifecycle: 17 tests — start validation gates (CAT/spread/signing), stop, shutdown contracts |
 
 ## Layer 2 — Unit test expansion (32 slices)
 
@@ -200,7 +201,7 @@ idempotency, response-shape validation.
 |-------|-------|--------|------|
 | 04-01 | status endpoints — /api/status, /api/bot/state, /api/bot/price | `[x]` | commit dbf5368 |
 | 04-02 | config — GET/POST, reload, live | `[x]` | commit 68138cc |
-| 04-03 | bot lifecycle — start, stop, shutdown | `[ ]` | |
+| 04-03 | bot lifecycle — start, stop, shutdown | `[x]` | commit 9728df6 |
 | 04-04 | offers endpoints — list, cancel (single + batch), post-to-dexie | `[ ]` | |
 | 04-05 | pnl endpoints — pnl, pnl/reset, pnl/reset-preview, fills/purge | `[ ]` | |
 | 04-06 | coin-prep endpoints — trigger, status, reset, verify | `[ ]` | |
