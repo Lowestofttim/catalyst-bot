@@ -52,7 +52,8 @@ executing. Cheap, broad, catches the "how did that even compile" class.
 | 2026-04-19 | 02-30 | `[x]` | 68ea170 | database: 40 tests — all public functions, temp-DB isolation |
 | 2026-04-19 | 02-06 | `[x]` | e21dd96 | dexie_manager: 37 tests — queue ops, stats, prune, metrics |
 | 2026-04-19 | 02-29 | `[x]` | 6921d0a | config+validator: 60 tests — helpers, methods, validate_config |
-| 2026-04-19 | 02-31 | `[x]` | (pending) | super_log: 29 tests — ring buffer, levels, cycle stats, db helpers |
+| 2026-04-19 | 02-31 | `[x]` | ea05830 | super_log: 29 tests — ring buffer, levels, cycle stats, db helpers |
+| 2026-04-19 | 02-32 | `[x]` | (pending) | tx_fees+event_taxonomy+notif_mgr: 46 tests |
 
 ## Layer 2 — Unit test expansion (32 slices)
 
@@ -128,8 +129,8 @@ Target ~3× current coverage. Integration-style side-effects go in Layer 3.
 ### Utilities (2)
 | Slice | Title | Status | Note |
 |-------|-------|--------|------|
-| 02-31 | super_log.py + super_log_hooks.py — logging layer | `[x]` | (pending commit) |
-| 02-32 | tx_fees.py, event_taxonomy.py, notification_manager.py | `[ ]` | |
+| 02-31 | super_log.py + super_log_hooks.py — logging layer | `[x]` | commit ea05830 |
+| 02-32 | tx_fees.py, event_taxonomy.py, notification_manager.py | `[x]` | (pending commit) |
 
 ## Layer 3 — Integration tests (18 slices)
 
