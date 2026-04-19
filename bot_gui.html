@@ -8814,6 +8814,22 @@
             <!-- PnL & Inventory Content -->
             <div id="pnlTab" class="tab-content active" style="display: block;">
 
+                <!-- Single-sided mode banner — explains how to read the PnL
+                     cards below when only one direction of trades exists.
+                     The two-sided default shows no banner at all. -->
+                <div id="pnlModeBanner" style="display:none; margin-bottom: var(--space-4); padding: 12px 16px; border-radius: 8px; border: 1px solid rgba(96,165,250,0.25); background: rgba(96,165,250,0.06); font-size: var(--text-sm); line-height: 1.55;">
+                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                        <span style="font-size: 18px;" id="pnlModeBannerIcon">📈</span>
+                        <div style="flex:1;">
+                            <div style="font-weight: 700; color: var(--info-300); margin-bottom: 2px;" id="pnlModeBannerTitle">Single-sided mode</div>
+                            <div id="pnlModeBannerText" style="color: var(--text-secondary);">
+                                In single-sided mode there are no round-trip pairs, so Realised PnL and Win Rate stay at zero. The most useful signal is in the volume and average-price cards below.
+                            </div>
+                            <div id="pnlAvgPriceDetail" style="margin-top: 8px; color: var(--text-primary); font-size: var(--text-sm);"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Time-Period Hero Cards -->
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-bottom: var(--space-5);">
                     <div class="v4-hero-card">
@@ -9324,6 +9340,20 @@
                         <div id="liquidityModeLockedHint" style="display:none; margin-top: 10px; padding: 8px 12px; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; font-size: 0.82em; color: var(--warning-300); line-height: 1.5;">
                             🔒 Stop the bot to change the liquidity mode. Existing offers on the opposite side will be cancelled when the new mode starts.
                         </div>
+                        <!-- Wallet-balance suggestion: appears when the wallet is
+                             clearly lopsided (lots of XCH and ~no CAT, or vice
+                             versa) and the currently-selected mode doesn't match.
+                             Purely advisory — the user can ignore it. -->
+                        <div id="liquidityModeWalletSuggestion" style="display:none; margin-top: 10px; padding: 10px 14px; background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.30); border-radius: 8px; font-size: 0.85em; line-height: 1.55;">
+                            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                <span style="font-size: 16px;">💡</span>
+                                <div style="flex:1;">
+                                    <div style="font-weight: 700; color: var(--violet-300); margin-bottom: 2px;">Suggestion</div>
+                                    <div id="liquidityModeWalletSuggestionText" style="color: var(--text-secondary);"></div>
+                                    <button type="button" id="liquidityModeApplySuggestionBtn" style="margin-top: 8px; padding: 4px 12px; background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.5); color: var(--violet-300); border-radius: 6px; cursor: pointer; font-size: 0.85em;">Apply suggestion</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- ══ SECTION: Reserves ══ -->
@@ -9375,8 +9405,8 @@
 
                     <!-- ══ Smart Defaults ══ -->
                     <div class="v4-settings-section v4-settings-purple" style="background: rgba(139,92,246,0.08); text-align: center;">
-                        <div style="font-size: 1.05em; font-weight: bold; color: var(--violet-300); margin-bottom: 8px;">Auto-Fill Settings</div>
-                        <div class="v4-settings-hint" style="margin-bottom: 10px;">Set your <strong>Reserves</strong> above first, then choose a risk profile, then click — everything is sized from what's left: fee pool → sniper pool → trading capital → tier sizes &amp; offer counts.</div>
+                        <div style="font-size: 1.05em; font-weight: bold; color: var(--violet-300); margin-bottom: 8px;" id="smartDefaultsTitle">Auto-Fill Settings</div>
+                        <div class="v4-settings-hint" style="margin-bottom: 10px;" id="smartDefaultsSubtitle">Set your <strong>Reserves</strong> above first, then choose a risk profile, then click — everything is sized from what's left: fee pool → sniper pool → trading capital → tier sizes &amp; offer counts.</div>
 
                         <!-- Risk Profile selector -->
                         <div style="margin-bottom: 12px;">
@@ -18402,15 +18432,48 @@
             });
         }
 
+        // Per-mode labels for the Smart Defaults block — gives users a
+        // clearer idea of what the preset will do when they're in a
+        // single-sided mode (no mention of ladders they don't have).
+        const _SMART_DEFAULTS_LABELS = {
+            two_sided: {
+                title: 'Auto-Fill Settings',
+                subtitle: 'Set your <strong>Reserves</strong> above first, then choose a risk profile, then click — everything is sized from what\'s left: fee pool → sniper pool → trading capital → tier sizes &amp; offer counts.',
+            },
+            buy_only: {
+                title: 'Auto-Fill — Accumulation Plan',
+                subtitle: 'Set your <strong>XCH Reserve</strong> above first, then choose a risk profile, then click — the buy ladder is sized from the XCH left over. No sell ladder or sniper in this mode; CAT balance stays untouched.',
+            },
+            sell_only: {
+                title: 'Auto-Fill — Distribution Plan',
+                subtitle: 'Set your <strong>Token Reserve</strong> above first, then choose a risk profile, then click — the sell ladder is sized from the tokens left over. No buy ladder or sniper in this mode; XCH balance stays untouched.',
+            },
+        };
+        function applySmartDefaultsLabels(mode) {
+            const labels = _SMART_DEFAULTS_LABELS[mode] || _SMART_DEFAULTS_LABELS.two_sided;
+            const t = document.getElementById('smartDefaultsTitle');
+            const s = document.getElementById('smartDefaultsSubtitle');
+            if (t) t.textContent = labels.title;
+            if (s) s.innerHTML = labels.subtitle;
+        }
+
         function setLiquidityMode(mode, { silent = false } = {}) {
             const valid = ['two_sided', 'buy_only', 'sell_only'];
             const resolved = valid.includes(mode) ? mode : 'two_sided';
             applyLiquidityModeSelectionUI(resolved);
             applyLiquidityModeToBody(resolved);
+            // Smart Settings preset description follows the mode so
+            // the user reads accurate copy before clicking Auto-Fill.
+            try { applySmartDefaultsLabels(resolved); } catch (_) {}
             // Smart Settings expects to know the mode on its next run.
             window._liquidityMode = resolved;
             if (!silent) {
                 try { scheduleSettingsUpdate(); } catch (_) {}
+                // Re-evaluate the wallet-aware suggestion after a mode change
+                // so the hint hides itself once the user adopts the suggested
+                // mode and reappears if they flip back to two-sided on a
+                // lopsided wallet.
+                try { refreshLiquidityModeSuggestion(); } catch (_) {}
             }
             return resolved;
         }
@@ -18436,6 +18499,72 @@
             cards.forEach((card) => card.classList.toggle('disabled', !!locked));
             const hint = document.getElementById('liquidityModeLockedHint');
             if (hint) hint.style.display = locked ? 'block' : 'none';
+        }
+
+        // Wallet-aware mode suggestion: if the wallet is lopsided (lots of
+        // one asset and ~none of the other) and the user is about to run a
+        // two-sided ladder, offer to switch to the matching single-sided
+        // mode. Suppressed when the bot is running (mode change is
+        // stop-required) or when the user has already picked a suitable
+        // mode.
+        function refreshLiquidityModeSuggestion() {
+            const box = document.getElementById('liquidityModeWalletSuggestion');
+            const textEl = document.getElementById('liquidityModeWalletSuggestionText');
+            const btn = document.getElementById('liquidityModeApplySuggestionBtn');
+            if (!box || !textEl || !btn) return;
+
+            // Hide if we can't get a wallet read, or if the bot is running.
+            if (document.body.classList.contains('settings-locked')) {
+                box.style.display = 'none';
+                return;
+            }
+            const xchBal = (typeof getWalletBalance === 'function')
+                ? (parseFloat(getWalletBalance('xch')) || 0) : 0;
+            const catBal = (typeof getWalletBalance === 'function')
+                ? (parseFloat(getWalletBalance('cat')) || 0) : 0;
+            // Need enough data to judge — if both balances are zero the
+            // status hasn't loaded yet, so stay quiet.
+            if (xchBal <= 0 && catBal <= 0) {
+                box.style.display = 'none';
+                return;
+            }
+
+            const mid = (typeof bot_state !== 'undefined' && bot_state?.pricing?.mid)
+                ? parseFloat(bot_state.pricing.mid) || 0 : 0;
+            const catXchEquivalent = (mid > 0) ? catBal * mid : 0;
+            const total = xchBal + catXchEquivalent;
+            if (total <= 0) {
+                box.style.display = 'none';
+                return;
+            }
+            const xchPct = xchBal / total;
+            const catPct = catXchEquivalent / total;
+
+            const currentMode = getLiquidityMode();
+            let suggest = null;
+            let msg = '';
+            // Threshold: ≥95% of value on one side AND absolute balance on the
+            // other side too small to fund even one offer at a token's typical
+            // inner size. We use a generous 90% threshold with a floor check.
+            if (xchPct >= 0.92 && catBal < 1) {
+                suggest = 'buy_only';
+                msg = `Your wallet is <strong>${(xchPct * 100).toFixed(0)}% XCH</strong> — if you want to acquire this token gradually, <strong>Buy Only (Accumulate)</strong> places a ladder of buys below mid without needing any token inventory. Two-Sided requires both XCH and tokens, so sell offers would sit idle.`;
+            } else if (catPct >= 0.92 && xchBal < 0.01) {
+                suggest = 'sell_only';
+                msg = `Your wallet is <strong>${(catPct * 100).toFixed(0)}% tokens</strong> — if you want to distribute this token gradually, <strong>Sell Only (Distribute)</strong> places a ladder of sells above mid without needing XCH inventory. Two-Sided requires both, so buy offers would sit idle.`;
+            }
+
+            if (suggest && suggest !== currentMode) {
+                textEl.innerHTML = msg;
+                btn.onclick = () => {
+                    setLiquidityMode(suggest);
+                    refreshLiquidityModeSuggestion();
+                    try { showToast(`Mode switched to ${suggest.replace('_', ' ')}. Save to apply.`, 'success', 4000); } catch (_) {}
+                };
+                box.style.display = 'block';
+            } else {
+                box.style.display = 'none';
+            }
         }
 
         // Dashboard-level banner update from the /api/status liquidity block.
@@ -20119,8 +20248,10 @@
             // Liquidity mode indicator: syncs the settings-picker body class
             // with whatever the server says the mode is, and banner-notifies
             // the dashboard when a single-sided mode has parked due to fuel
-            // exhaustion.
+            // exhaustion. The wallet-aware suggestion refresh is cheap so
+            // we call it on every status tick — it no-ops if nothing changed.
             try { updateLiquidityModeBanner(data && data.liquidity); } catch (_) {}
+            try { refreshLiquidityModeSuggestion(); } catch (_) {}
 
             // Status badge — handle running, stopped, blocked, and starting states
             const isRunning = data.running;
@@ -21272,6 +21403,70 @@
                 const sign = netCatFlow > 0 ? '+' : '';
                 el('pnlNetCatFlow').textContent = sign + netCatFlow.toFixed(2) + ' CAT net';
             }
+
+            // Single-sided mode adaptation: if the current mode is buy_only
+            // or sell_only, surface a banner explaining the PnL readings and
+            // compute an avg-price + notional-unrealised summary. Two-sided
+            // shows nothing (the default full MM view is unchanged).
+            try {
+                const mode = (typeof bot_state !== 'undefined' && bot_state?.liquidity?.mode) || 'two_sided';
+                const banner = el('pnlModeBanner');
+                if (banner) {
+                    if (mode === 'two_sided') {
+                        banner.style.display = 'none';
+                    } else {
+                        banner.style.display = 'block';
+                        const icon = el('pnlModeBannerIcon');
+                        const title = el('pnlModeBannerTitle');
+                        const text = el('pnlModeBannerText');
+                        const detail = el('pnlAvgPriceDetail');
+                        const liveMid = parseFloat((bot_state?.pricing?.mid) || 0) || 0;
+                        if (mode === 'buy_only') {
+                            if (icon) icon.textContent = '📈';
+                            if (title) { title.textContent = 'Buy Only — Accumulation'; title.style.color = 'var(--status-success)'; }
+                            if (text) text.textContent =
+                                'Every fill converts XCH into tokens. Round-trip PnL and Win Rate do not apply; use Bought volume + Avg buy price below to track your accumulation.';
+                            if (detail) {
+                                if (buyVolXch > 0 && buyVolCat > 0) {
+                                    const avgBuyPrice = buyVolXch / buyVolCat;
+                                    let line = `Avg buy price: <strong>${avgBuyPrice.toFixed(8)} XCH</strong> per token `
+                                        + `(${buyVolCat.toFixed(2)} tokens acquired for ${buyVolXch.toFixed(4)} XCH).`;
+                                    if (liveMid > 0) {
+                                        const notional = (liveMid - avgBuyPrice) * buyVolCat;
+                                        const col = notional > 0 ? 'var(--status-success)' : notional < 0 ? 'var(--status-danger)' : 'var(--text-primary)';
+                                        const sign = notional > 0 ? '+' : notional < 0 ? '' : '';
+                                        line += ` · Notional vs current mid: <strong style="color:${col}">${sign}${notional.toFixed(4)} XCH</strong>`;
+                                    }
+                                    detail.innerHTML = line;
+                                } else {
+                                    detail.innerHTML = '<span style="color: var(--text-tertiary);">No buy fills recorded this run yet.</span>';
+                                }
+                            }
+                        } else if (mode === 'sell_only') {
+                            if (icon) icon.textContent = '📉';
+                            if (title) { title.textContent = 'Sell Only — Distribution'; title.style.color = 'var(--status-danger)'; }
+                            if (text) text.textContent =
+                                'Every fill converts tokens into XCH. Round-trip PnL and Win Rate do not apply; use Sold volume + Avg sell price below to track your distribution.';
+                            if (detail) {
+                                if (sellVolXch > 0 && sellVolCat > 0) {
+                                    const avgSellPrice = sellVolXch / sellVolCat;
+                                    let line = `Avg sell price: <strong>${avgSellPrice.toFixed(8)} XCH</strong> per token `
+                                        + `(${sellVolCat.toFixed(2)} tokens sold for ${sellVolXch.toFixed(4)} XCH).`;
+                                    if (liveMid > 0) {
+                                        const notional = (avgSellPrice - liveMid) * sellVolCat;
+                                        const col = notional > 0 ? 'var(--status-success)' : notional < 0 ? 'var(--status-danger)' : 'var(--text-primary)';
+                                        const sign = notional > 0 ? '+' : notional < 0 ? '' : '';
+                                        line += ` · Notional vs current mid: <strong style="color:${col}">${sign}${notional.toFixed(4)} XCH</strong>`;
+                                    }
+                                    detail.innerHTML = line;
+                                } else {
+                                    detail.innerHTML = '<span style="color: var(--text-tertiary);">No sell fills recorded this run yet.</span>';
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_) { /* banner is cosmetic; never break the PnL panel */ }
 
             const avgTripPnl = parseFloat(data.avg_pnl_per_trip_xch || 0);
             if (el('pnlAvgTripPnl')) {
