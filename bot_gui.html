@@ -9971,6 +9971,10 @@
                         <div class="mode-hide-on-two-sided" style="display: none; margin-bottom: 10px; padding: 8px 12px; background: rgba(100,116,139,0.08); border: 1px solid rgba(100,116,139,0.2); border-radius: 6px; font-size: 0.82em; color: var(--text-tertiary); line-height: 1.5;">
                             🎯 <strong>Sniper unavailable</strong> in single-sided mode — the arb-discovery probe places buy AND sell orders simultaneously, which requires both sides of the book. It will re-enable automatically if you switch back to Two-Sided.
                         </div>
+                        <!-- Re-arm fields + hint are sniper knobs; hide them
+                             together with the rest of the sniper block when
+                             in single-sided mode. -->
+                        <div class="mode-hide-on-buy-only mode-hide-on-sell-only">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label style="font-size: 0.85em;">Re-arm Price Move (%) <span class="cc-help">?<span class="cc-tooltip">Minimum mid-price move before sniper is allowed to run discovery again after the first launch. Higher = calmer sniper, lower = more reactive.</span></span></label>
@@ -9984,6 +9988,7 @@
                         <div class="v4-settings-hint" style="margin-bottom: 10px; color: var(--slate-400);">
                             Sniper probes now expire after about 10 minutes and should only sit on the edge while the main ladder settles behind them.
                         </div>
+                        </div><!-- /mode-hide sniper re-arm block -->
 
                         <input type="hidden" id="configTransactionFeeMode" value="manual">
                         <input type="hidden" id="configTransactionFeeTargetSecs" value="300">
