@@ -30542,15 +30542,17 @@ function startupPollUntilReady() {
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('[INIT] Page loading...');
 
-    // If the bot is already running (page reload mid-session), skip the startup
-    // wizard entirely and go straight to the dashboard.
-    let _botAlreadyRunning = false;
+    // Risk disclosure is always the very first screen — show it immediately
+    // so the user never sees "Connecting to Sage" before accepting risks.
+    startupShowRiskDisclosure();
+
+    // Check if bot is already running (page reload mid-session) — if so,
+    // skip the startup wizard entirely and go straight to the dashboard.
     try {
         const _statusResp = await apiFetch(`${API_URL}/status`,
             { signal: AbortSignal.timeout(2000) });
         const _statusData = await _statusResp.json();
         if ((_statusData.stats?.loop_count || 0) > 0) {
-            _botAlreadyRunning = true;
             console.log('[INIT] Bot already running — skipping startup wizard');
             const _overlay = document.getElementById('startupOverlay');
             if (_overlay) { _overlay.classList.add('hidden'); _overlay.style.display = 'none'; }
@@ -30558,11 +30560,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch(_e) {
         console.log('[INIT] Bot status probe failed — showing startup wizard:', _e.message);
-    }
-
-    if (!_botAlreadyRunning) {
-        // Show the startup disclosure before any wallet login starts.
-        startupShowRiskDisclosure();
     }
 
     // Then fetch fingerprint
