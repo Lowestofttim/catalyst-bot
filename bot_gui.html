@@ -29543,6 +29543,10 @@ async function startupAcceptRiskDisclosure() {
         startupShowError('Could not check wallet status. Is the bot server running?');
     } finally {
         _startupRiskDisclosureBusy = false;
+        // Force cursor reset — PyWebView/WebView2 on Windows doesn't clear the
+        // loading cursor after async awaits without an explicit nudge.
+        document.body.style.cursor = 'default';
+        setTimeout(() => { document.body.style.cursor = ''; }, 50);
     }
 }
 
