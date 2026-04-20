@@ -1402,8 +1402,9 @@ class BotLoop:
                 self._current_mid_price = probe["tibet_price"]
                 self._set_state(mid_price=str(probe["tibet_price"]))
                 linger_secs = int(getattr(cfg, "SNIPER_LINGER_SECS", 600) or 0)
+                _probe_desc = "Both probes survived" if sell_required else "Buy probe survived (sell probe not placed — sniper single-sided or no CAT sniper coins)"
                 log_event("info", "probe_confirmed",
-                          f"Both probes survived - price confirmed at Tibet "
+                          f"{_probe_desc} - price confirmed at Tibet "
                           f"{probe['tibet_price']:.8f}. Keeping probes live for "
                           f"{linger_secs}s while building main offers behind them.")
                 log_event("info", "probe_confirmed_status",

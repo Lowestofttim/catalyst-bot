@@ -1864,6 +1864,15 @@ def api_bot_start():
     if cfg.SPREAD_BPS <= 0:
         errors.append("SPREAD_BPS is 0 or negative — bot would create bad offers")
 
+    # G5b: warn when both sides are at zero offers
+    _buy_slots = getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 0) or 0
+    _sell_slots = getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 0) or 0
+    if _buy_slots == 0 and _sell_slots == 0:
+        warnings.append(
+            "MAX_ACTIVE_BUY and MAX_ACTIVE_SELL are both 0 — "
+            "bot will loop but create no offers"
+        )
+
     # Check hard price limits are set
     hard_min = getattr(cfg, "HARD_MIN_PRICE_XCH", Decimal("0"))
     hard_max = getattr(cfg, "HARD_MAX_PRICE_XCH", Decimal("0"))
@@ -3382,6 +3391,34 @@ def api_config_update():
         value = data["value"]
         if key in blocked:
             return jsonify({"success": False, "error": f"Cannot modify {key} via API"}), 403
+
+        # ── Input validation (mirrors bulk-path G1/G2/G3/G7 checks) ──────
+        _bot_running = bool(bot and bot.is_running())
+        if key == "LIQUIDITY_MODE":
+            _allowed = ("two_sided", "buy_only", "sell_only")
+            if str(value).lower().strip() not in _allowed:
+                return jsonify({
+                    "success": False,
+                    "error": f"LIQUIDITY_MODE must be one of: {', '.join(_allowed)}"
+                }), 400
+            if _bot_running:
+                return jsonify({
+                    "success": False,
+                    "error": "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first"
+                }), 409
+
+        if key == "SPREAD_BPS":
+            try:
+                _bps_val = int(float(value))
+            except (ValueError, TypeError):
+                return jsonify({"success": False, "error": "SPREAD_BPS must be a positive integer"}), 400
+            if _bps_val <= 0:
+                return jsonify({
+                    "success": False,
+                    "error": "SPREAD_BPS must be a positive integer (got %d)" % _bps_val
+                }), 400
+        # ─────────────────────────────────────────────────────────────────
+
         ok = cfg.update(key, str(value), source="api_settings_save")
         if ok:
             extra = None
@@ -3514,23 +3551,75 @@ def api_config_update():
             "enable_runtime_coin_health": "ENABLE_RUNTIME_COIN_HEALTH",
             "sage_set_change_address": "SAGE_SET_CHANGE_ADDRESS",
         }
+        _bot_running = bool(bot and bot.is_running())
         updated = []
         errors = []
+        validation_warnings = []
         for gui_key, value in data.items():
             env_key = key_map.get(gui_key, gui_key.upper())
             if env_key in blocked:
                 continue
+
+            # ── Input validation (G1/G2/G3/G7) ──────────────────────────────
+            if env_key == "LIQUIDITY_MODE":
+                _allowed = ("two_sided", "buy_only", "sell_only")
+                if str(value).lower().strip() not in _allowed:
+                    errors.append(
+                        f"LIQUIDITY_MODE must be one of: {', '.join(_allowed)}"
+                    )
+                    continue
+                if _bot_running:
+                    errors.append(
+                        "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first"
+                    )
+                    continue
+
+            if env_key == "SPREAD_BPS":
+                try:
+                    _bps_val = int(float(value))
+                except (ValueError, TypeError):
+                    errors.append("SPREAD_BPS must be a positive integer")
+                    continue
+                if _bps_val <= 0:
+                    errors.append("SPREAD_BPS must be a positive integer (got %d)" % _bps_val)
+                    continue
+                _max_bps = getattr(cfg, "MAX_SPREAD_BPS", 0) or 0
+                if _max_bps and _bps_val > _max_bps:
+                    validation_warnings.append(
+                        f"SPREAD_BPS ({_bps_val}) exceeds MAX_SPREAD_BPS ({_max_bps}) — "
+                        "dynamic spread will always clamp to the maximum"
+                    )
+
             ok = cfg.update(env_key, str(value), source="api_settings_save")
             if ok:
                 updated.append(env_key)
             else:
                 errors.append(env_key)
 
+        # G6: warn if sniper is enabled in a single-sided liquidity mode
+        _mode_after = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
+        _sniper_after = getattr(cfg, "SNIPER_ENABLED", False)
+        if _sniper_after and _mode_after in ("sell_only", "buy_only"):
+            validation_warnings.append(
+                f"SNIPER_ENABLED=true has no effect in {_mode_after} mode — "
+                "sniper requires both sides to place opposing probe offers"
+            )
+
+        # G5b: warn when both sides are at zero
+        _buy_slots = getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 0) or 0
+        _sell_slots = getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 0) or 0
+        if _buy_slots == 0 and _sell_slots == 0 and (updated or errors):
+            validation_warnings.append(
+                "MAX_ACTIVE_BUY and MAX_ACTIVE_SELL are both 0 — "
+                "bot will loop but create no offers"
+            )
+
         response = {
             "success": len(errors) == 0,
             "status": "updated",
             "updated": updated,
             "errors": errors,
+            "warnings": validation_warnings or None,
             "change_address_result": None,
         }
 
