@@ -1182,9 +1182,11 @@ def _is_sage_process_running() -> bool:
     import sys as _sys
     try:
         if _sys.platform == "win32":
+            from win_subprocess import hidden_subprocess_kwargs as _hskw
             result = subprocess.run(
                 ["tasklist", "/FI", "IMAGENAME eq sage-tauri.exe", "/NH"],
                 capture_output=True, text=True, timeout=5,
+                **_hskw(),
             )
             return "sage-tauri.exe" in result.stdout
         else:
