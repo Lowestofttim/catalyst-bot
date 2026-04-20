@@ -93,3 +93,27 @@ do nothing (can't fire sell probes; buy probe disabled).
 
 All five bugs are input-validation gaps that can be fixed in the `/api/config` handler
 and `bot.start` pre-flight checks without affecting trading logic.
+
+---
+
+## Fixes applied — commit ea991ec
+
+**G1** — `api_config_update()` bulk path: LIQUIDITY_MODE enum validation added; invalid
+values now return 400 with descriptive error.
+
+**G2** — `api_config_update()` bulk path: LIQUIDITY_MODE change while bot running now
+returns 409. Same guard added to single key-value path.
+
+**G3** — `api_config_update()` both paths: `SPREAD_BPS <= 0` now rejected at save time
+with 400 error. (Previously only caught at bot start.)
+
+**G5b** — `api_bot_start()`: added pre-start warning when both `MAX_ACTIVE_BUY_OFFERS`
+and `MAX_ACTIVE_SELL_OFFERS` are 0.
+
+**G6** — `api_config_update()` bulk path: warning added to response when
+`SNIPER_ENABLED=true` with `sell_only` or `buy_only` mode.
+
+**G7** — `api_config_update()` bulk path: warning added when `SPREAD_BPS > MAX_SPREAD_BPS`.
+
+All six rules also apply to the single `{"key":…,"value":…}` format path (G1/G2/G3).
+Response shape now includes optional `"warnings"` field alongside `"errors"`.

@@ -82,3 +82,16 @@ blocks when `net_pos_cat <= 0` and projected exposure > `max_position_xch × 1.1
 
 After all Phase F scenarios, config was restored to two-sided with MAX_POSITION_XCH=40
 and fills reset to 0 via `/api/pnl/reset`.
+
+---
+
+## Fixes applied
+
+**F3-A** — `bot_loop.py` commit ea991ec: "Both probes survived" log message is now
+conditional. When `sell_required=False` (sell probe not placed), message reads:
+"Buy probe survived (sell probe not placed — sniper single-sided or no CAT sniper coins)".
+
+**F4-A** — `api_server.py` commit be22e3f (smart defaults): added post-calculation
+guard that bumps `max_position_xch` to `ceil(total_sell_ladder_xch / 0.9 × 10) / 10`
+whenever the recommended sell ladder would exceed the position limit.
+(Fix was in code on disk; server restart required to pick up.)

@@ -395,8 +395,8 @@ in a state that needs manual recovery.
 
 ---
 
-| 2026-04-20 | 06-F | `[x]` | live | Settings combos: Conservative+Both ✅, Balanced+Buy-only ✅, Aggressive+Both ⚠ (sell blocked by inherited net-short position — expected behaviour), Balanced+Sell-only ✅ (max_position_xch fix needed — see findings) |
-| 2026-04-20 | 06-G | `[x]` | live | Settings validation API: 5 validation gaps found (invalid mode accepted, config update while running, negative spread accepted, zero-side start allowed, sniper+sell-only not warned) |
+| 2026-04-20 | 06-F | `[x]` | live / ea991ec / be22e3f | Settings combos: all 4 scenarios passed. F3-A log fixed (ea991ec). F4-A smart-defaults fixed (be22e3f). |
+| 2026-04-20 | 06-G | `[x]` | ea991ec | Settings validation: all 5 bugs fixed — G1 enum check, G2 bot-running guard (409), G3 neg-spread rejected at save, G5b zero-slots warn in bot-start, G6 sniper+single-sided warn, G7 spread>max warn. |
 
 ## Progress summary
 
