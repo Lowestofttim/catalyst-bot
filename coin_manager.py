@@ -5093,6 +5093,34 @@ class CoinManager:
                       f"Could not record topup pool spend ({amount_mojos} mojos, "
                       f"is_cat={is_cat}): {exc}")
 
+    def _record_topup_pool_refund(self, is_cat: bool, amount_mojos: int) -> None:
+        """Credit an amount back to the topup pool spend counter.
+
+        Mirror of _record_topup_pool_spend for the reverse direction:
+        when coins are returned to the reserve (misfit absorption), the
+        cumulative-spend counter must decrement so the budget guard
+        continues to reflect the *net* amount carved from the pool. Without
+        this, spent drifts permanently higher than reality — coins return
+        to the reserve but the counter still treats them as committed —
+        and tier refills get refused even while the reserve holds plenty
+        of coins.
+
+        Clamped at zero so an over-refund (e.g. manually-added coins
+        joining a misfit absorption) can't go negative.
+        """
+        if amount_mojos <= 0:
+            return
+        try:
+            from database import get_setting, set_setting
+            key = "topup_pool_cat_spent_mojos" if is_cat else "topup_pool_xch_spent_mojos"
+            current = int(str(get_setting(key, "0") or "0"))
+            updated = max(0, current - int(amount_mojos))
+            set_setting(key, str(updated))
+        except Exception as exc:
+            log_event("debug", "topup_pool_refund_record_failed",
+                      f"Could not record topup pool refund ({amount_mojos} mojos, "
+                      f"is_cat={is_cat}): {exc}")
+
     def _sage_one_step_split(self, name: str, wallet_id: int,
                               source_coin_id: str, num_to_create: int,
                               trading_size_mojos: int, is_cat: bool) -> bool:
@@ -6170,6 +6198,14 @@ class CoinManager:
                 log_event("success", f"topup_{name.lower()}_absorb_ok",
                           f"Misfit absorption submitted — enlarged reserve "
                           f"({amt_str}) will be available after confirmation{extra}")
+                # Credit the absorbed misfit total back to the topup pool
+                # spend counter. The misfits were originally carved from the
+                # reserve (contributing to spent), and folding them back in
+                # means that XCH is once again available for future splits.
+                # Without this, the counter drifts permanently upward and
+                # blocks tier refills even when the reserve physically has
+                # coins — the bug we chased for the 2026-04-21 session.
+                self._record_topup_pool_refund(is_cat, int(total_misfit))
                 return True
 
             # Log the actual Sage error (not just "Unknown") for diagnosis
