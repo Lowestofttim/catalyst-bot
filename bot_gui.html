@@ -8093,6 +8093,7 @@
                             <div class="v4-hero-value data-pending" id="heroMidPrice">—</div>
                             <div class="v4-hero-sub data-pending" id="heroSpread">spread —</div>
                             <div id="heroPriceSpark" aria-hidden="true" style="margin-top: var(--space-2); height: 24px;"></div>
+                            <a href="javascript:void(0)" onclick="v4SwitchView('intel')" style="font-size: 10px; color: var(--text-tertiary); text-decoration: none; opacity: 0.6; display: inline-block; margin-top: 2px;" onmouseover="this.style.opacity='1'; this.style.color='var(--accent-primary)'" onmouseout="this.style.opacity='0.6'; this.style.color='var(--text-tertiary)'" title="Open Market Intel for full price history">Full chart →</a>
                         </div>
                         <div class="v4-hero-card">
                             <div class="v4-hero-label">Active Offers <span class="cc-help">?<span class="cc-tooltip">Total number of your active buy and sell offers on Dexie right now.</span></span></div>
@@ -8234,14 +8235,12 @@
                          closing the console window killed the bot. -->
                     <div id="consoleWarningBanner" style="display:none;" aria-hidden="true"></div>
 
-                    <!-- ===== PRICE HISTORY CHART ===== -->
-                    <div class="v4-card" id="dashboardPriceHistoryPanel" style="margin-bottom: var(--space-4);">
-                        <div class="v4-card-header">
-                            <div class="v4-card-title">Mid Price — last 20 minutes</div>
-                            <span style="font-size: var(--text-xs); color: var(--text-secondary);">Samples every 5s · max 240 points</span>
-                        </div>
-                        <div id="v4PriceHistoryChart" style="height: 160px; position: relative;"></div>
-                    </div>
+                    <!-- Full Mid Price history chart moved to the Market
+                         Intelligence tab. The header already shows a
+                         live sparkline next to the mid-price value
+                         (#heroPriceSpark), which is enough for at-a-
+                         glance trend. Frees ~200px above the fold for
+                         Recommendations + Activity + Advisor. -->
 
                     <!-- ===== SPLIT PANEL: RECOMMENDATIONS + ACTIVITY ===== -->
                     <div id="dashboardActivityRow" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
@@ -9032,6 +9031,15 @@
                     <div class="intel-brand-row">
                         <span class="service-badge-inline service-badge-dexie"><img src="/brand/dexie_logo_official.png" alt="Dexie logo">Dexie</span>
                         <span class="service-badge-inline service-badge-spacescan">Spacescan</span>
+                    </div>
+
+                    <!-- ===== PRICE HISTORY CHART (moved from dashboard 2026-04-21) ===== -->
+                    <div class="v4-card" id="intelPriceHistoryPanel" style="margin-bottom: var(--space-4);">
+                        <div class="v4-card-header">
+                            <div class="v4-card-title">Mid Price — last 20 minutes</div>
+                            <span style="font-size: var(--text-xs); color: var(--text-secondary);">Samples every 5s · max 240 points</span>
+                        </div>
+                        <div id="v4PriceHistoryChart" style="height: 200px; position: relative;"></div>
                     </div>
 
             <!-- Market Intelligence Content (moved from tab) -->
@@ -12846,6 +12854,10 @@
         function v4RenderPriceHistoryChart() {
             const chart = document.getElementById('v4PriceHistoryChart');
             if (!chart) return;
+            // 2026-04-21: chart was 160px on the dashboard; moved to Market
+            // Intel tab and given more vertical room now that it has the
+            // whole viewport to breathe in.
+            const _chartH = 200;
             if (_v4PriceHistory.length < 2) {
                 // Clear the canvas without any canvas-drawn text. The
                 // previous approach of passing emptyText into the canvas
@@ -12854,7 +12866,7 @@
                 // resize, etc.). Use a DOM overlay instead so the text is
                 // always rendered by the browser's text engine at the
                 // right size.
-                v4DrawLineChart(chart, [], { height: 160, emptyText: '' });
+                v4DrawLineChart(chart, [], { height: _chartH, emptyText: '' });
                 _v4SetChartEmptyOverlay(chart, 'Collecting price samples…');
                 return;
             }
@@ -12868,7 +12880,7 @@
                 : _cssVar('--status-danger', '#EF4444');
             const fill = up ? 'rgba(16,185,129,0.14)' : 'rgba(239,68,68,0.14)';
             v4DrawLineChart(chart, series, {
-                height: 160,
+                height: _chartH,
                 color: color,
                 fillColor: fill,
                 includeZero: false,
