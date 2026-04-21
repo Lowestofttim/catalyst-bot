@@ -4647,10 +4647,45 @@ class CoinManager:
                 max_possible = largest_amount // trading_size_mojos
                 num_to_create = min(needed, max_possible, 15)
 
+                # Auto-scale request to what the remaining topup pool
+                # budget can fund. When TOPUP_POOL_* is smaller than a full
+                # refill (common when Smart Settings was last run before
+                # the tier deficit grew), a full-ask would fail the budget
+                # guard entirely and the tier would stay permanently short.
+                # Instead, take the min of needed/source/safety/budget so
+                # a partial refill makes forward progress. When the tier is
+                # empty, the guard's empty_tier_bypass lets us overshoot —
+                # skip the pre-clamp so the bypass path still works.
+                if not tier_is_empty:
+                    budget_cap = self._max_coins_within_topup_budget(
+                        is_cat=is_cat,
+                        trading_size_mojos=trading_size_mojos,
+                    )
+                    if budget_cap is not None and budget_cap < num_to_create:
+                        if budget_cap < 1:
+                            log_event(
+                                "info",
+                                f"topup_{name.lower()}_budget_empty_skip",
+                                f"{name} topup pool budget exhausted — skipping "
+                                f"split (would fund 0 coins). Re-run Smart "
+                                f"Settings to replenish the budget."
+                            )
+                            num_to_create = 0
+                        else:
+                            log_event(
+                                "info",
+                                f"topup_{name.lower()}_budget_scaled",
+                                f"{name} request scaled {num_to_create} → "
+                                f"{budget_cap} to fit remaining topup pool "
+                                f"budget. Deficit will be refilled over "
+                                f"multiple cycles."
+                            )
+                            num_to_create = budget_cap
+
                 if num_to_create < 1:
-                    log_event("warning", f"topup_{name.lower()}_skip",
-                              f"{name} topup pool coin ({amt_str}) too small for "
-                              f"even 1 trading coin ({size_str})")
+                    log_event("info", f"topup_{name.lower()}_skip",
+                              f"{name} topup skipped — "
+                              f"{'pool coin ({}) too small for even 1 trading coin ({})'.format(amt_str, size_str) if largest_amount < trading_size_mojos else 'budget cap reached'}")
                 else:
                     # Calculate exact intermediate coin size
                     pool_amount_mojos = num_to_create * trading_size_mojos
@@ -5073,6 +5108,46 @@ class CoinManager:
                       f"guard still enforced).")
 
         return True
+
+    def _max_coins_within_topup_budget(self, is_cat: bool,
+                                       trading_size_mojos: int) -> Optional[int]:
+        """Return the largest number of trading coins the remaining topup
+        budget can fund, or None when no budget is configured (unlimited).
+
+        Used to auto-scale refill requests when `TOPUP_POOL_*` is smaller
+        than what a full deficit refill would cost. Without this, the guard
+        refuses every request and the tier stays permanently short even
+        while the budget has partial headroom.
+
+        Returns 0 when the budget is exhausted — caller should skip the
+        split entirely and let the existing guard log the refusal.
+        """
+        if trading_size_mojos <= 0:
+            return None
+        try:
+            if is_cat:
+                scale = Decimal(10) ** Decimal(str(getattr(cfg, "CAT_DECIMALS", 3)))
+                budget = Decimal(str(getattr(cfg, "TOPUP_POOL_CAT", 0) or 0))
+                budget_mojos = int(budget * scale)
+                spent_key = "topup_pool_cat_spent_mojos"
+            else:
+                budget = Decimal(str(getattr(cfg, "TOPUP_POOL_XCH", 0) or 0))
+                budget_mojos = int(budget * Decimal("1000000000000"))
+                spent_key = "topup_pool_xch_spent_mojos"
+        except Exception:
+            return None
+
+        if budget_mojos <= 0:
+            return None  # unlimited — no cap
+
+        try:
+            from database import get_setting
+            spent_mojos = int(str(get_setting(spent_key, "0") or "0"))
+        except Exception:
+            spent_mojos = 0
+
+        remaining = max(0, budget_mojos - spent_mojos)
+        return remaining // trading_size_mojos
 
     def _record_topup_pool_spend(self, is_cat: bool, amount_mojos: int) -> None:
         """Persist an incremental topup pool spend to bot_settings.

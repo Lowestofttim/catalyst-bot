@@ -84,13 +84,15 @@ class _FakeWalletBalance:
 class EmptyTierBudgetBypassTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
+        # Leave shared modules loaded. Popping `config` would force later
+        # test classes to re-import it, but `bot_health` (and other test
+        # modules) cache the cfg reference at import time — so the re-
+        # imported cfg would be a DIFFERENT instance from the one
+        # `bot_health.cfg` points at. That mismatch caused spurious
+        # drift-check failures when this file ran before the bot_health
+        # test suite.
         for name in _INSTALLED_STUBS:
             sys.modules.pop(name, None)
-        for name in list(sys.modules):
-            if name in ("amm_monitor", "coin_manager", "wallet_sage",
-                        "wallet_chia", "wallet", "price_engine", "tx_fees",
-                        "win_subprocess", "config", "database"):
-                sys.modules.pop(name, None)
 
     def _make_manager(self):
         with patch.object(coin_manager.CoinManager, "_resolve_fingerprint",

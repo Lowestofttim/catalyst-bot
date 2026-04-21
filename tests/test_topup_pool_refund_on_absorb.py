@@ -80,13 +80,13 @@ import coin_manager
 class TopupPoolRefundTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
+        # Leave coin_manager / config / database loaded: popping them
+        # here would force other test classes to re-import and cfg would
+        # get re-initialised from .env while bot_health.cfg still points
+        # to the original instance — leading to TOPUP_POOL_* values that
+        # don't match between modules and spurious drift check failures.
         for name in _INSTALLED_STUBS:
             sys.modules.pop(name, None)
-        for name in list(sys.modules):
-            if name in ("amm_monitor", "coin_manager", "wallet_sage",
-                        "wallet_chia", "wallet", "price_engine", "tx_fees",
-                        "win_subprocess", "config", "database"):
-                sys.modules.pop(name, None)
 
     def _make_manager(self):
         with patch.object(coin_manager.CoinManager, "_resolve_fingerprint",
