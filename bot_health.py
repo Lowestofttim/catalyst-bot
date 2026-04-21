@@ -26,6 +26,7 @@ import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 
 from config import cfg
@@ -645,6 +646,164 @@ def check_ladder_overbuild(auto_repair: bool = True) -> HealthCheck:
     )
 
 
+# ── Check 5: topup pool budget drift ──────────────────────────────────
+
+# Drift tolerance: below this (mojos) we ignore the mismatch because small
+# differences are expected from split fees, rounding, and mid-cycle timing
+# jitter. Above it, we clamp the stored spent counter down to observed
+# reality. Sized well below a single tier-split (~0.6 XCH / 4800 CAT) so a
+# drift big enough to block a real refill is always caught.
+_BUDGET_DRIFT_TOLERANCE_XCH_MOJOS = int(Decimal("0.1") * Decimal("1000000000000"))  # 0.1 XCH
+
+
+def _reserve_mojos(wallet_type: str) -> int:
+    """Sum mojos across all coins currently designated 'reserve'."""
+    from database import get_reserve_coins
+    total = 0
+    try:
+        for r in get_reserve_coins(wallet_type) or []:
+            amt = r.get("amount_mojos")
+            if amt is not None:
+                total += int(amt)
+    except Exception:
+        pass
+    return total
+
+
+def check_topup_budget_drift(auto_repair: bool = True) -> HealthCheck:
+    """Reconcile topup-pool spent counters against observed reserve size.
+
+    The spent counter should track the NET amount carved from the reserve
+    (splits add, misfit absorption returns subtract). Pre-2026-04-21 the
+    refund path was missing, so the counter drifted permanently higher than
+    reality and refused legitimate tier refills even while the reserve
+    physically held coins. The refund is now wired up, but any counter drift
+    from an earlier session persists in bot_settings across restarts.
+
+    Invariant (idempotent): stored_spent == budget - reserve_size (± fees).
+    When stored_spent exceeds that, the counter is stale; clamp it down.
+    Never adjust upward — doing so would widen the allowance beyond what
+    Smart Settings configured.
+
+    Covers both XCH and CAT pools in a single check. Repair is safe: the
+    hard-reserve guard (XCH_RESERVE / CAT_RESERVE) still runs on every
+    actual split and protects capital independently of this counter.
+    """
+    from database import get_setting, set_setting
+    from config import cfg
+
+    findings = []   # one entry per (wallet_type, asset) that drifted
+    repair_log = []
+    repaired = 0
+
+    specs = (
+        {
+            "label": "XCH",
+            "wallet_type": "xch",
+            "budget_cfg": "TOPUP_POOL_XCH",
+            "spent_key": "topup_pool_xch_spent_mojos",
+            "scale": Decimal("1000000000000"),  # 1e12 mojos per XCH
+            "tolerance_mojos": _BUDGET_DRIFT_TOLERANCE_XCH_MOJOS,
+            "display_scale": 1e12,
+            "unit": "XCH",
+        },
+        {
+            "label": "CAT",
+            "wallet_type": "cat",
+            "budget_cfg": "TOPUP_POOL_CAT",
+            "spent_key": "topup_pool_cat_spent_mojos",
+            # Scale depends on configured CAT decimals; computed inline.
+            "scale": None,
+            # CAT tolerance derived from 0.5% of the XCH-equivalent tier
+            # threshold — comfortably below a meaningful split amount.
+            "tolerance_mojos": None,
+            "display_scale": None,
+            "unit": "CAT",
+        },
+    )
+
+    for spec in specs:
+        try:
+            # Resolve the unit scale for CAT (depends on CAT_DECIMALS).
+            if spec["wallet_type"] == "cat":
+                cat_decimals = int(getattr(cfg, "CAT_DECIMALS", 3))
+                scale = Decimal(10) ** Decimal(cat_decimals)
+                # Tolerance: 1 whole CAT unit — well below any tier split.
+                tolerance_mojos = int(scale)
+                display_scale = float(scale)
+            else:
+                scale = spec["scale"]
+                tolerance_mojos = spec["tolerance_mojos"]
+                display_scale = spec["display_scale"]
+
+            budget_xch_or_cat = Decimal(str(getattr(cfg, spec["budget_cfg"], 0) or 0))
+            if budget_xch_or_cat <= 0:
+                continue  # unlimited — drift is meaningless
+            budget_mojos = int(budget_xch_or_cat * scale)
+
+            spent_mojos = int(str(get_setting(spec["spent_key"], "0") or "0"))
+            reserve_mojos = _reserve_mojos(spec["wallet_type"])
+
+            # Observed spend = what's actually been carved from the pool.
+            # If reserve > budget (user over-funded) we treat excess as 0 spend.
+            observed_spent = max(0, budget_mojos - reserve_mojos)
+
+            drift = spent_mojos - observed_spent
+            if drift <= tolerance_mojos:
+                continue  # counter within tolerance — healthy
+
+            # Drifted upward — stored counter exceeds what reality supports.
+            # Build a human-readable summary before any repair.
+            msg = (f"{spec['label']} spent counter "
+                   f"{spent_mojos / display_scale:.4f} > observed "
+                   f"{observed_spent / display_scale:.4f} "
+                   f"(reserve={reserve_mojos / display_scale:.4f} "
+                   f"of budget {budget_mojos / display_scale:.4f}); "
+                   f"drift={drift / display_scale:.4f} {spec['unit']}")
+            findings.append(msg)
+
+            if auto_repair:
+                try:
+                    set_setting(spec["spent_key"], str(observed_spent))
+                    repair_log.append(msg + " — clamped to observed.")
+                    slog("BOT_HEALTH",
+                         f"topup_budget_drift_healed {spec['label']}: "
+                         f"{spent_mojos / display_scale:.4f} → "
+                         f"{observed_spent / display_scale:.4f} "
+                         f"{spec['unit']} (drift {drift / display_scale:.4f})",
+                         level="info")
+                    repaired += 1
+                except Exception as e:
+                    slog("BOT_HEALTH",
+                         f"Failed to heal {spec['label']} budget drift: {e}",
+                         level="warn")
+
+        except Exception as e:
+            slog("BOT_HEALTH",
+                 f"topup_budget_drift check error on {spec['label']}: {e}",
+                 level="warn")
+
+    if not findings:
+        return HealthCheck(
+            name="topup_budget_drift",
+            category="coins",
+            status="pass",
+            severity="info",
+            message="Topup spent counters aligned with observed reserve size.",
+        )
+
+    return HealthCheck(
+        name="topup_budget_drift",
+        category="coins",
+        status="warn" if (findings and not auto_repair) else "pass",
+        severity="warning" if (findings and not auto_repair) else "info",
+        message="; ".join(findings),
+        anomaly_count=len(findings),
+        repaired_count=repaired,
+        repair_log=repair_log,
+    )
+
+
 # ── Top-level runner ───────────────────────────────────────────────────
 
 # Cache to avoid running checks more often than needed (the bot loop
@@ -694,6 +853,7 @@ def run_runtime_checks(auto_repair: bool = True,
     report.checks.append(check_orphan_locks(auto_repair=auto_repair))
     report.checks.append(check_stale_dexie_posts(auto_repair=auto_repair))
     report.checks.append(check_ladder_overbuild(auto_repair=auto_repair))
+    report.checks.append(check_topup_budget_drift(auto_repair=auto_repair))
 
     report.duration_ms = (time.time() - start) * 1000.0
     _last_run_lock_ts = time.time()
