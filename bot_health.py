@@ -1372,16 +1372,20 @@ def check_spacescan_cache_stale(auto_repair: bool = True) -> HealthCheck:
 
 # ── Check 9: unclaimed deposits → three-way allocation prompt ─────────
 
-# A new coin counts as a "significant deposit" candidate when its amount
-# meets BOTH conditions:
-#   - >= 10× the smallest configured trading tier size
-#   - first_seen within the last 15 minutes
-# AND it hasn't already been advised on (persisted list), AND no internal
-# misfit absorption happened in the last 90 seconds (that creates a new
-# reserve coin too but it's internal bucket reshuffle, not new capital).
+# A reserve coin counts as a "significant deposit" candidate when its
+# amount >= 10× the smallest configured trading tier size, AND it hasn't
+# already been advised on (persisted list), AND no internal misfit
+# absorption happened in the last 90 seconds (that creates a new reserve
+# coin too but it's internal bucket reshuffle, not new capital).
+#
+# No time window on `first_seen` — a deposit that arrived before a
+# restart is still unallocated and still deserves a prompt. The advised
+# coin_id list is the authoritative dedup mechanism; a time filter on
+# top would create false negatives (silently skip legit deposits that
+# happen to be older than N minutes).
 _DEPOSIT_ADVISORY_TIER_MULTIPLE = 10
-_DEPOSIT_ADVISORY_FRESH_SECS = 15 * 60
 _DEPOSIT_ADVISORY_ABSORB_COOLDOWN_SECS = 90
+_DEPOSIT_ADVISORY_MAX_ALERTS_PER_PASS = 5  # cap first-run flood
 
 
 def _advised_deposits() -> set:
@@ -1524,10 +1528,8 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 "WHERE wallet_type=? AND status='free' "
                 "  AND designation='reserve' "
                 "  AND amount_mojos >= ? "
-                "  AND first_seen >= datetime('now', ?) "
-                "ORDER BY first_seen DESC",
-                (wallet_type, int(threshold_mojos),
-                 f"-{int(_DEPOSIT_ADVISORY_FRESH_SECS)} seconds"),
+                "ORDER BY amount_mojos DESC",
+                (wallet_type, int(threshold_mojos)),
             ).fetchall()
         except Exception as e:
             slog("BOT_HEALTH",
@@ -1535,7 +1537,15 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                  level="warn")
             continue
 
+        # Cap the alerts per pass to avoid flooding the Recommendations
+        # panel on first deployment when there may be many pre-existing
+        # reserve coins. Surface the largest ones first; the user can
+        # dismiss or allocate each in turn.
+        raised_this_pass = 0
+
         for row in rows:
+            if raised_this_pass >= _DEPOSIT_ADVISORY_MAX_ALERTS_PER_PASS:
+                break
             coin_id = row["coin_id"] or ""
             if not coin_id or coin_id in advised:
                 continue
