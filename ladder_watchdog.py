@@ -227,13 +227,21 @@ def audit_ladder_shape(
 
     # Build list of (tier, median) in "inner-to-extreme" order, skipping empty tiers
     seq = [(t, medians[t]) for t in tier_order if medians[t] is not None]
+    # Float-precision tolerance: tier sizes are typically 0.1–5 XCH. Storage
+    # and arithmetic can introduce sub-mojo drift (e.g. 2.5349000000035 vs
+    # 2.534900000007). Without a tolerance, `Decimal` comparison flags such
+    # ~3e-12 XCH differences as an "inversion" and escalates the watchdog
+    # to ERROR level. 0.0001 XCH (= 100,000 mojos) sits well above float
+    # noise but well below any real tier-size gap, so genuine inversions
+    # still trip while precision drift no longer does.
+    _MEDIAN_EPS = Decimal("0.0001")
     for i in range(len(seq) - 1):
         t1, m1 = seq[i]
         t2, m2 = seq[i + 1]
         # Reverse: m1 should be >= m2 (inner is largest)
         # Standard: m1 should be <= m2 (inner is smallest)
         if reversed_ladder:
-            if m1 < m2:
+            if m1 < m2 - _MEDIAN_EPS:
                 # Cancel the smaller-side offers at t1 — those are the
                 # misfit-backed ones that caused the inversion.
                 offender_tids = list(trade_ids_by_tier.get(t1, []))
@@ -259,7 +267,7 @@ def audit_ladder_shape(
                     },
                 ))
         else:
-            if m1 > m2:
+            if m1 > m2 + _MEDIAN_EPS:
                 offender_tids = list(trade_ids_by_tier.get(t1, []))
                 result.issues.append(Issue(
                     severity=Severity.ERROR,
