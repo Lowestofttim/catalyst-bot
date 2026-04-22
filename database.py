@@ -3458,18 +3458,29 @@ def log_event(severity: str, event_type: str, message: str,
             pass
 
         conn = get_connection()
+        # The events.severity column has a CHECK constraint allowing only
+        # info / success / warning / error. Callers that log incidents at
+        # "critical" (oracle hard-pause, ladder/topup/prep zombies, etc.)
+        # would silently fail the INSERT — the event flashes in SSE and
+        # then vanishes from the DB-backed log, so post-mortem review
+        # after a GUI refresh couldn't find the worst incidents. Map
+        # critical to "error" at the storage layer to keep persistence
+        # reliable while the live SSE stream (emitted above at line
+        # 3446) still carries the original "critical" severity for
+        # high-visibility UI rendering.
+        db_severity = "error" if str(severity).lower() == "critical" else severity
         if event_category:
             conn.execute(
                 """INSERT INTO events (timestamp, event_type, severity, message, data, event_category)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (now, event_type, severity, message,
+                (now, event_type, db_severity, message,
                  json.dumps(data) if data else None, event_category)
             )
         else:
             conn.execute(
                 """INSERT INTO events (timestamp, event_type, severity, message, data)
                    VALUES (?, ?, ?, ?, ?)""",
-                (now, event_type, severity, message,
+                (now, event_type, db_severity, message,
                  json.dumps(data) if data else None)
             )
         conn.commit()

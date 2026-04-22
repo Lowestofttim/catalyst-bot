@@ -574,12 +574,29 @@ class BotLoop:
 
     def _emit_alert(self, alert_id: str, severity: str, title: str, message: str,
                     action: str = None, action_label: str = None):
-        """Emit a persistent alert to the GUI."""
+        """Emit a persistent alert to the GUI.
+
+        If the event bus itself throws (misconfigured alert_store, disk
+        full during persistence, etc.) we previously swallowed the
+        exception silently — a real fault could then happen with no
+        banner AND no evidence that alerting itself had failed. Now we
+        log a fallback warning so the operator at least sees via the
+        log that an alert was dropped.
+        """
         if self._event_bus:
             try:
                 self._event_bus.alert(alert_id, severity, title, message, action, action_label)
-            except Exception:
-                pass  # Non-critical
+            except Exception as _alert_err:
+                try:
+                    log_event(
+                        "warning", "alert_emit_failed",
+                        f"Alert '{alert_id}' (sev={severity}) failed to emit: "
+                        f"{_alert_err}. Title was: {title!r}",
+                        data={"alert_id": alert_id, "severity": severity,
+                              "title": title},
+                    )
+                except Exception:
+                    pass  # don't cascade a logging failure
 
     def _clear_alert(self, alert_id: str):
         """Clear a resolved alert."""
@@ -587,8 +604,15 @@ class BotLoop:
             try:
                 if hasattr(self._event_bus, '_alert_store'):
                     self._event_bus._alert_store.clear(alert_id)
-            except Exception:
-                pass
+            except Exception as _clear_err:
+                try:
+                    log_event(
+                        "debug", "alert_clear_failed",
+                        f"Alert '{alert_id}' failed to clear: {_clear_err}",
+                        data={"alert_id": alert_id},
+                    )
+                except Exception:
+                    pass
 
     def _probe_warn(self, event: str, message: str) -> bool:
         """Emit a probe-related warning at most once per _probe_warn_cooldown seconds.
@@ -4002,6 +4026,19 @@ class BotLoop:
 
         # Pricing strategy is logged but not emitted as an alert (not actionable)
 
+        # Clear the oracle-stale / hard-pause alerts as soon as we have a
+        # fresh usable mid. Previously the "Oracle Stale" and "Oracle
+        # Outage — Hard Pause" banners never cleared once raised, so the
+        # GUI kept shouting at the operator even after pricing had been
+        # healthy for many cycles. If pricing just recovered we ALSO
+        # emit a one-shot recovery notification so the operator sees
+        # the transition, not just the banner disappearance.
+        try:
+            self._clear_alert("price_stale")
+            self._clear_alert("circuit_breaker")
+        except Exception:
+            pass
+
         # ---- Connectivity recovery check (V1 parity) ----
         # If pricing was down for >30 min and just recovered, repost all offers
         pricing_now = time.time()
@@ -5422,10 +5459,13 @@ class BotLoop:
                     log_event("error", "reserve_floor_breached",
                               f"XCH balance ({_xch_total:.4f}) ≤ XCH_RESERVE ({_xch_reserve}) — "
                               f"cancelling all open offers to protect reserve")
+                    # Distinct XCH alert id so it doesn't collide with the
+                    # CAT path's alert and overwrite operator-facing
+                    # context mid-triage when both reserves are stressed.
                     self._emit_alert(
-                        "reserve_floor",
+                        "reserve_floor_xch",
                         "error",
-                        "Reserve Floor Breached",
+                        "Reserve Floor Breached (XCH)",
                         f"XCH balance ({_xch_total:.4f} XCH) has reached the reserve floor "
                         f"({_xch_reserve} XCH). Cancelling open offers to free locked coins.",
                         action="stop_bot",
@@ -5442,14 +5482,18 @@ class BotLoop:
                               f"XCH balance ({_xch_total:.4f}) approaching reserve floor "
                               f"({_xch_reserve}) — skipping offer creation")
                     self._emit_alert(
-                        "reserve_floor",
+                        "reserve_floor_xch",
                         "warning",
-                        "Reserve Floor Approaching",
+                        "Reserve Floor Approaching (XCH)",
                         f"XCH balance ({_xch_total:.4f} XCH) is within 5% of reserve floor "
                         f"({_xch_reserve} XCH). Offer creation paused.",
                     )
                     _reserve_skip_create = True
                 else:
+                    self._clear_alert("reserve_floor_xch")
+                    # Also clear the legacy alert id (pre-attribution fix)
+                    # so an upgrade-in-place does not leave a stale banner
+                    # glued to the screen.
                     self._clear_alert("reserve_floor")
 
             if not _reserve_skip_create and _cat_reserve > Decimal("0"):
@@ -5467,9 +5511,9 @@ class BotLoop:
                               f"CAT balance ({_cat_total:,.2f}) ≤ CAT_RESERVE ({_cat_reserve}) — "
                               f"cancelling all open offers to protect reserve")
                     self._emit_alert(
-                        "reserve_floor",
+                        "reserve_floor_cat",
                         "error",
-                        "Reserve Floor Breached",
+                        "Reserve Floor Breached (CAT)",
                         f"CAT balance ({_cat_total:,.2f}) has reached the reserve floor "
                         f"({_cat_reserve}). Cancelling open offers to free locked coins.",
                         action="stop_bot",
@@ -5486,13 +5530,15 @@ class BotLoop:
                               f"CAT balance ({_cat_total:,.2f}) approaching reserve floor "
                               f"({_cat_reserve}) — skipping offer creation")
                     self._emit_alert(
-                        "reserve_floor",
+                        "reserve_floor_cat",
                         "warning",
-                        "Reserve Floor Approaching",
+                        "Reserve Floor Approaching (CAT)",
                         f"CAT balance ({_cat_total:,.2f}) is within 5% of reserve floor "
                         f"({_cat_reserve}). Offer creation paused.",
                     )
                     _reserve_skip_create = True
+                else:
+                    self._clear_alert("reserve_floor_cat")
         except Exception as _rf_err:
             log_event("debug", "reserve_floor_check_error",
                       f"Reserve floor check failed (non-fatal): {_rf_err}")
@@ -7500,12 +7546,44 @@ class BotLoop:
                 restart_fn()
                 log_event("info", "background_thread_restarted",
                           f"Successfully restarted background thread '{name}'")
+                # Clear the "crashed" banner and raise a transient
+                # "recovered" banner so the operator sees the outcome —
+                # previously the original crash banner stayed up whether
+                # the restart succeeded or not, which left the GUI
+                # misleading.
+                self._clear_alert(f"thread_dead_{name}")
+                try:
+                    self._emit_alert(
+                        f"thread_recovered_{name}",
+                        "info",
+                        f"Background thread recovered: {name}",
+                        f"The {name} background thread has been restarted "
+                        f"after a crash. No action required.",
+                    )
+                except Exception:
+                    pass
             except Exception as _restart_err:
                 log_event(
                     "error",
                     "background_thread_restart_failed",
                     f"Failed to restart background thread '{name}': {_restart_err}",
                 )
+                # Upgrade the existing thread_dead_* banner to reflect the
+                # failed restart so operators don't believe a fix is in
+                # progress when it has already failed.
+                try:
+                    self._emit_alert(
+                        f"thread_dead_{name}",
+                        "error",
+                        f"Background thread crashed: {name} (restart FAILED)",
+                        f"The {name} background thread is still down. "
+                        f"Automatic restart failed with: {_restart_err}. "
+                        f"Manual intervention (bot restart) is required.",
+                        action="stop_bot",
+                        action_label="Stop Bot",
+                    )
+                except Exception:
+                    pass
 
     def _set_cycle_step(self, name: str) -> None:
         """F27 (2026-04-08): mark the start of a cycle step.
@@ -7517,9 +7595,17 @@ class BotLoop:
         """
         self._current_cycle_step = name
         self._cycle_step_started_at = time.monotonic()
-        # Reset per-step alert tracker so a new step is allowed to alert
+        # Reset per-step alert tracker so a new step is allowed to alert.
+        # Also clear the "step_sla" banner once the bot has moved on —
+        # otherwise the old hung-step warning stayed glued to the GUI
+        # until the next stuck step rewrote it, even though the cycle
+        # was demonstrably making progress.
         if self._step_sla_alerted_for and self._step_sla_alerted_for != name:
             self._step_sla_alerted_for = None
+            try:
+                self._clear_alert("step_sla")
+            except Exception:
+                pass
 
     def _check_step_sla(self) -> None:
         """F27 (2026-04-08): SLA timer for individual cycle steps.
