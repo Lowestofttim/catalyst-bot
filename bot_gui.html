@@ -2909,6 +2909,83 @@
         }
         .v4-settings-restart-banner.is-visible { display: flex; }
 
+        /* Configuration Presets card */
+        .v4-presets-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .v4-presets-count {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            font-weight: 500;
+        }
+        .v4-presets-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .v4-preset-row {
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: rgba(148,163,184,0.04);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            transition: border-color var(--transition-fast);
+        }
+        .v4-preset-row:hover { border-color: rgba(255,255,255,0.18); }
+        .v4-preset-info { min-width: 0; }
+        .v4-preset-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .v4-preset-meta {
+            font-size: 10.5px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+        }
+        .v4-preset-action {
+            appearance: none;
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+        }
+        .v4-preset-action:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.22); }
+        .v4-preset-action--primary {
+            border-color: rgba(59,130,246,0.5);
+            color: var(--accent-primary);
+        }
+        .v4-preset-action--primary:hover { background: rgba(59,130,246,0.12); }
+        .v4-preset-action--danger {
+            border-color: rgba(248,113,113,0.4);
+            color: var(--sell-color);
+        }
+        .v4-preset-action--danger:hover { background: rgba(248,113,113,0.12); }
+        .v4-presets-empty {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            padding: 8px 12px;
+            background: rgba(148,163,184,0.03);
+            border: 1px dashed var(--border-subtle);
+            border-radius: 8px;
+            text-align: center;
+        }
+
         /* Centred settings container — narrower than dashboard for form readability */
         #v4View-settings .container {
             max-width: 900px;
@@ -9771,6 +9848,23 @@
                     <!-- ========= SETUP SUB-VIEW ========= -->
                     <div class="v4-settings-subview is-active" id="settingsSetupView">
 
+                    <!-- ══ SECTION: Configuration Presets ══
+                         Save the current form state under a name and recall
+                         it later. Stored in localStorage; survives app
+                         restarts but not a fresh install / browser wipe. -->
+                    <div class="v4-settings-section v4-settings-presets" id="settingsPresetsSection">
+                        <div class="v4-settings-section-title" style="color: var(--accent-secondary);">
+                            Configuration Presets
+                            <span class="cc-help">?<span class="cc-tooltip">Save the current Setup fields under a name and reload them later. Presets are stored locally in this browser. Loading a preset populates the form — you still need to click Save to apply and (if the bot is running) restart for changes to take effect.</span></span>
+                        </div>
+                        <div class="v4-settings-hint" style="margin-bottom: 10px;">Save and recall complete configurations. Useful when you've tuned settings you want to return to later for a different run.</div>
+                        <div class="v4-presets-toolbar">
+                            <button type="button" class="btn btn-config btn-secondary" onclick="presetsSaveFromButton()">💾 Save current as preset…</button>
+                            <span id="presetsCount" class="v4-presets-count">No presets</span>
+                        </div>
+                        <div id="presetsList" class="v4-presets-list"></div>
+                    </div>
+
                     <!-- ══ SECTION: Trading Pair ══ -->
                     <div class="v4-settings-section v4-settings-purple">
                         <div class="v4-settings-section-title" style="color: var(--accent-secondary);">Trading Pair <span class="cc-help">?<span class="cc-tooltip">The CAT token you want to market-make, paired against XCH. All offers will be created for this pair.</span></span></div>
@@ -14562,6 +14656,184 @@
 
             // Also update the settings view lock state (new V4 lock banner + CSS class)
             updateSettingsLock();
+        }
+
+        // ======================================================
+        // Configuration Presets — localStorage-backed save/recall
+        // for the whole Setup form. Users can capture a "perfect
+        // setup" for a given pair and restore it later without
+        // re-typing every field. Loaded presets populate the form
+        // but DO NOT auto-save; the user clicks Save afterwards.
+        // ======================================================
+        const PRESETS_LS_KEY = 'catalyst_setup_presets_v1';
+
+        function _presetsReadAll() {
+            try {
+                const raw = localStorage.getItem(PRESETS_LS_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return (parsed && typeof parsed === 'object') ? parsed : {};
+            } catch (_) { return {}; }
+        }
+
+        function _presetsWriteAll(obj) {
+            try {
+                localStorage.setItem(PRESETS_LS_KEY, JSON.stringify(obj || {}));
+                return true;
+            } catch (e) {
+                console.warn('[PRESETS] localStorage write failed:', e);
+                return false;
+            }
+        }
+
+        function _captureSetupFormValues() {
+            const snap = {};
+            const scope = document.getElementById('settingsSetupView');
+            if (!scope) return snap;
+            scope.querySelectorAll('input, select, textarea').forEach((el) => {
+                if (!el.id && !el.name) return;
+                const key = el.id || ('name:' + el.name + ':' + (el.value || ''));
+                const type = (el.type || '').toLowerCase();
+                if (type === 'checkbox') {
+                    snap[key] = { _t: 'check', v: !!el.checked };
+                } else if (type === 'radio') {
+                    // Only record the *selected* radio; its name+value is enough to restore.
+                    if (el.checked && el.name) {
+                        snap['radio:' + el.name] = { _t: 'radio', name: el.name, v: el.value };
+                    }
+                } else if (el.tagName === 'SELECT') {
+                    snap[key] = { _t: 'select', v: el.value };
+                } else {
+                    snap[key] = { _t: 'text', v: el.value };
+                }
+            });
+            return snap;
+        }
+
+        function _applySetupFormValues(snap) {
+            if (!snap || typeof snap !== 'object') return 0;
+            let applied = 0;
+            Object.entries(snap).forEach(([key, entry]) => {
+                if (!entry || typeof entry !== 'object') return;
+                if (entry._t === 'radio' && entry.name) {
+                    const target = document.querySelector(
+                        'input[type="radio"][name="' + CSS.escape(entry.name) + '"][value="' + CSS.escape(String(entry.v)) + '"]'
+                    );
+                    if (target) {
+                        target.checked = true;
+                        target.dispatchEvent(new Event('change', { bubbles: true }));
+                        applied++;
+                    }
+                    return;
+                }
+                const el = key.startsWith('radio:') ? null : document.getElementById(key);
+                if (!el) return;
+                if (entry._t === 'check') el.checked = !!entry.v;
+                else el.value = entry.v;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                applied++;
+            });
+            return applied;
+        }
+
+        function presetsRender() {
+            const list = document.getElementById('presetsList');
+            const countEl = document.getElementById('presetsCount');
+            if (!list) return;
+            const all = _presetsReadAll();
+            const names = Object.keys(all).sort((a, b) => a.localeCompare(b));
+            if (countEl) countEl.textContent = names.length === 0
+                ? 'No presets'
+                : names.length + ' preset' + (names.length === 1 ? '' : 's') + ' saved';
+            if (names.length === 0) {
+                list.innerHTML = '<div class="v4-presets-empty">No presets saved yet. Tune your setup, then click "Save current as preset".</div>';
+                return;
+            }
+            const rows = names.map((name) => {
+                const entry = all[name] || {};
+                const when = entry.savedAt
+                    ? new Date(entry.savedAt).toLocaleString()
+                    : 'unknown date';
+                const fieldCount = entry.settings ? Object.keys(entry.settings).length : 0;
+                const nameAttr = encodeURIComponent(name);
+                return ''
+                    + '<div class="v4-preset-row">'
+                    +   '<div class="v4-preset-info">'
+                    +     '<div class="v4-preset-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div>'
+                    +     '<div class="v4-preset-meta">saved ' + escapeHtml(when) + ' · ' + fieldCount + ' fields</div>'
+                    +   '</div>'
+                    +   '<button class="v4-preset-action v4-preset-action--primary" onclick="presetsLoadByName(\'' + nameAttr + '\')">Load</button>'
+                    +   '<button class="v4-preset-action" onclick="presetsRenameByName(\'' + nameAttr + '\')">Rename</button>'
+                    +   '<button class="v4-preset-action v4-preset-action--danger" onclick="presetsDeleteByName(\'' + nameAttr + '\')">Delete</button>'
+                    + '</div>';
+            }).join('');
+            list.innerHTML = rows;
+        }
+
+        function presetsSaveFromButton() {
+            const nameRaw = prompt('Name this preset (e.g. "Monkeyzoo aggressive"):', '');
+            if (nameRaw === null) return;  // cancel
+            const name = String(nameRaw).trim();
+            if (!name) { showToast('Preset name is required.', 'warning'); return; }
+            if (name.length > 80) { showToast('Preset name too long (80 char max).', 'warning'); return; }
+            const all = _presetsReadAll();
+            if (all[name] && !confirm('Overwrite existing preset "' + name + '"?')) return;
+            all[name] = {
+                savedAt: new Date().toISOString(),
+                settings: _captureSetupFormValues(),
+            };
+            if (_presetsWriteAll(all)) {
+                showToast('Preset saved: ' + name, 'success');
+                presetsRender();
+            } else {
+                showToast('Could not save preset (localStorage error).', 'error');
+            }
+        }
+
+        function presetsLoadByName(encoded) {
+            const name = decodeURIComponent(String(encoded || ''));
+            const all = _presetsReadAll();
+            const entry = all[name];
+            if (!entry) { showToast('Preset not found.', 'warning'); return; }
+            if (!confirm('Load preset "' + name + '"? Any unsaved form changes will be overwritten.')) return;
+            const applied = _applySetupFormValues(entry.settings);
+            showToast(
+                'Preset "' + name + '" loaded (' + applied + ' fields). Review and click Save to apply.',
+                'info',
+                6000
+            );
+            // Mark form as dirty so the user is reminded to save
+            try { if (typeof markSettingsDirty === 'function') markSettingsDirty(); } catch (_) {}
+        }
+
+        function presetsRenameByName(encoded) {
+            const name = decodeURIComponent(String(encoded || ''));
+            const all = _presetsReadAll();
+            if (!(name in all)) return;
+            const nameRaw = prompt('New name for "' + name + '":', name);
+            if (nameRaw === null) return;
+            const next = String(nameRaw).trim();
+            if (!next || next === name) return;
+            if (all[next] && !confirm('Overwrite existing preset "' + next + '"?')) return;
+            all[next] = all[name];
+            delete all[name];
+            if (_presetsWriteAll(all)) {
+                showToast('Preset renamed to: ' + next, 'success');
+                presetsRender();
+            }
+        }
+
+        function presetsDeleteByName(encoded) {
+            const name = decodeURIComponent(String(encoded || ''));
+            if (!confirm('Delete preset "' + name + '"? This cannot be undone.')) return;
+            const all = _presetsReadAll();
+            if (!(name in all)) return;
+            delete all[name];
+            if (_presetsWriteAll(all)) {
+                showToast('Preset deleted: ' + name, 'info');
+                presetsRender();
+            }
         }
 
         // Whether the user has manually picked a sub-tab this session.
@@ -20817,13 +21089,22 @@
                 range7dEl.textContent = (hi !== '—' || lo !== '—') ? lo + ' – ' + hi : '—';
             }
 
-            // Hide description/website until async fetch returns
             const descWrap = document.getElementById('snapshotDescWrap');
             const siteWrap = document.getElementById('snapshotWebsiteWrap');
-            if (descWrap) descWrap.style.display = 'none';
-            if (siteWrap) siteWrap.style.display = 'none';
 
             bar.style.display = 'block';
+
+            // Only hide + re-fetch the description/website when the pair
+            // actually changes. Previously this ran on every call (including
+            // routine status-poll refreshes) which caused the About and
+            // Website pills to flash off and back on every few seconds.
+            const _snapKey = cat.asset_id + '|' + (cat.dexie_asset_id || '');
+            if (window._lastSnapshotFetchKey === _snapKey) {
+                return;
+            }
+            window._lastSnapshotFetchKey = _snapKey;
+            if (descWrap) descWrap.style.display = 'none';
+            if (siteWrap) siteWrap.style.display = 'none';
 
             // Lazy-fetch description + website from /api/token_overview
             if (cat.dexie_asset_id) {
@@ -30166,6 +30447,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Relocate the existing DOM node so all the lc* handler ids stay valid.
     try { mountLiveControlsInSettings(); } catch (_) {}
     try { updateSettingsLock(); } catch (_) {}
+    try { presetsRender(); } catch (_) {}
 
     // Tooltip click-to-toggle system
     document.addEventListener('click', function(e) {
