@@ -2496,6 +2496,12 @@ class OfferManager:
             open_offers, side, mid_price=current_price)
 
         # ── Graduated response: tier filter + budget cap ──
+        # Track pre-filter count so the cold-start detection below can tell
+        # "this side is truly empty" (do a full rebuild) apart from "the tier
+        # filter drained the scope but other tiers are still live" (do
+        # nothing — the ladder-fill path will refill the cancelled tier on
+        # the next cycle with proper tier-matched coins).
+        pre_filter_offer_count = len(open_offers)
         if allowed_tiers:
             _before = len(open_offers)
             open_offers = [o for o in open_offers
@@ -2517,6 +2523,48 @@ class OfferManager:
         log_event("info", "requote_start",
                   f"Requote {side}: {target_count} offers to replace, "
                   f"new price {current_price:.8f}")
+
+        # ── Tier filter emptied the requote scope, but side is not cold ──
+        # Happens after a defensive-cancel clears one tier in the wallet just
+        # before this requote runs. Pre-fix behavior: fell through to the
+        # cold-start branch below and rebuilt the FULL ladder, colliding with
+        # the untouched outer/mid/extreme offers and producing duplicate-offer
+        # storms that the trim pass had to clean up (post-mortem 2026-04-22
+        # 05:10 cascade). Correct behavior: let the standard ladder-fill path
+        # restore the cancelled tier on the next cycle with tier-matched
+        # coins.
+        if not open_offers and allowed_tiers and pre_filter_offer_count > 0:
+            log_event("info", "requote_tier_empty_skip",
+                      f"Tier filter drained requote scope for {side} "
+                      f"({pre_filter_offer_count} non-matching offers still "
+                      f"live) — deferring to ladder-fill on next cycle")
+            return {
+                "offers": [],
+                "fully_replaced": False,
+                "replaced_count": 0,
+                "target_count": 0,
+            }
+
+        # ── Wallet-truth cold-start guard ──
+        # Before the "no offers anywhere" branch triggers a full ladder
+        # rebuild, double-check against the wallet snapshot. During the
+        # post-mortem cascade, the DB briefly showed zero open offers for a
+        # side (cancelled records) while Sage still held live "zombie"
+        # offers — a cold-start rebuild at that moment would stack a full
+        # ladder on top of the zombies and overshoot the cap. If the
+        # wallet says offers are still live, defer; the regular
+        # reconcile + ladder-fill paths will catch up on the next cycle.
+        if not open_offers and live_offer_ids is not None and len(live_offer_ids) > 0:
+            log_event("info", "requote_skip_wallet_has_offers",
+                      f"DB shows {side} empty but wallet still holds "
+                      f"{len(live_offer_ids)} live offer(s) — deferring "
+                      f"cold-start rebuild to avoid zombie pile-up")
+            return {
+                "offers": [],
+                "fully_replaced": False,
+                "replaced_count": 0,
+                "target_count": 0,
+            }
 
         # ── Cold start: no existing offers → full ladder ──
         if not open_offers:

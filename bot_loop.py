@@ -443,6 +443,21 @@ class BotLoop:
         self._last_pricing_success_ts: float = 0
         self._connectivity_gap_threshold: int = 1800  # 30 min gap → repost to Dexie
 
+        # ---- Defensive-cancel coordination (post-mortem 2026-04-22) ----
+        # When the mempool watcher fires a defensive cancel on a tier, record
+        # which tiers were cleared so the next requote doesn't try to do the
+        # same work a second time. Tier enters as a set of tier names; the
+        # next requote consults `_defensive_cancel_active_tiers()` to know
+        # which tiers to skip ("already in flight").
+        self._last_defensive_cancel: Dict = {
+            "at": 0.0,
+            "tiers": set(),
+            "reason": "",
+        }
+        # How long to consider a defensive cancel still "in flight" — long
+        # enough for the cancel to confirm on-chain and the coins to return.
+        self._defensive_cancel_grace_secs: float = 90.0
+
         # ---- Degraded-mode recovery tracking ----
         # When the bot stays materially under target or Sage visibility is
         # degraded across multiple cycles, pause the noisy extras and focus on
@@ -2537,6 +2552,30 @@ class BotLoop:
 
         log_event("info", "bot_loop_exit", "Bot loop exited cleanly")
 
+    def _defensive_cancel_active_tiers(self) -> set:
+        """Return the set of tiers currently in-flight from a recent defensive
+        cancel. Used by the requote path so it doesn't duplicate cancels the
+        mempool watcher already submitted. Entries expire after the
+        defensive-cancel grace window (enough for on-chain confirmation +
+        coin return)."""
+        info = getattr(self, "_last_defensive_cancel", None)
+        if not info:
+            return set()
+        tiers = info.get("tiers")
+        if not tiers:
+            return set()
+        try:
+            at = float(info.get("at", 0) or 0)
+        except Exception:
+            return set()
+        if at <= 0:
+            return set()
+        if time.time() - at > self._defensive_cancel_grace_secs:
+            return set()
+        if isinstance(tiers, (set, list, tuple)):
+            return set(tiers)
+        return set()
+
     def _defensive_cancel_inner_offers(self, reason: str) -> int:
         """Backwards-compat wrapper — cancel inner tier only."""
         return self._defensive_cancel_tiers(("inner",), reason)
@@ -2660,14 +2699,30 @@ class BotLoop:
                               f"Pool reserves confirmed: {direction} {pct:.3f}% "
                               f"(XCH {sig.get('delta_xch', 0):+d} mojos)")
                     # F82 (2026-04-18): defensive cancel on confirmed pool
-                    # move > 50 bps. F81 only fired on imminent_swap which
-                    # missed swaps that confirmed before the 5s mempool
-                    # poll caught them. Live test 2026-04-18 had two sell
-                    # fills 29-37 SECONDS AFTER price_move was logged —
-                    # plenty of warning, but no defensive action was taken.
-                    # This closes that gap. Bot's normal emergency requote
-                    # still runs after; defensive cancel is just faster.
-                    if pct >= 0.50:  # 50 bps
+                    # move. F81 only fired on imminent_swap which missed
+                    # swaps that confirmed before the 5s mempool poll caught
+                    # them. Live test 2026-04-18 had two sell fills 29-37
+                    # SECONDS AFTER price_move was logged — plenty of
+                    # warning, but no defensive action was taken. This
+                    # closes that gap. Bot's normal emergency requote still
+                    # runs after; defensive cancel is just faster.
+                    #
+                    # Threshold (2026-04-22 post-mortem): scale by the
+                    # ladder's inner edge. The inner ring sits MIN_EDGE_BPS
+                    # away from mid, so a pool move only threatens inner
+                    # offers once it approaches a meaningful fraction of
+                    # that edge. Firing at a flat 50 bps caused pointless
+                    # churn on 6.5%-spread books (post-mortem: 0.53% move
+                    # triggered 20 cancels + a full ladder rebuild when
+                    # inner offers were still 177 bps in-edge and
+                    # profitable). Floor at 50 bps so we still react on
+                    # very tight books where min-edge is small.
+                    try:
+                        _min_edge = float(getattr(cfg, "MIN_EDGE_BPS", 100) or 100)
+                    except Exception:
+                        _min_edge = 100.0
+                    trigger_pct = max(0.50, _min_edge / 200.0)
+                    if pct >= trigger_pct:
                         # F83 (2026-04-18): graduated tier set based on
                         # magnitude. Big AMM moves expose more than just
                         # the inner tier. Test 3 saw 3 mid-tier buy fills
@@ -2687,9 +2742,25 @@ class BotLoop:
                             log_event("info", "mempool_defensive_cancel_done",
                                       f"price_move {pct:.2f}% {direction} — "
                                       f"cancelled {n} offers across {'+'.join(tiers)}")
+                            # Record the cancel so the next cycle's requote
+                            # knows the tier was just cleared and defers to
+                            # ladder-fill instead of treating it as cold-start.
+                            try:
+                                self._last_defensive_cancel = {
+                                    "at": time.time(),
+                                    "tiers": set(tiers),
+                                    "reason": f"mempool_price_move_{pct:.2f}pct_{direction}",
+                                }
+                            except Exception:
+                                pass
                         except Exception as _dc_err:
                             log_event("warning", "mempool_defensive_cancel_failed",
                                       f"price_move defensive cancel failed: {_dc_err}")
+                    else:
+                        log_event("info", "mempool_price_move_below_trigger",
+                                  f"Pool moved {pct:.3f}% — below defensive-cancel "
+                                  f"trigger of {trigger_pct:.2f}% (scales with "
+                                  f"MIN_EDGE_BPS={_min_edge:.0f}). Holding offers.")
         except Exception as _drain_err:
             # F81: previously silent — meant we couldn't tell if the watcher
             # signal flow was broken. Now logged at warning so anomalies
@@ -5715,6 +5786,37 @@ class BotLoop:
                 # For EMERGENCY, no budget cap — cancel everything arbable
                 if severity == RequoteSeverity.EMERGENCY:
                     _max_offers = 0  # 0 = no limit
+
+                # Post-mortem 2026-04-22: if the mempool watcher just fired
+                # a defensive cancel on a tier, the requote shouldn't try to
+                # cancel/recreate that same tier on its next pass — the
+                # cancels are in flight and the coins are returning. Skip
+                # any tier currently in-flight. For FULL/EMERGENCY severity
+                # the allowed_tiers is None (no filter applied), so this
+                # only tightens the INNER / INNER_MID paths.
+                if severity not in (RequoteSeverity.FULL, RequoteSeverity.EMERGENCY):
+                    _inflight = self._defensive_cancel_active_tiers()
+                    if _inflight and _allowed_tiers:
+                        _overlap = _allowed_tiers & _inflight
+                        if _overlap:
+                            _allowed_tiers = _allowed_tiers - _inflight
+                            log_event("info", "requote_skip_inflight_tiers",
+                                      f"Skipping {sorted(_overlap)} tier(s) for "
+                                      f"{side} — defensive cancel in flight "
+                                      f"(ladder-fill will restore them)")
+                    # If the overlap drained the tier set, there's nothing
+                    # for this requote to do. Defer cleanly instead of
+                    # falling into the requote path with an empty filter.
+                    if not _allowed_tiers:
+                        log_event("info", "requote_deferred_inflight",
+                                  f"All {severity.value} tiers for {side} "
+                                  f"are already being handled by a defensive "
+                                  f"cancel — no requote needed this cycle")
+                        # Advance baselines so the drift check doesn't
+                        # re-fire the same decision next cycle.
+                        self._last_quoted_price[side] = requote_mid
+                        self._last_quoted_plain_mid[side] = mid_price
+                        continue
 
                 _live_ids_req = current_buy_ids if side == "buy" else current_sell_ids
                 requote_result = self.offer_manager.requote_side(

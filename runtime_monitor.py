@@ -98,6 +98,10 @@ class RuntimeMonitor:
         # suppress spurious re-notifications when a condition briefly clears
         # and re-triggers within a short window.
         self._condition_last_logged: Dict[str, float] = {}
+        # Per-condition last signature, for conditions that pass one (e.g.
+        # ladder shape drift). When the signature matches a recent firing,
+        # suppress the alert — nothing changed that the user would act on.
+        self._condition_last_signature: Dict[str, str] = {}
         self._conditions: Dict[str, bool] = {
             "wallet_sync_stale": False,
             "db_wallet_divergence": False,
@@ -716,6 +720,14 @@ class RuntimeMonitor:
                     ladder_shape_mismatches.append(f"{side} " + ", ".join(mismatched))
 
         self._update_streak("ladder_shape_drift", bool(ladder_shape_mismatches) and not gap_closer_active)
+        # Signature = the exact mismatch breakdown. If the same signature
+        # re-fires within 2 hours, suppress the alert — the misfit mix hasn't
+        # changed (no fills, no reshape), so re-notifying is pure noise.
+        # Post-mortem 2026-04-22: this condition was flapping every ~30 min
+        # with an identical mismatch string because the underlying cause
+        # (mid tier stuck at 0 + misfit-sized inner coins) couldn't resolve
+        # without fills, and the bot has no fills on a quiet market.
+        ladder_shape_signature = " | ".join(ladder_shape_mismatches)
         if self._apply_condition(
             "ladder_shape_drift",
             self._streaks["ladder_shape_drift"] >= 2,
@@ -728,6 +740,8 @@ class RuntimeMonitor:
             close_event="bot_health_ladder_shape_ok",
             close_message="Live ladder tier mix matches the configured template again",
             min_refire_secs=1800,  # max one re-notification per 30 min for transient shape drift
+            signature=ladder_shape_signature,
+            signature_refire_secs=7200,  # 2h — if same shape, don't renotify
         ):
             active_conditions.append(self._condition_entry(
                 "ladder_shape_drift",
@@ -858,7 +872,9 @@ class RuntimeMonitor:
     def _apply_condition(self, key: str, active: bool, severity: str,
                          open_event: str, open_message: str,
                          close_event: str, close_message: str,
-                         min_refire_secs: float = 0.0) -> bool:
+                         min_refire_secs: float = 0.0,
+                         signature: Optional[str] = None,
+                         signature_refire_secs: float = 0.0) -> bool:
         """Evaluate a health condition and emit log events on transitions.
 
         min_refire_secs — if > 0, suppress the open-event log when the
@@ -866,15 +882,33 @@ class RuntimeMonitor:
         This prevents spurious re-notifications when a condition briefly
         clears for one health-check cycle and then re-triggers immediately.
         The active_conditions list (UI state) is unaffected.
+
+        signature + signature_refire_secs — optional dedup key. If the
+        same signature re-fires within signature_refire_secs, suppress the
+        log (nothing materially changed for the user to act on). Used for
+        persistent-state conditions like ladder-shape drift where the
+        underlying misfit coin mix stays the same across re-firings because
+        nothing in the environment has shifted (no fills, no reshape).
         """
         was_active = bool(self._conditions.get(key))
         self._conditions[key] = bool(active)
         now = time.monotonic()
         if active and not was_active:
             last_logged = self._condition_last_logged.get(key, 0.0)
-            if min_refire_secs <= 0.0 or (now - last_logged) >= min_refire_secs:
+            refire_ok = (
+                min_refire_secs <= 0.0
+                or (now - last_logged) >= min_refire_secs
+            )
+            sig_ok = True
+            if signature is not None and signature_refire_secs > 0.0:
+                last_sig = self._condition_last_signature.get(key, "")
+                if last_sig == signature and (now - last_logged) < signature_refire_secs:
+                    sig_ok = False
+            if refire_ok and sig_ok:
                 log_event(severity, open_event, open_message)
                 self._condition_last_logged[key] = now
+                if signature is not None:
+                    self._condition_last_signature[key] = signature
                 self._recent_findings.append({
                     "timestamp": _utc_now_iso(),
                     "severity": severity,
