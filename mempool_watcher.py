@@ -53,8 +53,8 @@ def compute_coin_id(parent_coin_info: str, puzzle_hash: str, amount: int) -> str
     coin_id = sha256(parent_coin_info_bytes + puzzle_hash_bytes + amount_bytes)
     """
     try:
-        parent_bytes = bytes.fromhex(parent_coin_info.lstrip("0x"))
-        puzzle_bytes = bytes.fromhex(puzzle_hash.lstrip("0x"))
+        parent_bytes = bytes.fromhex(parent_coin_info.removeprefix("0x"))
+        puzzle_bytes = bytes.fromhex(puzzle_hash.removeprefix("0x"))
         amount_bytes = _encode_amount(amount)
         return hashlib.sha256(parent_bytes + puzzle_bytes + amount_bytes).hexdigest()
     except Exception:
@@ -73,7 +73,7 @@ class MempoolWatcher:
     """
 
     TIBET_POLL_INTERVAL = 5      # seconds between Tibet reserve checks
-    MEMPOOL_POLL_INTERVAL = 5    # seconds between Coinset mempool checks
+    MEMPOOL_POLL_INTERVAL = 2    # seconds between Coinset mempool checks (tightened 2026-04-22 after a fill slipped between 5s polls)
     SIGNAL_MAX_AGE = 120         # drop stale signals older than 2 minutes
     MIN_SIGNAL_MAGNITUDE = 0.05  # ignore moves < 0.05% to suppress noise
 
@@ -207,7 +207,7 @@ class MempoolWatcher:
         cache so a fresh signal fires if they somehow reappear (shouldn't
         happen in practice, but keeps state clean).
         """
-        normalised = {c.lstrip("0x").lower() for c in coin_ids if c}
+        normalised = {c.removeprefix("0x").lower() for c in coin_ids if c}
         with self._lock:
             self._watched_offer_coins = normalised
             # Remove debounce entries for coins no longer being watched
