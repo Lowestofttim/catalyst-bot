@@ -2518,6 +2518,15 @@ class OfferManager:
                 log_event("info", "requote_tier_filter",
                           f"Tier filter ({', '.join(sorted(allowed_tiers))}): "
                           f"{_before} → {len(open_offers)} offers to process")
+        # `original_target_count` captures how many offers the requote
+        # SHOULD replace before the per-cycle budget cap trims the list.
+        # It is returned alongside the truncated target_count so callers
+        # can tell the difference between a true full-replace and "we
+        # capped at the budget and the rest of the old quotes are still
+        # live." Previously only the truncated count was exposed, so a
+        # capped FULL requote could report fully_replaced=True while 20+
+        # stale offers sat exposed at the old mid until the next cycle.
+        original_target_count = len(open_offers)
         if max_offers > 0 and len(open_offers) > max_offers:
             _full = len(open_offers)
             open_offers = open_offers[:max_offers]
@@ -2550,6 +2559,8 @@ class OfferManager:
                 "fully_replaced": False,
                 "replaced_count": 0,
                 "target_count": 0,
+                "original_target_count": 0,
+                "tier_filter_drained": True,
             }
 
         # ── Wallet-truth cold-start guard ──
@@ -2571,6 +2582,8 @@ class OfferManager:
                 "fully_replaced": False,
                 "replaced_count": 0,
                 "target_count": 0,
+                "original_target_count": 0,
+                "tier_filter_drained": False,
             }
 
         # ── Cold start: no existing offers → full ladder ──
@@ -2600,6 +2613,8 @@ class OfferManager:
                 "fully_replaced": True,
                 "replaced_count": len(fresh),
                 "target_count": 0,
+                "original_target_count": 0,
+                "tier_filter_drained": False,
             }
 
         # ── Count spare coins ──
@@ -2652,6 +2667,8 @@ class OfferManager:
                 "fully_replaced": False,
                 "replaced_count": 0,
                 "target_count": target_count,
+                "original_target_count": original_target_count,
+                "tier_filter_drained": False,
             }
 
         # ── Step 1: Create new offers at new price ──
@@ -2688,6 +2705,8 @@ class OfferManager:
                 "fully_replaced": False,
                 "replaced_count": 0,
                 "target_count": target_count,
+                "original_target_count": original_target_count,
+                "tier_filter_drained": False,
             }
 
         # ── Step 2: Post new offers to Dexie ──
@@ -2719,11 +2738,19 @@ class OfferManager:
         # Requote did real work — stamp the cooldown timer now (not at entry)
         with self._lock:
             self._last_requote_time[side] = time.time()
+        # fully_replaced is True only when we replaced every offer we
+        # INTENDED to replace BEFORE the per-cycle budget cap truncated
+        # the list. Using the truncated target_count here used to mark a
+        # capped FULL requote as "fully replaced" while 20+ old offers
+        # sat exposed at the stale mid — the caller then advanced its
+        # drift baseline and skipped them until another trigger fired.
         return {
             "offers": new_offers,
-            "fully_replaced": len(new_offers) >= target_count,
+            "fully_replaced": len(new_offers) >= original_target_count,
             "replaced_count": len(new_offers),
             "target_count": target_count,
+            "original_target_count": original_target_count,
+            "tier_filter_drained": False,
         }
 
     # -------------------------------------------------------------------

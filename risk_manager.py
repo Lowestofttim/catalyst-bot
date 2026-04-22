@@ -248,9 +248,12 @@ class RiskManager:
         if cfg.INVENTORY_ENABLED:
             base = self._apply_inventory_skew(base, side)
 
-        # Apply volatility scaling
+        # Apply volatility scaling (side-aware: the fill-rate widening
+        # is skipped on the "corrective" side when we carry inventory,
+        # so the side we need to attract fills to doesn't keep widening
+        # itself out of the market during a fill burst on the other side).
         if cfg.DYNAMIC_SPREAD_ENABLED:
-            base = self._apply_volatility_scaling(base)
+            base = self._apply_volatility_scaling(base, side=side)
 
         # Apply pool depth adjustment (NEW — if pool is shallow, widen to protect)
         if cfg.DYNAMIC_SPREAD_ENABLED:
@@ -343,11 +346,18 @@ class RiskManager:
 
         return adjusted
 
-    def _apply_volatility_scaling(self, spread: Decimal) -> Decimal:
+    def _apply_volatility_scaling(self, spread: Decimal,
+                                  side: Optional[str] = None) -> Decimal:
         """Scale spread based on recent price volatility.
 
         Higher volatility → wider spreads to protect against adverse selection.
         Low volatility → can tighten spreads for more fills.
+
+        ``side`` is optional. When provided together with a non-zero inventory
+        position, the fill-rate widening add-on below is skipped on the
+        corrective side (sells when long CAT, buys when short CAT) so a
+        directional fill burst doesn't widen the side we need to attract
+        trades to. Volatility and arb-gap buffers still apply globally.
         """
         vol = self._get_volatility()
         if vol <= 0:
@@ -383,18 +393,33 @@ class RiskManager:
             arb_buffer = min(arb_buffer, Decimal("0.015"))
             spread = spread + arb_buffer
 
-        # Add fill rate buffer (if recent fills are consistently high, widen)
-        fill_start = Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_START_PER_HOUR", "4")))
-        fill_full = Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_FULL_PER_HOUR", "12")))
-        fill_max_buffer = (
-            Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_MAX_BPS", "100")))
-            / Decimal("10000")
-        )
-        if self._recent_fill_rate > fill_start and fill_max_buffer > 0:
-            fill_span = max(Decimal("0.1"), fill_full - fill_start)
-            fill_ratio = (self._recent_fill_rate - fill_start) / fill_span
-            fill_ratio = max(Decimal("0"), min(fill_ratio, Decimal("1")))
-            spread = spread + (fill_max_buffer * fill_ratio)
+        # Add fill rate buffer (if recent fills are consistently high, widen).
+        # SKIP this add-on on the corrective side when we carry inventory —
+        # otherwise a burst of fills on one side (e.g. lots of sells while
+        # long CAT) keeps widening the OTHER side (buys) that we would want
+        # to stay attractive so the position naturally unwinds. Inventory
+        # skew already tightens the corrective side; letting fill-rate
+        # widening fight that was the behaviour Codex flagged in the
+        # 2026-04-22 audit.
+        is_corrective_side = False
+        if side and self._net_position_cat != 0:
+            if side == "sell" and self._net_position_cat > 0:
+                is_corrective_side = True   # long CAT → sells unwind the position
+            elif side == "buy" and self._net_position_cat < 0:
+                is_corrective_side = True   # short CAT → buys unwind the position
+
+        if not is_corrective_side:
+            fill_start = Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_START_PER_HOUR", "4")))
+            fill_full = Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_FULL_PER_HOUR", "12")))
+            fill_max_buffer = (
+                Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_MAX_BPS", "100")))
+                / Decimal("10000")
+            )
+            if self._recent_fill_rate > fill_start and fill_max_buffer > 0:
+                fill_span = max(Decimal("0.1"), fill_full - fill_start)
+                fill_ratio = (self._recent_fill_rate - fill_start) / fill_span
+                fill_ratio = max(Decimal("0"), min(fill_ratio, Decimal("1")))
+                spread = spread + (fill_max_buffer * fill_ratio)
 
         return spread
 

@@ -4404,37 +4404,59 @@ class BotLoop:
                     if amm_drift_bps >= _drift_threshold:
                         _now = time.time()
                         _cooldown = float(getattr(cfg, "REQUOTE_COOLDOWN_SECS", 60) or 60)
-                        _last_force = float(getattr(self, "_last_amm_drift_force_at", 0) or 0)
-                        if (_now - _last_force) < _cooldown:
-                            pass  # Cooldown active — skip silently
-                        else:
+
+                        # Per-side AMM-drift cooldown. Previously one shared
+                        # scalar gated both sides, so a buy-side force set
+                        # at t=0 blocked a sell-side force at t=30 even
+                        # though the opposite-direction move had just
+                        # exposed the sell ladder. Track buy and sell
+                        # independently; fall back to the legacy scalar
+                        # once on upgrade so operators mid-session don't
+                        # get an immediate double-fire.
+                        if not isinstance(getattr(self, "_last_amm_drift_force_at", None), dict):
+                            _legacy = float(getattr(self, "_last_amm_drift_force_at", 0) or 0)
+                            self._last_amm_drift_force_at = {
+                                "buy": _legacy, "sell": _legacy,
+                            }
+
                             # Determine which side is vulnerable based on price direction
-                            try:
-                                _amm_state = self.amm_monitor._state or {}
-                                _amm_price = Decimal(str(_amm_state.get("amm_price", 0) or 0))
-                                if _amm_price > 0 and self._current_mid_price > 0:
-                                    if _amm_price < self._current_mid_price:
-                                        # Price dropped → buys are vulnerable (too expensive)
-                                        if not self._force_requote.get("buy"):
-                                            log_event("info", "amm_drift_requote_triggered",
-                                                      f"AMM drift {amm_drift_bps:.1f}bps (price DOWN) — forcing buy requote only",
-                                                      data={"drift_bps": str(amm_drift_bps.quantize(Decimal("0.1")))})
-                                        self._force_requote["buy"] = True
-                                    else:
-                                        # Price rose → sells are vulnerable (too cheap)
-                                        if not self._force_requote.get("sell"):
-                                            log_event("info", "amm_drift_requote_triggered",
-                                                      f"AMM drift {amm_drift_bps:.1f}bps (price UP) — forcing sell requote only",
-                                                      data={"drift_bps": str(amm_drift_bps.quantize(Decimal("0.1")))})
-                                        self._force_requote["sell"] = True
-                                else:
-                                    # Can't determine direction — force both (fallback)
-                                    self._force_requote["buy"] = True
-                                    self._force_requote["sell"] = True
-                            except Exception:
-                                self._force_requote["buy"] = True
-                                self._force_requote["sell"] = True
-                            self._last_amm_drift_force_at = _now
+                        try:
+                            _amm_state = self.amm_monitor._state or {}
+                            _amm_price = Decimal(str(_amm_state.get("amm_price", 0) or 0))
+                            if _amm_price > 0 and self._current_mid_price > 0:
+                                _target_sides = (
+                                    ["buy"] if _amm_price < self._current_mid_price
+                                    else ["sell"]
+                                )
+                                _direction_note = (
+                                    "price DOWN" if _amm_price < self._current_mid_price
+                                    else "price UP"
+                                )
+                            else:
+                                _target_sides = ["buy", "sell"]
+                                _direction_note = "direction unknown"
+                        except Exception:
+                            _target_sides = ["buy", "sell"]
+                            _direction_note = "direction error"
+
+                        for _target_side in _target_sides:
+                            _last_force = float(
+                                self._last_amm_drift_force_at.get(_target_side, 0) or 0
+                            )
+                            if (_now - _last_force) < _cooldown:
+                                continue  # per-side cooldown active
+                            if not self._force_requote.get(_target_side):
+                                log_event(
+                                    "info", "amm_drift_requote_triggered",
+                                    f"AMM drift {amm_drift_bps:.1f}bps "
+                                    f"({_direction_note}) — forcing "
+                                    f"{_target_side} requote",
+                                    data={"drift_bps": str(
+                                        amm_drift_bps.quantize(Decimal("0.1"))),
+                                          "side": _target_side},
+                                )
+                            self._force_requote[_target_side] = True
+                            self._last_amm_drift_force_at[_target_side] = _now
         except Exception as _amm_drift_err:
             log_event("debug", "amm_drift_check_error",
                       f"AMM drift check error (non-critical): {_amm_drift_err}")
@@ -5953,7 +5975,15 @@ class BotLoop:
             compare_mid = self._get_probe_anchored_mid(side, mid_price)
 
             if forced:
-                # Forced convergence — use graduated severity based on drift magnitude
+                # Forced convergence — re-evaluate against CURRENT drift
+                # before acting. A force that was set minutes ago (AMM
+                # drift, ladder-anchor drift, CB-disabled side catching
+                # up, etc.) may no longer reflect real pressure by the
+                # time we run. If the price has returned to the last
+                # quoted level, clearing the force quietly is cheaper
+                # and safer than forcing at least INNER from a stale
+                # boolean — which used to produce wasteful cancel/recreate
+                # storms and churn coin-tier balances for no edge.
                 if last_price > 0:
                     _move_frac = abs(compare_mid - last_price) / last_price
                     from reaction_strategy import classify_drift
@@ -5964,9 +5994,16 @@ class BotLoop:
                         full_threshold=getattr(cfg, "REQUOTE_DRIFT_FULL", Decimal("0.02")),
                         emergency_threshold=getattr(cfg, "REQUOTE_DRIFT_EMERGENCY", Decimal("0.05")),
                     )
-                    # Forced convergence should always do at least INNER
                     if severity == RequoteSeverity.NONE:
-                        severity = RequoteSeverity.INNER
+                        # Pressure has already resolved (price converged
+                        # back to last quoted). Clear the force instead
+                        # of running a no-value requote.
+                        log_event("debug", "force_requote_stale_cleared",
+                                  f"{side} forced requote cleared — current "
+                                  f"drift resolved back to last quoted price "
+                                  f"({last_price:.8f} vs {compare_mid:.8f})")
+                        self._force_requote[side] = False
+                        continue
                 else:
                     severity = RequoteSeverity.FULL
             else:
@@ -5983,9 +6020,15 @@ class BotLoop:
                           f"Requoting {side} side ({reason})",
                           data={"severity": severity.value})
 
-                # Clear force flag BEFORE requoting (so it doesn't re-trigger)
-                if forced:
-                    self._force_requote[side] = False
+                # Keep the force flag LIT across spread/requote work so that
+                # an exception, wallet RPC abort, or "no spares" short-circuit
+                # below cannot silently drop a real requote obligation. The
+                # flag is cleared only after requote_side() reports progress
+                # (new offers placed or an intentional "nothing to do" state
+                # like tier-filter drained). On failure paths we leave the
+                # force set so the next cycle will retry the requote rather
+                # than stranding stale offers at the old mid.
+                force_clear_on_success = forced
 
                 spread = self.risk_manager.get_adjusted_spread(side)
                 # compare_mid is already probe-anchored — reuse it
@@ -6050,36 +6093,85 @@ class BotLoop:
                     allowed_tiers=_allowed_tiers if severity not in (
                         RequoteSeverity.FULL, RequoteSeverity.EMERGENCY) else None,
                 )
+                # Track whether the requote actually made progress so we can
+                # decide whether to advance baselines and clear the force
+                # flag. A no-op outcome (0 offers replaced, no tier-filter
+                # drain) leaves the book exposed at the old mid, so we
+                # must NOT advance baselines — doing so would hide the
+                # stale offers from the next cycle's drift detection.
+                replaced_count = 0
+                target_count_trunc = 0
+                original_target = 0
+                tier_filter_drained = False
+                made_progress = False
                 if isinstance(requote_result, dict):
                     new_offers = requote_result.get("offers", [])
+                    replaced_count = int(requote_result.get("replaced_count", 0) or 0)
+                    target_count_trunc = int(requote_result.get("target_count", 0) or 0)
+                    original_target = int(
+                        requote_result.get("original_target_count",
+                                           target_count_trunc) or 0
+                    )
+                    tier_filter_drained = bool(
+                        requote_result.get("tier_filter_drained", False)
+                    )
+                    made_progress = (replaced_count > 0 or len(new_offers) > 0)
+
                     if requote_result.get("fully_replaced"):
+                        # True full replace: advance baselines + refresh
+                        # ladder anchor so Step 10 doesn't see drift from
+                        # stale anchors.
                         self._last_quoted_price[side] = requote_mid
                         self._last_quoted_plain_mid[side] = mid_price  # F67
-                    else:
+                        self._ladder_grid_mid[side] = requote_mid
+                        self._ladder_anchor_plain_mid[side] = mid_price
+                    elif made_progress:
+                        # Partial progress — still advance the AMM drift
+                        # baseline so we don't loop re-detecting the same
+                        # drift every cycle, and refresh the ladder anchor
+                        # because at least some offers moved to the new
+                        # mid. The remaining offers will be picked up by
+                        # the trim/ladder-fill paths.
                         log_event("info", "requote_incomplete",
-                                  f"Did not advance {side} quote baseline: replaced "
-                                  f"{requote_result.get('replaced_count', 0)}/"
-                                  f"{requote_result.get('target_count', 0)} offers")
-                        # Fix 4: even on partial requote, advance the AMM
-                        # drift baseline to the attempted mid. Otherwise the
-                        # next AMM drift comparison still uses the OLD
-                        # baseline, the same drift fires again next cycle,
-                        # and we get the storm/feedback loop seen on
-                        # 2026-04-07. The baseline is "what we last tried
-                        # to quote at", not "what we last successfully
-                        # quoted at".
+                                  f"{side} requote partial: replaced "
+                                  f"{replaced_count}/{target_count_trunc} offers "
+                                  f"(original target {original_target}); advancing baseline")
                         self._last_quoted_price[side] = requote_mid
                         self._last_quoted_plain_mid[side] = mid_price  # F67
+                        self._ladder_grid_mid[side] = requote_mid
+                        self._ladder_anchor_plain_mid[side] = mid_price
+                    else:
+                        # Zero progress. Do NOT advance baselines — that
+                        # used to hide stale exposed offers from drift
+                        # detection for a full cycle. Leave the force
+                        # flag set so the next cycle retries.
+                        log_event("warning", "requote_no_progress",
+                                  f"{side} requote made zero progress "
+                                  f"(target {target_count_trunc}, original {original_target}) "
+                                  f"— leaving baseline and force_requote untouched "
+                                  f"so next cycle retries.",
+                                  data={"side": side,
+                                        "replaced": replaced_count,
+                                        "target": target_count_trunc,
+                                        "original_target": original_target,
+                                        "tier_filter_drained": tier_filter_drained})
                 else:
                     # Legacy return format (list)
                     new_offers = requote_result if isinstance(requote_result, list) else []
-                    if new_offers:
+                    made_progress = bool(new_offers)
+                    if made_progress:
                         self._last_quoted_price[side] = requote_mid
                         self._last_quoted_plain_mid[side] = mid_price  # F67
-                    else:
-                        # Fix 4: same baseline-advance even when nothing replaced
-                        self._last_quoted_price[side] = requote_mid
-                        self._last_quoted_plain_mid[side] = mid_price  # F67
+                        self._ladder_grid_mid[side] = requote_mid
+                        self._ladder_anchor_plain_mid[side] = mid_price
+
+                # Clear the force flag only on real progress OR on an
+                # intentional "nothing to do" outcome (tier filter drained
+                # because a defensive cancel is already handling the work).
+                # Genuine failure paths leave the flag set so the next
+                # cycle retries rather than stranding stale offers.
+                if force_clear_on_success and (made_progress or tier_filter_drained):
+                    self._force_requote[side] = False
                 # Block step 10 expansion only when the requote actually consumed
                 # spare coins.  If create_ladder returned 0 (all coin selections
                 # failed — e.g. only large-tier coins are spare but inner-tier
