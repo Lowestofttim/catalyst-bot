@@ -2648,27 +2648,85 @@
             height: 100%;
         }
 
-        /* ── Settings lock state when bot is running ── */
-        .settings-locked .v4-settings-section {
-            opacity: 0.5;
+        /* ── Settings mode states ──
+           Previously the Settings view hard-locked every field while the
+           bot was running (opacity: 0.5; pointer-events: none). That
+           blocked legitimate "prepare changes for next restart" edits.
+           New behaviour: fields remain editable; a persistent amber
+           banner at the top explains that saved changes won't touch the
+           running session. Individual panels retain the .settings-locked
+           class hook for isolated sections that really must stay frozen
+           mid-run (e.g. Liquidity Mode — pair/capital changes). */
+        .v4-settings-section.is-restart-gated {
+            position: relative;
+        }
+        .v4-settings-section.is-restart-gated::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 1px dashed rgba(251, 191, 36, 0.28);
             pointer-events: none;
-            user-select: none;
         }
-        .settings-locked .v4-settings-section .v4-settings-section-title::after {
-            content: ' 🔒';
-            font-size: 0.8em;
+        /* Settings sub-tab switcher (Live | Setup) */
+        .v4-settings-subtabs {
+            display: inline-flex;
+            gap: 4px;
+            padding: 4px;
+            background: rgba(148,163,184,0.06);
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
+            margin-bottom: 16px;
         }
-        /* Don't lock the Live Controls section or Save button area */
-        .settings-locked #settingsLiveSection,
-        .settings-locked .settings-locked-banner {
-            opacity: 1;
-            pointer-events: auto;
-            user-select: auto;
+        .v4-settings-subtab {
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background var(--transition-fast), color var(--transition-fast);
         }
-        .settings-locked #settingsSaveArea {
-            opacity: 1;
-            pointer-events: auto;
+        .v4-settings-subtab:hover { color: var(--text-primary); }
+        .v4-settings-subtab.is-active {
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.25);
         }
+        .v4-settings-subtab .v4-subtab-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: rgba(148,163,184,0.4);
+        }
+        .v4-settings-subtab.is-active[data-tab="live"] .v4-subtab-dot { background: var(--status-success); box-shadow: 0 0 6px rgba(16,185,129,0.6); }
+        .v4-settings-subtab.is-active[data-tab="setup"] .v4-subtab-dot { background: var(--accent-primary); }
+        .v4-settings-subtab:disabled { opacity: 0.4; cursor: not-allowed; }
+        .v4-settings-subview { display: none; }
+        .v4-settings-subview.is-active { display: block; }
+        /* Setup-while-running banner — amber, informational, NOT a hard lock */
+        .v4-settings-restart-banner {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            border-radius: 8px;
+            margin-bottom: 16px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            backdrop-filter: blur(6px);
+        }
+        .v4-settings-restart-banner.is-visible { display: flex; }
 
         /* Centred settings container — narrower than dashboard for form readability */
         #v4View-settings .container {
@@ -9480,31 +9538,44 @@
                         </div>
                     </div>
 
-                    <!-- Lock banner — shown when bot is running -->
-                    <div class="settings-locked-banner" id="settingsLockedBanner" style="display: none;">
-                        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 8px; margin-bottom: 16px;">
-                            <span style="font-size: 20px;">🔒</span>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600; color: var(--warning-300); font-size: 13px;">Settings locked while bot is running</div>
-                                <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Stop the bot to change setup settings. Use Live Controls on the dashboard for real-time adjustments.</div>
-                            </div>
-                            <button class="btn" onclick="stopBot()" style="background: var(--status-danger); color: white; padding: 6px 16px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap;">Stop Bot</button>
-                        </div>
-                    </div>
-
-                    <!-- Live Controls shortcut in Settings -->
-                    <div class="v4-settings-section v4-settings-blue" style="background: rgba(96, 165, 250, 0.03);" id="settingsLiveSection">
-                        <div class="v4-settings-section-title" style="color: var(--info-300);">
-                            Live Controls
-                            <span style="font-size: 10px; font-weight: 400; color: var(--text-tertiary); margin-left: 8px;">adjustable while running</span>
-                        </div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
-                            These settings can be changed while the bot is running. Changes take effect on the next loop cycle.
-                        </div>
-                        <button class="btn btn-config btn-secondary" onclick="v4SwitchView('dashboard'); setTimeout(() => document.getElementById('liveControls')?.scrollIntoView({behavior:'smooth'}), 100);" style="font-size: 12px; padding: 6px 16px;">
-                            Open Live Controls on Dashboard →
+                    <!-- Sub-tab switcher: Live (hot-reloadable) vs Setup (persisted, restart to apply while running) -->
+                    <div class="v4-settings-subtabs" role="tablist" aria-label="Settings view">
+                        <button type="button" class="v4-settings-subtab" id="settingsSubtabLive" data-tab="live" role="tab" aria-selected="false" onclick="settingsSwitchSubview('live')">
+                            <span class="v4-subtab-dot"></span>
+                            Live
+                            <span id="settingsSubtabLiveHint" style="font-size:10px; font-weight:500; color:var(--text-tertiary); margin-left:4px;"></span>
+                        </button>
+                        <button type="button" class="v4-settings-subtab is-active" id="settingsSubtabSetup" data-tab="setup" role="tab" aria-selected="true" onclick="settingsSwitchSubview('setup')">
+                            <span class="v4-subtab-dot"></span>
+                            Setup
                         </button>
                     </div>
+
+                    <!-- Restart-warning banner (replaces the old hard-lock banner) -->
+                    <div class="v4-settings-restart-banner" id="settingsRestartBanner">
+                        <span style="font-size: 18px;">⚠️</span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: var(--warning-300); font-size: 13px;">Bot is running — saved changes apply on next restart</div>
+                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Use the <a href="javascript:void(0)" onclick="settingsSwitchSubview('live')" style="color:var(--info-300); text-decoration:underline;">Live</a> tab for hot-reloadable spread / skew / toggle adjustments that take effect on the next loop cycle.</div>
+                        </div>
+                        <button class="btn" onclick="stopBot()" style="background: var(--status-danger); color: white; padding: 6px 14px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap;">Stop Bot</button>
+                    </div>
+
+                    <!-- Kept as a hidden placeholder so legacy updateSettingsLock calls still find an element -->
+                    <div id="settingsLockedBanner" style="display:none;"></div>
+
+                    <!-- ========= LIVE SUB-VIEW ========= -->
+                    <div class="v4-settings-subview" id="settingsLiveView">
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; padding: 10px 14px; background: rgba(96,165,250,0.05); border: 1px solid rgba(96,165,250,0.18); border-radius: 8px;">
+                            <strong style="color: var(--info-300);">Live Controls</strong> — these settings hot-reload on the next loop cycle. Safe to change while the bot is running.
+                        </div>
+                        <!-- Live Controls markup moves here from the dashboard during initial page load.
+                             Element id remains #liveControls so existing JS handlers keep working. -->
+                        <div id="settingsLiveControlsMount"></div>
+                    </div>
+
+                    <!-- ========= SETUP SUB-VIEW ========= -->
+                    <div class="v4-settings-subview is-active" id="settingsSetupView">
 
                     <!-- ══ SECTION: Trading Pair ══ -->
                     <div class="v4-settings-section v4-settings-purple">
@@ -10280,6 +10351,7 @@
                         </div>
                     </div>
 
+                    </div><!-- /#settingsSetupView -->
                 </div>
 
                 <!-- Sticky footer — always visible at bottom, never scrolls away -->
@@ -14272,20 +14344,67 @@
             updateSettingsLock();
         }
 
+        // Whether the user has manually picked a sub-tab this session.
+        // Prevents the auto-select (driven by bot state) from yanking the
+        // view out from under them mid-edit.
+        let _settingsSubviewUserPicked = false;
+
+        function settingsSwitchSubview(name, opts = {}) {
+            const tab = (name === 'live' || name === 'setup') ? name : 'setup';
+            if (!opts.auto) _settingsSubviewUserPicked = true;
+
+            const liveView = document.getElementById('settingsLiveView');
+            const setupView = document.getElementById('settingsSetupView');
+            const liveBtn = document.getElementById('settingsSubtabLive');
+            const setupBtn = document.getElementById('settingsSubtabSetup');
+            const footer = document.querySelector('#v4View-settings .v4-settings-footer');
+
+            const showLive = tab === 'live';
+            if (liveView) liveView.classList.toggle('is-active', showLive);
+            if (setupView) setupView.classList.toggle('is-active', !showLive);
+            if (liveBtn) { liveBtn.classList.toggle('is-active', showLive); liveBtn.setAttribute('aria-selected', showLive ? 'true' : 'false'); }
+            if (setupBtn) { setupBtn.classList.toggle('is-active', !showLive); setupBtn.setAttribute('aria-selected', !showLive ? 'true' : 'false'); }
+            // Footer holds Save/Export for the Setup view only — hide it
+            // while the Live tab is up so the sticky chrome doesn't imply
+            // "press Save to persist Live tweaks" (they auto-persist).
+            if (footer) footer.style.display = showLive ? 'none' : '';
+        }
+
+        // Ensure the live-controls DOM lives inside the Settings > Live sub-view.
+        // The dashboard used to host it, but the refactor (2026-04-22)
+        // relocates it so Settings becomes the single home for anything
+        // the user adjusts. This runs once per page load.
+        function mountLiveControlsInSettings() {
+            const mount = document.getElementById('settingsLiveControlsMount');
+            const panel = document.getElementById('liveControls');
+            if (!mount || !panel) return;
+            if (mount.contains(panel)) return;  // already relocated
+            mount.appendChild(panel);
+            // While mounted here the panel is always visually available;
+            // remove the legacy dashboard "hidden when bot idle" class.
+            panel.classList.remove('dashboard-section-hidden');
+        }
+
         function updateSettingsLock() {
             const isRunning = bot_state?.running || false;
-            const container = document.querySelector('#v4View-settings .container');
-            const banner = document.getElementById('settingsLockedBanner');
-            const liveSection = document.getElementById('settingsLiveSection');
+            const banner = document.getElementById('settingsRestartBanner');
+            const liveHint = document.getElementById('settingsSubtabLiveHint');
 
-            if (isRunning) {
-                if (container) container.classList.add('settings-locked');
-                if (banner) banner.style.display = 'block';
-                if (liveSection) liveSection.style.display = 'block';
-            } else {
-                if (container) container.classList.remove('settings-locked');
-                if (banner) banner.style.display = 'none';
-                if (liveSection) liveSection.style.display = 'block';
+            if (banner) banner.classList.toggle('is-visible', isRunning);
+            if (liveHint) liveHint.textContent = isRunning ? '• running' : '';
+
+            // Auto-select a sensible sub-tab if the user hasn't already
+            // manually picked one: Live when running, Setup when stopped.
+            if (!_settingsSubviewUserPicked) {
+                settingsSwitchSubview(isRunning ? 'live' : 'setup', { auto: true });
+            }
+
+            // Update Save button label so the user knows mid-run saves
+            // don't take effect until restart.
+            const saveBtn = document.getElementById('saveConfigBtn');
+            if (saveBtn) {
+                saveBtn.textContent = isRunning ? 'Save (applies on restart)' : 'Save & Continue';
+                saveBtn.classList.toggle('is-restart-save', isRunning);
             }
 
             // Liquidity-mode cards: changing mode is a capital-allocation
@@ -16144,7 +16263,9 @@
         function updateDashboardStartupLayout(data = bot_state) {
             const isRunning = !!(data && data.running);
             const showLiveDashboard = isRunning || _botStarting;
-            ['heroStrip', 'marketStrip', 'dashboardActivityRow', 'dashboardAdvisorRow', 'activeFeaturesBar', 'liveControls'].forEach((id) => {
+            // #liveControls moved to Settings → Live sub-tab (2026-04-22),
+            // so it's no longer part of the dashboard's running/idle toggle set.
+            ['heroStrip', 'marketStrip', 'dashboardActivityRow', 'dashboardAdvisorRow', 'activeFeaturesBar'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.classList.toggle('dashboard-section-hidden', !showLiveDashboard);
             });
@@ -18960,9 +19081,13 @@
         }
 
         function handleLiquidityModeChange(mode) {
-            // Reject clicks while locked (belt-and-braces — the cards are
-            // also marked .disabled with pointer-events:none).
-            if (document.body.classList.contains('settings-locked')) {
+            // Reject clicks while the bot is running — liquidity mode is a
+            // capital-allocation change that must not swap out from under
+            // live offers. Previously this checked body.settings-locked,
+            // but the dashboard refactor (2026-04-22) dropped the hard
+            // lock in favour of a restart banner; the bot-state check is
+            // the authoritative source now.
+            if (bot_state && bot_state.running) {
                 try { showToast('Stop the bot to change liquidity mode.', 'warning', 4000); } catch (_) {}
                 // Revert radio selection to whatever the body class says.
                 const current = (document.body.className.match(/liquidity-mode-([a-z-]+)/) || [])[1];
@@ -18995,7 +19120,7 @@
             if (!box || !textEl || !btn) return;
 
             // Hide if we can't get a wallet read, or if the bot is running.
-            if (document.body.classList.contains('settings-locked')) {
+            if (bot_state && bot_state.running) {
                 box.style.display = 'none';
                 return;
             }
@@ -28807,7 +28932,12 @@
                     clearUnsavedBadge();
                     runInlineValidation();
 
-                    showToast('Settings saved!', 'success');
+                    const _wasRunning = !!(bot_state && bot_state.running);
+                    showToast(
+                        _wasRunning ? 'Saved. Restart the bot to apply these changes.' : 'Settings saved!',
+                        _wasRunning ? 'warning' : 'success',
+                        _wasRunning ? 6000 : 3000
+                    );
                     if (result.warning) {
                         showToast(result.warning, 'warning', 7000);
                     }
@@ -29760,6 +29890,11 @@ function updateCtgCalculations() {
 
 // Event listeners for real-time updates
 document.addEventListener('DOMContentLoaded', function() {
+    // Live Controls moved from dashboard to Settings → Live sub-tab.
+    // Relocate the existing DOM node so all the lc* handler ids stay valid.
+    try { mountLiveControlsInSettings(); } catch (_) {}
+    try { updateSettingsLock(); } catch (_) {}
+
     // Tooltip click-to-toggle system
     document.addEventListener('click', function(e) {
         const icon = e.target.closest('.tooltip-icon');
