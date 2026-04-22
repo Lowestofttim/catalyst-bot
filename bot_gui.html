@@ -1602,6 +1602,49 @@
         }
         .v4-data-strip-link:hover { text-decoration: underline; }
 
+        /* Stacked-cell variant for the Dexie volume/token-info strip —
+           keeps the familiar "label above value" visual rhythm of the
+           previous dashboard instead of the inline key:value row. */
+        .v4-data-strip-body--stacked {
+            display: flex;
+            align-items: flex-start;
+            gap: 22px;
+            flex-wrap: wrap;
+        }
+        .v4-data-strip-cell { min-width: 80px; }
+        .v4-data-strip-cell--wide { min-width: 140px; }
+        .v4-data-strip-cell--grow { flex: 1; min-width: 160px; max-width: 420px; }
+        .v4-data-strip-cell--link {
+            margin-left: auto;
+            align-self: center;
+        }
+        .v4-data-strip-cell-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 3px;
+        }
+        .v4-data-strip-cell-val {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .v4-data-strip-cell-val--muted {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 12px;
+        }
+        .v4-data-strip-cell-val--truncate {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: var(--font-system);
+            font-size: 12px;
+        }
+
         /* Primary toolbar variant — sits directly under the token pill so
            the user sees bot state / wallet / sync immediately on load. */
         .v4-toolbar--primary {
@@ -8381,34 +8424,34 @@
                     </div>
 
                     <!-- ===== DEXIE VOLUME & TOKEN INFO: static pair metadata ===== -->
-                    <div id="tokenSnapshotBar" class="v4-data-strip v4-data-strip--volume" style="display: none;">
+                    <div id="tokenSnapshotBar" class="v4-data-strip v4-data-strip--volume v4-data-strip--stacked" style="display: none;">
                         <div class="v4-data-strip-header">
                             <span class="v4-data-strip-title">Volume &amp; Token Info</span>
                             <span class="v4-data-strip-source" title="Volume, range, and description sourced from the Dexie v3 trading API for this pair">Source · Dexie</span>
                         </div>
-                        <div class="v4-data-strip-body">
-                            <span class="v4-data-strip-field">
-                                <span class="v4-data-strip-key">7d Volume</span>
-                                <span id="snapshotVol7d" class="v4-data-strip-val">—</span>
-                            </span>
-                            <span class="v4-data-strip-field">
-                                <span class="v4-data-strip-key">30d Volume</span>
-                                <span id="snapshotVol30d" class="v4-data-strip-val">—</span>
-                            </span>
-                            <span class="v4-data-strip-field">
-                                <span class="v4-data-strip-key">7d Range</span>
-                                <span id="snapshotRange7d" class="v4-data-strip-val v4-data-strip-val--muted">—</span>
-                            </span>
-                            <span id="snapshotDescWrap" class="v4-data-strip-field v4-data-strip-field--about" style="display:none;">
-                                <span class="v4-data-strip-key">About</span>
-                                <span id="snapshotDesc" class="v4-data-strip-val v4-data-strip-val--muted v4-data-strip-val--truncate">—</span>
-                            </span>
-                            <span id="snapshotWebsiteWrap" class="v4-data-strip-field" style="display:none; margin-left:auto;">
+                        <div class="v4-data-strip-body v4-data-strip-body--stacked">
+                            <div class="v4-data-strip-cell">
+                                <div class="v4-data-strip-cell-label">7d Volume</div>
+                                <div id="snapshotVol7d" class="v4-data-strip-cell-val">—</div>
+                            </div>
+                            <div class="v4-data-strip-cell">
+                                <div class="v4-data-strip-cell-label">30d Volume</div>
+                                <div id="snapshotVol30d" class="v4-data-strip-cell-val">—</div>
+                            </div>
+                            <div class="v4-data-strip-cell v4-data-strip-cell--wide">
+                                <div class="v4-data-strip-cell-label">7d Range</div>
+                                <div id="snapshotRange7d" class="v4-data-strip-cell-val v4-data-strip-cell-val--muted">—</div>
+                            </div>
+                            <div id="snapshotDescWrap" class="v4-data-strip-cell v4-data-strip-cell--grow" style="display:none;">
+                                <div class="v4-data-strip-cell-label">About</div>
+                                <div id="snapshotDesc" class="v4-data-strip-cell-val v4-data-strip-cell-val--muted v4-data-strip-cell-val--truncate">—</div>
+                            </div>
+                            <div id="snapshotWebsiteWrap" class="v4-data-strip-cell v4-data-strip-cell--link" style="display:none;">
                                 <a id="snapshotWebsite" href="#" target="_blank" rel="noopener" class="v4-data-strip-link" onclick="return handleDashboardExternalLink(event, this)">
                                     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><ellipse cx="8" cy="8" rx="3" ry="7" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
                                     <span id="snapshotWebsiteLabel">Website</span>
                                 </a>
-                            </span>
+                            </div>
                         </div>
                     </div>
 
@@ -11939,10 +11982,13 @@
         }
 
         async function v4SwitchView(viewName, options = {}) {
-            if (viewName === 'settings' && !options.bypassResumeSettingsLock && hasResumedLiveBook()) {
-                await handleResumeSettingsChangeRequest({ openSettings: true });
-                return;
-            }
+            // Resume-lock modal intentionally removed from the Settings
+            // entry path (2026-04-22). With the new Settings > Live |
+            // Setup sub-tabs the Live tab is always safe to touch while
+            // running, and Setup edits now show an amber "applies on
+            // restart" banner instead of being frozen. Users who click
+            // Start Fresh from the startup card still get the destructive
+            // flow via handleResumeSettingsChangeRequest's callers.
 
             var alreadyOnView = (_v4CurrentView === viewName);
             _v4CurrentView = viewName;
