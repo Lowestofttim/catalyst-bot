@@ -3070,8 +3070,10 @@ class CoinManager:
             try:
                 self._normalize_tier_labels()
             except Exception as _norm_err:
-                log_event("debug", "tier_normalize_failed",
-                          f"Tier label normalisation pass failed: {_norm_err}")
+                log_event("warning", "tier_normalize_failed",
+                          f"Tier label normalisation pass failed: {_norm_err}",
+                          data={"exc_type": type(_norm_err).__name__,
+                                "exc_msg": str(_norm_err)})
 
         except Exception as e:
             log_event("warning", "locked_coin_count_failed",
@@ -3207,14 +3209,26 @@ class CoinManager:
 
         total_changes = (summary["relabeled"] + summary["demoted_reserve"]
                          + summary["demoted_unknown"])
+        # Always-log exit breadcrumb so we can see exactly what the pass
+        # computed, even when total_changes=0.
+        log_event("info", "tier_normalize_exit",
+                  f"scanned xch={scanned['xch']} cat={scanned['cat']} "
+                  f"relabeled={summary['relabeled']} "
+                  f"→reserve={summary['demoted_reserve']} "
+                  f"→unknown={summary['demoted_unknown']} "
+                  f"total_changes={total_changes}")
         if total_changes > 0:
-            conn.commit()
-            log_event("info", "tier_labels_normalized",
-                      f"Tier label normalisation: "
-                      f"relabeled={summary['relabeled']} "
-                      f"→reserve={summary['demoted_reserve']} "
-                      f"→unknown={summary['demoted_unknown']}",
-                      data=summary)
+            try:
+                conn.commit()
+                log_event("info", "tier_labels_normalized",
+                          f"Tier label normalisation: "
+                          f"relabeled={summary['relabeled']} "
+                          f"→reserve={summary['demoted_reserve']} "
+                          f"→unknown={summary['demoted_unknown']}",
+                          data=summary)
+            except Exception as _commit_err:
+                log_event("warning", "tier_normalize_commit_failed",
+                          f"Commit failed: {_commit_err}")
         return summary
 
     def get_inventory_summary(self) -> Dict:
