@@ -3096,9 +3096,17 @@ class CoinManager:
 
         Idempotent — writes nothing when labels already match sizes.
         """
+        # Debug breadcrumb — if this doesn't fire, the method isn't
+        # being invoked from update_coin_counts. If it fires but
+        # tier_labels_normalized doesn't, then labels are already
+        # correct (total_changes=0).
+        log_event("debug", "tier_normalize_entry",
+                  "Running tier label normalisation pass")
         try:
             from coin_classifier import classify_coin, CoinDesignation as _CD
-        except Exception:
+        except Exception as _imp_err:
+            log_event("debug", "tier_normalize_import_failed",
+                      f"classify_coin import failed: {_imp_err}")
             return {"relabeled": 0, "demoted": 0}
         from database import get_connection
 
@@ -3109,9 +3117,13 @@ class CoinManager:
         for wt in ("xch", "cat"):
             try:
                 tier_sizes = get_tier_sizes_mojos_from_cfg(is_cat=(wt == "cat"))
-            except Exception:
+            except Exception as _ts_err:
+                log_event("debug", "tier_normalize_sizes_failed",
+                          f"get_tier_sizes_mojos_from_cfg({wt}) failed: {_ts_err}")
                 tier_sizes = {}
             if not tier_sizes:
+                log_event("debug", "tier_normalize_no_sizes",
+                          f"No tier sizes available for {wt} — skipping")
                 continue
             rows = conn.execute(
                 "SELECT coin_id, amount_mojos, assigned_tier "
