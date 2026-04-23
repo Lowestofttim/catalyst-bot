@@ -3180,13 +3180,59 @@ class CoinManager:
                     )
                     summary["demoted_unknown"] += 1
 
+        # Overstock harvest — demote slack tier coins to reserve so the
+        # topup splitter has split-material when other tiers run short.
+        # Without this, change coins from fills accumulate in whichever
+        # tier their size matches, and tiers whose coins got consumed
+        # stay empty because there's no reserve to split from. Promoting
+        # overstock keeps the reserve pool fed automatically.
+        #
+        # Rule: for each tier, if free_count > target, demote the
+        # (free_count − target) largest coins to reserve. Largest-first
+        # because bigger coins have more split potential.
+        summary["demoted_overstock"] = 0
+        for wt in ("xch", "cat"):
+            try:
+                targets = self._configured_prep_counts(wt)
+            except Exception:
+                targets = {}
+            if not targets:
+                continue
+            for tier in ("inner", "mid", "outer", "extreme"):
+                target = int(targets.get(tier, 0) or 0)
+                if target <= 0:
+                    continue
+                rows = conn.execute(
+                    "SELECT coin_id, amount_mojos FROM coins "
+                    "WHERE wallet_type=? AND status='free' "
+                    "  AND designation='tier_spare' "
+                    "  AND assigned_tier=? "
+                    "ORDER BY amount_mojos DESC",
+                    (wt, tier),
+                ).fetchall()
+                if len(rows) <= target:
+                    continue
+                # Excess = rows.length - target. Demote the LARGEST
+                # first (they have the most split potential).
+                excess = len(rows) - target
+                for r in rows[:excess]:
+                    conn.execute(
+                        "UPDATE coins SET designation='reserve', "
+                        "assigned_tier='none', last_seen=? "
+                        "WHERE coin_id=?",
+                        (_now(), r["coin_id"]),
+                    )
+                    summary["demoted_overstock"] += 1
+
         total_changes = (summary["relabeled"] + summary["demoted_reserve"]
-                         + summary["demoted_unknown"])
+                         + summary["demoted_unknown"]
+                         + summary["demoted_overstock"])
         log_event("debug", "tier_normalize_exit",
                   f"scanned xch={scanned['xch']} cat={scanned['cat']} "
                   f"relabeled={summary['relabeled']} "
                   f"→reserve={summary['demoted_reserve']} "
                   f"→unknown={summary['demoted_unknown']} "
+                  f"overstock→reserve={summary['demoted_overstock']} "
                   f"total_changes={total_changes}")
         if total_changes > 0:
             try:
@@ -3195,7 +3241,8 @@ class CoinManager:
                           f"Tier label normalisation: "
                           f"relabeled={summary['relabeled']} "
                           f"→reserve={summary['demoted_reserve']} "
-                          f"→unknown={summary['demoted_unknown']}",
+                          f"→unknown={summary['demoted_unknown']} "
+                          f"overstock→reserve={summary['demoted_overstock']}",
                           data=summary)
             except Exception as _commit_err:
                 log_event("warning", "tier_normalize_commit_failed",
