@@ -40,9 +40,17 @@ class SecurityGuardrailSourceTests(unittest.TestCase):
         self.assertIn("/api/splash/incoming", rate_exempt)
 
     def test_bot_start_checks_sage_signing_capability(self):
+        # The /api/bot/start route moved from api_server.py into
+        # blueprints/bot.py during the blueprint refactor; check there
+        # for the guard call (via the re-exported helper on api_server).
+        bot_bp_source = (ROOT / "blueprints" / "bot.py").read_text(encoding="utf-8")
         api_source = (ROOT / "api_server.py").read_text(encoding="utf-8")
         bot_loop_source = (ROOT / "bot_loop.py").read_text(encoding="utf-8")
-        self.assertIn("signing_block_reason = _get_sage_signing_block_reason()", api_source)
+        self.assertIn(
+            "signing_block_reason = api_server._get_sage_signing_block_reason()",
+            bot_bp_source,
+        )
+        self.assertIn("def _get_sage_signing_block_reason", api_source)
         self.assertIn("bot_start_blocked_watch_only", bot_loop_source)
 
 

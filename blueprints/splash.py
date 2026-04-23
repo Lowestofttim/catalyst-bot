@@ -42,6 +42,7 @@ def api_splash_stats():
 def api_splash_receive():
     """Get or update inbound Splash listening state."""
     bot = api_server.bot
+    cfg = api_server.cfg
     if not bot:
         return jsonify({"error": "Bot not initialised"}), 500
 
@@ -109,6 +110,7 @@ def api_splash_node():
 def api_splash_node_start():
     """Start the Splash P2P node process (used by startup gate)."""
     bot = api_server.bot
+    cfg = api_server.cfg
     if not bot:
         return jsonify({"error": "Bot not initialised"}), 500
 

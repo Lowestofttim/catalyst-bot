@@ -53,6 +53,7 @@ def api_spacescan_setup():
     POST {"api_key": ""}     → clears key, falls back to Free tier
     POST {"skip": true}      → marks setup as seen, stays on Free tier
     """
+    cfg = api_server.cfg
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
