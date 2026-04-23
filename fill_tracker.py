@@ -349,9 +349,53 @@ class FillTracker:
                 attempts = int(meta.get("attempts", 0)) + 1
                 meta["attempts"] = attempts
                 if attempts >= self._pending_reverify_max_attempts:
-                    # Budget exhausted. Retire conservatively but loud —
-                    # the operator needs to confirm fill vs. cancel in
-                    # the wallet / on Spacescan manually.
+                    # Spacescan budget exhausted. Before defaulting to a
+                    # conservative "cancelled" (which silently loses a real
+                    # fill if Spacescan was merely rate-limited), ask Dexie
+                    # for the on-chain terminal status. Dexie indexes the
+                    # same chain and distinguishes status=3 (cancel) from
+                    # status=4 (fill).
+                    dexie_terminal = self._dexie_terminal_status(trade_id)
+
+                    if dexie_terminal == "filled":
+                        try:
+                            transition_offer(trade_id, "fill_verified")
+                        except Exception:
+                            pass
+                        fill_detail = self._record_fill(trade_id, side, details_cache)
+                        if fill_detail:
+                            key = "buy_fills" if side == "buy" else "sell_fills"
+                            out[key].append(fill_detail)
+                        log_event("warning", "fill_recovered_via_dexie",
+                                  f"{side.upper()} offer {trade_id[:16]}... "
+                                  f"Spacescan exhausted after {attempts} retries "
+                                  f"but Dexie reports status=4 (COMPLETED) — "
+                                  f"recorded as fill.",
+                                  data={"trade_id": trade_id, "side": side,
+                                        "attempts": attempts,
+                                        "source": "dexie_fallback"})
+                        self._pending_reverify.pop(trade_id, None)
+                        continue
+
+                    if dexie_terminal == "cancelled":
+                        status = "expired" if meta.get("local_clock_expired") else "cancelled"
+                        self._retire_local_offer(
+                            trade_id, side, details_cache,
+                            status=status,
+                            event_type="offer_closed_nonfill",
+                            severity="info",
+                            suffix=("expired on-chain" if status == "expired"
+                                    else "retired after Dexie confirmed cancel "
+                                         "(Spacescan exhausted)"),
+                            data_extra={"verification_state": "dexie_confirmed_cancelled",
+                                        "attempts": attempts,
+                                        "source": "dexie_fallback"},
+                        )
+                        self._pending_reverify.pop(trade_id, None)
+                        continue
+
+                    # Dexie also inconclusive (404, still-open, pending, rate-limited,
+                    # or network error). Retire conservatively and alert operator.
                     status = "expired" if meta.get("local_clock_expired") else "cancelled"
                     self._retire_local_offer(
                         trade_id,
@@ -368,7 +412,8 @@ class FillTracker:
                     )
                     log_event("error", "fill_verify_exhausted",
                               f"{side.upper()} offer {trade_id[:16]}... failed "
-                              f"to verify after {attempts} Spacescan retries — "
+                              f"to verify after {attempts} Spacescan retries "
+                              f"AND Dexie fallback was inconclusive — "
                               f"retired as {status}. MANUAL REVIEW RECOMMENDED.",
                               data={"trade_id": trade_id, "side": side,
                                     "attempts": attempts,
@@ -1090,6 +1135,66 @@ class FillTracker:
                   f"Offer {trade_id[:16]}... not found in Sage completed offers — "
                   f"treating as non-fill.")
         return False
+
+    def _dexie_terminal_status(self, trade_id: str) -> str:
+        """Ask Dexie whether this offer terminated as a fill or a cancel.
+
+        Used as a fallback when Spacescan verification is exhausted so we
+        don't silently lose a real fill to a rate-limit cascade. Dexie
+        indexes every on-chain spend and distinguishes status=3 (spend
+        was a cancel) from status=4 (spend was a fill) once a block
+        confirms. We trust that distinction because Dexie parses the
+        coin spends the same way the golden-gate Spacescan path does.
+
+        Returns:
+            "filled"    — Dexie status=4
+            "cancelled" — Dexie status=3
+            "unknown"   — any other state (still open, pending, 404,
+                          rate-limited, mismatched trade_id, or network
+                          error). The caller should fall back to a
+                          conservative exhausted-retire path with the
+                          MANUAL REVIEW flag.
+        """
+        try:
+            from database import get_offer
+            db_offer = get_offer(trade_id)
+        except Exception:
+            db_offer = None
+
+        dexie_id = ""
+        if isinstance(db_offer, dict):
+            dexie_id = str(db_offer.get("dexie_id") or "").strip()
+        if not dexie_id:
+            cached = self._last_dexie_details.get(trade_id)
+            if isinstance(cached, dict):
+                dexie_id = str(cached.get("id") or "").strip()
+        if not dexie_id:
+            return "unknown"
+
+        try:
+            from dexie_manager import get_offer_detail
+            detail = get_offer_detail(dexie_id)
+        except Exception:
+            detail = None
+
+        if not isinstance(detail, dict):
+            return "unknown"
+
+        # Guard against Dexie returning a detail for a different trade_id
+        # (dexie_id collision across re-quotes, stale cache, etc.)
+        norm_trade_id = str(trade_id).lower().replace("0x", "")
+        detail_trade_id = str(detail.get("trade_id") or "").lower().replace("0x", "")
+        if detail_trade_id and detail_trade_id != norm_trade_id:
+            return "unknown"
+
+        status = detail.get("status")
+        if status == 4:
+            # Cache for _record_fill() so it doesn't re-fetch
+            self._last_dexie_details[trade_id] = detail
+            return "filled"
+        if status == 3:
+            return "cancelled"
+        return "unknown"
 
     def _check_dexie_offer_still_open(self, trade_id: str, db_offer: Optional[Dict],
                                       coin_id: str) -> Optional[bool]:

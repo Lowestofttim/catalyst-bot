@@ -5910,8 +5910,16 @@ def api_coins():
     # On-demand refresh when the bot isn't running (so the dashboard
     # shows accurate numbers after coin prep finishes). When the bot IS
     # running, its loop refreshes every tick, so skip the extra RPC.
+    #
+    # Also reap the coin_prep subprocess here — only the bot loop normally
+    # calls check_coin_prep_status(), so a manual prep while the bot is
+    # stopped leaves ``_prep_running`` pinned True until the next bot
+    # start. That blocks the on-demand refresh below and any second prep
+    # attempt. Reaping it here lets the dashboard recover without a
+    # bot restart.
     try:
         if not bot.is_running():
+            bot.coin_manager.check_coin_prep_status()
             bot.coin_manager.update_coin_counts()
     except Exception as _refresh_err:
         # Don't fail the endpoint if the refresh glitches; the cached
