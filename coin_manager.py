@@ -3111,7 +3111,7 @@ class CoinManager:
             log_event("debug", "tier_normalize_import_failed",
                       f"classify_coin import failed: {_imp_err}")
             return {"relabeled": 0, "demoted": 0}
-        from database import get_connection
+        from database import get_connection, _now
 
         summary = {"relabeled": 0, "demoted_reserve": 0,
                    "demoted_unknown": 0}
