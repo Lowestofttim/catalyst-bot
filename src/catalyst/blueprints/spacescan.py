@@ -115,8 +115,11 @@ def api_spacescan_setup():
         log_event("info", "spacescan_setup", "Pro API key configured and validated")
         return jsonify({"success": True, "tier": "pro", "message": "Pro API key saved and verified"})
     else:
+        # Explicit user-initiated clear. clear_secret() also removes the
+        # on-disk backup so the next startup doesn't auto-restore the
+        # key the user just asked us to forget.
         import user_secrets as _user_secrets
-        _user_secrets.set_secret("SPACESCAN_API_KEY", "")
+        _user_secrets.clear_secret("SPACESCAN_API_KEY")
         cfg.SPACESCAN_API_KEY = ""
         cfg.update("SPACESCAN_ENABLED", "true")
         log_event("info", "spacescan_setup", "API key cleared — using Free tier")

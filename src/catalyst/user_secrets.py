@@ -39,9 +39,13 @@ def _secrets_path() -> Path:
     return Path(data_dir()) / "user_secrets.json"
 
 
-def _load_locked() -> dict:
-    """Read the secrets file.  Must be called while _LOCK is held."""
-    path = _secrets_path()
+def _backup_path() -> Path:
+    """Return the companion `.bak` path for the secrets file."""
+    return _secrets_path().with_suffix(".json.bak")
+
+
+def _read_json_dict(path: Path) -> dict:
+    """Read *path* as a JSON object, or {} on any error / non-object."""
     try:
         with path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -50,73 +54,135 @@ def _load_locked() -> dict:
         return {}
 
 
-def _save_locked(data: dict) -> None:
-    """Write the secrets file.  Must be called while _LOCK is held.
+def _load_locked() -> dict:
+    """Read the secrets file, auto-restoring from the backup if the
+    live file looks wiped and the backup has content.  Must be called
+    while _LOCK is held.
 
-    A wipe of this file cost a user an hour of re-setup once, so any
-    write that drops from non-empty to empty (or empty-to-empty) is
-    logged with a stack trace. That makes it possible to catch the
-    caller next time there's a mystery wipe.
+    Recovery is silent on the happy path (live file is normal) and loud
+    when a restore happens (prints to stderr so the operator sees it
+    even before super_log is initialised).
     """
     path = _secrets_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    live = _read_json_dict(path)
+    if live:
+        return live
 
-    # Forensic logging for suspicious writes: empty dict, or losing a
-    # previously-stored SPACESCAN_API_KEY. Uses a bare stderr print +
-    # traceback so it works even before super_log is initialised.
+    # Live is empty / missing — check the backup.
+    bak = _backup_path()
+    if not bak.exists():
+        return live  # genuinely empty, nothing to restore
+
+    backup = _read_json_dict(bak)
+    if not backup:
+        return live  # backup also empty — nothing to recover
+
+    # Restore.  We write back to the live file so subsequent reads are
+    # fast and so the restore is durable across processes.
     try:
-        if not data or (path.exists() and _looks_like_key_loss(path, data)):
-            import sys as _sys
-            import traceback as _tb
-            _sys.stderr.write(
-                f"[user_secrets] WARNING: writing sparse/empty secrets to {path} "
-                f"(new keys: {sorted(data.keys())}). Stack:\n"
-            )
-            _tb.print_stack(file=_sys.stderr)
+        import sys as _sys
+        _sys.stderr.write(
+            f"[user_secrets] WARNING: live secrets file at {path} was empty; "
+            f"restoring from backup {bak} (keys: {sorted(backup.keys())}).\n"
+        )
     except Exception:
-        pass  # Never let diagnostics break the actual write
+        pass
+    try:
+        _write_atomic(path, backup)
+    except Exception:
+        # Could not restore to disk; still return the in-memory value so
+        # the caller sees the key this session.
+        pass
+    return backup
 
+
+def _write_atomic(path: Path, data: dict) -> None:
+    """Write *data* to *path* as JSON. Caller holds _LOCK."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
-    # Restrict file permissions to owner only (defense-in-depth for secrets)
     try:
         import os
         os.chmod(path, 0o600)
     except (OSError, AttributeError):
-        pass  # Windows may not support chmod; ACLs would be needed there
+        pass  # Windows relies on user-profile ACLs
 
 
-def _looks_like_key_loss(path: "Path", new_data: dict) -> bool:
-    """Return True if the disk has a populated SPACESCAN_API_KEY and the
-    new payload has dropped it. Used only to decide whether to log a
-    forensic stack trace on write."""
+def _save_locked(data: dict) -> None:
+    """Write the secrets file and snapshot the previous content to
+    .bak.  Must be called while _LOCK is held.
+
+    Any write with content first copies the current live file to .bak
+    so a subsequent accidental wipe is recoverable on next startup.
+    """
+    path = _secrets_path()
+    bak = _backup_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Snapshot existing non-empty content to .bak BEFORE overwriting.
+    # Only snapshot when there's something worth keeping — this keeps
+    # .bak equal to the last known-good state, not junk.
     try:
-        with path.open("r", encoding="utf-8") as fh:
-            old = json.load(fh)
-        if not isinstance(old, dict):
-            return False
-        had_key = bool(old.get("SPACESCAN_API_KEY"))
-        still_has_key = bool(new_data.get("SPACESCAN_API_KEY"))
-        return had_key and not still_has_key
+        existing = _read_json_dict(path)
+        if existing and existing != data:
+            _write_atomic(bak, existing)
     except Exception:
-        return False
+        pass  # Never let backup failures block the actual write
+
+    _write_atomic(path, data)
 
 
 def get_secret(key: str) -> str:
-    """Return the stored value for *key*, or an empty string if not set."""
+    """Return the stored value for *key*, or an empty string if not set.
+
+    Triggers the .bak auto-restore if the live file is empty but the
+    backup has content.
+    """
     with _LOCK:
         return str(_load_locked().get(key) or "")
 
 
 def set_secret(key: str, value: str) -> None:
-    """Persist *value* for *key*.  Passing an empty string removes the entry."""
+    """Persist a non-empty *value* for *key*.
+
+    Empty values are rejected to prevent accidental wipes — callers that
+    genuinely want to remove a key must use `clear_secret()` and accept
+    that it also drops the .bak backup.  This split means a future bug
+    that passes user input through unchecked can't silently erase stored
+    secrets.
+    """
+    if not value:
+        raise ValueError(
+            "set_secret() refuses empty values; use clear_secret() to remove a key"
+        )
     with _LOCK:
         data = _load_locked()
-        if value:
-            data[key] = value
-        else:
-            data.pop(key, None)
+        data[key] = value
         _save_locked(data)
+
+
+def clear_secret(key: str) -> None:
+    """Remove *key* from stored secrets and invalidate the backup.
+
+    Only to be called when the operator has explicitly asked for the
+    secret to be forgotten.  Dropping the backup is part of the
+    contract: otherwise the next startup would auto-restore the key and
+    surprise the user.
+    """
+    with _LOCK:
+        data = _load_locked()
+        had_keys = bool(data)
+        data.pop(key, None)
+        if had_keys and not data:
+            # User just cleared the last remaining secret — remove .bak
+            # too so we don't ressurect it on next launch.
+            try:
+                _backup_path().unlink(missing_ok=True)
+            except Exception:
+                pass
+        # Snapshot-before-write is skipped here because .bak is the
+        # value we're trying to invalidate.  Write the new state directly.
+        _write_atomic(_secrets_path(), data)
 
 
 def apply_to_config(cfg) -> None:
