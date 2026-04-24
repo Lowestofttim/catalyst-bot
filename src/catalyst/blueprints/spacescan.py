@@ -52,6 +52,12 @@ def api_spacescan_setup():
     POST {"api_key": "xxx"}  → saves key, enables Pro tier
     POST {"api_key": ""}     → clears key, falls back to Free tier
     POST {"skip": true}      → marks setup as seen, stays on Free tier
+
+    A request that includes neither `api_key` nor `skip` is rejected
+    rather than silently clearing the key. An earlier version fell
+    through to the clear-key branch on malformed/empty bodies, which
+    made a stray POST from another flow (or a replayed request) wipe
+    the user's stored key.
     """
     cfg = api_server.cfg
     data = request.get_json(silent=True)
@@ -63,6 +69,18 @@ def api_spacescan_setup():
         cfg.update("SPACESCAN_ENABLED", "true")
         log_event("info", "spacescan_setup", "User chose Free tier (no API key)")
         return jsonify({"success": True, "tier": "free", "message": "Free tier active"})
+
+    # Require an explicit api_key field. A missing field is not permission
+    # to clear an existing key.
+    if "api_key" not in data:
+        log_event(
+            "warning", "spacescan_setup_rejected",
+            "POST to /api/spacescan/setup missing both api_key and skip fields; refusing to touch stored key",
+        )
+        return jsonify({
+            "success": False,
+            "error": "Request must include either 'api_key' (string) or 'skip' (true)",
+        }), 400
 
     api_key = data.get("api_key", "").strip()
 

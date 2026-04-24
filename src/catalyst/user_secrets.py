@@ -51,9 +51,31 @@ def _load_locked() -> dict:
 
 
 def _save_locked(data: dict) -> None:
-    """Write the secrets file.  Must be called while _LOCK is held."""
+    """Write the secrets file.  Must be called while _LOCK is held.
+
+    A wipe of this file cost a user an hour of re-setup once, so any
+    write that drops from non-empty to empty (or empty-to-empty) is
+    logged with a stack trace. That makes it possible to catch the
+    caller next time there's a mystery wipe.
+    """
     path = _secrets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Forensic logging for suspicious writes: empty dict, or losing a
+    # previously-stored SPACESCAN_API_KEY. Uses a bare stderr print +
+    # traceback so it works even before super_log is initialised.
+    try:
+        if not data or (path.exists() and _looks_like_key_loss(path, data)):
+            import sys as _sys
+            import traceback as _tb
+            _sys.stderr.write(
+                f"[user_secrets] WARNING: writing sparse/empty secrets to {path} "
+                f"(new keys: {sorted(data.keys())}). Stack:\n"
+            )
+            _tb.print_stack(file=_sys.stderr)
+    except Exception:
+        pass  # Never let diagnostics break the actual write
+
     with path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     # Restrict file permissions to owner only (defense-in-depth for secrets)
@@ -62,6 +84,22 @@ def _save_locked(data: dict) -> None:
         os.chmod(path, 0o600)
     except (OSError, AttributeError):
         pass  # Windows may not support chmod; ACLs would be needed there
+
+
+def _looks_like_key_loss(path: "Path", new_data: dict) -> bool:
+    """Return True if the disk has a populated SPACESCAN_API_KEY and the
+    new payload has dropped it. Used only to decide whether to log a
+    forensic stack trace on write."""
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            old = json.load(fh)
+        if not isinstance(old, dict):
+            return False
+        had_key = bool(old.get("SPACESCAN_API_KEY"))
+        still_has_key = bool(new_data.get("SPACESCAN_API_KEY"))
+        return had_key and not still_has_key
+    except Exception:
+        return False
 
 
 def get_secret(key: str) -> str:
