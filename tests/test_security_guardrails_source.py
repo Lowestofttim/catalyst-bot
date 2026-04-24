@@ -3,7 +3,8 @@ from pathlib import Path
 import unittest
 
 
-ROOT = Path(__file__).resolve().parent.parent  # project root, one level above tests/
+REPO_ROOT = Path(__file__).resolve().parent.parent  # project root, one level above tests/
+ROOT = REPO_ROOT / "src" / "catalyst"                # where python source now lives
 
 
 def _class_assign_literal(tree: ast.AST, class_name: str, attr_name: str):

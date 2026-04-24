@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def _load_mapping_helper():
-    source_path = Path(__file__).resolve().parent.parent / "bot_loop.py"
+    source_path = Path(__file__).resolve().parent.parent / "src" / "catalyst" / "bot_loop.py"
     module = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
     fn_node = next(
         node for node in module.body

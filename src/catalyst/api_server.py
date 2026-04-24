@@ -95,11 +95,25 @@ from tx_fees import get_fee_settings_snapshot
 # Bundle-aware path resolution.
 #
 # In a PyInstaller onedir bundle, __file__ for non-entry-point modules
-# resolves to the _internal/ subdirectory, NOT the bundle root where data
-# files (HTML, images) are placed.  sys._MEIPASS always points to the
-# bundle root, so we use it when available.
+# resolves to the _internal/ subdirectory, NOT the bundle root where
+# data files (HTML, images) are placed. sys._MEIPASS always points to
+# the bundle root, so we use it when available.
+#
+# In dev mode this file lives at src/catalyst/api_server.py, so the repo
+# root (where bot_gui.html sits) is two dirname() hops up from here.
 # ---------------------------------------------------------------------------
-_APP_ROOT = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+_APP_ROOT = getattr(sys, '_MEIPASS', None)
+if _APP_ROOT is None:
+    # Dev mode: this module lives at src/catalyst/api_server.py, and
+    # bot_gui.html sits at the repo root (three dirname() hops up).
+    _APP_ROOT = os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))
+    ))
+    # Legacy fallback: if bot_gui.html isn't at that computed root
+    # (e.g. a flat install for ad-hoc testing), look alongside this
+    # module instead so we don't regress the pre-src-layout behaviour.
+    if not os.path.isfile(os.path.join(_APP_ROOT, "bot_gui.html")):
+        _APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 _SPACESCAN_PUBLIC_PLANS = {
     "free": {
         "label": "Free",

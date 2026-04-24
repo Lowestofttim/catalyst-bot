@@ -117,13 +117,13 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
         )
 
     def test_worker_uses_120s_split_confirmation_timeout(self):
-        source = (Path(__file__).resolve().parent.parent / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
         self.assertIn("_poll_all_splits(pending_splits, timeout_s=120)", source)
         self.assertIn("grace_extension_s = 60", source)
         self.assertIn("should_extend_pending_consumed_split_grace(", source)
 
     def test_worker_aborts_instead_of_proceeding_cautiously_after_split_timeout(self):
-        source = (Path(__file__).resolve().parent.parent / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
         # The abort message references whichever timeout the call site uses.
         # The function default is 120s but the caller passes 300s explicitly;
         # the message in the source should mention an abort (not "cautiously").
