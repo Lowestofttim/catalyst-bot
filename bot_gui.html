@@ -4726,12 +4726,6 @@
             margin-bottom: 16px;
             overflow: hidden;
             transition: border-color var(--transition-fast);
-            /* Flex column so the body can grow to fill the grid cell height
-               alongside the sibling Guidance panel. Without this the
-               activity body only reports its own content height, leaving
-               empty space below. */
-            display: flex;
-            flex-direction: column;
         }
         .live-activity-panel:hover {
             border-color: var(--border-default);
@@ -4776,13 +4770,15 @@
             font-size: 12px;
             line-height: 1.5;
         }
-        /* Activity panel body (not the Guidance sub-panels) fills the
-           flex column so the rolling feed occupies all available height
-           rather than stopping after _laWindow entries. Buffered entries
-           above this height scroll. */
+        /* Activity panel body (not the Guidance sub-panels) — scrolls
+           when the feed has more entries than fit. The actual max-height
+           is set at runtime to match the Guidance panel's height so the
+           two grid columns line up regardless of how many alerts or
+           advisor notes are showing. Fallback max-height prevents the
+           feed from pushing the row taller before the observer runs. */
         #liveActivityPanel > .la-body:not(.la-body--actions):not(.la-body--notes) {
-            flex: 1 1 auto;
             min-height: 120px;
+            max-height: 360px;
             overflow-y: auto;
         }
         .la-entry {
@@ -24585,6 +24581,50 @@
                 }
             }
         }
+
+        // Keep the Activity feed body height in lock-step with the
+        // Guidance panel on the left. Without this, the two grid
+        // columns diverge — the Activity panel either leaves empty
+        // space (when Guidance is taller) or pushes the whole row
+        // taller (when the feed has many entries). The feed itself
+        // always scrolls inside the matched height.
+        (function _laSyncHeight() {
+            function syncOnce() {
+                const guidance = document.getElementById('alertsPanel');
+                const activity = document.getElementById('liveActivityPanel');
+                const body = document.getElementById('laBody');
+                if (!guidance || !activity || !body) return;
+                const guidanceHeight = guidance.getBoundingClientRect().height;
+                const activityHeight = activity.getBoundingClientRect().height;
+                const bodyHeight = body.getBoundingClientRect().height;
+                // Activity chrome = panel height - body height (header +
+                // context-note). Match body to (guidance - chrome) so
+                // the two panels end at the same pixel.
+                const chrome = Math.max(0, activityHeight - bodyHeight);
+                const target = Math.max(120, guidanceHeight - chrome);
+                body.style.maxHeight = target + 'px';
+            }
+            function install() {
+                const guidance = document.getElementById('alertsPanel');
+                if (!guidance) return false;
+                syncOnce();
+                if (typeof ResizeObserver !== 'undefined') {
+                    try {
+                        new ResizeObserver(syncOnce).observe(guidance);
+                    } catch (_e) { /* fall back to window.resize only */ }
+                }
+                window.addEventListener('resize', syncOnce);
+                return true;
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', install);
+            } else if (!install()) {
+                // Panels not in the DOM yet — retry until they are.
+                const retry = setInterval(() => {
+                    if (install()) clearInterval(retry);
+                }, 250);
+            }
+        })();
 
         // ===== ALERT NOTIFICATION SYSTEM =====
         let _activeAlerts = {};

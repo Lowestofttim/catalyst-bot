@@ -1588,21 +1588,34 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
             threshold_mojos = smallest_mojos * _DEPOSIT_ADVISORY_TIER_MULTIPLE
 
             # Coin prep designates the user's configured reserve as one
-            # large `reserve` coin. That coin is intentional and would
-            # otherwise trigger this alert every loop. Shift the
-            # threshold above the configured reserve so only coins that
-            # are genuinely *on top of* the reserve (i.e. fresh
-            # deposits) show up. Leaves a tier-size headroom so minor
-            # rounding in coin prep doesn't slip through as a deposit.
+            # large `reserve` coin. That coin is intentional — often a
+            # little bigger than XCH_RESERVE because prep consolidates
+            # the leftover after tier/sniper/fee/topup allocation into
+            # the reserve slot. Shift the alert threshold above
+            # `reserve + one top-up pool's worth` so only coins that
+            # wouldn't fit in the bot's next top-up cycle surface as
+            # "new deposit" — rounding overhead stays quiet.
             try:
                 configured_reserve = Decimal(str(
                     getattr(cfg, reserve_cfg, 0) or 0
                 ))
             except Exception:
                 configured_reserve = Decimal("0")
+            topup_budget_cfg = (
+                "TOPUP_POOL_XCH" if wallet_type == "xch" else "TOPUP_POOL_CAT"
+            )
+            try:
+                topup_pool = Decimal(str(
+                    getattr(cfg, topup_budget_cfg, 0) or 0
+                ))
+            except Exception:
+                topup_pool = Decimal("0")
             reserve_mojos = int(configured_reserve * scale)
+            topup_mojos = int(topup_pool * scale)
             if reserve_mojos > 0:
-                threshold_mojos = reserve_mojos + threshold_mojos
+                # reserve + max(tier×10 headroom, one top-up cycle)
+                headroom = max(threshold_mojos, topup_mojos)
+                threshold_mojos = reserve_mojos + headroom
         except Exception:
             continue
 
