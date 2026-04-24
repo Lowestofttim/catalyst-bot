@@ -18,6 +18,13 @@ Usage:
     python build.py --no-clean   # skip cleaning for faster iteration
 """
 
+# --- src-layout bootstrap (auto-inserted) ---
+import os as _os, sys as _sys
+_sys.path.insert(
+    0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "src", "catalyst")
+)
+# --- end bootstrap ---
+
 import os
 import sys
 import shutil

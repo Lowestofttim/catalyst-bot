@@ -28,12 +28,12 @@ jobs:
         run: |
           echo "Checking syntax on all .py files..."
           errors=0
-          for f in *.py; do
+          while IFS= read -r f; do
             python -c "import ast; ast.parse(open('$f', encoding='utf-8').read())" 2>&1 || {
               echo "SYNTAX ERROR: $f"
               errors=$((errors + 1))
             }
-          done
+          done < <(find . -name '*.py' -not -path './.*' -not -path '*/__pycache__/*')
           if [ $errors -gt 0 ]; then
             echo "FAILED: $errors files with syntax errors"
             exit 1
@@ -43,6 +43,9 @@ jobs:
       - name: Import check (critical modules)
         run: |
           echo "Verifying critical modules can be imported..."
+          # Application code lives under src/catalyst/; add it to PYTHONPATH
+          # so flat imports resolve.
+          export PYTHONPATH="src/catalyst:$PYTHONPATH"
           python -c "
           import sys
           failed = []
@@ -63,7 +66,7 @@ jobs:
 
       - name: Dead code scan (vulture)
         run: |
-          python -m vulture *.py --min-confidence 90 || true
+          python -m vulture src/catalyst scripts *.py --min-confidence 90 || true
 
   unit-tests:
     runs-on: ubuntu-latest

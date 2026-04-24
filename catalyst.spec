@@ -29,9 +29,13 @@ import sys
 block_cipher = None
 
 # ---------------------------------------------------------------------------
-# Resolve the project root (where this spec file lives)
+# Resolve the project root (where this spec file lives) and the
+# source directory.  Application modules live under src/catalyst/; that
+# directory is added to pathex so PyInstaller finds flat imports like
+# `import api_server` without the modules sitting at the project root.
 # ---------------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(SPEC))  # noqa: F821  (SPEC is injected by PyInstaller)
+_SRC = os.path.join(_HERE, 'src', 'catalyst')
 
 # ---------------------------------------------------------------------------
 # Data files — everything the running app reads from the filesystem
@@ -68,7 +72,7 @@ _splash_path = os.path.join(_HERE, _splash_name)
 _splash_files = [(_splash_path, '.')] if os.path.isfile(_splash_path) else []
 
 # Coin prep worker — launched as a subprocess, needs the .py file in the bundle
-_worker_path = os.path.join(_HERE, 'coin_prep_worker.py')
+_worker_path = os.path.join(_SRC, 'coin_prep_worker.py')
 _worker_files = [(_worker_path, '.')] if os.path.isfile(_worker_path) else []
 
 _datas = _html_files + _image_files + _splash_files + _worker_files
@@ -190,7 +194,7 @@ _binaries = []
 # ---------------------------------------------------------------------------
 a = Analysis(
     ['desktop_app.py'],
-    pathex=[_HERE],
+    pathex=[_HERE, _SRC],
     binaries=_binaries,
     datas=_datas,
     hiddenimports=_hiddenimports,

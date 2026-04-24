@@ -70,12 +70,20 @@ if sys.platform == "win32":
             setattr(sys, _pair[1], _pythonw_log)
 
 # ---------------------------------------------------------------------------
-# Early path setup â€” make sure we can import everything from our directory
+# Early path setup — make application modules importable.
+#
+# The application code lives under `src/catalyst/`. We put that directory
+# on sys.path so flat imports like `from api_server import ...` resolve
+# without every module having to know it lives inside a `src/` tree. The
+# repo root stays on sys.path too for any stragglers that look next to
+# desktop_app.py (e.g. bundled assets).
 # ---------------------------------------------------------------------------
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+_SRC_DIR = os.path.join(APP_DIR, "src", "catalyst")
 os.chdir(APP_DIR)
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
+for _p in (_SRC_DIR, APP_DIR):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
 
 def _bundle_path(relative: str) -> str:

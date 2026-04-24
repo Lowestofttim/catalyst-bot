@@ -9,6 +9,13 @@ loader in config.py uses when the env var is absent. Exits 1 and prints
 a table of drift otherwise. Wired into CI so drift is caught in PR.
 """
 
+# --- src-layout bootstrap (auto-inserted) ---
+import os as _os, sys as _sys
+_sys.path.insert(
+    0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src", "catalyst")
+)
+# --- end bootstrap ---
+
 from __future__ import annotations
 
 import os

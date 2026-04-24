@@ -13,6 +13,17 @@ import os
 import io
 
 # ---------------------------------------------------------------------------
+# Src-layout bootstrap: add src/catalyst/ to sys.path so tests can use
+# flat imports (`from database import X`) against the reorganised source
+# tree.  This runs at conftest load time, before any collection happens.
+# ---------------------------------------------------------------------------
+_SRC_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "catalyst")
+)
+if os.path.isdir(_SRC_DIR) and _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
+# ---------------------------------------------------------------------------
 # Exclude standalone integration scripts from collection.
 # These files contain module-level code (sys.exit, live API calls) that
 # crashes pytest's importer. They're meant to be run directly, not via pytest.
