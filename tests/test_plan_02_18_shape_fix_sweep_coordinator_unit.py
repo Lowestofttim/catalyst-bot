@@ -96,7 +96,9 @@ class TestFlowStateIsTerminal(unittest.TestCase):
     def test_running_stages_not_terminal(self):
         for stage in (Stage.CANCELLING, Stage.WAITING_FOR_CONFIRMATION,
                       Stage.CHECKING_COINS, Stage.REBUILDING, Stage.RESHAPING):
-            with self.subTest(stage=stage):
+            # subTest kwargs are serialized by pytest-xdist on pytest>=9;
+            # pass the enum name (string) not the enum itself.
+            with self.subTest(stage=stage.name):
                 self.assertFalse(self._make(stage).is_terminal())
 
 
