@@ -4726,6 +4726,12 @@
             margin-bottom: 16px;
             overflow: hidden;
             transition: border-color var(--transition-fast);
+            /* Flex column so the body can grow to fill the grid cell height
+               alongside the sibling Guidance panel. Without this the
+               activity body only reports its own content height, leaving
+               empty space below. */
+            display: flex;
+            flex-direction: column;
         }
         .live-activity-panel:hover {
             border-color: var(--border-default);
@@ -4769,6 +4775,15 @@
             padding: 6px 14px;
             font-size: 12px;
             line-height: 1.5;
+        }
+        /* Activity panel body (not the Guidance sub-panels) fills the
+           flex column so the rolling feed occupies all available height
+           rather than stopping after _laWindow entries. Buffered entries
+           above this height scroll. */
+        #liveActivityPanel > .la-body:not(.la-body--actions):not(.la-body--notes) {
+            flex: 1 1 auto;
+            min-height: 120px;
+            overflow-y: auto;
         }
         .la-entry {
             padding: 3px 0;
@@ -24105,7 +24120,11 @@
         // Detailed logs go to the Logs tab. Debug goes to the superlog file.
         // =================================================================
         const _laMax = 60;          // Retain last 60 entries — feed mirrors Logs page
-        const _laWindow = 5;        // Display window — newest N lines always visible
+        // Display window: render every buffered entry; the CSS on
+        // `#liveActivityPanel > .la-body` caps the panel height and
+        // scrolls overflow. Earlier versions hard-capped this at 5 and
+        // left the bottom of the panel empty.
+        const _laWindow = _laMax;
         let _laBuffer = [];         // Entries (newest first)
 
         // Translate technical events into friendly one-liners.

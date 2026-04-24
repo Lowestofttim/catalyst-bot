@@ -1586,6 +1586,23 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
             if smallest_mojos <= 0:
                 continue  # no tier sizing signal — skip silently
             threshold_mojos = smallest_mojos * _DEPOSIT_ADVISORY_TIER_MULTIPLE
+
+            # Coin prep designates the user's configured reserve as one
+            # large `reserve` coin. That coin is intentional and would
+            # otherwise trigger this alert every loop. Shift the
+            # threshold above the configured reserve so only coins that
+            # are genuinely *on top of* the reserve (i.e. fresh
+            # deposits) show up. Leaves a tier-size headroom so minor
+            # rounding in coin prep doesn't slip through as a deposit.
+            try:
+                configured_reserve = Decimal(str(
+                    getattr(cfg, reserve_cfg, 0) or 0
+                ))
+            except Exception:
+                configured_reserve = Decimal("0")
+            reserve_mojos = int(configured_reserve * scale)
+            if reserve_mojos > 0:
+                threshold_mojos = reserve_mojos + threshold_mojos
         except Exception:
             continue
 

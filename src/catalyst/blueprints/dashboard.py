@@ -33,7 +33,12 @@ def api_dashboard():
     bot = api_server.bot
     cfg = api_server.cfg
     try:
-        from database import get_stats, get_coin_summary, get_open_offers
+        from database import (
+            get_stats,
+            get_coin_summary,
+            get_open_offers,
+            get_live_tier_group_counts,
+        )
 
         # --- Active Settings ---
         settings = {
