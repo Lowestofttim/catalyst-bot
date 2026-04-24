@@ -488,7 +488,11 @@ def get_tier_sizes_mojos_from_cfg(is_cat: bool = False) -> Dict[str, int]:
     # Reading the non-existent `COIN_PREP_HEADROOM_MULT` key used to leave
     # prep_mult=1.0 and cause ~40 relabels per cycle.
     try:
-        headroom_pct = Decimal(str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", "10") or "10"))
+        _raw = getattr(cfg, "COIN_PREP_HEADROOM_PCT", None)
+        # Explicit None / missing → default 10%. A legitimate PCT=0 (zero
+        # headroom) must pass through; the `or` short-circuit would treat
+        # it as missing and substitute the default — wrong.
+        headroom_pct = Decimal("10") if _raw is None else Decimal(str(_raw))
         if headroom_pct < 0:
             headroom_pct = Decimal("0")
         prep_mult = Decimal("1") + (headroom_pct / Decimal("100"))

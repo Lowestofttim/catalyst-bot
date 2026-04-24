@@ -57,8 +57,10 @@ class _StubCfg:
         self.OUTER_SIZE_XCH = Decimal("0")
         self.EXTREME_SIZE_XCH = Decimal("0")
         self.CAT_DECIMALS = 3
-        self.COIN_PREP_HEADROOM_PCT = Decimal("10")
-        self.COIN_PREP_HEADROOM_MULT = Decimal("1.0")
+        # PCT=0 keeps the tier sizes raw so these assertions compare
+        # position→bucket remapping without also needing to account for
+        # the prep-headroom multiplier (which is exercised by other tests).
+        self.COIN_PREP_HEADROOM_PCT = Decimal("0")
         self.WALLET_FINGERPRINT = ""
 
 
