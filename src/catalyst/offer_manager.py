@@ -1168,8 +1168,15 @@ class OfferManager:
                                     if len(missing) == 1:
                                         locked_coin = missing.pop()
                                     else:
-                                        log_event("warning", "coin_snapshot_multi",
-                                                  f"Expected 1 locked coin, found {len(missing)} missing")
+                                        # Multiple coins vanished between snapshots — expected
+                                        # during parallel offer creation (other threads locked
+                                        # their own coins in the same interval). Downstream
+                                        # offer-id lock attribution still verifies the exact
+                                        # coin owned by this offer, so picking one arbitrarily
+                                        # is safe. Keep at debug to avoid ladder-burst noise.
+                                        log_event("debug", "coin_snapshot_multi",
+                                                  f"Parallel offer creation: {len(missing)} coins "
+                                                  f"locked between snapshots; picking first")
                                         locked_coin = sorted(missing)[0]
                                     break  # Coin is confirmed locked
                             except Exception as e:

@@ -129,11 +129,19 @@ def api_bot_start():
             "bot will loop but create no offers"
         )
 
-    # Check hard price limits are set
+    # Check hard price limits. Only warn when BOTH are missing AND the
+    # dynamic band isn't doing equivalent duty: DYNAMIC_LIMIT_PCT > 0 gives
+    # us a percentage-based circuit breaker that already rejects extreme
+    # oracle errors, so telling the user "circuit breakers disabled" when
+    # the dynamic guard is active is misleading.
     hard_min = getattr(cfg, "HARD_MIN_PRICE_XCH", Decimal("0"))
     hard_max = getattr(cfg, "HARD_MAX_PRICE_XCH", Decimal("0"))
-    if hard_min <= 0 or hard_max <= 0:
-        warnings.append("HARD_MIN_PRICE_XCH or HARD_MAX_PRICE_XCH not set — circuit breakers disabled")
+    dynamic_limit = getattr(cfg, "DYNAMIC_LIMIT_PCT", Decimal("0"))
+    if (hard_min <= 0 or hard_max <= 0) and dynamic_limit <= 0:
+        warnings.append(
+            "No price circuit breakers configured — "
+            "set HARD_MIN_PRICE_XCH/HARD_MAX_PRICE_XCH or DYNAMIC_LIMIT_PCT"
+        )
 
     # Block start on critical errors
     if errors:

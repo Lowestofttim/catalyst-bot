@@ -813,9 +813,19 @@ def check_topup_budget_drift(auto_repair: bool = True) -> HealthCheck:
             spent_mojos = int(str(get_setting(spec["spent_key"], "0") or "0"))
             reserve_mojos = _reserve_mojos(spec["wallet_type"])
 
+            # The `observed_spent = budget - reserve` formula only holds when
+            # the reserve was sized to match the budget. When the reserve
+            # exceeds the budget (user over-funded, or a topup bypass consumed
+            # more than the budget for an empty-tier recovery) the formula
+            # produces bogus negative values and the healer resets the
+            # counter to 0 — which then lets the next split bypass the
+            # budget again without warning. Skip drift detection in that
+            # case; the hard reserve guard still protects capital.
+            if reserve_mojos >= budget_mojos:
+                continue
+
             # Observed spend = what's actually been carved from the pool.
-            # If reserve > budget (user over-funded) we treat excess as 0 spend.
-            observed_spent = max(0, budget_mojos - reserve_mojos)
+            observed_spent = budget_mojos - reserve_mojos
 
             drift = spent_mojos - observed_spent
             if drift <= tolerance_mojos:

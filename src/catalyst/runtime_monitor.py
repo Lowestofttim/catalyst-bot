@@ -596,7 +596,12 @@ class RuntimeMonitor:
             for method in sorted(self._slow_active)
         ]
 
-        startup_grace = now < (float(self._bot._start_time or now) + 90.0)
+        # 180s grace: the initial ladder burst creates 70+ offers in ~20s, but
+        # wallet lock propagation and the first full wallet-sync cycle can take
+        # another 60-90s after that. 90s was too short — it fired the
+        # divergence warning at ~2.5 min even though everything self-healed
+        # within 20s. 180s covers the full post-ladder propagation window.
+        startup_grace = now < (float(self._bot._start_time or now) + 180.0)
         wallet_fresh = bool(market.get("wallet_sync_fresh", True))
 
         stale_active = (not wallet_fresh)

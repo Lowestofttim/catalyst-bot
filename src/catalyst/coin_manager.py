@@ -481,14 +481,19 @@ def get_tier_sizes_mojos_from_cfg(is_cat: bool = False) -> Dict[str, int]:
             except Exception:
                 continue
 
-    # Apply prep headroom (coins are prepped slightly larger than live
-    # offer size — matches CoinManager._get_tier_sizes_mojos behaviour).
+    # Apply prep headroom so the returned tier sizes match the actual coin
+    # sizes created by coin_prep_worker. Prep sizes coins at tier_size ×
+    # (1 + COIN_PREP_HEADROOM_PCT/100); classifier uses the same multiplier
+    # so inner-sized coins classify as inner instead of drifting to mid.
+    # Reading the non-existent `COIN_PREP_HEADROOM_MULT` key used to leave
+    # prep_mult=1.0 and cause ~40 relabels per cycle.
     try:
-        prep_mult = Decimal(str(getattr(cfg, "COIN_PREP_HEADROOM_MULT", "1.0") or "1.0"))
-        if prep_mult <= 0:
-            prep_mult = Decimal("1.0")
+        headroom_pct = Decimal(str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", "10") or "10"))
+        if headroom_pct < 0:
+            headroom_pct = Decimal("0")
+        prep_mult = Decimal("1") + (headroom_pct / Decimal("100"))
     except Exception:
-        prep_mult = Decimal("1.0")
+        prep_mult = Decimal("1.10")
 
     if is_cat:
         # Need a price to convert XCH-denominated tier sizes to CAT mojos.
@@ -3237,13 +3242,30 @@ class CoinManager:
         if total_changes > 0:
             try:
                 conn.commit()
-                log_event("info", "tier_labels_normalized",
-                          f"Tier label normalisation: "
-                          f"relabeled={summary['relabeled']} "
-                          f"→reserve={summary['demoted_reserve']} "
-                          f"→unknown={summary['demoted_unknown']} "
-                          f"overstock→reserve={summary['demoted_overstock']}",
-                          data=summary)
+                # Steady-state suppression: if the SAME coins keep being
+                # re-normalised every cycle (same counts) there's a deeper
+                # convention mismatch elsewhere — the classifier writes the
+                # "correct" label but something else re-writes it back. Log
+                # that once, then DEBUG; the log was noisy otherwise.
+                prev = getattr(self, "_last_normalize_summary", None)
+                stable = (
+                    prev is not None
+                    and prev.get("relabeled") == summary["relabeled"]
+                    and prev.get("demoted_reserve") == summary["demoted_reserve"]
+                    and prev.get("demoted_unknown") == summary["demoted_unknown"]
+                    and prev.get("demoted_overstock") == summary["demoted_overstock"]
+                )
+                log_event(
+                    "debug" if stable else "info",
+                    "tier_labels_normalized",
+                    f"Tier label normalisation: "
+                    f"relabeled={summary['relabeled']} "
+                    f"→reserve={summary['demoted_reserve']} "
+                    f"→unknown={summary['demoted_unknown']} "
+                    f"overstock→reserve={summary['demoted_overstock']}",
+                    data=summary,
+                )
+                self._last_normalize_summary = dict(summary)
             except Exception as _commit_err:
                 log_event("warning", "tier_normalize_commit_failed",
                           f"Commit failed: {_commit_err}")
@@ -3388,6 +3410,24 @@ class CoinManager:
         any_critical = False
         any_low = False
 
+        # Pre-compute locked-coin counts per tier so the status check can
+        # treat "all coins locked in active offers" as healthy deployment
+        # instead of flagging EMPTY. Without this, the startup re-check
+        # fires CRITICAL the moment the first ladder goes out.
+        _locked_by_tier: Dict[str, Dict[str, int]] = {"xch": {}, "cat": {}}
+        try:
+            from database import get_connection as _get_conn
+            _conn = _get_conn()
+            for _wt in ("xch", "cat"):
+                for _tn in ("inner", "mid", "outer", "extreme"):
+                    _locked_by_tier[_wt][_tn] = int(_conn.execute(
+                        "SELECT COUNT(*) FROM coins "
+                        "WHERE status='locked' AND wallet_type=? AND assigned_tier=?",
+                        (_wt, _tn),
+                    ).fetchone()[0] or 0)
+        except Exception:
+            pass
+
         for tier_name in ["inner", "mid", "outer", "extreme"]:
             slots_per_side = tier_dist.get(tier_name, 0)
 
@@ -3403,6 +3443,8 @@ class CoinManager:
 
             xch_have = len(self._xch_inventory.get(tier_name, []))
             cat_have = len(self._cat_inventory.get(tier_name, []))
+            xch_locked = int(_locked_by_tier.get("xch", {}).get(tier_name, 0))
+            cat_locked = int(_locked_by_tier.get("cat", {}).get(tier_name, 0))
 
             # F62: Status per asset — compare the free pool against the SPARE
             # BUFFER target, not the slot count. The old check compared `have`
@@ -3416,22 +3458,28 @@ class CoinManager:
             xch_spare_target = max(0, xch_target - xch_needed)
             cat_spare_target = max(0, cat_target - cat_needed)
 
-            def _compute_status(have: int, slot_need: int, spare_tgt: int, enabled: bool) -> str:
+            def _compute_status(have: int, locked: int, slot_need: int,
+                                spare_tgt: int, enabled: bool) -> str:
                 if not enabled or slot_need == 0:
                     return "READY"
                 if spare_tgt <= 0:
-                    # No spares configured — fall back to legacy slot comparison
-                    if have >= slot_need:
+                    # No spares configured — coin count == slot count. Count
+                    # locked coins too, otherwise the tier flips EMPTY the
+                    # moment the ladder deploys (all coins move to locked).
+                    covered = have + locked
+                    if covered >= slot_need:
                         return "READY"
-                    return "LOW" if have > 0 else "EMPTY"
+                    return "LOW" if covered > 0 else "EMPTY"
                 if have >= spare_tgt:
                     return "READY"
                 if have > 0:
                     return "LOW"
                 return "EMPTY"
 
-            xch_status = _compute_status(xch_have, xch_needed, xch_spare_target, cfg.ENABLE_BUY)
-            cat_status = _compute_status(cat_have, cat_needed, cat_spare_target, cfg.ENABLE_SELL)
+            xch_status = _compute_status(xch_have, xch_locked, xch_needed,
+                                         xch_spare_target, cfg.ENABLE_BUY)
+            cat_status = _compute_status(cat_have, cat_locked, cat_needed,
+                                         cat_spare_target, cfg.ENABLE_SELL)
 
             # F62: Spare buffer remaining — after a full deployment, the entire
             # free pool IS the spare buffer (slot coins are locked). Before
@@ -5463,15 +5511,18 @@ class CoinManager:
                         # Letting the budget stop us here trades one protected
                         # number for a dead trading slot. The hard reserve
                         # above is the real capital guard — it already passed.
+                        # INFO-level: this is the expected recovery path when
+                        # the budget was sized smaller than one split. The
+                        # warning severity was too loud for a designed bypass.
                         log_event(
-                            "warning",
+                            "info",
                             f"topup_{name.lower()}_budget_bypass_empty_tier",
                             f"{name} tier is empty (0 free coins) — bypassing "
                             f"topup pool budget ({spent_mojos / _display_scale:.4f} "
                             f"spent + {pool_amount_mojos / _display_scale:.4f} "
                             f"requested > {budget_mojos / _display_scale:.4f} "
                             f"{_unit} {budget_label}). Hard reserve guard still "
-                            f"honoured. Re-run Smart Settings to reset the budget.",
+                            f"honoured.",
                         )
                         return True
 
