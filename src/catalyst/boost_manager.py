@@ -347,7 +347,13 @@ class BoostManager:
         if mid_price <= 0:
             return
 
-        proven_spread_bps = self._arb_floor_bps
+        # Hand off at the TIGHTEST spread the probes survived. If the below-
+        # floor sub-probe ran and is still alive (gap_spread < arb_floor with
+        # no widening having pushed us back up), use that — it's a stronger
+        # safety proof than the calculated floor. Otherwise fall back to the
+        # calculated floor, which is what we held stably.
+        proven_spread_bps = min(self._gap_spread_bps, self._arb_floor_bps) \
+            if self._gap_spread_bps > 0 else self._arb_floor_bps
         handoff_count = 0
 
         for side in ("buy", "sell"):
