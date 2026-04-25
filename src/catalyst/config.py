@@ -626,6 +626,28 @@ class Config:
         self.GAP_CLOSE_START_PCT = _int("GAP_CLOSE_START_PCT", 75)  # Start at 75% of main spread
         self.GAP_CLOSE_STEP_PCT = _int("GAP_CLOSE_STEP_PCT", 30)  # Tighten 30% per stable period (bigger jumps = faster floor discovery)
         self.GAP_CLOSE_SAFETY_BUFFER_BPS = _int("GAP_CLOSE_SAFETY_BUFFER_BPS", 5)  # Buffer above arb gap (tight — empirical test showed Dexie watchers take any +EV offer, so sub-probe needs room to actually push past the real arb threshold)
+
+        # ----- Inverted-probe floor discovery (2026-04-25) -----
+        # Empirical evidence: symmetric tight quotes (positive half-spread on
+        # both sides) are NEVER arbed via TibetSwap because the math doesn't
+        # work — taking a SELL at mid+X and dumping to TibetSwap (which pays
+        # mid-fee) loses (X+fee) bps every time. To actually find the arb
+        # floor, probes must INVERT past mid+/-tibet_fee where TibetSwap-
+        # routed arbs become profitable.
+        self.TIBETSWAP_FEE_BPS = _int("TIBETSWAP_FEE_BPS", 70)
+        # Initial inverted probe offset, measured as bps PAST tibet_fee
+        # (e.g. tibet_fee=70, initial=10 → start probe at mid+/-80bps).
+        self.GAP_PROBE_INITIAL_PAST_FEE_BPS = _int("GAP_PROBE_INITIAL_PAST_FEE_BPS", 10)
+        # How much deeper the probe pushes per cooldown cycle when surviving.
+        self.GAP_PROBE_STEP_BPS = _int("GAP_PROBE_STEP_BPS", 30)
+        # Hard cap on probe depth to prevent runaway losses if every probe
+        # gets arbed (in busy markets). 500bps = 5% inversion is plenty.
+        self.GAP_PROBE_MAX_PAST_FEE_BPS = _int("GAP_PROBE_MAX_PAST_FEE_BPS", 500)
+        # Safety buffer subtracted from the proven floor when handing off.
+        # Proven floor is the deepest survival point; ladder plants at
+        # (proven_floor - safety_buffer) — i.e. one step safer than where
+        # we got arbed.
+        self.GAP_PROBE_HANDOFF_BUFFER_BPS = _int("GAP_PROBE_HANDOFF_BUFFER_BPS", 20)
         self.GAP_CLOSE_STEP_COOLDOWN_SECS = _int("GAP_CLOSE_STEP_COOLDOWN_SECS", 60)  # 1 min between steps
         self.GAP_CLOSE_CONVERGENCE_SECS = _int("GAP_CLOSE_CONVERGENCE_SECS", 120)  # 2 min between main book convergence steps
         self.GAP_CLOSE_CONVERGENCE_STEP_PCT = _int("GAP_CLOSE_CONVERGENCE_STEP_PCT", 20)  # Main book tightens 20% per step

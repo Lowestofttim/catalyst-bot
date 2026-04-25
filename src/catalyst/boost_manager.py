@@ -103,6 +103,45 @@ class BoostManager:
         # whether inner-tier main-book offers are also exposed.
         self._inner_vulnerability_flag: bool = False
 
+        # ---- Inverted-probe per-side floor discovery (2026-04-25) -----
+        # The gap-closer now probes INVERTED (BUY > mid, SELL < mid) past
+        # the TibetSwap fee threshold to actually trigger TibetSwap-routed
+        # arbs, since symmetric tight quotes are mathematically immune to
+        # arbs and prove nothing about market activity.
+        #
+        # Each side's depth is tracked independently — empirical testing
+        # showed arbers are asymmetric (a 100bps inverted BUY got taken
+        # while the equivalent SELL did not).
+        #
+        # Semantics: offset = bps PAST mid (positive = inverted).
+        #   BUY price  = mid * (1 + buy_offset / 10000)   [overpay]
+        #   SELL price = mid * (1 - sell_offset / 10000)  [underprice]
+        self._buy_offset_bps: int = 0
+        self._sell_offset_bps: int = 0
+        self._buy_settled: bool = False
+        self._sell_settled: bool = False
+        # Proven safe depth (last survival before this side got arbed)
+        self._buy_floor_bps: int = 0
+        self._sell_floor_bps: int = 0
+        # Per-side trade IDs so prune knows which side disappeared
+        self._buy_probe_tid: str = ""
+        self._sell_probe_tid: str = ""
+        # Last successful (survived a cooldown) offset for each side —
+        # used as the proven floor when the next push gets arbed.
+        self._buy_last_safe_offset_bps: int = 0
+        self._sell_last_safe_offset_bps: int = 0
+        # Historic probe TIDs per side. We need these because fills can
+        # arrive AFTER the bot rotated to a new probe — without this,
+        # prune_active_boosts can't tell that an "old" filled TID was
+        # one of our probes (and thus an arb, not just a stale cancel).
+        self._buy_probe_tid_history: set = set()
+        self._sell_probe_tid_history: set = set()
+        # Alternation flag — only push one side per cycle to avoid
+        # mempool conflicts caused by simultaneous cancel+create on
+        # both sides at once (Sage/mempool stress test 2026-04-25).
+        # Toggles each step: True = next push is BUY, False = next is SELL.
+        self._next_step_is_buy: bool = True
+
     # -------------------------------------------------------------------
     # Activate / Deactivate
     # -------------------------------------------------------------------
@@ -142,44 +181,36 @@ class BoostManager:
         # Store user overrides
         self._custom_size_xch = size_xch_override
 
-        # Calculate starting spread
-        start_pct = start_pct_override or getattr(cfg, "GAP_CLOSE_START_PCT", 75)
-        if main_spread_bps > 0:
-            # Start at X% of main book spread
-            self._gap_spread_bps = max(1, int(main_spread_bps * start_pct / 100))
-        else:
-            # Fallback if no main spread available
-            self._gap_spread_bps = getattr(cfg, "BOOST_SPREAD_BPS", 200)
+        # ===== INVERTED PROBE INITIALIZATION =====
+        # Each side starts at (tibet_fee + initial_past_fee_bps) past mid.
+        # That's the SHALLOWEST inverted depth where TibetSwap arb is barely
+        # profitable for a watcher. We push deeper each cycle if it survives,
+        # back off when it gets arbed.
+        tibet_fee = int(getattr(cfg, "TIBETSWAP_FEE_BPS", 70))
+        initial_past_fee = int(getattr(cfg, "GAP_PROBE_INITIAL_PAST_FEE_BPS", 10))
+        starting_offset = tibet_fee + initial_past_fee + int(arb_gap_bps)
 
-        self._start_spread_bps = self._gap_spread_bps  # Remember initial spread
+        self._buy_offset_bps = starting_offset
+        self._sell_offset_bps = starting_offset
+        self._buy_settled = False
+        self._sell_settled = False
+        self._buy_floor_bps = 0
+        self._sell_floor_bps = 0
+        self._buy_last_safe_offset_bps = 0
+        self._sell_last_safe_offset_bps = 0
+        self._buy_probe_tid = ""
+        self._sell_probe_tid = ""
 
-        # Widen ceiling — when probes get arbed, the spread widens by 20% per
-        # arb. Capped at the LARGER of (start spread) and (main book spread)
-        # so an aggressive find-floor start (e.g. 30bps) can still widen up
-        # toward the original ladder spread (e.g. 480bps) if every probe
-        # gets eaten. Without this, an aggressive start gets stuck at the
-        # initial value because each arb-widen is clamped back down to 30bps.
-        self._widen_ceiling_bps = max(self._start_spread_bps, max(1, int(main_spread_bps)))
+        # Compatibility: keep old fields populated for any external readers
+        self._gap_spread_bps = starting_offset * 2  # symmetric equivalent
+        self._start_spread_bps = self._gap_spread_bps
+        self._arb_floor_bps = tibet_fee + int(arb_gap_bps)
+        self._widen_ceiling_bps = self._gap_spread_bps
 
-        # Calculate arb floor (never go tighter than this)
-        buffer = getattr(cfg, "GAP_CLOSE_SAFETY_BUFFER_BPS", 20)
-        self._arb_floor_bps = max(1, int(arb_gap_bps) + buffer)
-
-        # Clamp starting spread: can't start below the arb floor
-        if self._gap_spread_bps < self._arb_floor_bps:
-            self._gap_spread_bps = self._arb_floor_bps
-
-        # Warnings
         warnings = []
-        if int(arb_gap_bps) > self._gap_spread_bps:
-            warnings.append(
-                f"Arb gap ({_bps_to_pct(int(arb_gap_bps))}) is wider than starting spread "
-                f"({_bps_to_pct(self._gap_spread_bps)}) — offers may be arbed initially"
-            )
-            self._total_arb_warnings += 1
 
-        # Create the initial offers
-        created = self._create_gap_closer_pair(mid_price)
+        # Create initial inverted probe pair
+        created = self._create_inverted_probe_pair(mid_price)
 
         if created:
             self._boost_active = True
@@ -187,38 +218,87 @@ class BoostManager:
             self._steps_taken = 0
             self._arb_count = 0
             self._last_step_time = time.time()
-            self._subprobe_attempted = False  # reset for this run
-            # Reset convergence
+            self._subprobe_attempted = False  # legacy field, unused in inverted mode
             self._convergence_factor = Decimal("1.0")
 
             log_event("info", "gap_closer_activated",
-                      f"📈 Close the Gap ON — {len(created)} offers at "
-                      f"{_bps_to_pct(self._gap_spread_bps)} "
-                      f"(target floor: {_bps_to_pct(self._arb_floor_bps)})",
-                      data={"spread_bps": self._gap_spread_bps, "arb_floor_bps": self._arb_floor_bps,
-                            "steps_taken": 0, "start_spread_bps": self._start_spread_bps})
-            print(f"📈 Close the Gap ON: {len(created)} offers at "
-                  f"{_bps_to_pct(self._gap_spread_bps)} spread "
-                  f"(started at {start_pct}% of main book, "
-                  f"arb floor: {_bps_to_pct(self._arb_floor_bps)})", flush=True)
+                      f"📈 Close the Gap ON (inverted-probe mode) — "
+                      f"{len(created)} offers at BUY+{_bps_to_pct(self._buy_offset_bps)}, "
+                      f"SELL-{_bps_to_pct(self._sell_offset_bps)} past mid. "
+                      f"Will push deeper until arbed, then back off to find each side's floor.",
+                      data={"buy_offset_bps": self._buy_offset_bps,
+                            "sell_offset_bps": self._sell_offset_bps,
+                            "tibet_fee_bps": tibet_fee,
+                            "arb_gap_bps": int(arb_gap_bps),
+                            "steps_taken": 0})
+            print(f"📈 Close the Gap ON (inverted): BUY +{_bps_to_pct(self._buy_offset_bps)}, "
+                  f"SELL -{_bps_to_pct(self._sell_offset_bps)} past mid", flush=True)
 
         size_xch = self._effective_size_xch()
-        half_spread = Decimal(str(self._gap_spread_bps)) / Decimal("20000")
-        buy_price = mid_price * (Decimal("1") - half_spread)
-        sell_price = mid_price * (Decimal("1") + half_spread)
+        buy_price  = mid_price * (Decimal("1") + Decimal(self._buy_offset_bps)  / Decimal("10000"))
+        sell_price = mid_price * (Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000"))
 
         return {
             "success": len(created) > 0,
             "created": len(created),
+            "mode": "inverted",
             "buy_price": str(buy_price),
             "sell_price": str(sell_price),
-            "spread_bps": self._gap_spread_bps,
-            "start_spread_bps": self._start_spread_bps,
-            "arb_floor_bps": self._arb_floor_bps,
+            "buy_offset_bps": self._buy_offset_bps,
+            "sell_offset_bps": self._sell_offset_bps,
+            "tibet_fee_bps": tibet_fee,
+            "arb_gap_bps": int(arb_gap_bps),
+            "spread_bps": self._buy_offset_bps + self._sell_offset_bps,  # total inverted span
             "main_spread_bps": main_spread_bps,
             "size_xch": str(size_xch),
             "warnings": warnings,
         }
+
+    def _create_inverted_probe_pair(self, mid_price: Decimal) -> List[Dict]:
+        """Create one BUY (overpay) + one SELL (underprice) inverted probe.
+
+        Uses self._buy_offset_bps and self._sell_offset_bps. Tracks the
+        resulting trade IDs separately in _buy_probe_tid / _sell_probe_tid
+        so prune_active_boosts can identify which side was arbed.
+        """
+        size_xch = self._effective_size_xch()
+        buy_price  = mid_price * (Decimal("1") + Decimal(self._buy_offset_bps)  / Decimal("10000"))
+        sell_price = mid_price * (Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000"))
+
+        created = []
+
+        if cfg.ENABLE_BUY and not self._buy_settled:
+            buy_result = self._create_single_offer("buy", buy_price, size_xch)
+            if buy_result:
+                created.append(buy_result)
+                tid = buy_result.get("trade_id", "")
+                if tid:
+                    self._buy_probe_tid = tid
+                    self._buy_probe_tid_history.add(tid)
+                    self._active_boost_ids.append(tid)
+
+        if cfg.ENABLE_SELL and not self._sell_settled:
+            sell_result = self._create_single_offer("sell", sell_price, size_xch)
+            if sell_result:
+                created.append(sell_result)
+                tid = sell_result.get("trade_id", "")
+                if tid:
+                    self._sell_probe_tid = tid
+                    self._sell_probe_tid_history.add(tid)
+                    self._active_boost_ids.append(tid)
+
+        # Post to Dexie immediately
+        if created and self._dexie_manager and cfg.DEXIE_AUTO_POST:
+            for offer in created:
+                bech32 = offer.get("offer_bech32", "")
+                trade_id = offer.get("trade_id", "")
+                if bech32 and trade_id:
+                    self._dexie_manager._post_single(bech32, trade_id, force=True)
+
+        if created:
+            self._boost_mid_price = mid_price
+
+        return created
 
     def _effective_size_xch(self) -> Decimal:
         """Return offer size — custom override, then SNIPER_SIZE_XCH (same pool)."""
@@ -462,55 +542,263 @@ class BoostManager:
     # -------------------------------------------------------------------
 
     def step_tighter(self, current_arb_gap_bps: Decimal) -> bool:
-        """Check if gap-closer offers should tighten one step.
+        """Inverted-probe step: push surviving sides DEEPER (more inverted)
+        until they get arbed; then settle that side at the last safe depth.
 
-        Called each bot loop cycle when gap-closer is active.
-        Tightens the gap-closer spread by STEP_PCT if offers have survived
-        the cooldown period without being arbed.
+        Each side (BUY and SELL) progresses INDEPENDENTLY because empirical
+        testing showed watchers are asymmetric — a 100bps inverted BUY got
+        taken while the equivalent SELL did not.
 
         Args:
-            current_arb_gap_bps: Latest arb gap from price engine
+            current_arb_gap_bps: Latest arb gap from price engine (used as
+                an additive offset to floor calc)
 
-        Returns True if a step was taken (offers recreated at tighter spread).
+        Returns True if any action was taken (probe pushed deeper or
+        replaced after side settled).
         """
-        if not self._boost_active or self._gap_spread_bps == 0:
+        if not self._boost_active:
             return False
-
-        # Circuit breaker — skip stepping while CB is active. Existing offers
-        # stay put; they will be refreshed (or not) next cycle once CB clears.
         if self._cb_blocks_boost():
             return False
 
         now = time.time()
 
-        # Update arb floor from latest data
-        buffer = getattr(cfg, "GAP_CLOSE_SAFETY_BUFFER_BPS", 20)
-        self._arb_floor_bps = max(1, int(current_arb_gap_bps) + buffer)
+        # Both sides settled? Hand off and stop.
+        if self._buy_settled and self._sell_settled:
+            return self._inverted_complete_handoff()
 
-        # Need active offers for stability proof
-        if len(self._active_boost_ids) == 0:
+        cooldown = getattr(cfg, "GAP_CLOSE_STEP_COOLDOWN_SECS", 60)
+        if self._stable_since == 0:
+            self._stable_since = now
+            return False
+        if (now - self._stable_since) < cooldown:
+            return False
+        if (now - self._last_step_time) < cooldown:
             return False
 
-        # Stability check: offers must have survived N seconds
+        step_bps = int(getattr(cfg, "GAP_PROBE_STEP_BPS", 30))
+        max_offset = int(getattr(cfg, "GAP_PROBE_MAX_PAST_FEE_BPS", 500))
+        tibet_fee = int(getattr(cfg, "TIBETSWAP_FEE_BPS", 70))
+        # Hard ceiling on offset = tibet_fee + max_past_fee + arb_gap
+        ceiling = tibet_fee + max_offset + int(current_arb_gap_bps)
+
+        side_action = False
+
+        # Throttle: only push ONE side per cycle to avoid mempool conflicts
+        # from simultaneous cancel+create on both BUY and SELL. We alternate.
+        # If the side we'd push is already settled, fall through to the other.
+        push_buy_first = self._next_step_is_buy
+        if push_buy_first and self._buy_settled:
+            push_buy_first = False  # buy done, try sell
+        elif not push_buy_first and self._sell_settled:
+            push_buy_first = True   # sell done, try buy
+
+        # --- BUY side: if probe survived, push deeper ---
+        if push_buy_first and not self._buy_settled and self._buy_probe_tid in self._active_boost_ids:
+            # Survived the cooldown — record this depth as last safe, push deeper
+            self._buy_last_safe_offset_bps = self._buy_offset_bps
+            new_buy_offset = min(self._buy_offset_bps + step_bps, ceiling)
+            if new_buy_offset > self._buy_offset_bps:
+                old_off = self._buy_offset_bps
+                self._buy_offset_bps = new_buy_offset
+                # Cancel just the buy probe (fire-and-forget)
+                if self._buy_probe_tid and self._offer_manager:
+                    self._offer_manager._bot_cancelled_ids.add(self._buy_probe_tid)
+                    self._offer_manager.cancel_offers(
+                        [self._buy_probe_tid], reason="gap_closer_buy_step",
+                        skip_confirmation=True,
+                    )
+                    if self._buy_probe_tid in self._active_boost_ids:
+                        self._active_boost_ids.remove(self._buy_probe_tid)
+                    self._buy_probe_tid = ""
+                # Brief pause so the cancel tx propagates to Sage's mempool
+                # before we create the new offer (avoids MEMPOOL_CONFLICT
+                # when Sage picks an overlapping fee coin).
+                time.sleep(2.0)
+                # Create new BUY at deeper depth
+                buy_price = self._boost_mid_price * (Decimal("1") + Decimal(self._buy_offset_bps) / Decimal("10000"))
+                size_xch = self._effective_size_xch()
+                buy_result = self._create_single_offer("buy", buy_price, size_xch)
+                if buy_result and buy_result.get("trade_id"):
+                    new_tid = buy_result["trade_id"]
+                    self._buy_probe_tid = new_tid
+                    self._buy_probe_tid_history.add(new_tid)
+                    self._active_boost_ids.append(new_tid)
+                    if self._dexie_manager and cfg.DEXIE_AUTO_POST:
+                        bech32 = buy_result.get("offer_bech32", "")
+                        if bech32:
+                            self._dexie_manager._post_single(bech32, new_tid, force=True)
+                log_event("info", "gap_closer_buy_step",
+                          f"📈 BUY probe push deeper: +{_bps_to_pct(old_off)} → +{_bps_to_pct(self._buy_offset_bps)} past mid (survived → testing deeper)",
+                          data={"buy_offset_bps": self._buy_offset_bps,
+                                "buy_last_safe": self._buy_last_safe_offset_bps})
+                side_action = True
+            else:
+                # Hit ceiling without arb — settle as "no watchers detected"
+                self._buy_settled = True
+                self._buy_floor_bps = self._buy_offset_bps  # ceiling is the floor
+                log_event("info", "gap_closer_buy_settled_ceiling",
+                          f"📈 BUY side settled at ceiling +{_bps_to_pct(self._buy_offset_bps)} — no arbs detected at max depth",
+                          data={"buy_floor_bps": self._buy_floor_bps})
+
+        # --- SELL side: only when it's SELL's turn (alternation) ---
+        if (not push_buy_first) and not self._sell_settled and self._sell_probe_tid in self._active_boost_ids:
+            self._sell_last_safe_offset_bps = self._sell_offset_bps
+            new_sell_offset = min(self._sell_offset_bps + step_bps, ceiling)
+            if new_sell_offset > self._sell_offset_bps:
+                old_off = self._sell_offset_bps
+                self._sell_offset_bps = new_sell_offset
+                if self._sell_probe_tid and self._offer_manager:
+                    self._offer_manager._bot_cancelled_ids.add(self._sell_probe_tid)
+                    self._offer_manager.cancel_offers(
+                        [self._sell_probe_tid], reason="gap_closer_sell_step",
+                        skip_confirmation=True,
+                    )
+                    if self._sell_probe_tid in self._active_boost_ids:
+                        self._active_boost_ids.remove(self._sell_probe_tid)
+                    self._sell_probe_tid = ""
+                # Same mempool-propagation pause as the BUY path
+                time.sleep(2.0)
+                sell_price = self._boost_mid_price * (Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000"))
+                size_xch = self._effective_size_xch()
+                sell_result = self._create_single_offer("sell", sell_price, size_xch)
+                if sell_result and sell_result.get("trade_id"):
+                    new_tid = sell_result["trade_id"]
+                    self._sell_probe_tid = new_tid
+                    self._sell_probe_tid_history.add(new_tid)
+                    self._active_boost_ids.append(new_tid)
+                    if self._dexie_manager and cfg.DEXIE_AUTO_POST:
+                        bech32 = sell_result.get("offer_bech32", "")
+                        if bech32:
+                            self._dexie_manager._post_single(bech32, new_tid, force=True)
+                log_event("info", "gap_closer_sell_step",
+                          f"📈 SELL probe push deeper: -{_bps_to_pct(old_off)} → -{_bps_to_pct(self._sell_offset_bps)} past mid (survived → testing deeper)",
+                          data={"sell_offset_bps": self._sell_offset_bps,
+                                "sell_last_safe": self._sell_last_safe_offset_bps})
+                side_action = True
+            else:
+                self._sell_settled = True
+                self._sell_floor_bps = self._sell_offset_bps
+                log_event("info", "gap_closer_sell_settled_ceiling",
+                          f"📈 SELL side settled at ceiling -{_bps_to_pct(self._sell_offset_bps)} — no arbs detected at max depth",
+                          data={"sell_floor_bps": self._sell_floor_bps})
+
+        if side_action:
+            self._steps_taken += 1
+            self._last_step_time = now
+            self._stable_since = now
+            # Flip for next cycle
+            self._next_step_is_buy = not push_buy_first
+
+        return side_action
+
+    def notify_boost_fill(self, trade_id: str) -> bool:
+        """External hook: called by fill_tracker when a boost-tier offer is
+        confirmed filled (even after the bot tried to cancel it).
+
+        Maps the trade_id back to BUY or SELL via the historic-TID sets,
+        then settles that side. Idempotent — safe to call multiple times.
+
+        Returns True if a side was settled as a result of this call.
+        """
+        if not trade_id:
+            return False
+        with self._lock:
+            if trade_id in self._buy_probe_tid_history and not self._buy_settled:
+                self._on_inverted_arb("buy")
+                return True
+            if trade_id in self._sell_probe_tid_history and not self._sell_settled:
+                self._on_inverted_arb("sell")
+                return True
+        return False
+
+    def _on_inverted_arb(self, side: str):
+        """Called from prune_active_boosts when a probe vanishes pre-expiry.
+
+        Records the proven floor for that side and marks it settled. The
+        OPPOSITE side keeps probing independently.
+
+        Args:
+            side: "buy" or "sell"
+        """
+        with self._lock:
+            if side == "buy":
+                if not self._buy_settled:
+                    # The depth that just got arbed IS the proven boundary
+                    # (= the shallowest depth at which watchers fire).
+                    # We stop probing this side; ladder will plant in safe
+                    # territory (any positive symmetric half-spread is safe).
+                    self._buy_floor_bps = self._buy_offset_bps
+                    self._buy_settled = True
+                    self._buy_probe_tid = ""
+                    self._arb_count += 1
+                    log_event("info", "gap_closer_buy_arbed",
+                              f"📈 BUY side arbed at +{_bps_to_pct(self._buy_offset_bps)} past mid — "
+                              f"floor proven. Last safe depth was +{_bps_to_pct(self._buy_last_safe_offset_bps)}.",
+                              data={"buy_floor_bps": self._buy_floor_bps,
+                                    "buy_last_safe_offset_bps": self._buy_last_safe_offset_bps})
+                    print(f"📈 BUY arbed at +{_bps_to_pct(self._buy_offset_bps)} → floor settled", flush=True)
+            elif side == "sell":
+                if not self._sell_settled:
+                    self._sell_floor_bps = self._sell_offset_bps
+                    self._sell_settled = True
+                    self._sell_probe_tid = ""
+                    self._arb_count += 1
+                    log_event("info", "gap_closer_sell_arbed",
+                              f"📈 SELL side arbed at -{_bps_to_pct(self._sell_offset_bps)} past mid — "
+                              f"floor proven. Last safe depth was -{_bps_to_pct(self._sell_last_safe_offset_bps)}.",
+                              data={"sell_floor_bps": self._sell_floor_bps,
+                                    "sell_last_safe_offset_bps": self._sell_last_safe_offset_bps})
+                    print(f"📈 SELL arbed at -{_bps_to_pct(self._sell_offset_bps)} → floor settled", flush=True)
+
+    def _inverted_complete_handoff(self) -> bool:
+        """Both sides settled — log the discovered floors and deactivate.
+
+        We do NOT plant inner-tier offers at the proven floor (which is in
+        INVERTED territory — that would be a continuous giveaway). Instead
+        we just report the floor as informational. The bot's normal ladder
+        operates at safe positive half-spread regardless.
+        """
+        log_event("info", "gap_closer_inverted_complete",
+                  f"📈 Inverted floor discovery complete. "
+                  f"BUY floor: +{_bps_to_pct(self._buy_floor_bps)} past mid "
+                  f"(last safe: +{_bps_to_pct(self._buy_last_safe_offset_bps)}). "
+                  f"SELL floor: -{_bps_to_pct(self._sell_floor_bps)} past mid "
+                  f"(last safe: -{_bps_to_pct(self._sell_last_safe_offset_bps)}). "
+                  f"Arbs: {self._arb_count}, steps: {self._steps_taken}.",
+                  data={"buy_floor_bps": self._buy_floor_bps,
+                        "sell_floor_bps": self._sell_floor_bps,
+                        "buy_last_safe": self._buy_last_safe_offset_bps,
+                        "sell_last_safe": self._sell_last_safe_offset_bps,
+                        "arb_count": self._arb_count,
+                        "steps_taken": self._steps_taken})
+        print(f"📈 Floor discovery complete: BUY +{_bps_to_pct(self._buy_floor_bps)}, "
+              f"SELL -{_bps_to_pct(self._sell_floor_bps)} (arbs: {self._arb_count})", flush=True)
+        self.deactivate(preserve_convergence=True)
+        return False
+
+    # ------- Legacy step path retained behind a flag (unreachable in inverted mode) -------
+    def _legacy_step_tighter(self, current_arb_gap_bps: Decimal) -> bool:
+        """Original symmetric tightening logic — kept for reference but
+        not called in inverted-probe mode. Will be removed once inverted
+        mode is proven in production."""
+        if not self._boost_active or self._gap_spread_bps == 0:
+            return False
+        if self._cb_blocks_boost():
+            return False
+        now = time.time()
+        buffer = getattr(cfg, "GAP_CLOSE_SAFETY_BUFFER_BPS", 20)
+        self._arb_floor_bps = max(1, int(current_arb_gap_bps) + buffer)
+        if len(self._active_boost_ids) == 0:
+            return False
         cooldown = getattr(cfg, "GAP_CLOSE_STEP_COOLDOWN_SECS", 300)
         if self._stable_since == 0:
             self._stable_since = now
             return False
         if (now - self._stable_since) < cooldown:
             return False
-
-        # Cooldown since last step
         if (now - self._last_step_time) < cooldown:
             return False
-
-        # Already at or below the arb floor?
-        # If we've also passed both cooldown guards to get here, that means
-        # offers have been sitting at the floor for a full cooldown with no arb.
-        # Try ONE below-floor sub-probe to discover the *real* floor — the
-        # calculated floor is just (arb_gap + buffer), which may overestimate
-        # what the market actually punishes. If the sub-probe survives, the
-        # real floor is below us and we can keep going. If it gets arbed, we
-        # bounce back up to the calculated floor and hand off there.
         if self._gap_spread_bps <= self._arb_floor_bps:
             # Sub-probe goes much deeper than the calculated floor. The
             # 2026-04-25 giveaway test proved that Dexie watchers take ANY
@@ -695,9 +983,14 @@ class BoostManager:
 
         old_ids = list(self._active_boost_ids) if self._active_boost_ids else []
 
-        # Step 1: Create new offers FIRST (before cancelling old ones)
+        # Step 1: Create new offers FIRST (before cancelling old ones).
+        # In inverted-probe mode use the new pair builder which respects
+        # the per-side offsets and tracks BUY/SELL probe TIDs separately.
         self._active_boost_ids.clear()
-        created = self._create_gap_closer_pair(current_mid_price)
+        # Reset probe TIDs since the old ones are about to be cancelled
+        self._buy_probe_tid = ""
+        self._sell_probe_tid = ""
+        created = self._create_inverted_probe_pair(current_mid_price)
 
         # Step 2: Cancel old offers AFTER new ones exist
         if old_ids and self._offer_manager:
@@ -741,22 +1034,28 @@ class BoostManager:
                 bot_cancelled = self._offer_manager._bot_cancelled_ids
 
             now = time.time()
-            # Iterate over a snapshot so _on_arbed() cannot mutate the list
-            # out from under us.
+            # Iterate over a snapshot so _on_inverted_arb() cannot mutate the
+            # list out from under us.
             for tid in list(self._active_boost_ids):
                 if tid not in open_trade_ids and tid not in bot_cancelled:
                     # Before declaring arb, check if this offer simply expired.
-                    # Gap closer offers carry a 60-second expiry; when the time
-                    # is up they vanish from the wallet without a cancel tx.
                     expiry_time = self._boost_id_expiry.get(tid, 0)
                     if expiry_time > 0 and now >= (expiry_time - 5):
-                        # Natural expiry — not an arb fill, don't widen spread
                         log_event("debug", "gap_closer_offer_expired",
                                   f"Gap closer offer {tid[:16]}… expired naturally (not arbed)")
                     else:
-                        # Disappeared before expiry — this was arbed
-                        self._arb_count += 1
-                        self._on_arbed()
+                        # Inverted-mode arb detection: identify which side
+                        # the missing trade_id belongs to so we can settle
+                        # only that side. _on_inverted_arb increments arb_count.
+                        if tid == self._buy_probe_tid:
+                            self._on_inverted_arb("buy")
+                        elif tid == self._sell_probe_tid:
+                            self._on_inverted_arb("sell")
+                        else:
+                            # Unknown probe — fall back to legacy widen
+                            self._arb_count += 1
+                            log_event("warning", "gap_closer_arb_unknown_side",
+                                      f"Probe {tid[:16]}… arbed but didn't match BUY or SELL TID")
 
             self._active_boost_ids = [
                 tid for tid in self._active_boost_ids if tid in open_trade_ids
@@ -1340,24 +1639,33 @@ class BoostManager:
                 "active": self._boost_active,
                 "boost_count": len(self._active_boost_ids),
                 "boost_mid_price": str(self._boost_mid_price),
-                # Adaptive spread info
-                "current_spread_bps": self._gap_spread_bps,
+                "mode": "inverted",
+                # Inverted-probe per-side state (the new interesting bits)
+                "buy_offset_bps": self._buy_offset_bps,
+                "sell_offset_bps": self._sell_offset_bps,
+                "buy_settled": self._buy_settled,
+                "sell_settled": self._sell_settled,
+                "buy_floor_bps": self._buy_floor_bps,
+                "sell_floor_bps": self._sell_floor_bps,
+                "buy_last_safe_offset_bps": self._buy_last_safe_offset_bps,
+                "sell_last_safe_offset_bps": self._sell_last_safe_offset_bps,
+                "buy_probe_tid": self._buy_probe_tid,
+                "sell_probe_tid": self._sell_probe_tid,
+                "tibet_fee_bps": int(getattr(cfg, "TIBETSWAP_FEE_BPS", 70)),
+                # Legacy fields kept for GUI backward compat
+                "current_spread_bps": self._buy_offset_bps + self._sell_offset_bps,
                 "start_spread_bps": self._start_spread_bps,
                 "arb_floor_bps": self._arb_floor_bps,
                 "steps_taken": self._steps_taken,
                 "arb_count": self._arb_count,
                 "secs_until_step": secs_until_step,
-                # Offer details
                 "size_xch": str(self._effective_size_xch()),
                 "active_ids": list(self._active_boost_ids),
-                # Main book convergence
                 "convergence_factor": str(self._convergence_factor),
                 "convergence_pct": str(self._convergence_factor * Decimal("100")),
-                # Stats
                 "total_refreshes": self._total_refreshes,
                 "total_arb_warnings": self._total_arb_warnings,
                 "stable_secs": int(stable_secs),
-                # Cascade info
                 "cascade_count": self._cascade_count,
                 "cascade_ready": self.should_cascade(),
             }

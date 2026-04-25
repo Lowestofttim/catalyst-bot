@@ -1449,6 +1449,20 @@ class FillTracker:
                         "tier": tier,
                         "mempool_warned": mempool_warned})
 
+        # Notify BoostManager when a boost-tier offer was confirmed filled
+        # so the inverted-probe state machine can settle that side. This
+        # path catches the fill-beat-cancel race where the bot rotated to
+        # a new probe before the old one's fill was reconciled by Spacescan.
+        try:
+            if str(tier or "").lower() == "boost":
+                import api_server as _api_server
+                bot_ref = getattr(_api_server, "bot", None)
+                bm = getattr(bot_ref, "boost_manager", None) if bot_ref else None
+                if bm and hasattr(bm, "notify_boost_fill"):
+                    bm.notify_boost_fill(trade_id)
+        except Exception:
+            pass  # additive — never block fill recording on this hook
+
         # ---- Fill classification (additive, fail-open) -------------------
         # Classify the fill and persist to DB.  Then register with the
         # SweepCoordinator so same-block fills get grouped into a sweep event.
