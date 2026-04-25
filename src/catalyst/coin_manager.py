@@ -7047,6 +7047,31 @@ class CoinManager:
                           f"{target_xch_size} each, {total_coins} CAT coins "
                           f"(+{prep_headroom_pct}% headroom)")
 
+            # Pass the bot's current weighted mid to the worker so CAT sizing
+            # reflects what the bot is actually quoting, not Dexie's last_price
+            # (which can lag by minutes on quiet pairs). Without this the
+            # worker logs "Using Dexie last_price for CAT sizing (no live mid
+            # passed via --live-price)" twice per prep.
+            try:
+                _live_mid = None
+                _pe = getattr(self, "price_engine", None)
+                if _pe is not None and hasattr(_pe, "current_mid"):
+                    try:
+                        _live_mid = _pe.current_mid()
+                    except Exception:
+                        _live_mid = None
+                if _live_mid is None:
+                    # Fall back to whatever the api_server helper exposes.
+                    try:
+                        from api_server import _get_live_mid_price_str  # type: ignore
+                        _live_mid = _get_live_mid_price_str()
+                    except Exception:
+                        _live_mid = None
+                if _live_mid is not None and str(_live_mid).strip():
+                    cmd.extend(["--live-price", str(_live_mid)])
+            except Exception:
+                pass
+
             self._prep_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,

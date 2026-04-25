@@ -3403,9 +3403,27 @@ class BotLoop:
             if not readiness.get("overall_ready", True):
                 status = readiness.get("overall_status", "UNKNOWN")
                 if status == "CRITICAL":
-                    log_event("warning", "startup_coins_critical",
-                              "COIN READINESS: CRITICAL — some tiers have zero coins! "
-                              "Run coin prep before starting offers.")
+                    # Suppress the warning if coin prep is running or about
+                    # to run — the bot is actively building those tiers, so
+                    # CRITICAL is a snapshot of an in-flight state, not a
+                    # condition the user needs to act on. Only warn if the
+                    # user genuinely has no path to coins (prep not running,
+                    # not pending).
+                    _prep_active = (
+                        self.coin_manager.is_busy()
+                        or getattr(self.coin_manager, "_topup_running", False)
+                        or self.coin_manager.needs_coin_prep(
+                            len(wallet_open_ids), len(wallet_open_ids)
+                        )
+                    )
+                    if _prep_active:
+                        log_event("info", "startup_coins_critical_prep_pending",
+                                  "Coin tiers below target — coin prep is "
+                                  "in flight or queued, will replenish.")
+                    else:
+                        log_event("warning", "startup_coins_critical",
+                                  "COIN READINESS: CRITICAL — some tiers have zero coins! "
+                                  "Run coin prep before starting offers.")
 
             # Per-tier spare summary — fires on EVERY start (cold or resume).
             # Shows exactly which tiers are below their spare_target so the user

@@ -635,9 +635,16 @@ class RuntimeMonitor:
         gap_closer_active = bool(market.get("gap_closer_active"))
         divergence_active = (not startup_grace) and wallet_fresh and gap_total >= 2 and not gap_closer_active
         self._update_streak("db_wallet_divergence", divergence_active)
+        # Require 4 consecutive samples (≥60s on the 15-20s health cadence)
+        # before warning. Sage's get_offers RPC routinely lags 30-90s after
+        # large requote bursts and recovery_mode redeploys; firing at 2
+        # samples produces noise on every fresh start while the wallet
+        # caches catch up to the local DB. The bot-side state is correct
+        # in either case — this warning only matters if the divergence
+        # PERSISTS, which 4 samples reliably distinguishes.
         if self._apply_condition(
             "db_wallet_divergence",
-            self._streaks["db_wallet_divergence"] >= 2,
+            self._streaks["db_wallet_divergence"] >= 4,
             severity="warning",
             open_event="bot_health_db_wallet_gap",
             open_message=(

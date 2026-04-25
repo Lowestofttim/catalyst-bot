@@ -3151,7 +3151,16 @@ class CoinPrepWorker:
             owned_ready_logged = set()
             grace_extensions = {}  # pending index -> number of pending-tx grace extensions used
             split_deadlines = {idx: timeout_s for idx in range(len(pending_splits))}
-            retry_after_s = 45
+            # Sage on a busy chain regularly takes 50-80s to confirm a split
+            # broadcast. The previous 45s threshold fired a "still intact"
+            # warning + retry on every tier even when the original split was
+            # going to land cleanly a few seconds later. 90s gives Sage a
+            # full block-cycle of headroom before we treat the split as
+            # stuck. The on-chain spent_height pre-check below still blocks
+            # the actual retry RPC if the source coin is committed, so the
+            # bumped threshold doesn't risk double-spending — it only
+            # silences the false-alarm warning.
+            retry_after_s = 90
             grace_extension_s = 60
             poll_started_at = time.time()
             self.log(f"\n   🔍 Polling for ALL {len(pending_splits)} splits to confirm...")

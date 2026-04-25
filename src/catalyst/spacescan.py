@@ -17,6 +17,7 @@ Key responsibilities:
 """
 
 import re
+import threading
 import time
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
@@ -34,6 +35,33 @@ from database import log_event
 
 _last_call_time = 0.0  # Rate limiting: track last API call
 _rate_limited_until = 0.0  # Non-blocking 429 backoff timestamp
+
+# Process-wide lock around _spacescan_get so parallel threads (e.g. the
+# 6 fill-verify workers) serialize their API access. Without this, six
+# threads each pass _rate_limit() at the same instant (since elapsed >
+# interval is true for all of them simultaneously), all hit the endpoint,
+# all get 429, all log spacescan_rate_limited + spacescan_verify_failed —
+# turning one cooldown into 12 warning lines.
+_api_lock = threading.Lock()
+
+# Per-event-type warning dedup: only log the first occurrence inside any
+# active cooldown window. Reset when cooldown clears or a successful call
+# proves the API is healthy again.
+_last_warned: Dict[str, float] = {}
+_WARN_DEDUP_WINDOW = 60.0  # seconds
+
+
+def _maybe_log_warn(event_type: str, message: str) -> None:
+    """Log a warning at most once per _WARN_DEDUP_WINDOW per event_type.
+
+    Suppresses cascade noise when N parallel callers hit the same failure
+    mode (rate-limit, timeout, verify-failed) inside one cooldown.
+    """
+    now = time.time()
+    last = _last_warned.get(event_type, 0.0)
+    if now - last >= _WARN_DEDUP_WINDOW:
+        _last_warned[event_type] = now
+        log_event("warning", event_type, message)
 
 # Tier-aware rate limiting and call budgeting
 # Free plan limits are documented publicly by Spacescan.
@@ -177,60 +205,74 @@ def _spacescan_get(endpoint: str) -> Optional[Dict]:
     Returns:
         JSON response dict, or None on error.
     """
-    global _calls_this_session, _calls_today, _rate_limited_until
+    global _calls_this_session, _calls_today, _rate_limited_until, _last_warned
 
-    _rate_limit()
-
-    # Non-blocking 429 backoff — skip calls during cooldown
+    # Cheap pre-lock cooldown gate — no point queuing on the lock if we're
+    # going to no-op anyway. Threads inside the cooldown window return
+    # immediately and don't compete for the API slot.
     if time.time() < _rate_limited_until:
         return None
 
-    url = f"{_get_base_url()}{endpoint}"
-    timeout = getattr(cfg, "SPACESCAN_TIMEOUT", 10)
-
-    try:
-        response = requests.get(url, headers=_get_headers(), timeout=timeout)
-
-        if response.status_code == 429:
-            log_event("warning", "spacescan_rate_limited",
-                      "Spacescan rate limit hit — backing off 60s (non-blocking)")
-            _rate_limited_until = time.time() + 60
+    # Serialize across threads. Without this, six fill-verify workers can
+    # pass _rate_limit() at the same instant and all hit the endpoint
+    # simultaneously, turning a single cooldown into N rate-limit logs.
+    with _api_lock:
+        # Re-check the cooldown after acquiring the lock — another thread
+        # may have just hit a 429 while we were waiting.
+        if time.time() < _rate_limited_until:
             return None
 
-        if response.status_code == 404:
-            log_event("debug", "spacescan_not_found",
-                      f"Spacescan 404 for {endpoint[:60]}...")
+        _rate_limit()
+
+        url = f"{_get_base_url()}{endpoint}"
+        timeout = getattr(cfg, "SPACESCAN_TIMEOUT", 10)
+
+        try:
+            response = requests.get(url, headers=_get_headers(), timeout=timeout)
+
+            if response.status_code == 429:
+                _maybe_log_warn("spacescan_rate_limited",
+                                "Spacescan rate limit hit — backing off 60s (non-blocking)")
+                _rate_limited_until = time.time() + 60
+                return None
+
+            if response.status_code == 404:
+                log_event("debug", "spacescan_not_found",
+                          f"Spacescan 404 for {endpoint[:60]}...")
+                return None
+
+            if response.status_code >= 500:
+                _maybe_log_warn("spacescan_server_error",
+                                f"Spacescan server error {response.status_code}")
+                return None
+
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("status") != "success":
+                _maybe_log_warn("spacescan_api_error",
+                                f"Spacescan returned non-success: {data.get('status')}")
+                return None
+
+            _calls_this_session += 1
+            _calls_today += 1
+            # Successful call — clear the dedup memory so a NEW failure
+            # surfaces immediately instead of being silenced for 60s.
+            _last_warned.clear()
+            return data
+
+        except requests.exceptions.Timeout:
+            _maybe_log_warn("spacescan_timeout",
+                            f"Spacescan request timed out after {timeout}s")
             return None
-
-        if response.status_code >= 500:
-            log_event("warning", "spacescan_server_error",
-                      f"Spacescan server error {response.status_code}")
+        except requests.exceptions.ConnectionError:
+            _maybe_log_warn("spacescan_connection_error",
+                            "Cannot connect to Spacescan API")
             return None
-
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("status") != "success":
-            log_event("warning", "spacescan_api_error",
-                      f"Spacescan returned non-success: {data.get('status')}")
+        except Exception as e:
+            log_event("error", "spacescan_error",
+                      f"Spacescan request failed: {e}")
             return None
-
-        _calls_this_session += 1
-        _calls_today += 1
-        return data
-
-    except requests.exceptions.Timeout:
-        log_event("warning", "spacescan_timeout",
-                  f"Spacescan request timed out after {timeout}s")
-        return None
-    except requests.exceptions.ConnectionError:
-        log_event("warning", "spacescan_connection_error",
-                  "Cannot connect to Spacescan API")
-        return None
-    except Exception as e:
-        log_event("error", "spacescan_error",
-                  f"Spacescan request failed: {e}")
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -343,8 +385,13 @@ def verify_fill(coin_id: str, our_address: str,
     result = is_coin_spent(coin_id)
 
     if result is None:
-        log_event("warning", "spacescan_verify_failed",
-                  f"Cannot verify coin {coin_id[:16]}... — API error.")
+        # Deduped: when a rate-limit cascade hits 6 fill-verify threads at
+        # once, we used to log one of these per thread. The first call
+        # already logged the underlying cause (rate_limited / timeout); a
+        # per-coin verify_failed for each one just adds noise.
+        _maybe_log_warn("spacescan_verify_failed",
+                        f"Cannot verify coin {coin_id[:16]}... — API error "
+                        "(further verify failures suppressed for 60s).")
         return None  # Distinct from False (explicit rejection)
 
     if not result["spent"]:
