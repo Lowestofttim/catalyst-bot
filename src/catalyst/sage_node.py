@@ -929,11 +929,30 @@ def get_startup_status() -> Dict:
     Returns a simple dict the main GUI can poll to show startup progress.
     Works for both wallet types — adds wallet_type so the GUI can adapt.
     """
+    global _selected_fingerprint, _sage_startup_phase
     wallet_type = os.getenv("WALLET_TYPE", "sage").lower().strip()
     with _cache_lock:
         cached = _node_status_cache
     status = cached.get("status", "unknown") if cached else "checking"
     wallet_label = "Sage wallet" if wallet_type == "sage" else "Chia wallet"
+
+    # Adoption check: if Sage already has a wallet logged in (e.g. user
+    # was logged in from a previous CATalyst run, or a page reload lost
+    # the cached _selected_fingerprint mid-session), pick that fingerprint
+    # up so the GUI doesn't strand the operator on the wallet picker
+    # while the bot loop is happily running. We deliberately scope this
+    # to "Sage already says someone is logged in" — never auto-pick from
+    # a fresh state where no wallet is selected.
+    if wallet_type == "sage" and not _selected_fingerprint:
+        try:
+            live_fp = _get_live_sage_fingerprint()
+            if live_fp:
+                _selected_fingerprint = live_fp
+                if _sage_startup_phase == "waiting_fingerprint":
+                    with _phase_lock:
+                        _sage_startup_phase = "ready"
+        except Exception:
+            pass
 
     # For Sage: use _sage_startup_phase directly — it tracks the exact state
     # of the multi-step startup (connecting → launching → waiting_certs →
