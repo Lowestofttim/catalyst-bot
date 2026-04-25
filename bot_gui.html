@@ -1686,12 +1686,31 @@
 
         /* Dashboard panels row (Guidance + Activity) — equal columns with
            a slightly larger bottom gap so the Market Health card below
-           reads as a separate section. */
+           reads as a separate section.
+
+           Both panels share a fixed height so the layout never reflows
+           when items come and go. Guidance shows ONE recommendation +
+           ONE advisor note at a time (rotating through extras every
+           ~10s). Activity shows the most recent N rows that fit, with
+           no scrollbar — older rows fall off the bottom as new ones
+           arrive at the top.
+
+           --dash-panel-height is the single source of truth; tweak it
+           here and both panels resize together. */
+        :root {
+            --dash-panel-height: 280px;
+        }
         .v4-dashboard-panels-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: var(--space-4);
             margin-bottom: var(--space-5);
+        }
+        .v4-dashboard-panels-row > .live-activity-panel {
+            height: var(--dash-panel-height);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         @media (max-width: 900px) {
             .v4-dashboard-panels-row {
@@ -1701,9 +1720,9 @@
         /* Sub-header inside the Guidance panel separating the actions
            (Recommendations) from the advisor notes. */
         .la-subheader {
-            padding: 10px 14px 4px;
+            padding: 8px 14px 2px;
             border-top: 1px dashed var(--border-subtle);
-            margin-top: 4px;
+            margin-top: 2px;
         }
         .la-subheader-label {
             font-size: 10px;
@@ -1712,17 +1731,36 @@
             text-transform: uppercase;
             color: var(--text-tertiary);
         }
-        .la-body--actions {
-            max-height: 180px;
-            overflow-y: auto;
-        }
+        /* Each Guidance slot holds exactly one item (rotated if there
+           are more). Fixed height so the panel can't grow when text
+           wraps. Use flex so the item fills the slot vertically. */
+        .la-body--actions,
         .la-body--notes {
-            max-height: 220px;
-            overflow-y: auto;
-            padding-top: 4px;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+            padding: 4px 14px;
+            display: flex;
+            flex-direction: column;
+        }
+        .la-body--actions .alert-item,
+        .la-body--notes .sa-suggestions {
+            flex: 1 1 auto;
+            min-height: 0;
         }
         .la-body--notes .sa-suggestions { font-size: 13px; line-height: 1.55; }
         .la-body--notes .sa-empty { padding: 4px 0; }
+        /* Rotation indicator — small "2 / 5 ▸" hint shown when the slot
+           is showing one of several items. */
+        .la-rotator-hint {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            color: var(--text-tertiary);
+            opacity: 0.65;
+        }
 
         .dashboard-startup-guide {
             position: relative;
@@ -4770,16 +4808,15 @@
             font-size: 12px;
             line-height: 1.5;
         }
-        /* Activity panel body (not the Guidance sub-panels) — scrolls
-           when the feed has more entries than fit. The actual max-height
-           is set at runtime to match the Guidance panel's height so the
-           two grid columns line up regardless of how many alerts or
-           advisor notes are showing. Fallback max-height prevents the
-           feed from pushing the row taller before the observer runs. */
+        /* Activity panel body — fills the fixed-height container, no
+           scroll. _laRender() measures available height and only renders
+           as many rows as fit; older rows fall off the bottom of the
+           buffer window. The buffer itself still keeps 60 entries so the
+           Logs tab can replay them. */
         #liveActivityPanel > .la-body:not(.la-body--actions):not(.la-body--notes) {
-            min-height: 120px;
-            max-height: 360px;
-            overflow-y: auto;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
         }
         .la-entry {
             padding: 3px 0;
@@ -15597,34 +15634,36 @@
                 return;
             }
 
-            // Only re-render if the visible suggestions changed (avoid flicker)
-            const key = visibleSuggestions.map((s) => [
-                s.type,
-                s.msg
-            ].join('~')).join('|');
-            const oldKey = _saLastSuggestions.map((s) => [
-                s.type,
-                s.msg
-            ].join('~')).join('|');
-            if (key === oldKey) return;
-            _saLastSuggestions = visibleSuggestions.map((item) => ({ ...item }));
-            let html = '';
-            for (const s of visibleSuggestions) {
-                const dismissKey = escapeHtml((s.type || '') + ':' + (s.msg || ''));
-                html += '<div class="sa-item ' + escapeHtml(s.type) + '" style="position: relative;">';
-                html += '<span class="sa-icon">' + escapeHtml(s.icon) + '</span>';
-                html += '<div class="sa-content" style="flex: 1;">';
-                html += '<div class="sa-msg">' + escapeHtml(s.msg) + '</div>';
-                html += '</div>';
-                html += '<button class="alert-dismiss" data-dismiss-key="' + dismissKey + '" '
-                    + 'title="Dismiss until conditions change" '
-                    + 'style="flex-shrink: 0; align-self: center;"'
-                    + '>Dismiss</button>';
-                html += '</div>';
+            // Detect whether the *content* changed (not just the rotator
+            // tick). Reset the rotator index ONLY on content change so a
+            // 10-second tick doesn't restart at slide 0.
+            const key = visibleSuggestions.map((s) => [s.type, s.msg].join('~')).join('|');
+            const oldKey = _saLastSuggestions.map((s) => [s.type, s.msg].join('~')).join('|');
+            if (key !== oldKey) {
+                _saLastSuggestions = visibleSuggestions.map((item) => ({ ...item }));
+                _advisorRotatorIdx = 0;
             }
-            container.innerHTML = html;
+
+            const idx = ((_advisorRotatorIdx % visibleSuggestions.length) + visibleSuggestions.length) % visibleSuggestions.length;
+            _advisorRotatorIdx = idx;
+            const s = visibleSuggestions[idx];
+            const dismissKey = escapeHtml((s.type || '') + ':' + (s.msg || ''));
+            const rotatorHint = (visibleSuggestions.length > 1)
+                ? '<span class="la-rotator-hint">' + (idx + 1) + ' / ' + visibleSuggestions.length + ' &#9656;</span>'
+                : '';
+            container.innerHTML = '<div class="sa-item ' + escapeHtml(s.type) + '" style="position: relative;">'
+                + '<span class="sa-icon">' + escapeHtml(s.icon) + '</span>'
+                + '<div class="sa-content" style="flex: 1;">'
+                + '<div class="sa-msg">' + escapeHtml(s.msg) + ' ' + rotatorHint + '</div>'
+                + '</div>'
+                + '<button class="alert-dismiss" data-dismiss-key="' + dismissKey + '" '
+                +   'title="Dismiss until conditions change" '
+                +   'style="flex-shrink: 0; align-self: center;"'
+                + '>Dismiss</button>'
+                + '</div>';
             container.scrollTop = 0;
             container.scrollLeft = 0;
+
             if (!container._advisorDismissDelegated) {
                 container.addEventListener('click', (e) => {
                     const btn = e.target.closest('[data-dismiss-key]');
@@ -15634,6 +15673,44 @@
                 });
                 container._advisorDismissDelegated = true;
             }
+
+            // (Re)start the rotator only when there's more than one item.
+            // The tick advances the index and calls _renderAdvisorRotation()
+            // which re-renders without going through saUpdateAdvisor (which
+            // would treat the bare advance as a content change).
+            _ensureAdvisorRotator(() => {
+                const cur = _saLastSuggestions || [];
+                if (cur.length <= 1) return false;
+                _advisorRotatorIdx = (_advisorRotatorIdx + 1) % cur.length;
+                _renderAdvisorRotation();
+                return true;
+            });
+        }
+
+        // Re-paint the advisor slot using the cached suggestion list and
+        // the current rotator index. Used by the 10-second tick so we
+        // don't re-enter the full advisor pipeline.
+        function _renderAdvisorRotation() {
+            const container = document.getElementById('saList');
+            if (!container) return;
+            const list = _saLastSuggestions || [];
+            if (!list.length) return;
+            const idx = ((_advisorRotatorIdx % list.length) + list.length) % list.length;
+            const s = list[idx];
+            const dismissKey = escapeHtml((s.type || '') + ':' + (s.msg || ''));
+            const rotatorHint = (list.length > 1)
+                ? '<span class="la-rotator-hint">' + (idx + 1) + ' / ' + list.length + ' &#9656;</span>'
+                : '';
+            container.innerHTML = '<div class="sa-item ' + escapeHtml(s.type) + '" style="position: relative;">'
+                + '<span class="sa-icon">' + escapeHtml(s.icon) + '</span>'
+                + '<div class="sa-content" style="flex: 1;">'
+                + '<div class="sa-msg">' + escapeHtml(s.msg) + ' ' + rotatorHint + '</div>'
+                + '</div>'
+                + '<button class="alert-dismiss" data-dismiss-key="' + dismissKey + '" '
+                +   'title="Dismiss until conditions change" '
+                +   'style="flex-shrink: 0; align-self: center;"'
+                + '>Dismiss</button>'
+                + '</div>';
         }
 
         // Advisor-dismissal persistence. We keep the dismissal keys in
@@ -24570,11 +24647,14 @@
                 return;
             }
 
-            // Rolling feed: always show the newest _laWindow entries.
-            // New events flow in at the top; old events drop off the bottom.
-            // No cycling/wrap-around — that created a jarring forward/backward
-            // motion whenever a new event arrived mid-cycle.
-            const visible = _laBuffer.slice(0, _laWindow);
+            // Measure how many rows fit in the (fixed-height) body so the
+            // panel never scrolls. Each .la-entry is ~3px padding + 1.5
+            // line-height × 12px ≈ 24px in practice. We measure once with
+            // a probe so theme-specific font/padding tweaks don't drift.
+            const entryHeight = _laMeasureRowHeight(body);
+            const available = Math.max(0, body.clientHeight);
+            const maxRows = Math.max(1, Math.floor(available / entryHeight));
+            const visible = _laBuffer.slice(0, Math.min(maxRows, _laBuffer.length));
 
             let html = '';
             for (const e of visible) {
@@ -24590,6 +24670,23 @@
                     + '</div>';
             }
             body.innerHTML = html;
+        }
+
+        // Cache the measured row height — typography is stable per theme.
+        let _laRowHeightCache = null;
+        function _laMeasureRowHeight(body) {
+            if (_laRowHeightCache) return _laRowHeightCache;
+            const probe = document.createElement('div');
+            probe.className = 'la-entry';
+            probe.style.visibility = 'hidden';
+            probe.innerHTML = '<span class="la-time">00:00</span>'
+                + '<span class="la-icon">·</span>'
+                + '<span class="la-msg">measure</span>';
+            body.appendChild(probe);
+            const h = probe.getBoundingClientRect().height || 22;
+            body.removeChild(probe);
+            _laRowHeightCache = h;
+            return h;
         }
 
         function laClear() {
@@ -24610,44 +24707,29 @@
             }
         }
 
-        // Keep the Activity feed body height in lock-step with the
-        // Guidance panel on the left. Without this, the two grid
-        // columns diverge — the Activity panel either leaves empty
-        // space (when Guidance is taller) or pushes the whole row
-        // taller (when the feed has many entries). The feed itself
-        // always scrolls inside the matched height.
-        (function _laSyncHeight() {
-            function syncOnce() {
-                const guidance = document.getElementById('alertsPanel');
-                const activity = document.getElementById('liveActivityPanel');
-                const body = document.getElementById('laBody');
-                if (!guidance || !activity || !body) return;
-                const guidanceHeight = guidance.getBoundingClientRect().height;
-                const activityHeight = activity.getBoundingClientRect().height;
-                const bodyHeight = body.getBoundingClientRect().height;
-                // Activity chrome = panel height - body height (header +
-                // context-note). Match body to (guidance - chrome) so
-                // the two panels end at the same pixel.
-                const chrome = Math.max(0, activityHeight - bodyHeight);
-                const target = Math.max(120, guidanceHeight - chrome);
-                body.style.maxHeight = target + 'px';
-            }
+        // Re-render the Activity feed when the panel resizes (e.g. a
+        // window resize changes how many rows fit). _laRender() measures
+        // the body's available height and renders only the rows that
+        // fit — the buffer keeps everything internally for the Logs tab.
+        (function _laReRenderOnResize() {
             function install() {
-                const guidance = document.getElementById('alertsPanel');
-                if (!guidance) return false;
-                syncOnce();
+                const activity = document.getElementById('liveActivityPanel');
+                if (!activity) return false;
                 if (typeof ResizeObserver !== 'undefined') {
                     try {
-                        new ResizeObserver(syncOnce).observe(guidance);
-                    } catch (_e) { /* fall back to window.resize only */ }
+                        new ResizeObserver(() => {
+                            if (typeof _laRender === 'function') _laRender();
+                        }).observe(activity);
+                    } catch (_e) { /* fall back to window.resize */ }
                 }
-                window.addEventListener('resize', syncOnce);
+                window.addEventListener('resize', () => {
+                    if (typeof _laRender === 'function') _laRender();
+                });
                 return true;
             }
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', install);
             } else if (!install()) {
-                // Panels not in the DOM yet — retry until they are.
                 const retry = setInterval(() => {
                     if (install()) clearInterval(retry);
                 }, 250);
@@ -25571,58 +25653,87 @@
             badge.style.display = 'inline';
             pulse.className = 'la-pulse active';
 
-            // Render an individual alert row. Shared by both the Critical
-            // and Suggested groups below.
-            const renderAlert = (a) => {
-                const actionId = String(a.action || '');
-                const actionBtn = canRunDashboardAction(actionId) && a.action_label
-                    ? `<button class="alert-action-btn" data-action="${escapeHtml(actionId)}" data-action-value="${escapeHtml(a.action_value || '')}" onclick="runAlertAction(this.dataset.action, this.dataset.actionValue)">${escapeHtml(a.action_label)}</button>`
-                    : '';
-                const alertId = encodeURIComponent(String(a.id || ''));
-                const dismissBtn = a.dismissible === false
-                    ? ''
-                    : `<button class="alert-dismiss" data-alert-id="${alertId}" onclick="dismissAlert(decodeURIComponent(this.dataset.alertId))" title="Dismiss until conditions change">Dismiss</button>`;
-                return `<div class="alert-item alert-${escapeHtml(a.severity)}" data-alert-id="${alertId}">
-                    <div class="alert-content">
-                        <div class="alert-title">${escapeHtml(a.title)}</div>
-                        <div class="alert-msg">${escapeHtml(a.message)}</div>
-                        <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
-                            ${actionBtn}
-                            ${dismissBtn}
-                        </div>
+            // Cache the deduped+sorted list so the rotator tick can advance
+            // without re-running the full filter pipeline.
+            _alertActiveCache = active;
+            // Content changed → reset to slide 0 so the operator always sees
+            // the most-critical item first when something new arrives.
+            _alertRotatorIdx = 0;
+            _renderAlertsRotation();
+            // (Re)start the rotator only when there's more than one item.
+            _ensureAlertRotator(() => {
+                const list = _alertActiveCache || [];
+                if (list.length <= 1) return false;
+                _alertRotatorIdx = (_alertRotatorIdx + 1) % list.length;
+                _renderAlertsRotation();
+                return true;
+            });
+        }
+
+        // Render a single alert row. Used by both the initial render in
+        // renderAlerts() and the 10-second rotator tick.
+        function _renderAlertsRotation() {
+            const body = document.getElementById('alertsBody');
+            const list = _alertActiveCache || [];
+            if (!body || !list.length) return;
+            const idx = ((_alertRotatorIdx % list.length) + list.length) % list.length;
+            const a = list[idx];
+            const actionId = String(a.action || '');
+            const actionBtn = canRunDashboardAction(actionId) && a.action_label
+                ? `<button class="alert-action-btn" data-action="${escapeHtml(actionId)}" data-action-value="${escapeHtml(a.action_value || '')}" onclick="runAlertAction(this.dataset.action, this.dataset.actionValue)">${escapeHtml(a.action_label)}</button>`
+                : '';
+            const alertId = encodeURIComponent(String(a.id || ''));
+            const dismissBtn = a.dismissible === false
+                ? ''
+                : `<button class="alert-dismiss" data-alert-id="${alertId}" onclick="dismissAlert(decodeURIComponent(this.dataset.alertId))" title="Dismiss until conditions change">Dismiss</button>`;
+            const sevLabel = String(a.severity) === 'error'
+                ? `<span class="la-rotator-hint" style="color: var(--status-danger); opacity: 1;">CRITICAL</span>`
+                : '';
+            const rotatorHint = (list.length > 1)
+                ? `<span class="la-rotator-hint">${idx + 1} / ${list.length} &#9656;</span>`
+                : '';
+            body.innerHTML = `<div class="alert-item alert-${escapeHtml(a.severity)}" data-alert-id="${alertId}">
+                <div class="alert-content">
+                    <div class="alert-title">${escapeHtml(a.title)} ${sevLabel} ${rotatorHint}</div>
+                    <div class="alert-msg">${escapeHtml(a.message)}</div>
+                    <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+                        ${actionBtn}
+                        ${dismissBtn}
                     </div>
-                </div>`;
-            };
+                </div>
+            </div>`;
+        }
 
-            // Severity grouping: errors become a "Critical" group, everything
-            // else becomes "Suggested". Headers are only shown when there's
-            // something on the other side — a single-group panel stays
-            // uncluttered.
-            const critical = active.filter((a) => String(a.severity) === 'error');
-            const suggested = active.filter((a) => String(a.severity) !== 'error');
-            const showHeaders = critical.length > 0 && suggested.length > 0;
-
-            const headerStyle = 'font-size: 11px; font-weight: 600; letter-spacing: 0.04em; '
-                + 'text-transform: uppercase; color: var(--text-tertiary); '
-                + 'padding: 4px 0 2px; margin-top: 6px;';
-            const criticalHeaderStyle = headerStyle + 'color: var(--status-danger);';
-
-            let html = '';
-            if (critical.length) {
-                if (showHeaders) {
-                    html += `<div style="${criticalHeaderStyle}">`
-                        + `Critical — act now (${critical.length})</div>`;
+        // ---- Single-slot rotators for the Guidance panel ----
+        // Both Recommendations and Advisor notes show ONE item at a time.
+        // When the underlying list has >1 item, the rotator advances every
+        // 10s so the operator eventually sees them all without the panel
+        // growing or scrolling.
+        let _alertActiveCache = [];
+        let _alertRotatorIdx = 0;
+        let _alertRotatorTimer = null;
+        function _ensureAlertRotator(tick) {
+            if (_alertRotatorTimer) clearInterval(_alertRotatorTimer);
+            _alertRotatorTimer = setInterval(() => {
+                const keepGoing = tick();
+                if (!keepGoing && _alertRotatorTimer) {
+                    clearInterval(_alertRotatorTimer);
+                    _alertRotatorTimer = null;
                 }
-                html += critical.map(renderAlert).join('');
-            }
-            if (suggested.length) {
-                if (showHeaders) {
-                    html += `<div style="${headerStyle}">`
-                        + `Suggested (${suggested.length})</div>`;
+            }, 10000);
+        }
+
+        let _advisorRotatorIdx = 0;
+        let _advisorRotatorTimer = null;
+        function _ensureAdvisorRotator(tick) {
+            if (_advisorRotatorTimer) clearInterval(_advisorRotatorTimer);
+            _advisorRotatorTimer = setInterval(() => {
+                const keepGoing = tick();
+                if (!keepGoing && _advisorRotatorTimer) {
+                    clearInterval(_advisorRotatorTimer);
+                    _advisorRotatorTimer = null;
                 }
-                html += suggested.map(renderAlert).join('');
-            }
-            body.innerHTML = html;
+            }, 10000);
         }
 
         async function dismissAlert(alertId) {
