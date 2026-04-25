@@ -111,6 +111,26 @@ class FillTracker:
         # Retry any previously-parked unverified offers before processing new
         # disappearances. A delayed Spacescan success here will be surfaced as
         # a fill on the current cycle exactly like a just-disappeared offer.
+        #
+        # PRE-RETRY CLEANUP: drop any pending entry whose trade_id has
+        # reappeared in the wallet. These were false-positive "disappearances"
+        # from Sage RPC lag during the initial deploy (DB had 36 sells,
+        # wallet RPC briefly showed only 11) — the bot inferred 25 fills
+        # and queued them for verification. When the wallet caught up the
+        # offers came back, but the queue kept hammering Spacescan to
+        # verify offers that are alive and visible. Without this cleanup
+        # one Sage lag burst produced ~7 warnings × 6 retry cycles =
+        # 42 warnings for offers that never actually filled.
+        if self._pending_reverify:
+            _live_ids = current_buy_ids | current_sell_ids
+            _restored = [tid for tid in list(self._pending_reverify.keys())
+                         if tid in _live_ids]
+            for _tid in _restored:
+                self._pending_reverify.pop(_tid, None)
+            if _restored:
+                log_event("info", "fill_verify_cancelled_alive",
+                          f"Dropped {len(_restored)} pending verifications: "
+                          f"offers reappeared in wallet (Sage RPC lag, not fills)")
         if self._pending_reverify:
             retry_fills = self._retry_pending_reverify(offer_details_cache or {})
             if retry_fills.get("buy_fills"):
@@ -680,7 +700,15 @@ class FillTracker:
                         "first_seen": time.time(),
                         "local_clock_expired": local_clock_expired,
                     }
-                    log_event("warning", "fill_verify_pending",
+                    # INFO not WARNING: this is a transient parked-for-retry
+                    # state, not a problem to action. The genuine warning
+                    # fires at line ~370 if all retries exhaust without a
+                    # Dexie fallback (fill_recovered_via_dexie or the
+                    # lost-fill path). Logging the first park as WARNING
+                    # produced N warnings per fill cascade where the
+                    # downstream cause (Spacescan rate-limit) is already
+                    # logged once via the spacescan dedup.
+                    log_event("info", "fill_verify_pending",
                               f"{side.upper()} offer {trade_id[:16]}... disappeared "
                               f"but Spacescan unverified — parked for retry "
                               f"(1/{self._pending_reverify_max_attempts})",
@@ -1047,11 +1075,17 @@ class FillTracker:
                 log_event("debug", "fill_dexie_fallback_failed",
                           f"Dexie fallback check failed for {trade_id[:16]}...: {_dexie_err}")
 
-            # All sources inconclusive — fail closed.
-            log_event("warning", "fill_unverified",
+            # All sources inconclusive — fail closed. INFO (not WARNING)
+            # because the retry path will re-attempt verification across
+            # the next few cycles and either confirm or trigger the
+            # genuine warning at exhaustion (fill_recovered_via_dexie /
+            # lost-fill path). Logging at WARN here produced N warnings
+            # per cascade where the underlying spacescan rate-limit was
+            # already deduped to a single warning.
+            log_event("info", "fill_unverified",
                       f"On-chain verification inconclusive for {side} fill "
                       f"{trade_id[:16]}... — Spacescan, Sage, and Dexie all "
-                      f"inconclusive. NOT recording.")
+                      f"inconclusive. NOT recording (retry will re-verify).")
             return "unverified"
 
     def _check_sage_offer_confirmed(self, trade_id: str) -> bool:

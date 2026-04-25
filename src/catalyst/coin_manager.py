@@ -5053,7 +5053,12 @@ class CoinManager:
                 pass
 
             if not fresh_inv["reserve"]:
-                log_event("warning", f"topup_{name.lower()}_reserve_gone",
+                # INFO not WARNING: this is a benign race when the pool
+                # coin was just consumed by another concurrent split (the
+                # bot can rapidly re-prep tiers during initial deploy or
+                # heavy fills). The "Will retry next cycle" comment makes
+                # explicit that no action is needed.
+                log_event("info", f"topup_{name.lower()}_reserve_gone",
                           f"{name} topup pool coin vanished between scan and split — "
                           f"coins may have been spent. Will retry next cycle.")
                 small_coins = fresh_inv["small"]

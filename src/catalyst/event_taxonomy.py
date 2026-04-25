@@ -145,6 +145,7 @@ _EVENT_CATEGORY_MAP = {
     "fill_verified": EventCategory.OFFER,
     "fill_rejected": EventCategory.OFFER,
     "fill_unverified": EventCategory.OFFER,
+    "fill_verify_cancelled_alive": EventCategory.OFFER,
     "fill_no_details": EventCategory.OFFER,
     "fill_no_coin_id": EventCategory.OFFER,
     "fill_record_failed": EventCategory.OFFER,

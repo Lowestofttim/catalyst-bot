@@ -173,9 +173,12 @@ def install_all_hooks():
         from fill_tracker import FillTracker
         count = 0
         # detect_fills issues network calls (Spacescan + Sage + Dexie verify)
-        # so a 500ms warn threshold (default) fires constantly — bumped to
-        # SLOW_NETWORK_MS so warns reflect a genuinely degraded path.
-        _wrap_method(FillTracker, "detect_fills", "FILL", slow_ms=SLOW_NETWORK_MS)
+        # so a 500ms warn threshold (default) fires constantly. WARN fires
+        # at 5×slow_ms; bumped to 5000 so warn fires at >25s — that
+        # accommodates a single Spacescan rate-limit wait (12s free tier
+        # interval) plus the 20s timeout, while still catching a genuinely
+        # wedged verify path.
+        _wrap_method(FillTracker, "detect_fills", "FILL", slow_ms=5000)
         count += 1
         for method in ["match_round_trips", "_record_fill",
                         "_check_mass_disappearance"]:
@@ -304,14 +307,14 @@ def install_all_hooks():
     try:
         from bot_loop import BotLoop
         count = 0
-        # _run_one_cycle includes a full Sage get_offers RPC (~4s for 80 offers),
-        # so it gets a 6s threshold rather than the default 500ms to avoid noise.
-        # WARN fires at 5× slow_ms; bumped from 6000→13000 so the cold-start
-        # cycle (which bundles startup_sync + dexie repost + initial offer
-        # creation + Spacescan + first AMM poll) doesn't reliably warn just
-        # for being a busy first cycle. Steady-state cycles average <10s, so
-        # 65s still catches a genuinely wedged loop.
-        _wrap_method(BotLoop, "_run_one_cycle", "LOOP", slow_ms=13000)
+        # _run_one_cycle includes a full Sage get_offers RPC (~4s for 80
+        # offers). WARN fires at 5× slow_ms. Bumped from 6000→18000 so the
+        # cold-start cycle (which bundles startup_sync + dexie repost +
+        # initial offer creation + Spacescan + first AMM poll) doesn't
+        # warn just for being a busy first cycle — observed up to ~86s on
+        # a fresh deploy. Steady-state cycles average <10s, so 90s still
+        # catches a genuinely wedged loop.
+        _wrap_method(BotLoop, "_run_one_cycle", "LOOP", slow_ms=18000)
         count += 1
         for method in ["_startup_sync", "_handle_requoting",
                         "_create_offers_if_needed", "_handle_coins",

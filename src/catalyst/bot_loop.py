@@ -521,6 +521,13 @@ class BotLoop:
             "sell_deficit": 0,
             "cycle_probe_churn": False,
             "cycle_create_stalled": False,
+            # Flips True the first time the book reaches its full target in
+            # this session. Used to distinguish "initial deploy in progress"
+            # (book under target because we're still creating offers) from
+            # "real recovery" (book regressed after being healthy). Only
+            # the latter deserves a WARN — the former is just throttled
+            # ladder build.
+            "book_ever_at_target": False,
         }
         self._recovery_under_target_cycles: int = 4
         self._recovery_wallet_stale_cycles: int = 2
@@ -712,11 +719,16 @@ class BotLoop:
             "sell_deficit": int(sell_deficit),
         })
         self._set_state(status="recovering")
+        # Demote to INFO if the book has never been at target this session —
+        # this is the initial throttled deploy, not a real recovery scenario.
+        # The user knows the bot is building; warning here is just noise that
+        # clears within ~1 cycle as soon as the ladder fills.
+        _is_initial_deploy = not bool(state.get("book_ever_at_target"))
         log_event(
-            "warning",
+            "info" if _is_initial_deploy else "warning",
             "recovery_mode_enter",
-            f"Entering recovery mode — {reason}. "
-            f"Current deficit: {buy_deficit} buy, {sell_deficit} sell.",
+            f"{'Initial deploy in progress' if _is_initial_deploy else 'Entering recovery mode'} — "
+            f"{reason}. Current deficit: {buy_deficit} buy, {sell_deficit} sell.",
         )
         self._emit_alert(
             "bot_recovery",
@@ -785,6 +797,12 @@ class BotLoop:
 
         state["buy_deficit"] = int(buy_deficit)
         state["sell_deficit"] = int(sell_deficit)
+        # Mark "book has been at target at least once this session" the first
+        # time both sides reach their target. Used by _enter_recovery_mode to
+        # distinguish initial-deploy under-target (expected) from real recovery
+        # (book regressed after being healthy).
+        if not under_target and not state.get("book_ever_at_target"):
+            state["book_ever_at_target"] = True
         state["wallet_stale_streak"] = (
             int(state.get("wallet_stale_streak", 0)) + 1
             if self._wallet_sync_stale_cycle else 0

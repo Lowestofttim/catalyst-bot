@@ -129,7 +129,11 @@ class RuntimeMonitor:
             "sync_from_wallet": {"threshold_ms": 2500.0, "hits": 3},
             "update_coin_counts": {"threshold_ms": 9000.0, "hits": 3},
             "reconcile_with_wallet": {"threshold_ms": 18000.0, "hits": 2},
-            "_run_one_cycle": {"threshold_ms": 30000.0, "hits": 2},
+            # 90000ms aligns with super_log_hooks (WARN at >90s for cold
+            # start). 4 consecutive samples (~6 min) before bot_health_perf_slow
+            # — cold-start + Spacescan rate-limit waits regularly push the
+            # first cycle above 30s without indicating a real problem.
+            "_run_one_cycle": {"threshold_ms": 90000.0, "hits": 4},
             "get_tibet_pool_info": {"threshold_ms": 900.0, "hits": 3},
         }
         self._session_cutoff_ts = _utc_now_iso()
@@ -629,19 +633,21 @@ class RuntimeMonitor:
                 ),
             ))
 
-        gap_total = abs(int(market["wallet_buy"]) - int(market["db_buy"])) + abs(
-            int(market["wallet_sell"]) - int(market["db_sell"])
-        )
+        # Compute the SIGNED gap per side. Positive = wallet has more than
+        # DB (zombies the bot lost track of — actionable). Negative = DB
+        # has more than wallet (Sage broadcast lag during active deploy or
+        # requote — not actionable, just throttling). Only warn on the
+        # actionable direction.
+        wallet_excess_buy = max(0, int(market["wallet_buy"]) - int(market["db_buy"]))
+        wallet_excess_sell = max(0, int(market["wallet_sell"]) - int(market["db_sell"]))
+        gap_total = wallet_excess_buy + wallet_excess_sell
         gap_closer_active = bool(market.get("gap_closer_active"))
         divergence_active = (not startup_grace) and wallet_fresh and gap_total >= 2 and not gap_closer_active
         self._update_streak("db_wallet_divergence", divergence_active)
         # Require 4 consecutive samples (≥60s on the 15-20s health cadence)
         # before warning. Sage's get_offers RPC routinely lags 30-90s after
-        # large requote bursts and recovery_mode redeploys; firing at 2
-        # samples produces noise on every fresh start while the wallet
-        # caches catch up to the local DB. The bot-side state is correct
-        # in either case — this warning only matters if the divergence
-        # PERSISTS, which 4 samples reliably distinguishes.
+        # large requote bursts; even on the actionable direction (zombie
+        # offers), one sample is more likely propagation than data loss.
         if self._apply_condition(
             "db_wallet_divergence",
             self._streaks["db_wallet_divergence"] >= 4,
