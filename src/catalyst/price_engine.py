@@ -408,7 +408,12 @@ class PriceEngine:
                                    f"suppressed for {int(cooldown // 60)}m"
                                    if self._crossed_repeats >= 2
                                    else f"suppressed for {self._warn_cooldown_secs}s")
-                        log_event("warning", "dexie_crossed_market",
+                        # Logged at INFO, not WARNING: the bot handles this
+                        # transparently by falling back to current_avg_price.
+                        # Nothing the user can act on — promoting to WARNING
+                        # just creates red noise for an event we already
+                        # absorbed cleanly. Stays in the diagnostic log.
+                        log_event("info", "dexie_crossed_market",
                                   f"Dexie ticker returned crossed bid/ask "
                                   f"(bid={bid_d}, ask={ask_d}) — using "
                                   f"current_avg_price instead ({suffix})")
@@ -469,7 +474,10 @@ class PriceEngine:
                                            if self._empty_repeats >= 2
                                            else f"suppressed for "
                                                 f"{self._warn_cooldown_secs}s")
-                                log_event("warning", "dexie_ticker_unusable",
+                                # INFO, not WARNING: same reasoning as
+                                # dexie_crossed_market — fallback works,
+                                # nothing for the user to do.
+                                log_event("info", "dexie_ticker_unusable",
                                           f"Dexie ticker bid/ask unavailable "
                                           f"(thin/illiquid pair). Using "
                                           f"historical '{field}' = "
