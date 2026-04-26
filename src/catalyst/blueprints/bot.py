@@ -251,6 +251,48 @@ def api_shutdown():
             except Exception as e:
                 print(f"   ⚠️ Cancel failed: {e}", flush=True)
 
+            # Cancel TXs submitted to mempool take a few seconds to leave the
+            # wallet's open-offer view. cancel_all keeps DB status as "open"
+            # for those (so a racing fill isn't misclassified) — but if we
+            # exit immediately the DB stays stale, and the next startup
+            # shows offers that no longer exist on-chain. Poll briefly until
+            # the wallet confirms they're gone, then write through to the DB
+            # so the next session boots with a clean book.
+            try:
+                import time as _t
+                from database import get_open_offers, update_offer_status
+                submitted_tids = [
+                    tid for tid, r in (result or {}).items()
+                    if r and r.get("success")
+                ]
+                deadline = _t.time() + 30
+                final_open: list = []
+                while _t.time() < deadline:
+                    open_buys, open_sells, _ = bot.offer_manager.sync_from_wallet()
+                    final_open = open_buys + open_sells
+                    if not final_open:
+                        break
+                    _t.sleep(2)
+
+                # Anything in our submitted set that's no longer in the wallet
+                # has cleared on-chain — mark it cancelled in the DB.
+                still_open_tids = {o.get("trade_id") for o in final_open}
+                cleared = [tid for tid in submitted_tids if tid not in still_open_tids]
+                for tid in cleared:
+                    try:
+                        update_offer_status(tid, "cancelled")
+                    except Exception:
+                        pass
+                if cleared:
+                    print(f"   ✅ {len(cleared)} cancellation(s) confirmed; "
+                          f"DB marked cancelled", flush=True)
+                if final_open:
+                    print(f"   ⚠️ {len(final_open)} offer(s) still pending after "
+                          f"30s — next startup reconcile will catch them",
+                          flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Cancel settle wait failed: {e}", flush=True)
+
         # 3. Stop Splash node (in case bot.stop() didn't cover it)
         try:
             if bot and hasattr(bot, 'splash_node') and bot.splash_node.is_running():
