@@ -15479,14 +15479,35 @@
                 // button silently widened the user's config.
                 if (!_gapCloserActive && baseBps > 400 && !_spreadCooldownActive) {
                     const safeRoom = baseBps - Math.max(arbGapBps + 20, 80);
-                    if (arbGapBps >= 50 && safeRoom > 150) {
-                        // Active arb gap — probe approach makes sense
+                    // Arb-gap reliability gate: the arb gap is computed
+                    // against Dexie's price, which falls back to a stale
+                    // 24h average for thin/illiquid pairs. Without legit
+                    // competitor offers on BOTH sides of Dexie's book the
+                    // gap doesn't reflect a real opportunity arbers would
+                    // act on, so probing is futile and the recommendation
+                    // becomes misleading. Require a real two-sided Dexie
+                    // market before suggesting Close the Gap.
+                    const _arbDataReliable = competitorBestBid > 0 && competitorBestAsk > 0;
+                    if (arbGapBps >= 50 && safeRoom > 150 && _arbDataReliable) {
+                        // Active arb gap WITH a real two-sided Dexie market — probe makes sense
                         pushSuggestion({
                             type: 'warning',
                             icon: '📈',
                             msg: 'Arb gap is ' + fmtPct(arbGapBps) + ' between Dexie and TibetSwap while your spread is ' + fmtPct(baseBps) + '. Close the Gap will probe for the arb floor with small offers, stepping tighter every 60s. When it finds the floor it plants an inner-tier offer at the proven safe price.',
                             action: 'Close the Gap',
                             actionType: 'activateGapCloser'
+                        });
+                    } else if (arbGapBps >= 50 && !_arbDataReliable) {
+                        // Arb gap looks tradeable on paper but Dexie's
+                        // book has no real competitors near market — the
+                        // gap is computed against historical price data,
+                        // not live opportunity. Probing won't catch real
+                        // arbers because there aren't any.
+                        pushSuggestion({
+                            type: 'info',
+                            icon: '...',
+                            msg: 'Arb gap reads ' + fmtPct(arbGapBps) + ' but Dexie has no live two-sided market for this pair — the gap is calculated against stale historical price data, not a real opportunity. Probing for the arb floor here would just expire offers without proving anything.',
+                            action: null
                         });
                     } else if (arbGapBps < 50 && fillsHr === 0 && safeRoom > 100 && configBaseBps > 400) {
                         // No arb gap, but BASE is wide with zero fills — tighten the actual config.

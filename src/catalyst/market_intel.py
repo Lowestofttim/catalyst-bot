@@ -295,7 +295,25 @@ class MarketIntel:
         competitor_buys = [o for o in buy_offers if not o.get("is_ours")]
         competitor_sells = [o for o in sell_offers if not o.get("is_ours")]
 
-        # Best bid/ask from competitors
+        # Junk-offer guard: thin pairs accumulate dust/lowball offers (e.g.
+        # someone bidding 1% of market). Including them in best_bid drags
+        # competitor_spread to nonsensical values like 194% and makes the
+        # advisor recommend "probe the arb floor" against an opponent that
+        # doesn't exist. Filter each side using the cleanest cross-side
+        # reference: a buy is sane only if it's at least half the lowest
+        # competitor sell price (and vice versa). When no sane reference
+        # is available on either side, we leave the lists alone so we
+        # don't blank the orderbook on healthy thin markets.
+        _raw_best_buy = competitor_buys[0]["price"] if competitor_buys else Decimal("0")
+        _raw_best_sell = competitor_sells[0]["price"] if competitor_sells else Decimal("0")
+        if _raw_best_sell > 0:
+            _buy_floor = _raw_best_sell * Decimal("0.5")
+            competitor_buys = [o for o in competitor_buys if o["price"] >= _buy_floor]
+        if _raw_best_buy > 0:
+            _sell_ceiling = _raw_best_buy * Decimal("2")
+            competitor_sells = [o for o in competitor_sells if o["price"] <= _sell_ceiling]
+
+        # Best bid/ask from competitors (post-junk-filter)
         best_bid = competitor_buys[0]["price"] if competitor_buys else Decimal("0")
         best_ask = competitor_sells[0]["price"] if competitor_sells else Decimal("0")
 
