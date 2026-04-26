@@ -104,7 +104,7 @@ def main() -> int:
         recovered.unlink()
 
     # Step 1: keep the corrupt original for forensic / pre-roll back
-    print(f"[recover] backing up corrupt DB → {corrupt_backup.name}", flush=True)
+    print(f"[recover] backing up corrupt DB -> {corrupt_backup.name}", flush=True)
     shutil.copy2(db, corrupt_backup)
     # The WAL/SHM go with it so the backup is self-contained.
     for suffix in ("-wal", "-shm"):
@@ -116,7 +116,7 @@ def main() -> int:
     # fresh file. iterdump() is best-effort; rows past the first corrupt
     # page may be missed, but the dump survives most malformed-image
     # scenarios because SQLite skips unreadable pages instead of aborting.
-    print(f"[recover] dumping into {recovered.name}…", flush=True)
+    print(f"[recover] dumping into {recovered.name}...", flush=True)
     src = sqlite3.connect(str(db), timeout=10)
     dst = sqlite3.connect(str(recovered), timeout=10)
     try:
@@ -146,7 +146,7 @@ def main() -> int:
 
     # Step 4: swap. WAL/SHM must be removed so the new main DB owns its
     # own WAL on first open.
-    print("[recover] swapping recovered → bot.db", flush=True)
+    print("[recover] swapping recovered -> bot.db", flush=True)
     db.unlink()
     for suffix in ("-wal", "-shm"):
         side = db.with_suffix(db.suffix + suffix)
