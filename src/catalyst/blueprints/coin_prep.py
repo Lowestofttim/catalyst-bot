@@ -1469,15 +1469,74 @@ def api_logs_clear():
 
 @bp.route("/api/logs/download")
 def api_logs_download():
-    """Download a richer debug bundle with recent events and runtime state."""
+    """Download a richer debug bundle with recent events and runtime state.
+
+    Bundle contents are designed to give a support engineer (or a future
+    Claude session) enough context to triage a user-reported issue
+    *without* the user having to share raw DB or wallet credentials.
+
+    Privacy guarantees:
+      * Bech32 wallet addresses (xch1...) and Sage wallet fingerprints
+        are redacted from log text and event messages before bundling.
+      * Config snapshot uses cfg.to_dict() which already excludes
+        SPACESCAN_API_KEY, RPC TLS paths, and wallet fingerprints.
+      * The DB file, .env, user_secrets.json, and TLS keys are NEVER
+        included.
+
+    What's preserved:
+      * Trade IDs, coin IDs, asset IDs (public on-chain — required
+        for any meaningful trade-history debugging).
+      * App version, OS, Python version, sage version when known.
+      * Live tier coin inventory, open offers, recent fills.
+    """
     bot = api_server.bot
     cfg = api_server.cfg
     try:
         import glob
         import io
+        import platform as _platform
+        import re
+        import sys as _sys
         import zipfile
-        from database import get_recent_events
+        from database import (
+            get_recent_events, get_open_offers, get_fills,
+            get_live_tier_group_counts, get_coin_summary,
+        )
         from super_log import get_archive_summary, get_log_path, get_log_stats
+
+        # ---- Privacy: redact identifying wallet info ----
+        # Wallet bech32 (xch1... / txch1... + 8-62 lowercase alphanumerics).
+        # Already-truncated prefixes (e.g. "xch1z2ghg3jsg5h4pfzr...") still
+        # leak because anyone can crawl Dexie/Spacescan and brute-force the
+        # remaining chars. Replace all of them with "<addr>".
+        _RE_BECH32 = re.compile(r"\b(t?xch1)[a-z0-9]{8,62}\b", re.IGNORECASE)
+        # Sage wallet fingerprints — 8-12 digit number tagged with the
+        # word "fingerprint" (case-insensitive). Plain large integers
+        # appearing elsewhere in logs (offer counts, mojo amounts, etc.)
+        # are NOT redacted to keep the log readable.
+        _RE_FP = re.compile(r"(?i)(fingerprint[\"'\s:=\-]+)(\d{8,12})")
+
+        def _redact_text(text):
+            if not isinstance(text, str) or not text:
+                return text
+            try:
+                text = _RE_BECH32.sub(r"\1<redacted>", text)
+                text = _RE_FP.sub(r"\1<redacted>", text)
+            except Exception:
+                pass
+            return text
+
+        def _redact_obj(obj):
+            """Recursively scrub strings inside a JSON-shaped structure."""
+            if isinstance(obj, str):
+                return _redact_text(obj)
+            if isinstance(obj, dict):
+                return {k: _redact_obj(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_redact_obj(v) for v in obj]
+            if isinstance(obj, tuple):
+                return tuple(_redact_obj(v) for v in obj)
+            return obj
 
         def _read_text_tail(path: str, max_bytes: int = 400_000) -> str:
             if not path or not os.path.exists(path):
@@ -1528,6 +1587,85 @@ def api_logs_download():
             "superlog_stats": get_log_stats(),
             "superlog_archive": get_archive_summary(5),
         }
+
+        # System info — Python version, OS, executable path. Lets us
+        # match against known platform-specific bugs without having to
+        # ask the user.
+        try:
+            snapshots["system_info"] = {
+                "python_version": _sys.version.split("\n")[0],
+                "python_executable": _sys.executable,
+                "platform": _platform.platform(),
+                "system": _platform.system(),
+                "release": _platform.release(),
+                "machine": _platform.machine(),
+                "processor": _platform.processor(),
+                "frozen": bool(getattr(_sys, "frozen", False)),
+            }
+        except Exception as e:
+            snapshots["system_info"] = {"error": str(e)}
+
+        # Config snapshot — cfg.to_dict() already excludes secrets
+        # (SPACESCAN_API_KEY, SAGE_FINGERPRINT, RPC TLS paths, etc.).
+        try:
+            snapshots["config"] = cfg.to_dict() if hasattr(cfg, "to_dict") else {}
+        except Exception as e:
+            snapshots["config"] = {"error": str(e)}
+
+        # API call stats — central counter + every per-service manager
+        # available, so support sees rate-limit cooldowns / API budget
+        # remaining at the moment the user hit the button.
+        try:
+            from api_call_tracker import get_all_stats as _api_stats_all
+            snapshots["api_calls"] = _api_stats_all() or {}
+        except Exception as e:
+            snapshots["api_calls"] = {"error": str(e)}
+
+        # Coin inventory — current tier-group counts + reserve totals
+        # from the DB designations. Far more compact than parsing
+        # periodic [coin_inventory] lines out of the superlog.
+        try:
+            _coin_summary = get_coin_summary() or {}
+            _tier_counts = get_live_tier_group_counts() or {}
+            _coin_inv = {
+                "summary": _coin_summary,
+                "tier_counts": _tier_counts,
+            }
+            if bot is not None and getattr(bot, "coin_manager", None):
+                try:
+                    _coin_inv["inventory_summary"] = (
+                        bot.coin_manager.get_inventory_summary() or {}
+                    )
+                except Exception as _ce:
+                    _coin_inv["inventory_summary_error"] = str(_ce)
+            snapshots["coin_inventory"] = api_server._serialize_dict(_coin_inv)
+        except Exception as e:
+            snapshots["coin_inventory"] = {"error": str(e)}
+
+        # Open offers — what's currently live. Trade IDs are public
+        # on-chain so they're preserved (needed to correlate with Dexie /
+        # Spacescan when triaging "where did my offer go").
+        try:
+            _cat_id = getattr(cfg, "CAT_ASSET_ID", "") or None
+            buys = get_open_offers(side="buy", cat_asset_id=_cat_id) or []
+            sells = get_open_offers(side="sell", cat_asset_id=_cat_id) or []
+            snapshots["open_offers"] = api_server._serialize_dict({
+                "buy_count": len(buys),
+                "sell_count": len(sells),
+                "buys": buys,
+                "sells": sells,
+            })
+        except Exception as e:
+            snapshots["open_offers"] = {"error": str(e)}
+
+        # Recent fills — last 100 verified, structured. Easier to spot
+        # patterns ("did the bot stop matching at price X") than scanning
+        # the events log.
+        try:
+            recent_fills = get_fills(limit=100) or []
+            snapshots["recent_fills"] = api_server._serialize_list(recent_fills)
+        except Exception as e:
+            snapshots["recent_fills"] = {"error": str(e)}
 
         if bot:
             runtime_snapshot = {
@@ -1607,27 +1745,80 @@ def api_logs_download():
         bundle_name = "bot_debug_bundle_" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + ".zip"
         readme = "\n".join([
             "CATalyst debug bundle",
+            "=====================",
             "",
-            "Included:",
-            "- manifest.json: bundle metadata",
-            "- recent_events.json / recent_events.txt: latest database events",
-            "- snapshots/*.json: health, runtime, market, pnl, splash, and monitor state",
-            "- logs/*.log: tails of the current superlog and nearby runtime logs",
+            "Generated: " + manifest["generated_at"],
+            "App version: " + str(manifest.get("app_version", "?")),
             "",
-            "This bundle is designed for troubleshooting a run without requiring direct DB access.",
+            "Contents",
+            "--------",
+            "  README.txt              this file",
+            "  manifest.json           bundle metadata + active CAT pair",
+            "  recent_events.json      latest DB events (structured)",
+            "  recent_events.txt       latest DB events (one line each)",
+            "  snapshots/",
+            "    config.json           bot configuration (secrets stripped)",
+            "    system_info.json      Python / OS / platform",
+            "    api_calls.json        external API call counters",
+            "    coin_inventory.json   tier-group counts + topup-pool totals",
+            "    open_offers.json      live open offers (with trade_ids)",
+            "    recent_fills.json     last 100 verified fills",
+            "    health.json           wallet/node reachability",
+            "    runtime.json          loop count, uptime, recovery state",
+            "    pnl.json              session PnL + sniper stats",
+            "    market_intel.json     orderbook summary",
+            "    runtime_monitor.json  runtime monitor state",
+            "    splash.json           splash broadcast/node/receive",
+            "    superlog_stats.json   superlog rotation stats",
+            "    superlog_archive.json recent superlog file list",
+            "    event_type_counts.json frequency of each event_type",
+            "  logs/",
+            "    current_superlog_tail.log    last ~400KB of running superlog",
+            "    latest_run_superlog_tail.log last ~400KB of most-recent run",
+            "",
+            "Privacy",
+            "-------",
+            "* Wallet bech32 addresses (xch1...) and Sage fingerprints are",
+            "  redacted from log text and event messages before bundling.",
+            "* Configuration excludes SPACESCAN_API_KEY, RPC TLS paths, and",
+            "  wallet fingerprints (filtered by cfg.to_dict()).",
+            "* The DB file, .env, user_secrets.json, and TLS keys are NOT",
+            "  included.",
+            "* Trade IDs, coin IDs, and asset IDs ARE preserved — they are",
+            "  public on-chain data and are required for any meaningful",
+            "  trade-history debugging.",
+            "",
+            "This bundle is designed to give support enough context to",
+            "triage a run without requiring direct DB or wallet access.",
         ])
+
+        # Redact event content before serialising. Asset IDs and trade
+        # IDs in event data fields stay (they're public on-chain and
+        # required for debugging). Bech32 wallet addresses + Sage
+        # fingerprints in message text are stripped.
+        events_list_redacted = _redact_obj(events_list)
+        lines_redacted = [_redact_text(line) for line in lines]
 
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("README.txt", readme)
+            # manifest is hand-curated and only contains current_cat (which
+            # has no wallet identifiers) so we don't redact it.
             zf.writestr("manifest.json", json.dumps(_json_safe(manifest), indent=2))
-            zf.writestr("recent_events.json", json.dumps(_json_safe(events_list), indent=2))
-            zf.writestr("recent_events.txt", "\n".join(lines))
+            zf.writestr("recent_events.json",
+                        json.dumps(_json_safe(events_list_redacted), indent=2))
+            zf.writestr("recent_events.txt", "\n".join(lines_redacted))
             for name, payload in snapshots.items():
-                zf.writestr(f"snapshots/{name}.json", json.dumps(_json_safe(payload), indent=2))
+                # config is already secret-filtered by cfg.to_dict() and
+                # generally safe — but it can still carry wallet-shaped
+                # strings (e.g. Sage data dir paths if a future change
+                # surfaces them), so we redact every snapshot uniformly.
+                safe_payload = _redact_obj(_json_safe(payload))
+                zf.writestr(f"snapshots/{name}.json",
+                            json.dumps(safe_payload, indent=2))
             for path, text in log_texts.items():
                 if text:
-                    zf.writestr(path, text)
+                    zf.writestr(path, _redact_text(text))
 
         buffer.seek(0)
         return Response(
