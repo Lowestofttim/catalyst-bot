@@ -17555,30 +17555,23 @@
         let SMART_DEFAULTS_IN_FLIGHT = false;
 
         async function _fetchDbxIncentiveInfo(assetId) {
-            // Best effort: prefer the cached Market Intel snapshot if it's
-            // already loaded for this pair (no network round-trip needed),
-            // otherwise hit the live endpoint. Returns null if the pair
-            // isn't incentivized or the call fails.
+            // Lightweight call to /api/dbx/info — returns just the per-pair
+            // incentive blob from dexie_incentives' 5-min cache, no
+            // orderbook refresh. Earlier versions called /api/market/intel
+            // which forced a Dexie network refresh and added a noticeable
+            // 1–2s pause before the Smart Settings DBX-cap modal appeared.
             if (!assetId) return null;
             try {
-                const resp = await apiFetch('/api/market/intel');
+                const resp = await apiFetch('/api/dbx/info?asset_id=' + encodeURIComponent(assetId));
                 const data = await resp.json();
-                const dbx = data && data.dbx ? data.dbx : null;
-                if (!dbx || !dbx.pair_incentivized) return null;
-                const buy = dbx.buy_incentive || dbx.buy || null;
-                const sell = dbx.sell_incentive || dbx.sell || null;
-                const caps = [buy, sell]
-                    .filter(s => s && s.max_spread_bps > 0)
-                    .map(s => Number(s.max_spread_bps));
-                if (!caps.length) return null;
-                const aprs = [buy, sell]
-                    .filter(s => s && s.estimated_apr > 0)
-                    .map(s => Number(s.estimated_apr));
+                if (!data || !data.pair_incentivized || !data.max_spread_bps) {
+                    return null;
+                }
                 return {
                     pair_incentivized: true,
-                    max_spread_bps: Math.min(...caps),
-                    estimated_apr: aprs.length ? Math.max(...aprs) : 0,
-                    reward_token: (buy && buy.reward_token) || (sell && sell.reward_token) || 'DBX',
+                    max_spread_bps: Number(data.max_spread_bps),
+                    estimated_apr: Number(data.estimated_apr || 0),
+                    reward_token: data.reward_token || 'DBX',
                 };
             } catch (_e) {
                 return null;

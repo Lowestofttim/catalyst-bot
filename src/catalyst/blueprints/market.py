@@ -204,6 +204,57 @@ def api_market_intel():
     return jsonify(api_server._serialize_dict(summary))
 
 
+@bp.route("/api/dbx/info")
+def api_dbx_info():
+    """Lightweight per-pair Dexie-incentive lookup.
+
+    Query: ?asset_id=<hex>  (defaults to the active CAT)
+
+    Returns just the projected incentive blob for the requested pair —
+    no orderbook refresh, no market-intel computation. The Smart
+    Settings DBX-cap pre-prompt calls this so the modal appears
+    instantly instead of waiting on a forced /api/market/intel refresh.
+    """
+    asset_id = (request.args.get("asset_id") or "").strip()
+    if not asset_id:
+        asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+    out = {
+        "asset_id": asset_id,
+        "pair_incentivized": None,
+        "max_spread_bps": 0,
+        "estimated_apr": 0.0,
+        "reward_token": "",
+        "buy": None,
+        "sell": None,
+    }
+    if not asset_id:
+        return jsonify(out)
+    try:
+        from dexie_incentives import fetch_incentives, get_pair_incentives
+        bulk = fetch_incentives()
+        if not bulk.get("success") and not bulk.get("incentives"):
+            return jsonify(out)  # API unreachable — pair_incentivized stays None
+        pair = get_pair_incentives(asset_id)
+        out["pair_incentivized"] = bool(pair.get("incentivized"))
+        out["buy"] = pair.get("buy")
+        out["sell"] = pair.get("sell")
+        sides = [s for s in (out["buy"], out["sell"]) if s]
+        caps = [int(s.get("max_spread_bps") or 0) for s in sides if (s.get("max_spread_bps") or 0) > 0]
+        if caps:
+            out["max_spread_bps"] = min(caps)
+        aprs = [float(s.get("estimated_apr") or 0) for s in sides if (s.get("estimated_apr") or 0) > 0]
+        if aprs:
+            out["estimated_apr"] = max(aprs)
+        for s in sides:
+            tok = (s.get("reward_token") or "").strip()
+            if tok:
+                out["reward_token"] = tok
+                break
+    except Exception:
+        pass
+    return jsonify(out)
+
+
 @bp.route("/api/dbx/pending")
 def api_dbx_pending():
     """List the user's offers that currently have claimable Dexie rewards."""
