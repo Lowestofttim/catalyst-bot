@@ -166,6 +166,17 @@ def api_log_event():
     live console via SSE + write to the database.
     """
     bot = api_server.bot
+    # Werkzeug raises BadRequest before our handler runs when the request body
+    # is malformed — that happens when the coin_prep_worker subprocess exits
+    # mid-POST after "COIN PREPARATION COMPLETE!". The request reaches us with
+    # a truncated body, BadRequest fires, and the catch-all in _api_error logs
+    # it as a red error in the activity feed even though nothing actually
+    # broke. Pre-read the body via silent get_data() so we can swallow that
+    # specific case quietly.
+    try:
+        _ = request.get_data(cache=True, as_text=False)
+    except Exception:
+        return jsonify({"success": False, "error": "truncated_body"}), 200
     try:
         payload = request.get_json(force=True, silent=True) or {}
         severity = payload.get("severity", "info")
