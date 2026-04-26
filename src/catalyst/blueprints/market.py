@@ -226,6 +226,10 @@ def api_dbx_info():
         "reward_token": "",
         "buy": None,
         "sell": None,
+        # Whether new offer posts carry the claim_rewards flag — drives
+        # the GUI's Pending Rewards panel UX (auto-claim ON → hide manual
+        # claim button, show "auto-paid by Dexie" copy).
+        "auto_claim_enabled": bool(getattr(cfg, "DEXIE_AUTO_CLAIM_REWARDS", True)),
     }
     if not asset_id:
         return jsonify(out)
@@ -260,7 +264,12 @@ def api_dbx_pending():
     """List the user's offers that currently have claimable Dexie rewards."""
     try:
         from dexie_claims import list_pending_rewards
-        return jsonify(list_pending_rewards())
+        result = list_pending_rewards() or {}
+        # Include the auto-claim toggle so the GUI panel can render the
+        # right messaging in a single round-trip (auto-claim ON →
+        # informational only; auto-claim OFF → show Claim button).
+        result["auto_claim_enabled"] = bool(getattr(cfg, "DEXIE_AUTO_CLAIM_REWARDS", True))
+        return jsonify(result)
     except Exception as e:
         log_event("error", "dbx_claim", f"pending lookup failed: {e}")
         return jsonify({"success": False, "error": str(e), "offers": [], "totals": {}})

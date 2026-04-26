@@ -9753,8 +9753,8 @@
                     <!-- Pending claimable rewards (populated from /api/dbx/pending) -->
                     <div id="intelDbxPendingPanel" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <div style="font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.85);">Pending Rewards <span style="font-size: 10px; color: var(--status-success); font-weight: 400; margin-left: 6px;">⚡ auto-claim ON</span> <span class="cc-help">?<span class="cc-tooltip">Posted offers carry the claim_rewards flag, so Dexie pays out DBX automatically to your wallet every ~15 min. The Claim button is a backup — only needed for offers posted before auto-claim was enabled, or if Dexie's auto-payout is paused.</span></span></div>
-                            <button id="intelDbxClaimBtn" onclick="claimDbxRewards()" style="background: var(--accent-primary); color: white; border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;">Manual Claim</button>
+                            <div style="font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.85);"><span id="intelDbxPendingHeaderLabel">Pending Rewards</span> <span id="intelDbxAutoClaimBadge" style="font-size: 10px; color: var(--status-success); font-weight: 400; margin-left: 6px;">⚡ auto-claim ON</span> <span class="cc-help">?<span class="cc-tooltip">When auto-claim is on, posted offers carry the claim_rewards flag and Dexie pays DBX directly to your wallet every ~15 min. The Manual Claim button is hidden in that mode because Sage's standalone RPC can't sign the claim message anyway. Toggle DEXIE_AUTO_CLAIM_REWARDS off (env or settings) if you need the button back.</span></span></div>
+                            <button id="intelDbxClaimBtn" onclick="claimDbxRewards()" style="display: none; background: var(--accent-primary); color: white; border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer;">Manual Claim</button>
                         </div>
                         <div id="intelDbxPendingTotal" style="font-size: 14px; color: rgba(255,255,255,0.85); margin-bottom: 4px;">—</div>
                         <div id="intelDbxPendingDetail" style="font-size: 11px; color: rgba(255,255,255,0.55);"></div>
@@ -22514,6 +22514,27 @@
                 const panel = document.getElementById('intelDbxPendingPanel');
                 if (!panel) return;
                 const offers = data.offers || [];
+                const autoClaim = data.auto_claim_enabled !== false; // default ON
+
+                // Header label + auto-claim badge update each cycle so a
+                // config flip (DEXIE_AUTO_CLAIM_REWARDS) takes effect on
+                // the next poll without a page reload.
+                const header = document.getElementById('intelDbxPendingHeaderLabel');
+                if (header) {
+                    header.textContent = autoClaim ? 'Pending Rewards' : 'Pending Claims';
+                }
+                const badge = document.getElementById('intelDbxAutoClaimBadge');
+                if (badge) {
+                    badge.style.display = autoClaim ? 'inline' : 'none';
+                }
+
+                // Manual Claim button: only useful when auto-claim is OFF.
+                // With auto-claim ON, Sage's standalone RPC can't sign the
+                // claim message anyway, so the button just produces an
+                // error toast — better to hide it than to mislead.
+                const btn = document.getElementById('intelDbxClaimBtn');
+                if (btn) btn.style.display = autoClaim ? 'none' : '';
+
                 if (!offers.length) {
                     panel.style.display = 'none';
                     return;
@@ -22530,8 +22551,25 @@
                     .map(([code, amt]) => `${amt.toFixed(3)} ${code}`)
                     .join(' + ') || 'no rewards';
                 document.getElementById('intelDbxPendingTotal').textContent = totalStr;
-                document.getElementById('intelDbxPendingDetail').textContent =
-                    `${offers.length} offer${offers.length === 1 ? '' : 's'} with claimable rewards`;
+                const detailEl = document.getElementById('intelDbxPendingDetail');
+                if (autoClaim) {
+                    // With auto-claim ON, any pending balance is either
+                    // (a) waiting for Dexie's next ~15-min payout batch, or
+                    // (b) leftover from offers posted before auto-claim
+                    //     was enabled — those need a manual claim via the
+                    //     dexie-rewards CLI since Sage RPC can't sign.
+                    detailEl.innerHTML =
+                        `${offers.length} offer${offers.length === 1 ? '' : 's'} with rewards · ` +
+                        `auto-paid by Dexie ~every 15 min. ` +
+                        `<span style="color: rgba(255,255,255,0.4);">` +
+                        `Anything still pending after a few payout cycles is from offers ` +
+                        `posted before auto-claim was on — claim those via ` +
+                        `<a href="https://github.com/dexie-space/dexie-rewards" target="_blank" ` +
+                        `style="color: var(--accent-primary);">dexie-rewards</a>.</span>`;
+                } else {
+                    detailEl.textContent =
+                        `${offers.length} offer${offers.length === 1 ? '' : 's'} with claimable rewards`;
+                }
             } catch (_e) { /* non-fatal */ }
         }
 
