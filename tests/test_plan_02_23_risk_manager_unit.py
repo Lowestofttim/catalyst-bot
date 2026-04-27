@@ -45,7 +45,7 @@ def _make_rm(**kwargs):
 
 
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
-class TestCircuitBreakerTrip(_rm_mod.__class__.__mro__[0] if False else unittest.TestCase):
+class TestCircuitBreakerTrip(unittest.TestCase):
     """_trip_circuit_breaker — state activation and query."""
 
     def setUp(self):
