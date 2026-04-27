@@ -86,6 +86,57 @@ def _coin_prep_is_active(bot) -> bool:
     return False
 
 
+def _tier_size_drift_findings() -> list[dict]:
+    """Return tier coins whose DB labels no longer match current settings."""
+    if not bool(getattr(cfg, "TIER_ENABLED", False)):
+        return []
+
+    from coin_manager import check_tier_size_drift_standalone
+
+    return check_tier_size_drift_standalone(
+        low_ratio=0.50, high_ratio=2.00, min_sample=2
+    ) or []
+
+
+def _format_tier_size_drift(findings: list[dict]) -> str:
+    """Human-readable compact drift summary for API/UI responses."""
+    return ", ".join(
+        f"{str(f.get('side', '?'))}/{str(f.get('tier', '?'))}="
+        f"{f.get('ratio', '?')}x (n={f.get('coin_count', 0)})"
+        for f in findings
+    )
+
+
+def _tier_size_drift_message(findings: list[dict]) -> str:
+    summary = _format_tier_size_drift(findings)
+    base = (
+        "Coin tier sizes do not match the saved Smart Settings. "
+        "Run Coin Prep before starting the bot."
+    )
+    return f"{base} Drift: {summary}" if summary else base
+
+
+def _mark_payload_needs_coin_prep_for_drift(payload: dict, findings: list[dict]) -> None:
+    """Make an otherwise-ready coin-prep payload fail readiness on drift."""
+    if not findings:
+        return
+
+    payload["needs_coin_prep"] = True
+    payload["needs_prep"] = True
+    payload["coin_prep_reason"] = "tier_size_drift"
+    payload["reason"] = "tier_size_drift"
+    payload["tier_size_drift"] = findings
+    payload["drift_summary"] = _format_tier_size_drift(findings)
+    payload["message"] = _tier_size_drift_message(findings)
+
+    # Do not allow a stale successful prep file to keep the startup guide green
+    # after Smart Settings changed tier sizes.
+    payload["complete"] = False
+    payload["previously_complete"] = False
+    if str(payload.get("phase") or "").lower() == "complete":
+        payload["phase"] = "idle"
+
+
 @bp.route("/api/coins")
 def api_coins():
     """Get coin status.
@@ -543,6 +594,18 @@ def api_coin_prep_status():
         else:
             result["last_prep_settings"] = None
 
+        # The start route has a hard safety gate for tier-size drift. Mirror
+        # that here so Smart Settings and the coin-prep modal catch stale
+        # tier coins before the user presses Start Bot.
+        result["tier_size_drift"] = []
+        if not result.get("running"):
+            try:
+                _drift = _tier_size_drift_findings()
+                result["tier_size_drift"] = _drift
+                _mark_payload_needs_coin_prep_for_drift(result, _drift)
+            except Exception as _drift_err:
+                result["tier_size_drift_error"] = str(_drift_err)[:200]
+
         # Include the recent coin prep transcript for the inline console.
         # We prefer DB-backed events because that captures both structured
         # coin_prep logs and raw worker stdout mirrored via /api/log.
@@ -761,11 +824,23 @@ def api_coin_prep_verify():
                     f"CAT balance too low: need {cat_need:,.0f} CAT but only have {cat_have:,.0f} CAT"
                 )
 
-            return jsonify({
+            tier_drift = []
+            try:
+                tier_drift = _tier_size_drift_findings()
+            except Exception:
+                tier_drift = []
+            if tier_drift:
+                all_sufficient = False
+
+            response = {
                 "success": True,
                 "tier_enabled": True,
                 "tiers": result_tiers,
                 "all_sufficient": all_sufficient,
+                "needs_coin_prep": not all_sufficient,
+                "reason": "tier_size_drift" if tier_drift else (
+                    "ready" if all_sufficient else "must_resize"
+                ),
                 "xch_total": len(xch_coins),
                 "cat_total": len(cat_coins),
                 "xch_balance_mojos": xch_balance_mojos,
@@ -774,7 +849,11 @@ def api_coin_prep_verify():
                 "cat_needed_mojos": total_cat_needed_mojos,
                 "balance_sufficient": xch_balance_sufficient and cat_balance_sufficient,
                 "balance_warnings": balance_warnings,
-            })
+                "tier_size_drift": tier_drift,
+            }
+            if tier_drift:
+                _mark_payload_needs_coin_prep_for_drift(response, tier_drift)
+            return jsonify(response)
         else:
             # Flat mode
             trade_size = float(request.args.get("trade_size", "0"))

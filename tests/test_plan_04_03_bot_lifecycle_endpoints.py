@@ -140,6 +140,31 @@ class TestBotStart(_FlaskBase):
         body = resp.get_json()
         self.assertIn("errors", body)
 
+    def test_tier_size_drift_returns_coin_prep_response(self):
+        fake_cfg = _fake_cfg()
+        bot = _make_bot(running=False)
+        drift = [{
+            "side": "xch",
+            "tier": "inner",
+            "ratio": 0.457,
+            "coin_count": 11,
+        }]
+        with patch.object(api_server, "bot", bot), \
+             patch.object(api_server, "cfg", fake_cfg), \
+             patch.object(api_server, "_get_sage_signing_block_reason", return_value=None), \
+             patch("wallet.get_wallet_sync_status",
+                   return_value={"reachable": True, "sync_state": "synced"}), \
+             patch("coin_manager.check_tier_size_drift_standalone",
+                   return_value=drift):
+            resp = self._post("/api/bot/start")
+
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertTrue(body.get("needs_coin_prep"))
+        self.assertEqual(body.get("reason"), "tier_size_drift")
+        self.assertEqual(body.get("tier_size_drift"), drift)
+        bot.start.assert_not_called()
+
     def test_signing_block_reason_prevents_start(self):
         """If _get_sage_signing_block_reason returns a string, start is blocked."""
         fake_cfg = _fake_cfg()

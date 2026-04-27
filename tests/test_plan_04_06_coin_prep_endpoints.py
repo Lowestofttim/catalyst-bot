@@ -18,9 +18,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+    from blueprints import coin_prep as coin_prep_blueprint
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
+    coin_prep_blueprint = None
     _SKIP = str(exc)
 
 
@@ -58,6 +60,15 @@ class _FlaskBase(unittest.TestCase):
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCoinPrepStatus(_FlaskBase):
+
+    _DRIFT = [{
+        "side": "xch",
+        "tier": "inner",
+        "ratio": 0.457,
+        "coin_count": 11,
+        "median_mojos": 457000000000,
+        "live_size_mojos": 1000000000000,
+    }]
 
     def test_returns_200(self):
         with patch("database.get_coin_summary", return_value={}):
@@ -105,6 +116,26 @@ class TestCoinPrepStatus(_FlaskBase):
         self.assertEqual(body.get("xch_free_coins"), 5)
         self.assertEqual(body.get("cat_free_coins"), 10)
 
+    def test_tier_size_drift_marks_status_as_needing_prep(self):
+        summary = {
+            "xch_free_count": 5,
+            "cat_free_count": 10,
+            "xch_total": 5,
+            "cat_total": 10,
+        }
+        with patch("database.get_coin_summary", return_value=summary), \
+             patch("coin_manager.check_tier_size_drift_standalone",
+                   return_value=self._DRIFT), \
+             patch.object(coin_prep_blueprint.cfg, "TIER_ENABLED", True):
+            resp = self.client.get("/api/coin-prep/status",
+                                   environ_base=self._LOOPBACK)
+
+        body = resp.get_json()
+        self.assertTrue(body.get("needs_coin_prep"))
+        self.assertEqual(body.get("reason"), "tier_size_drift")
+        self.assertEqual(body.get("tier_size_drift"), self._DRIFT)
+        self.assertFalse(body.get("complete"))
+
 
 # ---------------------------------------------------------------------------
 # 2. GET /api/coin-prep/verify
@@ -115,6 +146,20 @@ class TestCoinPrepVerify(_FlaskBase):
 
     _EMPTY_COINS = {"success": True, "records": []}
     _ZERO_BALANCE = {"wallet_balance": {"confirmed_wallet_balance": 0, "spendable_balance": 0}}
+    _ENOUGH_BALANCE = {
+        "wallet_balance": {
+            "confirmed_wallet_balance": 10_000_000_000_000,
+            "spendable_balance": 10_000_000_000_000,
+        }
+    }
+    _DRIFT = [{
+        "side": "cat",
+        "tier": "mid",
+        "ratio": 2.25,
+        "coin_count": 4,
+        "median_mojos": 225000,
+        "live_size_mojos": 100000,
+    }]
 
     def test_returns_200_flat_mode(self):
         with patch("wallet.get_spendable_coins_rpc", return_value=self._EMPTY_COINS), \
@@ -162,6 +207,41 @@ class TestCoinPrepVerify(_FlaskBase):
             )
         body = resp.get_json()
         self.assertFalse(body["all_sufficient"])
+
+    def test_tier_verify_drift_overrides_matching_wallet_counts(self):
+        xch_coins = {
+            "success": True,
+            "records": [
+                {"coin": {"amount": 1_000_000_000_000}},
+                {"coin": {"amount": 1_000_000_000_000}},
+            ],
+        }
+        cat_coins = {
+            "success": True,
+            "records": [
+                {"coin": {"amount": 10_000}},
+                {"coin": {"amount": 10_000}},
+            ],
+        }
+
+        with patch("wallet.get_spendable_coins_rpc",
+                   side_effect=[xch_coins, cat_coins]), \
+             patch("wallet.get_wallet_balance", return_value=self._ENOUGH_BALANCE), \
+             patch("wallet.WALLET_ID_XCH", 1), \
+             patch("coin_manager.check_tier_size_drift_standalone",
+                   return_value=self._DRIFT), \
+             patch.object(coin_prep_blueprint.cfg, "TIER_ENABLED", True):
+            resp = self.client.get(
+                "/api/coin-prep/verify?tier_enabled=true"
+                "&inner_xch=1&inner_cat=10&inner_count=2",
+                environ_base=self._LOOPBACK,
+            )
+
+        body = resp.get_json()
+        self.assertFalse(body["all_sufficient"])
+        self.assertTrue(body["needs_coin_prep"])
+        self.assertEqual(body["reason"], "tier_size_drift")
+        self.assertEqual(body["tier_size_drift"], self._DRIFT)
 
 
 # ---------------------------------------------------------------------------

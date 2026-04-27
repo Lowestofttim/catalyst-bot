@@ -98,6 +98,9 @@ def api_bot_start():
     # ---- Pre-start validation (V1 parity) ----
     warnings = []
     errors = []
+    needs_coin_prep = False
+    coin_prep_error = None
+    tier_size_drift = []
 
     # Check CAT_ASSET_ID is configured
     if not cfg.CAT_ASSET_ID or cfg.CAT_ASSET_ID == "":
@@ -163,6 +166,8 @@ def api_bot_start():
             low_ratio=0.50, high_ratio=2.00, min_sample=2
         ) or []
         if _drift:
+            tier_size_drift = _drift
+            needs_coin_prep = True
             _summary = ", ".join(
                 f"{f['side']}/{f['tier']}={f['ratio']}× (n={f['coin_count']})"
                 for f in _drift
@@ -171,12 +176,22 @@ def api_bot_start():
                 "Coin tier sizes don't match Smart Settings — "
                 "re-run Coin Prep before starting. Drift: " + _summary
             )
+            coin_prep_error = errors[-1]
     except Exception as _drift_err:
         warnings.append(f"Tier-drift gate skipped: {_drift_err}")
 
     # Block start on critical errors
     if errors:
-        return jsonify({"status": "error", "errors": errors, "warnings": warnings}), 400
+        payload = {"success": False, "status": "error", "errors": errors, "warnings": warnings}
+        if needs_coin_prep:
+            payload.update({
+                "needs_coin_prep": True,
+                "reason": "tier_size_drift",
+                "error": coin_prep_error or errors[-1],
+                "message": coin_prep_error or errors[-1],
+                "tier_size_drift": tier_size_drift,
+            })
+        return jsonify(payload), 400
 
     api_server._reset_runtime_session_stats()
 
