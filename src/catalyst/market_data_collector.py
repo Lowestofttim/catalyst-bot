@@ -17,6 +17,7 @@ Key responsibilities:
 
 import time
 import math
+import threading
 import requests
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List, Any
@@ -50,6 +51,18 @@ CACHE_TTL_TRENDING = 10     # Dexie trending pairs — discovery use, not critic
 
 _session = requests.Session()
 _session.headers.update({"Content-Type": "application/json"})
+
+# Spacescan token-health calls are slow-changing Smart Defaults data, not the
+# critical fill-verification path. Pace them separately so cache refreshes do
+# not hammer the free tier and produce repeated 429 warning noise.
+_SPACESCAN_SMART_PRO_INTERVAL = 2.0
+_SPACESCAN_SMART_FREE_INTERVAL = 12.0
+_SPACESCAN_SMART_429_COOLDOWN = 60.0
+_SPACESCAN_SMART_WARN_DEDUP = 300.0
+_spacescan_smart_lock = threading.Lock()
+_spacescan_smart_last_call_at: Dict[str, float] = {}
+_spacescan_smart_cooldown_until: Dict[str, float] = {}
+_spacescan_smart_last_warned: Dict[str, float] = {}
 
 
 # ===========================================================================
@@ -865,6 +878,49 @@ def _spacescan_smart_timeout() -> tuple[int, int]:
     return (5, read_timeout)
 
 
+def _spacescan_smart_key(base_url: str, headers: Optional[Dict[str, str]]) -> tuple[str, bool]:
+    """Return a cooldown bucket key and whether the request uses a Pro key."""
+    has_key = bool((headers or {}).get("x-api-key"))
+    tier = "pro" if has_key else "free"
+    return f"{tier}:{base_url.rstrip('/')}", has_key
+
+
+def _spacescan_smart_before_request(key: str, is_pro: bool) -> Optional[str]:
+    """Return an error string if a Spacescan request should be skipped."""
+    now = time.time()
+    interval = _SPACESCAN_SMART_PRO_INTERVAL if is_pro else _SPACESCAN_SMART_FREE_INTERVAL
+
+    with _spacescan_smart_lock:
+        cooldown_until = _spacescan_smart_cooldown_until.get(key, 0.0)
+        if now < cooldown_until:
+            remaining = int(max(1, cooldown_until - now))
+            return f"HTTP 429 cooldown active ({remaining}s)"
+
+        last_call_at = _spacescan_smart_last_call_at.get(key, 0.0)
+        wait_for = max(0.0, (last_call_at + interval) - now)
+        scheduled_at = now + wait_for
+        _spacescan_smart_last_call_at[key] = scheduled_at
+
+    if wait_for > 0:
+        time.sleep(wait_for)
+    return None
+
+
+def _spacescan_smart_set_cooldown(key: str) -> None:
+    with _spacescan_smart_lock:
+        _spacescan_smart_cooldown_until[key] = time.time() + _SPACESCAN_SMART_429_COOLDOWN
+
+
+def _spacescan_smart_report_once(key: str, message: str) -> None:
+    now = time.time()
+    with _spacescan_smart_lock:
+        last = _spacescan_smart_last_warned.get(key, 0.0)
+        if now - last < _SPACESCAN_SMART_WARN_DEDUP:
+            return
+        _spacescan_smart_last_warned[key] = now
+    print(message)
+
+
 def _spacescan_smart_get(base_url: str, endpoint: str, *,
                          params: Optional[Dict[str, Any]] = None,
                          headers: Optional[Dict[str, str]] = None,
@@ -873,12 +929,21 @@ def _spacescan_smart_get(base_url: str, endpoint: str, *,
     url = f"{base_url.rstrip('/')}{endpoint}"
     timeout = _spacescan_smart_timeout()
     last_error = "unknown error"
+    cooldown_key, is_pro = _spacescan_smart_key(base_url, headers)
 
     for attempt in range(retries + 1):
+        cooldown_error = _spacescan_smart_before_request(cooldown_key, is_pro)
+        if cooldown_error:
+            return None, cooldown_error
+
         try:
             resp = _session.get(url, params=params, headers=headers, timeout=timeout)
 
-            if resp.status_code in {429, 500, 502, 503, 504}:
+            if resp.status_code == 429:
+                last_error = "HTTP 429"
+                _spacescan_smart_set_cooldown(cooldown_key)
+                return None, last_error
+            if resp.status_code in {500, 502, 503, 504}:
                 last_error = f"HTTP {resp.status_code}"
             else:
                 resp.raise_for_status()
@@ -1116,7 +1181,11 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
             time.sleep(1)
 
     if not result["has_data"] and info_errors:
-        print(f"[MARKET_DATA] Spacescan info failed: {' | '.join(info_errors)}")
+        joined = " | ".join(info_errors)
+        _spacescan_smart_report_once(
+            f"info:{joined}",
+            f"[MARKET_DATA] Spacescan info failed: {joined}",
+        )
 
     # ---- Holders ----
     # The /token/holders endpoint returns { "tokens": [...], "count": N, "total_count": REAL_TOTAL }
@@ -1154,7 +1223,10 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
             if result["holder_count"] > 0:
                 break  # Got a good answer — don't retry with free tier
         elif err:
-            print(f"[MARKET_DATA] Spacescan holders ({h_label}) failed: {err}")
+            _spacescan_smart_report_once(
+                f"holders:{h_label}:{err}",
+                f"[MARKET_DATA] Spacescan holders ({h_label}) failed: {err}",
+            )
         if h_idx < len(holder_attempts) - 1:
             time.sleep(1)
 
@@ -1213,7 +1285,11 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
             activity_errors.append(f"{label}: {err}")
 
     if result["activity_count"] == 0 and activity_errors:
-        print(f"[MARKET_DATA] Spacescan activity failed: {' | '.join(activity_errors)}")
+        joined = " | ".join(activity_errors)
+        _spacescan_smart_report_once(
+            f"activity:{joined}",
+            f"[MARKET_DATA] Spacescan activity failed: {joined}",
+        )
         # F77: surface the failure to the data-quality layer. Previously
         # the score ignored activity altogether; now set a flag so the
         # quality label can note "token health partial".

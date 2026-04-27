@@ -50,7 +50,11 @@ except ModuleNotFoundError:
 
 
 def _load_real_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).parent.parent / filename)
+    root = Path(__file__).parent.parent
+    module_path = root / filename
+    if not module_path.exists():
+        module_path = root / "src" / "catalyst" / filename
+    spec = importlib.util.spec_from_file_location(name, module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     sys.modules[name] = module
@@ -85,10 +89,42 @@ class SpacescanCollectorTests(unittest.TestCase):
     def setUp(self):
         self.orig_key = getattr(mdc.cfg, "SPACESCAN_API_KEY", "")
         self.orig_timeout = getattr(mdc.cfg, "SPACESCAN_TIMEOUT", 10)
+        mdc._spacescan_smart_last_call_at.clear()
+        mdc._spacescan_smart_cooldown_until.clear()
+        mdc._spacescan_smart_last_warned.clear()
 
     def tearDown(self):
         mdc.cfg.SPACESCAN_API_KEY = self.orig_key
         mdc.cfg.SPACESCAN_TIMEOUT = self.orig_timeout
+        mdc._spacescan_smart_last_call_at.clear()
+        mdc._spacescan_smart_cooldown_until.clear()
+        mdc._spacescan_smart_last_warned.clear()
+
+    @patch("market_data_collector.time.sleep", return_value=None)
+    def test_spacescan_smart_get_stops_retrying_after_429(self, _sleep):
+        calls = []
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            calls.append(url)
+            return FakeResponse(status_code=429, data={})
+
+        with patch.object(mdc._session, "get", side_effect=fake_get):
+            data, err = mdc._spacescan_smart_get(
+                mdc.cfg.SPACESCAN_FREE_URL,
+                "/token/holders/asset123",
+                retries=2,
+            )
+            data2, err2 = mdc._spacescan_smart_get(
+                mdc.cfg.SPACESCAN_FREE_URL,
+                "/token/holders/asset123",
+                retries=2,
+            )
+
+        self.assertIsNone(data)
+        self.assertEqual(err, "HTTP 429")
+        self.assertIsNone(data2)
+        self.assertIn("cooldown", err2)
+        self.assertEqual(len(calls), 1)
 
     @patch("market_data_collector.time.sleep", return_value=None)
     def test_fetch_spacescan_data_prefers_pro_and_uses_fallback_activity_route(self, _sleep):
