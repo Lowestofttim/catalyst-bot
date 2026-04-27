@@ -7,11 +7,9 @@ get_free_coins/lock_coin/free_coin/get_coin_summary, record_price/
 get_recent_prices, log_event/get_recent_events, get_setting/set_setting.
 """
 import os
-import sys
 import tempfile
 import unittest
 from decimal import Decimal
-from unittest.mock import patch
 
 try:
     import database as _db
@@ -391,6 +389,32 @@ class TestGetSetSetting(_TempDB):
         _db.set_setting("k2", "val2")
         self.assertEqual(_db.get_setting("k1"), "val1")
         self.assertEqual(_db.get_setting("k2"), "val2")
+
+
+@unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
+class TestSplashIncomingMissingTable(_TempDB):
+    """Splash helpers tolerate older or narrow test DBs without the table."""
+
+    def setUp(self):
+        super().setUp()
+        conn = _db.get_connection()
+        conn.execute("DROP TABLE splash_incoming_offers")
+        conn.commit()
+
+    def test_clear_missing_table_is_quiet_noop(self):
+        self.assertEqual(_db.clear_splash_incoming(), 0)
+
+    def test_prune_missing_table_is_quiet_noop(self):
+        self.assertEqual(_db.prune_splash_incoming(), 0)
+
+    def test_list_missing_table_returns_empty_list(self):
+        self.assertEqual(_db.get_splash_incoming_offers(), [])
+
+    def test_stats_missing_table_returns_zeroes(self):
+        stats = _db.get_splash_incoming_stats("assetA")
+        self.assertEqual(stats["total"], 0)
+        self.assertEqual(stats["new"], 0)
+        self.assertEqual(stats["relevant"], 0)
 
 
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")

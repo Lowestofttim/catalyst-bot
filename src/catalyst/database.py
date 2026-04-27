@@ -75,6 +75,14 @@ _db_initialized_path: str = ""
 _db_init_lock = threading.Lock()
 
 
+def _missing_splash_table(exc: Exception) -> bool:
+    """Return True when an older/test DB has no Splash incoming table."""
+    return (
+        isinstance(exc, sqlite3.OperationalError)
+        and "no such table: splash_incoming_offers" in str(exc).lower()
+    )
+
+
 def get_connection() -> sqlite3.Connection:
     """Get a thread-local database connection.
 
@@ -4683,18 +4691,23 @@ def get_splash_incoming_offers(status: str = None, limit: int = 50) -> List[Dict
     Returns list of offer dicts.
     """
     conn = get_connection()
-    if status:
-        rows = conn.execute(
-            "SELECT * FROM splash_incoming_offers WHERE status = ? "
-            "ORDER BY received_at DESC LIMIT ?",
-            (status, limit)
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM splash_incoming_offers ORDER BY received_at DESC LIMIT ?",
-            (limit,)
-        ).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM splash_incoming_offers WHERE status = ? "
+                "ORDER BY received_at DESC LIMIT ?",
+                (status, limit)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM splash_incoming_offers ORDER BY received_at DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        if _missing_splash_table(e):
+            return []
+        raise
 
 
 def update_splash_incoming_status(offer_id: int, status: str,
@@ -4733,31 +4746,37 @@ def get_splash_incoming_stats(asset_id: str = None) -> Dict:
     conn = get_connection()
     normalized_asset = (asset_id or "").strip().lower()
 
-    totals = conn.execute(
-        """
-        SELECT
-            COUNT(*) AS total,
-            SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS new_count,
-            SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_count,
-            SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored_count,
-            SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expired_count,
-            MAX(received_at) AS last_received_at
-        FROM splash_incoming_offers
-        """
-    ).fetchone()
-
-    relevant = None
-    if normalized_asset:
-        relevant = conn.execute(
+    try:
+        totals = conn.execute(
             """
             SELECT
-                COUNT(*) AS relevant_count,
-                MAX(received_at) AS last_relevant_at
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS new_count,
+                SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_count,
+                SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignored_count,
+                SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expired_count,
+                MAX(received_at) AS last_received_at
             FROM splash_incoming_offers
-            WHERE status = 'processed' AND lower(coalesce(pair_hint, '')) = ?
             """,
-            (normalized_asset,)
         ).fetchone()
+
+        relevant = None
+        if normalized_asset:
+            relevant = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS relevant_count,
+                    MAX(received_at) AS last_relevant_at
+                FROM splash_incoming_offers
+                WHERE status = 'processed' AND lower(coalesce(pair_hint, '')) = ?
+                """,
+                (normalized_asset,)
+            ).fetchone()
+    except Exception as e:
+        if not _missing_splash_table(e):
+            raise
+        totals = None
+        relevant = None
 
     return {
         "total": int((totals["total"] or 0) if totals else 0),
@@ -4792,6 +4811,8 @@ def clear_splash_incoming() -> int:
             conn.rollback()
         except Exception:
             pass
+        if _missing_splash_table(e):
+            return 0
         log_event("warning", "splash_db_error", f"Failed to clear incoming offers: {e}")
         return 0
 
@@ -4821,6 +4842,8 @@ def prune_splash_incoming(max_age_hours: int = 24) -> int:
             conn.rollback()
         except Exception:
             pass
+        if _missing_splash_table(e):
+            return 0
         log_event("warning", "splash_db_error", f"Failed to prune incoming offers: {e}")
         return 0
 
