@@ -83,9 +83,9 @@ def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None
       - cancelled
       - expired
 
-    Sage exposes richer terminal states like PENDING_CANCEL / CONFIRMED / FAILED.
-    For local bookkeeping we collapse those onto the nearest safe terminal state
-    so housekeeping can retire stale offers without violating DB constraints.
+    Sage exposes richer states like PENDING_CANCEL / CONFIRMED / FAILED.
+    Only terminal states collapse onto the local SQLite enum; transitional
+    states return None so cleanup leaves them for reconciliation.
     """
     from datetime import datetime, timezone
 
@@ -118,7 +118,9 @@ def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None
             pass
 
     if isinstance(status_val, int):
-        if status_val in {2, 3, 5}:  # pending_cancel / cancelled / failed
+        if status_val == 2:  # pending_cancel: not terminal; can still fill
+            return None
+        if status_val in {3, 5}:  # cancelled / failed
             return "cancelled"
         if status_val == 4:  # confirmed
             return "filled"
@@ -133,7 +135,9 @@ def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None
 
     if status_text in {"EXPIRED"}:
         return "expired"
-    if status_text in {"CANCELLED", "CANCELED", "PENDING_CANCEL", "FAILED"}:
+    if status_text in {"PENDING_CANCEL"}:
+        return None
+    if status_text in {"CANCELLED", "CANCELED", "FAILED"}:
         return "cancelled"
     if status_text in {"CONFIRMED", "COMPLETED", "SUCCEEDED", "SUCCESS"}:
         return "filled"
@@ -3296,6 +3300,8 @@ class BotLoop:
                     # not "cancelled" — otherwise PnL is permanently wrong.
                     fill_ids = set()
                     expire_ids = set()
+                    pending_cancel_ids = set()
+                    deferred_stale_ids = set()
                     try:
                         from wallet_sage import get_all_offers as sage_get_all
                         now_ts_cleanup = int(time.time())
@@ -3366,8 +3372,13 @@ class BotLoop:
                         for tid in stale_ids:
                             sage_offer = completed_map.get(tid)
                             if sage_offer:
+                                status_val = sage_offer.get("status")
+                                status_text = str(status_val).upper() if isinstance(status_val, str) else ""
+                                if status_val == 2 or status_text == "PENDING_CANCEL":
+                                    pending_cancel_ids.add(tid)
+                                    continue
                                 mapped = map_sage_terminal_offer_status(
-                                    sage_offer.get("status"),
+                                    status_val,
                                     sage_offer=sage_offer,
                                     local_offer=stale_db_map.get(tid, {}),
                                     now_ts=now_ts_cleanup,
@@ -3376,12 +3387,17 @@ class BotLoop:
                                     fill_ids.add(tid)
                                 elif mapped == "expired":
                                     expire_ids.add(tid)
+                                elif mapped is None:
+                                    deferred_stale_ids.add(tid)
                     except Exception as e:
                         log_event("warning", "db_cleanup_status_check_failed",
                                   f"Could not check completed offers at startup: {e}")
 
                     cancel_ids = [t for t in stale_ids
-                                  if t not in fill_ids and t not in expire_ids]
+                                  if t not in fill_ids
+                                  and t not in expire_ids
+                                  and t not in pending_cancel_ids
+                                  and t not in deferred_stale_ids]
 
                     if fill_ids:
                         from database import update_offer_status
@@ -3425,15 +3441,48 @@ class BotLoop:
                         log_event("info", "db_cleanup_expired",
                                   f"Marked {len(expire_ids)} offers as expired")
 
+                    if pending_cancel_ids:
+                        try:
+                            from database import transition_offer as _to, mark_cancel_attempted as _mca
+                        except Exception:
+                            _to = None
+                            _mca = None
+                        for tid in pending_cancel_ids:
+                            if _to:
+                                try:
+                                    _to(tid, "cancel_sent")
+                                except Exception:
+                                    pass
+                            if _mca:
+                                try:
+                                    _mca(tid)
+                                except Exception:
+                                    pass
+                        log_event("info", "db_cleanup_pending_cancel_deferred",
+                                  f"Deferred {len(pending_cancel_ids)} stale offers still "
+                                  f"PENDING_CANCEL in Sage; pending-cancel verifier will reconcile")
+
+                    if deferred_stale_ids:
+                        log_event("warning", "db_cleanup_stale_deferred",
+                                  f"Deferred {len(deferred_stale_ids)} stale offers with "
+                                  f"non-terminal Sage status; leaving open for next wallet sync")
+
                     cleaned = batch_cancel_stale_offers(cancel_ids) if cancel_ids else 0
                     total_cleaned = cleaned + len(fill_ids) + len(expire_ids)
+                    total_deferred = len(pending_cancel_ids) + len(deferred_stale_ids)
                     slog("STARTUP", f"Cleanup result: {cleaned} cancelled, "
-                                    f"{len(fill_ids)} filled, {len(expire_ids)} expired")
+                                    f"{len(fill_ids)} filled, {len(expire_ids)} expired, "
+                                    f"{total_deferred} deferred")
                     if total_cleaned == len(stale_ids):
                         log_event("info", "db_cleanup_done",
                                   f"Cleaned {total_cleaned} stale DB offers "
                                   f"({cleaned} cancelled, {len(fill_ids)} filled, "
                                   f"{len(expire_ids)} expired)")
+                    elif total_deferred:
+                        log_event("info", "db_cleanup_done",
+                                  f"Cleaned {total_cleaned}/{len(stale_ids)} stale DB offers "
+                                  f"({cleaned} cancelled, {len(fill_ids)} filled, "
+                                  f"{len(expire_ids)} expired, {total_deferred} deferred)")
                     else:
                         log_event("info", "db_cleanup_done",
                                   f"Cleaned {total_cleaned}/{len(stale_ids)} stale DB offers "

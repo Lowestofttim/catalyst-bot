@@ -33,11 +33,11 @@ class TestBotLoopSageStatusMapping(unittest.TestCase):
             "filled",
         )
 
-    def test_pending_cancel_and_failed_map_to_cancelled(self):
-        self.assertEqual(
-            self.map_status(2, sage_offer={}, local_offer={}),
-            "cancelled",
-        )
+    def test_pending_cancel_is_not_terminal(self):
+        self.assertIsNone(self.map_status(2, sage_offer={}, local_offer={}))
+        self.assertIsNone(self.map_status("PENDING_CANCEL", sage_offer={}, local_offer={}))
+
+    def test_failed_maps_to_cancelled(self):
         self.assertEqual(
             self.map_status("FAILED", sage_offer={}, local_offer={}),
             "cancelled",
