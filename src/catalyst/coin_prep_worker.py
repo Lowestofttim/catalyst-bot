@@ -1784,12 +1784,9 @@ class CoinPrepWorker:
         Falls back to sequential cancel if bulk RPC fails.
 
         Confirmation polling verifies all offers are actually gone before
-        returning.
-
-        GRACEFUL MIGRATION: If protected_offers.json exists (written by
-        api_server's graceful_pre_migration), those offers are kept alive to
-        maintain market liquidity during coin prep. Only non-protected offers
-        are cancelled.
+        returning. Coin prep needs the full wallet coin set unlocked; if any
+        offer remains open after retries, prep fails cleanly instead of
+        reshaping a partial wallet view.
         """
         try:
             self.log(f"\n{'='*60}")
@@ -1806,37 +1803,7 @@ class CoinPrepWorker:
             initial_count = len(open_offers)
             self.log(f"Found {initial_count} open offers")
             
-            # Load protected offer IDs (written by graceful_pre_migration in api_server)
-            protected_ids = set()
-            try:
-                try:
-                    from user_paths import protected_offers_file
-                    _protected_path = protected_offers_file()
-                except Exception:
-                    _protected_path = "protected_offers.json"
-                if os.path.exists(_protected_path):
-                    with open(_protected_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    protected_ids = set(data.get("protected_ids", []))
-                    ts = data.get("timestamp", 0)
-                    age = int(time.time() - ts) if ts else 0
-                    if protected_ids:
-                        self.log(f"  Loaded {len(protected_ids)} protected offers (age: {age}s)")
-                    # Safety: ignore stale protected file (>20 min old)
-                    if age > 1200:
-                        self.log(f"  Protected offers file is stale ({age}s) — ignoring")
-                        protected_ids = set()
-            except Exception as e:
-                self.log(f"  Could not read protected_offers file: {e}")
-            
-            # Filter out protected offers (kept alive for market liquidity during migration)
-            if protected_ids:
-                trade_ids = [o["id"] for o in open_offers if o["id"] not in protected_ids]
-                skipped = initial_count - len(trade_ids)
-                if skipped > 0:
-                    self.log(f"  Keeping {skipped} protected core offers alive for market liquidity")
-            else:
-                trade_ids = [o["id"] for o in open_offers]
+            trade_ids = [o["id"] for o in open_offers]
             
             if not trade_ids:
                 self.log("  All offers are protected — skipping cancellation")
@@ -2000,7 +1967,8 @@ class CoinPrepWorker:
             # All rounds exhausted — log final state and proceed
             if still_open:
                 self.log(f"\nTIMEOUT: {len(still_open)} offers still open after {max_rounds} rounds")
-                self.log("Proceeding anyway — consolidation will skip their locked coins")
+                self.log("Aborting coin prep — all offers must cancel before reshaping coins")
+                return False
             else:
                 self.log("\nAll cancellable offers confirmed!")
 
@@ -2010,7 +1978,7 @@ class CoinPrepWorker:
             self.log(f"Cancellation error: {e}")
             import traceback
             self.log(f"   {traceback.format_exc()}")
-            return True  # Don't fail coin prep
+            return False
 
     def consolidate_wallet(self, wallet_id: int, name: str) -> bool:
         """Consolidate all coins in wallet to single coin"""
@@ -5370,8 +5338,17 @@ class CoinPrepWorker:
             cancel_success = self.cancel_all_offers()
 
             if not cancel_success:
-                self.log("⚠️ Offer cancellation failed - coin prep may fail")
-                # Continue anyway - user can manually cancel
+                self.log("Offer cancellation failed - aborting coin prep before reshaping coins")
+                try:
+                    self.update_status(
+                        PrepPhase.ERROR,
+                        0.05,
+                        "Offer cancellation failed - coin prep aborted",
+                        error="offer_cancel_failed",
+                    )
+                except Exception:
+                    pass
+                return
 
             # Re-classify existing tier_spare coins against the CURRENT tier
             # sizes from cfg. Without this, coins designated by a previous
