@@ -204,6 +204,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests -q --ignore=tests/e2e --disable-warnings
 python -m ruff check . --select E9,F821
 python -m bandit -r src --ini .bandit -ll
+python scripts/check_tracked_secrets.py
 ```
 
 Integration tests that hit live APIs are excluded via `conftest.py` by default.

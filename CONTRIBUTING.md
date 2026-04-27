@@ -42,7 +42,7 @@ Maintainers will convert accepted Ideas into tracked Issues.
 2. Follow the conventions in [CLAUDE.md](CLAUDE.md): `Decimal` for prices, `slog()` for logging, DB access via `database.py`, etc.
 3. Install developer dependencies: `pip install -r requirements-dev.txt`.
 4. Run the tests: `python -m pytest tests -q --ignore=tests/e2e --disable-warnings`.
-5. Run the static checks: `python -m ruff check . --select E9,F821`, `python -m bandit -r src --ini .bandit -ll`, and `python scripts/check_env_example.py`.
+5. Run the static checks: `python -m ruff check . --select E9,F821`, `python -m bandit -r src --ini .bandit -ll`, `python scripts/check_env_example.py`, and `python scripts/check_tracked_secrets.py`.
 6. Open a PR with a clear description of **why** the change is needed.
 
 Small, focused PRs get reviewed faster. If you're unsure whether an approach will be accepted, open a Discussion first.

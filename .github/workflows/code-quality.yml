@@ -114,21 +114,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check for secrets in code
-        run: |
-          echo "Scanning for hardcoded secrets..."
-          found=0
-          for f in *.py; do
-            # Check for hardcoded private keys (64 hex chars in assignment)
-            if grep -Pn 'key\s*=\s*["\x27][a-f0-9]{64}["\x27]' "$f" 2>/dev/null; then
-              echo "POTENTIAL SECRET: $f"
-              found=$((found + 1))
-            fi
-          done
-          if [ $found -gt 0 ]; then
-            echo "WARNING: $found file(s) may contain hardcoded secrets"
-            exit 1
-          fi
-          echo "No hardcoded secrets detected"
+        run: python scripts/check_tracked_secrets.py
 
       - name: Check .gitignore covers sensitive files
         run: |

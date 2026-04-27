@@ -18,6 +18,7 @@ It is written for a non-developer maintainer.
 - Confirm the working branch is clean and all intended changes are committed.
 - Run the unit suite.
 - Run the security scan.
+- Run `python scripts/check_tracked_secrets.py`.
 - Check `git status --ignored` for any surprising local files.
 - Confirm no live database, wallet cert, token, or `.env` content is tracked.
 - Confirm the latest release artifacts were built from the intended tag.
