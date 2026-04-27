@@ -48,6 +48,9 @@ jobs:
           fi
           echo "All Python files pass syntax check"
 
+      - name: Ruff crash-class lint
+        run: python -m ruff check . --select E9,F821
+
       - name: Import check (critical modules)
         run: |
           echo "Verifying critical modules can be imported..."
@@ -114,8 +117,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install security tooling
+        run: pip install -r requirements-dev.txt
+
       - name: Check for secrets in code
         run: python scripts/check_tracked_secrets.py
+
+      - name: Bandit static security scan
+        run: python -m bandit -r src --ini .bandit -ll
 
       - name: Check .gitignore covers sensitive files
         run: |
