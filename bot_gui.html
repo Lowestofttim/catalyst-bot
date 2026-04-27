@@ -23833,6 +23833,12 @@
             if (!enabled || rows.length === 0) {
                 section.style.display = 'none';
                 grid.innerHTML = '';
+                // Clear the dedup cache too, otherwise the next emit
+                // arriving with the same HTML as the last good render
+                // hits the "no-op" branch below, sets display='block'
+                // but leaves grid.innerHTML empty — visible to the user
+                // as the panel header showing with no rows under it.
+                grid._lastTierHtml = null;
                 return;
             }
 
