@@ -21,6 +21,9 @@ It is written for a non-developer maintainer.
 - Run `python scripts/check_tracked_secrets.py`.
 - Check `git status --ignored` for any surprising local files.
 - Confirm no live database, wallet cert, token, or `.env` content is tracked.
+- Review tracked planning documents, especially `docs/partial_offers/*.docx`,
+  and remove or rewrite anything that is internal-only before switching the
+  repository public.
 - Confirm the latest release artifacts were built from the intended tag.
 - Review README wording so users understand the beta and trading-risk status.
 
