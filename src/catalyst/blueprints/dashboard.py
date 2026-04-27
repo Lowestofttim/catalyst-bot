@@ -228,10 +228,16 @@ def api_dashboard():
 
         # --- Wallet & Coins ---
         wallet = {"xch_spendable": 0, "xch_total": 0, "cat_spendable": 0, "cat_total": 0}
+        # tier_counts is intentionally OMITTED here. We only populate it
+        # below when TIER_ENABLED is true AND we successfully read the
+        # coin summary. Sending a placeholder {"enabled": False, ...}
+        # caused the GUI's spare-tier panel to flicker on/off whenever a
+        # transient DB read raised: the frontend treats enabled=false as
+        # "hide", but the user's tier mode is actually still on. Leaving
+        # the key absent lets the frontend keep its last known render.
         coins = {
             "xch_free": 0, "xch_locked": 0, "xch_total": 0,
             "cat_free": 0, "cat_locked": 0, "cat_total": 0,
-            "tier_counts": {"enabled": False, "xch": {}, "cat": {}},
         }
 
         # Fetch wallet balances directly from RPC (works whether bot is running or not)
