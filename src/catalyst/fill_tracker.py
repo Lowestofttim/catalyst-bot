@@ -283,14 +283,13 @@ class FillTracker:
                 if _check and isinstance(_check, dict):
                     _status = _check.get("status", "")
                     _status_norm = str(_status).upper()
-                    if _status in (0, 1) or _status_norm in (
+                    if _status in (0, 1, 2) or _status_norm in (
                         "ACTIVE", "OPEN", "PENDING_ACCEPT", "PENDING_CONFIRM",
-                        "PENDING", "IN_PROGRESS"
+                        "PENDING", "PENDING_CANCEL", "IN_PROGRESS"
                     ):
                         return (trade_id, True, False, _status_norm)
-                    elif _status in (2, 3, 5) or _status_norm in (
-                        "PENDING_CANCEL", "CANCELLED", "CANCELED",
-                        "FAILED", "EXPIRED"
+                    elif _status in (3, 5) or _status_norm in (
+                        "CANCELLED", "CANCELED", "FAILED", "EXPIRED"
                     ):
                         return (trade_id, False, True, _status_norm)
             except Exception as _e:
@@ -655,14 +654,13 @@ class FillTracker:
                             _status = _check.get("status", "")
                             _status_norm = str(_status).upper()
                             wallet_offer_status = _status_norm
-                            if _status in (0, 1) or _status_norm in (
+                            if _status in (0, 1, 2) or _status_norm in (
                                 "ACTIVE", "OPEN", "PENDING_ACCEPT", "PENDING_CONFIRM",
-                                "PENDING", "IN_PROGRESS"
+                                "PENDING", "PENDING_CANCEL", "IN_PROGRESS"
                             ):
                                 offer_still_exists = True
-                            elif _status in (2, 3, 5) or _status_norm in (
-                                "PENDING_CANCEL", "CANCELLED", "CANCELED",
-                                "FAILED", "EXPIRED"
+                            elif _status in (3, 5) or _status_norm in (
+                                "CANCELLED", "CANCELED", "FAILED", "EXPIRED"
                             ):
                                 offer_closed_nonfill = True
             except Exception as _wallet_err:

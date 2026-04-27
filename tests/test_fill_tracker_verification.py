@@ -171,6 +171,29 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertTrue(any(evt == "fill_wallet_closed_nonfill" for _, evt, _, _ in self.logged))
         self.assertTrue(any(evt == "offer_closed_nonfill" for _, evt, _, _ in self.logged))
 
+    def test_wallet_pending_cancel_stays_open_for_reconcile(self):
+        self.fake_wallet_sage.rpc = lambda *args, **kwargs: {"status": "PENDING_CANCEL"}
+        spacescan_calls = []
+
+        def _spacescan_should_not_run(*args, **kwargs):
+            spacescan_calls.append((args, kwargs))
+            self.fail("Pending-cancel offers are still fillable; leave them for cancel reconcile")
+
+        self.fake_spacescan.verify_fill = _spacescan_should_not_run
+        tracker = self.fill_tracker.FillTracker()
+        trade_id = "trade-pending-cancel"
+        tracker._previous_ids["sell"] = {trade_id}
+        tracker._previous_ids["buy"] = set()
+
+        result = tracker.detect_fills(set(), set(), {})
+
+        self.assertEqual(result["sell_fills"], [])
+        self.assertEqual(self.recorded, [])
+        self.assertEqual(self.status_updates, [])
+        self.assertEqual(self.lifecycle_updates, [])
+        self.assertEqual(spacescan_calls, [])
+        self.assertTrue(any(evt == "fill_wallet_still_open" for _, evt, _, _ in self.logged))
+
     def test_dexie_still_open_blocks_fill_recording(self):
         self.db_offer = {"coin_id": "0xcoin123", "dexie_id": "dexie-open"}
         self.fake_spacescan.verify_fill = lambda coin_id, our_address: True
