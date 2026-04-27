@@ -476,14 +476,14 @@ class FillTracker:
         # For a 14-fill sweep this compresses ~4min of HTTP waits to ~30s,
         # which is the main driver of offer-replacement latency after a sweep.
         #
-        # We skip obvious non-fills (bot-cancelled, still open in wallet,
-        # or closed as non-fill per wallet RPC) so we don't waste calls on
-        # trades that the main loop will early-continue anyway. Everything
-        # else is verified in parallel up-front and cached; the main loop
-        # pulls from the cache instead of calling _verify_fill_on_chain
-        # serially. Behaviour with an empty cache is identical to before —
-        # this is strictly a latency optimisation, not a correctness change.
+        # We skip obvious non-fills (still open in wallet, closed as non-fill
+        # per wallet RPC, or bot-cancelled with a Dexie terminal verdict) so we
+        # don't waste calls on trades that the main loop will early-continue
+        # anyway. Everything else is verified in parallel up-front and cached;
+        # the main loop pulls from the cache instead of calling
+        # _verify_fill_on_chain serially.
         _verify_cache: Dict[str, str] = {}
+        _terminal_prefilter: Dict[str, str] = {}
         _verify_candidates: List[str] = []
         for _pv_tid in disappeared_ids:
             # Do NOT skip bot-cancelled offers here. The in-memory flag is set
@@ -495,6 +495,26 @@ class FillTracker:
             if _pv_tid in _wallet_status_cache:
                 _pv_still, _pv_closed, _ = _wallet_status_cache[_pv_tid]
                 if _pv_still or _pv_closed:
+                    continue
+            try:
+                _pv_bot_cancelled = bool(
+                    self._offer_manager
+                    and self._offer_manager.is_bot_cancelled(_pv_tid)
+                )
+            except Exception:
+                _pv_bot_cancelled = False
+            if _pv_bot_cancelled:
+                # Requote/cancel cleanup is the hot path that can flood
+                # Spacescan. If Dexie already reports a terminal cancel/fill
+                # for an offer we cancelled, use that verdict before spending
+                # an on-chain verifier call. Unknown Dexie states still fall
+                # through to the Spacescan golden gate below.
+                try:
+                    _terminal = self._dexie_terminal_status(_pv_tid)
+                except Exception:
+                    _terminal = "unknown"
+                if _terminal in ("cancelled", "filled"):
+                    _terminal_prefilter[_pv_tid] = _terminal
                     continue
             _verify_candidates.append(_pv_tid)
 
@@ -574,6 +594,43 @@ class FillTracker:
                 log_event("debug", "expiry_check_error",
                           f"Expiry check failed for {trade_id[:16]}...: {_expiry_err}")
                 # Proceed with other verification gates
+
+            pre_terminal = _terminal_prefilter.get(trade_id)
+            if pre_terminal == "cancelled":
+                self._last_dexie_details.pop(trade_id, None)
+                status = "expired" if local_clock_expired else "cancelled"
+                self._retire_local_offer(
+                    trade_id,
+                    side,
+                    details_cache,
+                    status=status,
+                    event_type="offer_closed_nonfill",
+                    severity="info",
+                    suffix=("expired via Dexie terminal status"
+                            if status == "expired"
+                            else "retired after Dexie confirmed cancel "
+                                 "(pre-Spacescan)"),
+                    data_extra={
+                        "verification_state": "dexie_confirmed_cancelled",
+                        "source": "dexie_prefilter",
+                    },
+                )
+                continue
+            if pre_terminal == "filled":
+                try:
+                    transition_offer(trade_id, "fill_verified")
+                except Exception:
+                    pass
+                if was_cancelled:
+                    log_event("warning", "fill_beat_cancel_dexie",
+                              f"{side.upper()} offer {trade_id[:16]}... was marked "
+                              f"bot-cancelled but Dexie reports COMPLETED — "
+                              f"recording fill before Spacescan.",
+                              data={"trade_id": trade_id, "side": side})
+                fill_detail = self._record_fill(trade_id, side, details_cache)
+                if fill_detail:
+                    fills.append(fill_detail)
+                continue
 
             # ---- V5 FIX: Wallet-level verification gate ----
             # Before Spacescan, check if the wallet actually confirms the offer
@@ -1066,9 +1123,9 @@ class FillTracker:
                                       f"Spacescan inconclusive BUT Dexie confirms FILL "
                                       f"(status=4) for {trade_id[:16]}... — recording fill.")
                             return "filled"
-                        elif dexie_status == 0:  # Dexie: 0 = cancelled
+                        elif dexie_status == 3:  # Dexie: 3 = cancelled
                             log_event("info", "fill_rejected_via_dexie",
-                                      f"Dexie reports CANCELLED (status=0) for "
+                                      f"Dexie reports CANCELLED (status=3) for "
                                       f"{trade_id[:16]}... — not a fill.")
                             return "rejected"
             except Exception as _dexie_err:
@@ -1173,12 +1230,11 @@ class FillTracker:
     def _dexie_terminal_status(self, trade_id: str) -> str:
         """Ask Dexie whether this offer terminated as a fill or a cancel.
 
-        Used as a fallback when Spacescan verification is exhausted so we
-        don't silently lose a real fill to a rate-limit cascade. Dexie
-        indexes every on-chain spend and distinguishes status=3 (spend
-        was a cancel) from status=4 (spend was a fill) once a block
-        confirms. We trust that distinction because Dexie parses the
-        coin spends the same way the golden-gate Spacescan path does.
+        Used for bot-cancel cleanup and as a fallback when Spacescan
+        verification is exhausted so we don't silently lose a real fill
+        to a rate-limit cascade. Dexie indexes every on-chain spend and
+        distinguishes status=3 (spend was a cancel) from status=4
+        (spend was a fill) once a block confirms.
 
         Returns:
             "filled"    — Dexie status=4

@@ -9,6 +9,14 @@ class _FakeCfg:
     WALLET_ADDRESS = "xch1ourwalletaddress"
 
 
+class _FakeOfferManager:
+    def __init__(self, cancelled):
+        self.cancelled = set(cancelled)
+
+    def is_bot_cancelled(self, trade_id):
+        return trade_id in self.cancelled
+
+
 _MODS_TO_RESTORE = ("fill_tracker", "spacescan", "wallet_sage", "wallet",
                     "database", "config", "dexie_manager")
 
@@ -201,6 +209,74 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertTrue(any(evt == "fill_dexie_trade_mismatch_defer"
                             for _, evt, _, _ in self.logged))
         self.assertTrue(any(evt == "fill_verified"
+                            for _, evt, _, _ in self.logged))
+
+    def test_bot_cancelled_dexie_cancel_skips_spacescan(self):
+        self.db_offer = {
+            "coin_id": "0xcoin123",
+            "dexie_id": "dexie-cancelled",
+        }
+        trade_id = "trade-dexie-cancelled"
+        spacescan_calls = []
+
+        def _spacescan_should_not_run(*args, **kwargs):
+            spacescan_calls.append((args, kwargs))
+            self.fail("Spacescan should not run after Dexie confirms cancel")
+
+        self.fake_spacescan.verify_fill = _spacescan_should_not_run
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: {
+            "status": 3,
+            "trade_id": trade_id,
+            "involved_coins": ["0xcoin123"],
+        }
+
+        tracker = self.fill_tracker.FillTracker(
+            offer_manager=_FakeOfferManager({trade_id})
+        )
+        tracker._previous_ids["buy"] = {trade_id}
+        tracker._previous_ids["sell"] = set()
+
+        result = tracker.detect_fills(set(), set(), {})
+
+        self.assertEqual(result["buy_fills"], [])
+        self.assertEqual(self.recorded, [])
+        self.assertEqual(spacescan_calls, [])
+        self.assertIn((trade_id, "cancelled"), self.status_updates)
+        self.assertTrue(any(evt == "offer_closed_nonfill"
+                            for _, evt, _, _ in self.logged))
+
+    def test_bot_cancelled_dexie_fill_records_without_spacescan(self):
+        self.db_offer = {
+            "coin_id": "0xcoin123",
+            "dexie_id": "dexie-filled",
+        }
+        trade_id = "trade-dexie-filled"
+        spacescan_calls = []
+
+        def _spacescan_should_not_run(*args, **kwargs):
+            spacescan_calls.append((args, kwargs))
+            self.fail("Spacescan should not run after Dexie confirms fill")
+
+        self.fake_spacescan.verify_fill = _spacescan_should_not_run
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: {
+            "status": 4,
+            "trade_id": trade_id,
+            "involved_coins": ["0xcoin123"],
+        }
+        fill_detail = {"trade_id": trade_id, "side": "sell", "price": "0.1"}
+
+        tracker = self.fill_tracker.FillTracker(
+            offer_manager=_FakeOfferManager({trade_id})
+        )
+        tracker._record_fill = lambda trade_id, side, details_cache: fill_detail
+        tracker._previous_ids["buy"] = set()
+        tracker._previous_ids["sell"] = {trade_id}
+
+        result = tracker.detect_fills(set(), set(), {})
+
+        self.assertEqual(result["sell_fills"], [fill_detail])
+        self.assertEqual(spacescan_calls, [])
+        self.assertTrue(any(evt == "fill_beat_cancel_dexie"
                             for _, evt, _, _ in self.logged))
 
 
