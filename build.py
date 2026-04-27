@@ -161,7 +161,7 @@ def main():
 
     if not os.path.isfile(SPEC_FILE):
         print(f"\n  ERROR: Spec file not found: {SPEC_FILE}")
-        print("  Make sure build_windows.spec is in the same directory as build.py.")
+        print("  Make sure catalyst.spec is in the same directory as build.py.")
         sys.exit(1)
 
     _ensure_pyinstaller()

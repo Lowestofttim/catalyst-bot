@@ -53,12 +53,12 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
-      - name: Sync _version.py to tag
+      - name: Sync release metadata to tag
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          echo "__version__ = \"${version}\"" > _version.py
-          echo "Synced _version.py to ${version}"
+          python scripts/sync_release_metadata.py "${version}"
+          echo "Synced release metadata to ${version}"
 
       - name: Build with PyInstaller
         run: python build.py

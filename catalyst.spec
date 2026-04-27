@@ -1,9 +1,9 @@
-# build_windows.spec
+# catalyst.spec
 #
 # PyInstaller spec file for CATalyst — Windows (onedir bundle)
 #
 # Usage:
-#   pyinstaller build_windows.spec
+#   pyinstaller catalyst.spec
 #
 # Or via the helper script:
 #   python build.py
@@ -36,6 +36,20 @@ block_cipher = None
 # ---------------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(SPEC))  # noqa: F821  (SPEC is injected by PyInstaller)
 _SRC = os.path.join(_HERE, 'src', 'catalyst')
+
+
+def _read_app_version():
+    version_file = os.path.join(_SRC, '_version.py')
+    namespace = {}
+    try:
+        with open(version_file, 'r', encoding='utf-8') as handle:
+            exec(compile(handle.read(), version_file, 'exec'), namespace)
+    except Exception:
+        return '1.0.0'
+    return namespace.get('__version__', '1.0.0')
+
+
+_APP_VERSION = _read_app_version()
 
 # ---------------------------------------------------------------------------
 # Data files — everything the running app reads from the filesystem
@@ -292,8 +306,8 @@ if sys.platform == 'darwin':
         info_plist={
             'CFBundleName': 'CATalyst',
             'CFBundleDisplayName': 'CATalyst',
-            'CFBundleVersion': '1.0.0',
-            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleVersion': _APP_VERSION,
+            'CFBundleShortVersionString': _APP_VERSION,
             'NSHighResolutionCapable': True,
         },
     )
