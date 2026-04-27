@@ -198,7 +198,6 @@ class UnclaimedDepositsTests(unittest.TestCase):
             "amount_mojos": 750_000_000,   # 750,000 CAT at 3 decimals
             "first_seen": "2026-04-21 20:13:01",
             "wallet_type": "cat",
-            "wallet_type": "cat",
         })
         bus, cleanup = self._install(rows=[row])
         try:

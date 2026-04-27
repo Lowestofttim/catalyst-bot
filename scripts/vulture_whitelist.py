@@ -5,7 +5,8 @@
 # Usage: vulture . vulture_whitelist.py --min-confidence 80
 
 # --- src-layout bootstrap (auto-inserted) ---
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 _sys.path.insert(
     0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src", "catalyst")
 )

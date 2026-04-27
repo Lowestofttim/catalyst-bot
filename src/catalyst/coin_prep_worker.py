@@ -1027,7 +1027,7 @@ class CoinPrepWorker:
                 # merged-coin visibility check has a real chance to
                 # succeed before we fall back to "assuming success".
                 if my_tx_ids and poll >= 3:
-                    self.log(f"XCH fee cleanup TX cleared mempool but coin view lags — assuming success")
+                    self.log("XCH fee cleanup TX cleared mempool but coin view lags — assuming success")
                     return True
 
             if poll > 0 and poll % 4 == 0:

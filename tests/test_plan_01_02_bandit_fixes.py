@@ -96,7 +96,9 @@ class TestTxFeesFullNodeRpcTLS(unittest.TestCase):
 
     def test_verify_false_not_hardcoded_as_kwarg_in_full_node_rpc(self):
         """requests.post must not be called with literal verify=False in _full_node_rpc."""
-        import ast, inspect, tx_fees
+        import ast
+        import inspect
+        import tx_fees
         src = inspect.getsource(tx_fees._full_node_rpc)
         tree = ast.parse(src)
         for node in ast.walk(tree):

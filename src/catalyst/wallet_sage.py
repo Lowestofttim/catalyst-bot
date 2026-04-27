@@ -3097,7 +3097,7 @@ def _cancel_offers_bulk_proper(offer_ids: list, fee_mojos: int = 0) -> bool:
     # "pending cancel" rows. Validate the JSON body before claiming
     # success.
     if not isinstance(submit_resp, dict):
-        print(f"   [Bulk] submit_transaction response not a dict — falling back")
+        print("   [Bulk] submit_transaction response not a dict — falling back")
         return False
     _sub_err = submit_resp.get("error") or submit_resp.get("reason")
     _sub_status = str(submit_resp.get("status", "") or "").lower()
@@ -3106,7 +3106,7 @@ def _cancel_offers_bulk_proper(offer_ids: list, fee_mojos: int = 0) -> bool:
               f"(error={_sub_err!r}, status={_sub_status!r}) — falling back")
         return False
     if "success" in submit_resp and submit_resp.get("success") is False:
-        print(f"   [Bulk] submit_transaction success=false — falling back")
+        print("   [Bulk] submit_transaction success=false — falling back")
         return False
     return True
 

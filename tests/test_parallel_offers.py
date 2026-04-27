@@ -163,7 +163,7 @@ try:
     print(f"  [OK] Sage v{version} reachable")
 except Exception as e:
     print(f"  [FAIL] Cannot reach Sage: {e}")
-    sys.exit(1)  # noqa: safe — excluded from pytest via pytest.ini
+    sys.exit(1)  # Safe: excluded from pytest via pytest.ini.
 
 # Step 2: Get available coins
 print()
