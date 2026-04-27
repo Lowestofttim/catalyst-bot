@@ -5346,7 +5346,22 @@ class CoinManager:
                 # a partial refill makes forward progress. When the tier is
                 # empty, the guard's empty_tier_bypass lets us overshoot —
                 # skip the pre-clamp so the bypass path still works.
-                if not tier_is_empty:
+                # Same skip applies when the wallet has enough excess
+                # unlocked spare coins to back the request: the soft
+                # budget exists to stop unbounded spend, but with excess
+                # spares already on hand the spend is bounded by what
+                # we already hold (hard reserve still applies inside
+                # _check_topup_reserve_guards).
+                bypass_pre_clamp = tier_is_empty
+                if not bypass_pre_clamp:
+                    requested_pool_mojos = num_to_create * trading_size_mojos
+                    excess_mojos_pre = self._unlocked_excess_spare_mojos(
+                        inventory=inventory,
+                        is_cat=is_cat,
+                    )
+                    if excess_mojos_pre >= requested_pool_mojos:
+                        bypass_pre_clamp = True
+                if not bypass_pre_clamp:
                     budget_cap = self._max_coins_within_topup_budget(
                         is_cat=is_cat,
                         trading_size_mojos=trading_size_mojos,
