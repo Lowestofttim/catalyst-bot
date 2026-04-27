@@ -42,7 +42,18 @@ try:
         if os.path.isfile(_example):
             try:
                 import shutil as _shutil
-                _shutil.copy2(_example, _ENV_PATH)
+                _tmp_env = f"{_ENV_PATH}.{os.getpid()}.tmp"
+                _shutil.copy2(_example, _tmp_env)
+                try:
+                    os.replace(_tmp_env, _ENV_PATH)
+                except OSError:
+                    # Another process may have won the first-run seed race.
+                    if not os.path.exists(_ENV_PATH):
+                        raise
+                    try:
+                        os.unlink(_tmp_env)
+                    except OSError:
+                        pass
             except Exception as _copy_err:
                 print(f"[config] Could not seed .env from .env.example: {_copy_err}", flush=True)
 except Exception as _e:
