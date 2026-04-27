@@ -346,6 +346,26 @@ class TestExtractOpenOfferIds(_PatchedCfg):
         self.assertEqual(buys, set())
 
 
+class TestRequoteFailureBackoff(_PatchedCfg):
+    """Emergency/forced requote failure backoff helpers."""
+
+    def test_set_backoff_clears_force_flag(self):
+        loop = _make_loop()
+        loop._force_requote["buy"] = True
+        with patch.object(_fake_cfg_instance, "REQUOTE_FAILURE_BACKOFF_SECS", 12, create=True):
+            with patch.object(bot_loop.time, "time", return_value=100.0):
+                loop._set_requote_failure_backoff("buy", "unit_test")
+        self.assertFalse(loop._force_requote["buy"])
+        with patch.object(bot_loop.time, "time", return_value=105.0):
+            self.assertAlmostEqual(loop._requote_backoff_remaining("buy"), 7.0)
+
+    def test_expired_backoff_returns_zero(self):
+        loop = _make_loop()
+        loop._requote_failure_backoff_until["sell"] = 100.0
+        with patch.object(bot_loop.time, "time", return_value=101.0):
+            self.assertEqual(loop._requote_backoff_remaining("sell"), 0.0)
+
+
 class TestProbeHoldTimer(_PatchedCfg):
     """_probe_hold_seconds_remaining and _probe_has_matured — confirm timer."""
 

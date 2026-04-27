@@ -312,6 +312,7 @@ class BotLoop:
         # the dead probe offset from triggering a spurious requote.
         self._last_quoted_plain_mid: Dict[str, Decimal] = {"buy": Decimal("0"), "sell": Decimal("0")}
         self._force_requote: Dict[str, bool] = {"buy": False, "sell": False}
+        self._requote_failure_backoff_until: Dict[str, float] = {"buy": 0.0, "sell": 0.0}
         self._current_mid_price: Decimal = Decimal("0")
         self._requoted_this_cycle: set = set()   # sides requoted in current cycle
 
@@ -540,6 +541,37 @@ class BotLoop:
         # Flag: __init__ complete — get_state() checks this to avoid
         # AttributeError when SSE connects before all attrs are set.
         self._init_complete = True
+
+    def _requote_backoff_remaining(self, side: str) -> float:
+        try:
+            until = float(self._requote_failure_backoff_until.get(side, 0) or 0)
+        except Exception:
+            return 0.0
+        return max(0.0, until - time.time())
+
+    def _set_requote_failure_backoff(self, side: str, reason: str, data: Optional[Dict] = None) -> None:
+        try:
+            base = float(getattr(cfg, "REQUOTE_FAILURE_BACKOFF_SECS", 0) or 0)
+        except Exception:
+            base = 0.0
+        if base <= 0:
+            try:
+                base = max(90.0, float(getattr(cfg, "REQUOTE_COOLDOWN_SECS", 60) or 60))
+            except Exception:
+                base = 90.0
+        until = time.time() + base
+        self._requote_failure_backoff_until[side] = until
+        self._force_requote[side] = False
+        payload = {"side": side, "reason": reason, "backoff_secs": round(base, 1)}
+        if data:
+            payload.update(data)
+        log_event(
+            "warning",
+            "requote_failure_backoff",
+            f"{side} requote made no progress ({reason}) — backing off for "
+            f"{base:.0f}s so wallet cancels/coin reconciliation can settle",
+            data=payload,
+        )
 
     def _set_state(self, **updates):
         """Update _bot_state under the state lock (GUI-visible state).
@@ -4700,6 +4732,20 @@ class BotLoop:
                             _direction_note = "direction error"
 
                         for _target_side in _target_sides:
+                            _backoff_remaining = self._requote_backoff_remaining(_target_side)
+                            if _backoff_remaining > 0:
+                                log_event(
+                                    "info",
+                                    "amm_drift_requote_backoff",
+                                    f"AMM drift would force {_target_side} requote, "
+                                    f"but that side is in requote failure backoff "
+                                    f"for {_backoff_remaining:.0f}s",
+                                    data={
+                                        "side": _target_side,
+                                        "remaining_secs": round(_backoff_remaining, 1),
+                                    },
+                                )
+                                continue
                             _last_force = float(
                                 self._last_amm_drift_force_at.get(_target_side, 0) or 0
                             )
@@ -5432,6 +5478,21 @@ class BotLoop:
                 )
 
                 if is_vulnerable and move_bps > cfg.ARB_ALERT_THRESHOLD_BPS:
+                    _backoff_remaining = self._requote_backoff_remaining(eq_side)
+                    if _backoff_remaining > 0:
+                        log_event(
+                            "info",
+                            "emergency_requote_backoff",
+                            f"Emergency {eq_side} requote suppressed for "
+                            f"{_backoff_remaining:.0f}s after a zero-progress "
+                            f"requote failure",
+                            data={
+                                "side": eq_side,
+                                "remaining_secs": round(_backoff_remaining, 1),
+                                "move_bps": str(move_bps),
+                            },
+                        )
+                        continue
                     msg = (f"[EMERGENCY] requote of {eq_side} side -- "
                            f"price shock {_bps_to_pct(move_bps)} "
                            f"({last_q:.8f} -> {mid_price:.8f}, "
@@ -5516,9 +5577,14 @@ class BotLoop:
                                       f"Emergency {eq_side} requote replaced "
                                       f"0/{original_target} offers despite "
                                       f"severe price shock — leaving stale "
-                                      f"offers exposed until next cycle retry",
+                                      f"offers exposed until wallet state settles",
                                       data={"side": eq_side,
                                             "original_target": original_target})
+                            self._set_requote_failure_backoff(
+                                eq_side,
+                                "emergency_no_progress",
+                                data={"original_target": original_target},
+                            )
                     else:
                         # Legacy return format (list)
                         new_offers = requote_result if isinstance(requote_result, list) else []
@@ -5553,9 +5619,8 @@ class BotLoop:
                         log_event("info", "emergency_requote_done", done_msg)
                     else:
                         skipped_msg = (f"[WARN] Emergency requote {eq_side}: "
-                                       f"0 new offers produced — leaving "
-                                       f"force_requote set and allowing Step 10 "
-                                       f"ladder-fill to retry this cycle")
+                                       f"0 new offers produced — backing off "
+                                       f"so wallet settlement/reconcile can catch up")
                         print(skipped_msg, flush=True)
                         log_event("warning", "emergency_requote_retry_eligible",
                                   skipped_msg,
@@ -6546,13 +6611,23 @@ class BotLoop:
                         log_event("warning", "requote_no_progress",
                                   f"{side} requote made zero progress "
                                   f"(target {target_count_trunc}, original {original_target}) "
-                                  f"— leaving baseline and force_requote untouched "
-                                  f"so next cycle retries.",
+                                  f"— backing off so wallet state can settle "
+                                  f"before retrying.",
                                   data={"side": side,
                                         "replaced": replaced_count,
                                         "target": target_count_trunc,
                                         "original_target": original_target,
                                         "tier_filter_drained": tier_filter_drained})
+                        if forced or severity == RequoteSeverity.EMERGENCY:
+                            self._set_requote_failure_backoff(
+                                side,
+                                "forced_requote_no_progress",
+                                data={
+                                    "target": target_count_trunc,
+                                    "original_target": original_target,
+                                    "severity": severity.value,
+                                },
+                            )
                 else:
                     # Legacy return format (list)
                     new_offers = requote_result if isinstance(requote_result, list) else []
@@ -6732,6 +6807,27 @@ class BotLoop:
                             "effective_count": effective_sell_count,
                             "target": int(cfg.MAX_ACTIVE_SELL_OFFERS),
                             "recently_created": self.offer_manager.get_recently_created_count("sell")})
+
+        _buy_backoff = self._requote_backoff_remaining("buy")
+        if _buy_backoff > 0:
+            skip_buy = True
+            log_event(_skip_level(_buy_under), "create_skip_requote_backoff",
+                      f"Skipping buy creation — requote failure backoff has "
+                      f"{_buy_backoff:.0f}s remaining",
+                      data={"side": "buy",
+                            "remaining_secs": round(_buy_backoff, 1),
+                            "effective_count": effective_buy_count,
+                            "target": int(cfg.MAX_ACTIVE_BUY_OFFERS)})
+        _sell_backoff = self._requote_backoff_remaining("sell")
+        if _sell_backoff > 0:
+            skip_sell = True
+            log_event(_skip_level(_sell_under), "create_skip_requote_backoff",
+                      f"Skipping sell creation — requote failure backoff has "
+                      f"{_sell_backoff:.0f}s remaining",
+                      data={"side": "sell",
+                            "remaining_secs": round(_sell_backoff, 1),
+                            "effective_count": effective_sell_count,
+                            "target": int(cfg.MAX_ACTIVE_SELL_OFFERS)})
 
         buy_enabled  = (cfg.ENABLE_BUY  and not skip_buy
                         and effective_buy_count  < cfg.MAX_ACTIVE_BUY_OFFERS
