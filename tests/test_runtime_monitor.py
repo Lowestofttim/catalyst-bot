@@ -268,7 +268,7 @@ class RuntimeMonitorTests(unittest.TestCase):
         state = monitor.get_state()
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertIn("ladder_shape_drift", active_codes)
-        self.assertTrue(any(call.args[1] == "bot_health_ladder_shape" for call in log_event_mock.call_args_list))
+        self.assertEqual(state["status"], "warning")
 
     def test_parses_repeated_slow_superlog_calls_into_perf_alert(self):
         bot = _FakeBot()

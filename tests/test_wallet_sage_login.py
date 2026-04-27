@@ -15,6 +15,9 @@ class TestWalletSageLogin(unittest.TestCase):
         """Reset init state so each test starts clean."""
         wallet_sage._init_ok = False
         wallet_sage._init_last_attempt = 0.0
+        self._reachable_patch = patch.object(wallet_sage, "_sage_rpc_port_reachable", return_value=True)
+        self._reachable_patch.start()
+        self.addCleanup(self._reachable_patch.stop)
 
     def test_login_follows_version_initialize_login_sequence(self):
         """sage_login should call get_version -> initialize -> login -> get_current_key."""

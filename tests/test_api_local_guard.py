@@ -86,7 +86,7 @@ class TestApiLocalGuard(unittest.TestCase):
         self.assertEqual(resp.get_json()["error"], "Only absolute http/https URLs are allowed")
 
     def test_open_external_uses_system_browser_for_http_urls(self):
-        with patch.object(api_server.os, "startfile", create=True) as mock_startfile:
+        with patch.object(api_server.webbrowser, "open", return_value=True) as mock_open:
             resp = self.client.post(
                 "/api/open-external",
                 json={"url": "https://sagewallet.net/"},
@@ -95,7 +95,7 @@ class TestApiLocalGuard(unittest.TestCase):
             )
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.get_json()["success"])
-        mock_startfile.assert_called_once_with("https://sagewallet.net/")
+        mock_open.assert_called_once_with("https://sagewallet.net/", new=2)
 
     def test_smart_defaults_orderbook_uses_dexie_v1_params(self):
         calls = []
