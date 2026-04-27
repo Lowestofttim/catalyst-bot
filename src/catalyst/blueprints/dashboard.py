@@ -8,6 +8,7 @@ _get_live_local_offer_edges, _get_spacescan_market_context, etc.).
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib.parse import quote

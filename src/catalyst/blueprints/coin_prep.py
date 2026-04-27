@@ -30,7 +30,7 @@ from flask import Blueprint, Response, jsonify, request, send_file
 
 import api_server
 from config import cfg
-from database import log_event, get_stats, backup_database
+from database import log_event, get_stats, backup_database, get_connection
 
 
 # Package directory — the parent of blueprints/ (i.e. src/catalyst/).
