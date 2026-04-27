@@ -110,6 +110,35 @@ class TestWalletBeginStartup(_FlaskBase):
 
 
 # ---------------------------------------------------------------------------
+# 2b. POST /api/sage/daemon/start
+# ---------------------------------------------------------------------------
+
+@unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
+class TestSageDaemonStart(_FlaskBase):
+
+    def test_requires_token(self):
+        resp = self._post("/api/sage/daemon/start",
+                          {"services": "all"}, auth=False)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_returns_start_chia_result(self):
+        result = {"success": True, "message": "Sage wallet runs independently"}
+        with patch("sage_node.start_chia", return_value=result) as mock_start:
+            resp = self._post("/api/sage/daemon/start", {"services": "all"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), result)
+        mock_start.assert_called_once_with("all")
+
+    def test_defaults_services_to_all(self):
+        with patch("sage_node.start_chia",
+                   return_value={"success": True}) as mock_start:
+            self._post("/api/sage/daemon/start")
+
+        mock_start.assert_called_once_with("all")
+
+
+# ---------------------------------------------------------------------------
 # 3. GET /api/sage/startup-status
 # ---------------------------------------------------------------------------
 

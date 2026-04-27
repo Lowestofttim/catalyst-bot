@@ -132,6 +132,24 @@ def api_wallet_retry_sage_connect():
         return api_server._api_error(e, request.path)
 
 
+@bp.route("/api/sage/daemon/start", methods=["POST"])
+def api_sage_daemon_start():
+    """Legacy GUI alias for starting wallet services.
+
+    Sage itself has no Chia daemon, but old frontend code still calls this
+    endpoint before logging in. Route it through sage_node.start_chia(), which
+    already returns a safe no-op success for Sage and starts Chia services when
+    WALLET_TYPE=chia.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        services = str(data.get("services", "all") or "all").lower().strip()
+        import sage_node
+        return jsonify(sage_node.start_chia(services))
+    except Exception as e:
+        return api_server._api_error(e, request.path)
+
+
 @bp.route("/api/wallet/begin-startup", methods=["POST"])
 def api_wallet_begin_startup():
     """Trigger wallet preload after the user has chosen how to connect.
