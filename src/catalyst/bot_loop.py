@@ -7236,6 +7236,7 @@ class BotLoop:
             self.offer_manager.cancel_offers(
                 trade_ids,
                 reason="oversized_coin_reclaim",
+                force_storm=True,
                 skip_confirmation=True,
             )
             return True

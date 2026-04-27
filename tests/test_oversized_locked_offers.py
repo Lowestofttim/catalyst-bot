@@ -3,10 +3,12 @@ import sys
 import tempfile
 import unittest
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import database
+import bot_loop
 
 
 class OversizedLockedOffersTests(unittest.TestCase):
@@ -93,6 +95,38 @@ class OversizedLockedOffersTests(unittest.TestCase):
         )
 
         self.assertEqual(database.get_oversized_locked_offers(max_ratio=1.5), [])
+
+    def test_reclaim_bypasses_cancel_storm_guard(self):
+        loop = bot_loop.BotLoop.__new__(bot_loop.BotLoop)
+        loop.offer_manager = MagicMock()
+        flagged = [
+            {
+                "trade_id": f"trade-{i}",
+                "side": "buy",
+                "tier": "mid",
+                "wallet_type": "xch",
+                "amount_mojos": 5_000_000_000_000,
+                "expected_mojos": 1_000_000_000_000,
+                "ratio": "5.0000",
+                "reason": "oversized_coin_locked",
+            }
+            for i in range(6)
+        ]
+
+        with (
+            patch.object(bot_loop.cfg, "TIER_ENABLED", True),
+            patch.object(bot_loop.cfg, "COIN_MAX_SIZE_RATIO", 1.5),
+            patch.object(bot_loop.cfg, "CAT_DECIMALS", 3),
+            patch("database.get_oversized_locked_offers", return_value=flagged),
+        ):
+            self.assertTrue(loop._reclaim_oversized_locked_offers())
+
+        loop.offer_manager.cancel_offers.assert_called_once_with(
+            [f"trade-{i}" for i in range(6)],
+            reason="oversized_coin_reclaim",
+            force_storm=True,
+            skip_confirmation=True,
+        )
 
 
 if __name__ == "__main__":
