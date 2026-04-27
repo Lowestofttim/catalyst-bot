@@ -208,6 +208,52 @@ class TopupPoolRefundTests(unittest.TestCase):
                 is_cat=False, amount_mojos=2_650_230_000_000)
             self.assertEqual(storage["topup_pool_xch_spent_mojos"], "0")
 
+    def test_pool_rebuild_refunds_spent_counter(self):
+        """Excess tier coins consolidated back into reserve credit the pool."""
+        manager = self._make_manager()
+        storage = {"topup_pool_xch_spent_mojos": "500"}
+        inventory = {
+            "reserve": [],
+            "small": [],
+            "inner": [
+                {"coin_id": "0xa", "coin": {"amount": 100}},
+                {"coin_id": "0xb", "coin": {"amount": 100}},
+                {"coin_id": "0xc", "coin": {"amount": 100}},
+                {"coin_id": "0xd", "coin": {"amount": 100}},
+            ],
+            "mid": [],
+            "outer": [],
+            "extreme": [],
+        }
+
+        def _fake_get(key, default="0"):
+            return storage.get(key, default)
+
+        def _fake_set(key, value):
+            storage[key] = value
+
+        with patch("database.get_setting", side_effect=_fake_get), \
+             patch("database.set_setting", side_effect=_fake_set), \
+             patch.object(manager, "_configured_tier_sizes_xch",
+                          return_value={"inner": 1}), \
+             patch.object(coin_manager, "get_weighted_tier_prep_counts",
+                          return_value={"inner": 1}), \
+             patch.object(manager, "_consolidate_coins", return_value=True), \
+             patch.object(coin_manager, "log_event"):
+            result = manager._smart_topup_wallet(
+                "XCH-inner",
+                wallet_id=1,
+                inventory=inventory,
+                trading_size_mojos=100,
+                needed=1,
+                is_cat=False,
+            )
+
+        self.assertEqual(result, "rebuild")
+        # Four inner coins, target/floor=1, so three excess coins (300 mojos)
+        # were consolidated back into the topup pool.
+        self.assertEqual(storage["topup_pool_xch_spent_mojos"], "200")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5647,6 +5647,12 @@ class CoinManager:
                     log_event("success", f"topup_{name.lower()}_pool_rebuild_ok",
                               f"{name} topup pool rebuild submitted — new reserve coin "
                               f"will be classified and split on the next topup cycle.")
+                    # Excess tier_spare coins are value returning to the topup
+                    # pool, same as misfit absorption. Credit the soft-budget
+                    # counter back now so a successful pool rebuild does not
+                    # leave the budget guard thinking those coins are still
+                    # permanently spent.
+                    self._record_topup_pool_refund(is_cat, int(_pool_total))
                     # Return "rebuild" (not True) so the caller can distinguish a
                     # pool consolidation from an actual tier split. Pool rebuilds
                     # should NOT consume the single-action slot — the opposite side
