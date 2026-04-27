@@ -338,7 +338,7 @@ def _prune_archive(archive_path: str):
 
         # If still over size limit, keep fewer
         while len(keep) > 10:
-            total = sum(len(l) for l in keep)
+            total = sum(len(line) for line in keep)
             if total <= MAX_ARCHIVE_BYTES:
                 break
             keep = keep[len(keep) // 4:]  # Drop oldest quarter
@@ -844,7 +844,7 @@ def intercept_log_event():
             _mod = sys.modules.get(_mod_name)
             if _mod and hasattr(_mod, "log_event"):
                 try:
-                    setattr(_mod, "log_event", _patched_log_event)
+                    _mod.log_event = _patched_log_event
                 except Exception:
                     pass
 

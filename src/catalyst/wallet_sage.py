@@ -349,8 +349,8 @@ def _get_sage_connection(timeout: int = 10):
     if conn is not None:
         # Check if the existing connection is still usable
         try:
-            conn.sock  # will be None if closed
-            if conn.sock is not None:
+            sock = getattr(conn, "sock", None)
+            if sock is not None:
                 conn.timeout = timeout
                 return conn
         except Exception:

@@ -159,7 +159,7 @@ class TestSSEInitialState(_FlaskBase):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
-        lines = [l for l in raw.splitlines() if l.startswith("data:")]
+        lines = [line for line in raw.splitlines() if line.startswith("data:")]
         self.assertTrue(len(lines) >= 1)
         first = json.loads(lines[0].split("data: ", 1)[1])
         self.assertNotEqual(first.get("type"), "state")
@@ -176,7 +176,7 @@ class TestSSEInitialState(_FlaskBase):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
-        lines = [l for l in raw.splitlines() if l.startswith("data:")]
+        lines = [line for line in raw.splitlines() if line.startswith("data:")]
         self.assertTrue(len(lines) >= 1, f"No data lines in: {raw!r}")
         first = json.loads(lines[0].split("data: ", 1)[1])
         self.assertEqual(first.get("type"), "state")
@@ -193,7 +193,7 @@ class TestSSEInitialState(_FlaskBase):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
-        lines = [l for l in raw.splitlines() if l.startswith("data:")]
+        lines = [line for line in raw.splitlines() if line.startswith("data:")]
         self.assertTrue(len(lines) >= 1)
         first = json.loads(lines[0].split("data: ", 1)[1])
         self.assertIsInstance(first.get("data"), dict)
@@ -214,7 +214,7 @@ class TestSSEMessageFormat(_FlaskBase):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
-        lines = [l for l in raw.splitlines() if l.startswith("data:")]
+        lines = [line for line in raw.splitlines() if line.startswith("data:")]
         self.assertTrue(len(lines) >= 1)
         msg = json.loads(lines[0].split("data: ", 1)[1])
         self.assertEqual(msg.get("type"), "price_update")
@@ -238,9 +238,9 @@ class TestSSEMessageFormat(_FlaskBase):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
-        lines = [l for l in raw.splitlines() if l.startswith("data:")]
+        lines = [line for line in raw.splitlines() if line.startswith("data:")]
         self.assertEqual(len(lines), 2)
-        types = [json.loads(l.split("data: ", 1)[1]).get("type") for l in lines]
+        types = [json.loads(line.split("data: ", 1)[1]).get("type") for line in lines]
         self.assertIn("msg1", types)
         self.assertIn("msg2", types)
 
