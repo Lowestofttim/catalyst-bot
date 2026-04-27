@@ -23809,9 +23809,18 @@
             const grid = document.getElementById('coinTierGrid');
             if (!section || !grid) return;
 
-            const enabled = !!(tierData && tierData.enabled);
-            const xch = (tierData && tierData.xch) || {};
-            const cat = (tierData && tierData.cat) || {};
+            // Missing tierData = "no update available right now" (e.g. an
+            // SSE event that didn't carry tier info, or a /api/dashboard
+            // poll where the coin-summary read raised). Don't disturb the
+            // panel — the previous render is still accurate. Without this
+            // guard the panel flickered on/off between every emit.
+            if (tierData === null || tierData === undefined) {
+                return;
+            }
+
+            const enabled = !!tierData.enabled;
+            const xch = tierData.xch || {};
+            const cat = tierData.cat || {};
             const order = ['inner', 'mid', 'outer', 'extreme', 'sniper', 'fees', 'reserve', 'dust'];
             const rows = order.filter(name =>
                 Object.prototype.hasOwnProperty.call(xch, name) ||
@@ -23824,6 +23833,12 @@
             if (!enabled || rows.length === 0) {
                 section.style.display = 'none';
                 grid.innerHTML = '';
+                // Clear the dedup cache too, otherwise the next emit
+                // arriving with the same HTML as the last good render
+                // hits the "no-op" branch below, sets display='block'
+                // but leaves grid.innerHTML empty — visible to the user
+                // as the panel header showing with no rows under it.
+                grid._lastTierHtml = null;
                 return;
             }
 
