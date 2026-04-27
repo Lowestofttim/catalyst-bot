@@ -9,7 +9,7 @@
 ;
 ; After Inno produces Output\Catalyst-Setup-X.Y.Z.exe,
 ; SIGN that installer with the same code-signing cert used for
-; Catalyst.exe and splash.exe (see BUILD.md). Users run
+; Catalyst.exe and splash.exe (see docs\PUBLIC_RELEASE_CHECKLIST.md). Users run
 ; the installer first, so SmartScreen checks its signature.
 ; ============================================================
 
