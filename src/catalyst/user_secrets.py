@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import threading
 from pathlib import Path
 
@@ -99,13 +98,27 @@ def _load_locked() -> dict:
 def _write_atomic(path: Path, data: dict) -> None:
     """Write *data* to *path* as JSON. Caller holds _LOCK."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    tmp_path = path.with_name(
+        f".{path.name}.tmp.{os.getpid()}.{threading.get_ident()}"
+    )
     try:
-        import os
-        os.chmod(path, 0o600)
-    except (OSError, AttributeError):
-        pass  # Windows relies on user-profile ACLs
+        with tmp_path.open("w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        try:
+            os.chmod(tmp_path, 0o600)
+        except (OSError, AttributeError):
+            pass  # Windows relies on user-profile ACLs
+        os.replace(tmp_path, path)
+        try:
+            os.chmod(path, 0o600)
+        except (OSError, AttributeError):
+            pass
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _save_locked(data: dict) -> None:
