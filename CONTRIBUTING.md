@@ -40,9 +40,10 @@ Maintainers will convert accepted Ideas into tracked Issues.
 
 1. Fork the repo and create a branch from `master`.
 2. Follow the conventions in [CLAUDE.md](CLAUDE.md): `Decimal` for prices, `slog()` for logging, DB access via `database.py`, etc.
-3. Run the tests: `cd tests && pytest`.
-4. Run the static checks: `ruff check .` and `bandit -r . -c .bandit`.
-5. Open a PR with a clear description of **why** the change is needed.
+3. Install developer dependencies: `pip install -r requirements-dev.txt`.
+4. Run the tests: `python -m pytest tests -q --ignore=tests/e2e --disable-warnings`.
+5. Run the static checks: `python -m ruff check . --select E9,F821`, `python -m bandit -r src --ini .bandit -ll`, and `python scripts/check_env_example.py`.
+6. Open a PR with a clear description of **why** the change is needed.
 
 Small, focused PRs get reviewed faster. If you're unsure whether an approach will be accepted, open a Discussion first.
 

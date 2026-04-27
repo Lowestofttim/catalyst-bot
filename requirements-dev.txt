@@ -1,6 +1,8 @@
 -r requirements.txt
 pytest>=9.0.3,<10
 pytest-xdist>=3.5,<4
+ruff>=0.8,<1
+bandit>=1.7,<2
 vulture>=2.11,<3
 # E2E browser tests against the live Flask GUI. After install run:
 #     python -m playwright install chromium
