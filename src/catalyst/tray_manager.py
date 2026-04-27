@@ -247,29 +247,29 @@ class TrayManager:
     # Action handlers
     # -----------------------------------------------------------------------
 
-    def _on_show(self, icon=None, item=None):
+    def _on_show(self, _icon=None, _item=None):
         """Show dashboard callback."""
         if self.on_show_dashboard:
             self.on_show_dashboard()
 
-    def _on_quit(self, icon=None, item=None):
+    def _on_quit(self, _icon=None, _item=None):
         """Quit app callback."""
         if self.on_quit:
             self.on_quit()
         else:
             self.stop()
 
-    def _on_pause(self, icon=None, item=None):
+    def _on_pause(self, _icon=None, _item=None):
         """Pause bot callback."""
         if self.on_pause:
             self.on_pause()
 
-    def _on_resume(self, icon=None, item=None):
+    def _on_resume(self, _icon=None, _item=None):
         """Resume bot callback."""
         if self.on_resume:
             self.on_resume()
 
-    def _on_start_bot(self, icon=None, item=None):
+    def _on_start_bot(self, _icon=None, _item=None):
         """
         Start bot from tray.
 
@@ -291,7 +291,7 @@ class TrayManager:
         if self.on_show_dashboard:
             self.on_show_dashboard()
 
-    def _on_stop_bot(self, icon=None, item=None):
+    def _on_stop_bot(self, _icon=None, _item=None):
         """
         Stop bot from tray.
 
