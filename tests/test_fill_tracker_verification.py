@@ -29,6 +29,7 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.logged = []
         self.recorded = []
         self.status_updates = []
+        self.lifecycle_updates = []
         self.db_offer = {"trade_id": "", "coin_id": "0xcoin123"}
 
         fake_config = types.ModuleType("config")
@@ -45,7 +46,7 @@ class FillTrackerVerificationTests(unittest.TestCase):
             "trade_id": trade_id,
         }
         fake_database.update_offer_status = self._update_offer_status
-        fake_database.update_offer_lifecycle_state = lambda *args, **kwargs: None
+        fake_database.update_offer_lifecycle_state = self._update_lifecycle_state
         fake_database.transition_offer = lambda *args, **kwargs: None
         fake_database.mark_cancel_attempted = lambda *args, **kwargs: None
         fake_database.log_event = self._log_event
@@ -85,6 +86,10 @@ class FillTrackerVerificationTests(unittest.TestCase):
 
     def _update_offer_status(self, trade_id, status):
         self.status_updates.append((trade_id, status))
+        return True
+
+    def _update_lifecycle_state(self, trade_id, lifecycle_state):
+        self.lifecycle_updates.append((trade_id, lifecycle_state))
         return True
 
     def test_unverified_spacescan_result_parks_for_retry(self):
@@ -183,6 +188,8 @@ class FillTrackerVerificationTests(unittest.TestCase):
 
         self.assertEqual(result["buy_fills"], [])
         self.assertEqual(self.recorded, [])
+        self.assertEqual(self.status_updates, [])
+        self.assertEqual(self.lifecycle_updates, [])
         self.assertTrue(any(evt == "fill_dexie_still_open" for _, evt, _, _ in self.logged))
 
     def test_dexie_trade_mismatch_defers_to_spacescan(self):

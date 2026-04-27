@@ -731,6 +731,11 @@ class FillTracker:
                 fill_detail = self._record_fill(trade_id, side, details_cache)
                 if fill_detail:
                     fills.append(fill_detail)
+            elif verification == "still_open":
+                # Dexie still reports this offer as active. Treat the wallet
+                # disappearance as a Sage/cache blip and leave the local DB row
+                # open so the next fresh wallet sync can see it again.
+                continue
             elif verification == "rejected":
                 # Lifecycle: FILL_REJECTED signal → phantom_rejected terminal state.
                 try:
@@ -902,7 +907,8 @@ class FillTracker:
 
         Returns:
             "filled" = Spacescan confirms this was a real fill
-            "rejected" = Not a fill / do not retire locally here
+            "still_open" = Dexie still sees the offer active; leave DB alone
+            "rejected" = Confirmed not a fill
             "unverified" = Offer vanished but on-chain verification is unavailable
         """
         try:
@@ -969,7 +975,7 @@ class FillTracker:
             trade_id, db_offer, primary_coin_id
         )
         if dexie_still_open is True:
-            return "rejected"
+            return "still_open"
 
         # Get our wallet address for self-spend detection
         # This is populated dynamically at startup from the wallet RPC
