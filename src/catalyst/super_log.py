@@ -410,6 +410,8 @@ class _TeeWriter:
         self._lock = lock
 
     def _write_terminal(self, text):
+        if self._original is None:
+            return
         try:
             self._original.write(text)
             return
@@ -441,7 +443,11 @@ class _TeeWriter:
                     pass
 
     def flush(self):
-        self._original.flush()
+        try:
+            if self._original is not None:
+                self._original.flush()
+        except Exception:
+            pass
         with self._lock:
             try:
                 if _log_file and not _log_file.closed:
@@ -450,6 +456,8 @@ class _TeeWriter:
                 pass
 
     def __getattr__(self, name):
+        if self._original is None:
+            raise AttributeError(name)
         return getattr(self._original, name)
 
 

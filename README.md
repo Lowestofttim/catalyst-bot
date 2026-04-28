@@ -65,22 +65,93 @@ CATalyst handles all of that. You tell it the CAT you want to trade and your cap
 
 ## Quick start
 
+CATalyst is not a hosted web app. Every operator runs their own local copy on
+their own computer, connected to their own Sage wallet. GitHub provides the
+source code and release downloads; it does not provide a shared CATalyst server.
+
+`127.0.0.1` always means "this computer". Nobody should connect to the
+maintainer's machine, and CATalyst deliberately blocks non-local browser/API
+access for wallet safety.
+
 ### From the installer (recommended)
 
 1. Download `Catalyst-Setup-v*.exe` from the [latest release](https://github.com/Lowestofttim/catalyst-bot/releases/latest).
 2. Run it. The installer places CATalyst in Program Files and adds a desktop shortcut.
-3. Launch CATalyst. On first run it will prompt for your Sage wallet connection and walk you through Smart Settings.
+3. Launch CATalyst on the same computer as Sage wallet. On first run it will prompt for your Sage wallet connection and walk you through Smart Settings.
 
-### From source
+### From source on Windows
+
+Use this path if you want to run the current source code or develop the app.
+Run these commands on the same PC that has Sage wallet installed:
+
+```powershell
+git clone https://github.com/Lowestofttim/catalyst-bot.git
+cd catalyst-bot
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+notepad .env
+python desktop_app.py --flask
+```
+
+In `.env`, fill in `SAGE_CERT_PATH` and `SAGE_KEY_PATH` for that user's own
+Sage wallet. Typical Windows paths look like:
+
+```env
+SAGE_CERT_PATH=C:/Users/YOU/.sage/ssl/client.crt
+SAGE_KEY_PATH=C:/Users/YOU/.sage/ssl/client.key
+```
+
+Then open `http://127.0.0.1:5000/` in a browser on that same PC. For the native
+desktop window instead, run `python desktop_app.py`.
+
+### From source on macOS/Linux
 
 ```bash
 git clone https://github.com/Lowestofttim/catalyst-bot.git
 cd catalyst-bot
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 cp .env.example .env
-# Edit .env to fill in SAGE_CERT_PATH and SAGE_KEY_PATH
-python desktop_app.py
+${EDITOR:-nano} .env
+python desktop_app.py --flask
 ```
+
+Then open `http://127.0.0.1:5000/` in a browser on that same machine.
+
+If port `5000` is already in use, set `CATALYST_FLASK_PORT` before starting.
+Windows PowerShell:
+
+```powershell
+$env:CATALYST_FLASK_PORT = "5010"
+python desktop_app.py --flask
+```
+
+macOS/Linux:
+
+```bash
+CATALYST_FLASK_PORT=5010 python desktop_app.py --flask
+```
+
+Then open `http://127.0.0.1:5010/` instead.
+
+### If you see "Access denied" or "Loopback only"
+
+That usually means the browser request is not reaching CATalyst as a local
+request from the same machine. Check that:
+
+- CATalyst is running locally on the computer opening the browser.
+- You are using `http://127.0.0.1:5000/`, not another PC's IP address, a
+  Codespaces/browser-preview URL, or a port-forwarded URL.
+- Sage wallet RPC is enabled locally and the `.env` cert/key paths belong to
+  that same user's wallet.
+
+Direct API clients also need CATalyst's per-run local write token. The normal
+web page handles this automatically; hand-written scripts must supply the token.
 
 ---
 
@@ -169,7 +240,7 @@ Between cycles, the coin prep subprocess runs asynchronously and the mempool wat
 | Mode | Command | Use case |
 |------|---------|----------|
 | Desktop | `python desktop_app.py` | Default. Native window + system tray. |
-| Browser | `python desktop_app.py --flask` | Server-only, open in any browser at `http://localhost:5000`. |
+| Browser | `python desktop_app.py --flask` | Server-only, open in any browser on the same machine at `http://127.0.0.1:5000/`. |
 | Dev | `python desktop_app.py --dev` | Desktop window AND browser access simultaneously. |
 
 ---
@@ -192,6 +263,10 @@ Override with the `CMM_DATA_DIR` environment variable.
 python build.py              # full clean build, produces dist/Catalyst/
 python build.py --no-clean   # skip cleaning for faster iteration
 ```
+
+The local build output stays on the machine that ran `python build.py`. To make
+builds available to other users, publish a GitHub Release or push a `v*` tag so
+the GitHub Actions release workflow can upload downloadable packages.
 
 Tag a commit as `v*` to trigger the GitHub Actions build-release pipeline, which produces Windows/macOS/Linux packages plus a Windows installer and uploads them all to a new GitHub Release.
 
