@@ -70,6 +70,22 @@ def _local_api_headers() -> dict:
         headers["X-Bot-Local-Token"] = _LOCAL_API_TOKEN
     return headers
 
+
+def _env_int(name: str, default: int, *fallback_names: str) -> int:
+    """Read an integer env setting, treating blank template values as unset."""
+    for key in (name, *fallback_names):
+        raw = os.getenv(key)
+        if raw is None:
+            continue
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            return int(raw)
+        except ValueError:
+            continue
+    return default
+
 # Database integration for coin designations (V3)
 # The prep worker writes designations at birth so the DB stays in sync
 try:
@@ -251,10 +267,10 @@ class CoinPrepWorker:
             print("[INIT] No env fingerprint, attempting auto-detect...")
             self.fingerprint = self._get_fingerprint()
 
-        self.xch_wallet_id = int(os.getenv("CHIA_WALLET_ID_XCH", "1"))
+        self.xch_wallet_id = _env_int("CHIA_WALLET_ID_XCH", 1)
         # CAT wallet_id: default 2 (Sage dynamic ID). get_wallets() in the
         # subprocess will override this to match the configured CAT_ASSET_ID.
-        self.cat_wallet_id = int(os.getenv("CAT_WALLET_ID", "2"))
+        self.cat_wallet_id = _env_int("CAT_WALLET_ID", 2)
         
         # Coin targets — derive from bot settings.
         # We create DOUBLE the offer count so there are always spare coins
@@ -264,8 +280,8 @@ class CoinPrepWorker:
         # IMPORTANT: We use _CLI_XCH_TARGET (set by main() from --xch-target)
         # instead of XCH_TARGET_COINS from .env, because load_dotenv() can
         # load stale values from .env that cause double-counting.
-        max_buy = int(os.getenv("MAX_ACTIVE_BUY_OFFERS", os.getenv("MAX_ACTIVE_BUY", "25")))
-        max_sell = int(os.getenv("MAX_ACTIVE_SELL_OFFERS", os.getenv("MAX_ACTIVE_SELL", "25")))
+        max_buy = _env_int("MAX_ACTIVE_BUY_OFFERS", 25, "MAX_ACTIVE_BUY")
+        max_sell = _env_int("MAX_ACTIVE_SELL_OFFERS", 25, "MAX_ACTIVE_SELL")
 
         # Check if main() set explicit CLI overrides (uses private env keys
         # that can't clash with stale .env values)
@@ -313,7 +329,7 @@ class CoinPrepWorker:
         # CAT settings — same approach, derive from bot config
         # CAT_DECIMALS is the canonical name; MZ_DECIMALS is the legacy alias kept for
         # any old .env files that haven't been migrated yet.
-        self.cat_decimals = int(os.getenv("CAT_DECIMALS") or os.getenv("MZ_DECIMALS", "3"))
+        self.cat_decimals = _env_int("CAT_DECIMALS", 3, "MZ_DECIMALS")
 
         # CAT coins = buy + sell count (double up for spares)
         if cat_target_override:

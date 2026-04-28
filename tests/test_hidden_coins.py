@@ -38,9 +38,20 @@ from wallet_sage import (
     get_selectable_coins_only, get_pending_transactions,
 )
 
+
+def _env_int(name, default=0):
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 CAT_ASSET_ID = os.getenv("CAT_ASSET_ID", "")
 XCH_WALLET_ID = ws.WALLET_ID_XCH
-CAT_WALLET_ID = int(os.getenv("CAT_WALLET_ID", "0")) or int(os.getenv("CHIA_WALLET_ID_MZ", "0")) or 5
+CAT_WALLET_ID = _env_int("CAT_WALLET_ID") or _env_int("CHIA_WALLET_ID_MZ") or 5
 
 POLL_INTERVAL = 5     # seconds between polls
 POLL_TIMEOUT = 180    # max wait for on-chain confirm (splits can take 60-90s after pending clears)

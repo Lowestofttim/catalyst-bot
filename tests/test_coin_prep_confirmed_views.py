@@ -12,15 +12,33 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
     def setUp(self):
         self._saved_env = {
             "WALLET_TYPE": os.environ.get("WALLET_TYPE"),
+            "WALLET_FINGERPRINT": os.environ.get("WALLET_FINGERPRINT"),
             "DEFAULT_TRADE_XCH": os.environ.get("DEFAULT_TRADE_XCH"),
             "CAT_COIN_SIZE": os.environ.get("CAT_COIN_SIZE"),
+            "CHIA_WALLET_ID_XCH": os.environ.get("CHIA_WALLET_ID_XCH"),
+            "CAT_WALLET_ID": os.environ.get("CAT_WALLET_ID"),
+            "MAX_ACTIVE_BUY_OFFERS": os.environ.get("MAX_ACTIVE_BUY_OFFERS"),
+            "MAX_ACTIVE_BUY": os.environ.get("MAX_ACTIVE_BUY"),
+            "MAX_ACTIVE_SELL_OFFERS": os.environ.get("MAX_ACTIVE_SELL_OFFERS"),
+            "MAX_ACTIVE_SELL": os.environ.get("MAX_ACTIVE_SELL"),
+            "CAT_DECIMALS": os.environ.get("CAT_DECIMALS"),
+            "MZ_DECIMALS": os.environ.get("MZ_DECIMALS"),
         }
         self._saved_modules = {
             name: sys.modules.get(name) for name in _MODS_TO_RESTORE
         }
         os.environ["WALLET_TYPE"] = "sage"
+        os.environ["WALLET_FINGERPRINT"] = "123"
         os.environ["DEFAULT_TRADE_XCH"] = ""
         os.environ["CAT_COIN_SIZE"] = "4000"
+        os.environ["CHIA_WALLET_ID_XCH"] = ""
+        os.environ["CAT_WALLET_ID"] = ""
+        os.environ["MAX_ACTIVE_BUY_OFFERS"] = ""
+        os.environ["MAX_ACTIVE_BUY"] = ""
+        os.environ["MAX_ACTIVE_SELL_OFFERS"] = ""
+        os.environ["MAX_ACTIVE_SELL"] = ""
+        os.environ["CAT_DECIMALS"] = ""
+        os.environ["MZ_DECIMALS"] = ""
 
         fake_wallet = types.ModuleType("wallet")
         fake_wallet.get_all_offers = lambda *args, **kwargs: {"offers": []}
@@ -132,6 +150,13 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         self.assertEqual(self.worker.status.cat_coins_target, self.worker.cat_target_coins)
         self.assertEqual(self.worker.xch_expected_total_coins, self.worker.xch_target_coins + 1)
         self.assertEqual(self.worker.cat_expected_total_coins, self.worker.cat_target_coins + 1)
+
+    def test_blank_template_env_values_use_worker_defaults(self):
+        self.assertEqual(self.worker.xch_wallet_id, 1)
+        self.assertEqual(self.worker.cat_wallet_id, 2)
+        self.assertEqual(self.worker.xch_target_coins, 50)
+        self.assertEqual(self.worker.cat_target_coins, 50)
+        self.assertEqual(self.worker.cat_decimals, 3)
 
     def test_preselected_pool_helper_falls_back_to_same_amount_coin_when_exact_id_not_found(self):
         # When the exact coin ID is not selectable AND a selectable coin with the
