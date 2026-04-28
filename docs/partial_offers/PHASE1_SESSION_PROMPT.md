@@ -7,12 +7,13 @@ Copy everything below this line and paste it as your first message in a new code
 ## Context
 
 We are integrating CHIP-0052 partial offer support into CATalyst, an automated
-market-making bot for Chia blockchain CAT tokens. Read the skill at
-`.claude/skills/catalyst-partial-offers/SKILL.md` for full context on the
-codebase and what partial offers are. Also read `PARTIAL_OFFERS_PLAN.md` for
-the complete integration plan.
+market-making bot for Chia blockchain CAT tokens. Read
+`docs/partial_offers/PARTIAL_OFFERS_PLAN.md` for full context on the codebase,
+partial offers, and the complete integration plan.
 
-The working directory is the project root (all Python files are flat, no src/ subfolder).
+The working directory is the project root. Runtime Python modules live under
+`src/catalyst`; root-level entry points such as `desktop_app.py` and
+`bot_gui.html` remain at the repo root.
 
 ## What We're Building Today — Phase 1 Only
 
