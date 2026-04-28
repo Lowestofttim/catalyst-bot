@@ -1699,7 +1699,7 @@ def api_logs_download():
     """Download a richer debug bundle with recent events and runtime state.
 
     Bundle contents are designed to give a support engineer (or a future
-    Claude session) enough context to triage a user-reported issue
+    debugging session) enough context to triage a user-reported issue
     *without* the user having to share raw DB or wallet credentials.
 
     Privacy guarantees:

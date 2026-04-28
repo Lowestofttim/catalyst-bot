@@ -398,9 +398,8 @@ class RiskManager:
         # otherwise a burst of fills on one side (e.g. lots of sells while
         # long CAT) keeps widening the OTHER side (buys) that we would want
         # to stay attractive so the position naturally unwinds. Inventory
-        # skew already tightens the corrective side; letting fill-rate
-        # widening fight that was the behaviour Codex flagged in the
-        # 2026-04-22 audit.
+        # skew already tightens the corrective side, and fill-rate widening
+        # should not fight that correction.
         is_corrective_side = False
         if side and self._net_position_cat != 0:
             if side == "sell" and self._net_position_cat > 0:

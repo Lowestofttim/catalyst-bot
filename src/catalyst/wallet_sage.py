@@ -3530,7 +3530,7 @@ def get_transaction_count(wallet_id: int) -> int:
 # REMOVED: duplicate get_pending_transactions() that shadowed the correct
 # implementation at line ~833. The correct version uses Sage's documented
 # get_pending_transactions endpoint. This duplicate used get_transactions
-# with heuristic status filtering. See Codex audit item 4.2.
+# with heuristic status filtering.
 
 
 def get_all_coins_for_wallet(wallet_id: int):
@@ -4032,7 +4032,7 @@ def delete_offers_batch(offer_ids: list) -> dict:
 # REMOVED: duplicate get_spendable_coin_count() that shadowed the correct
 # implementation at line ~796. The correct version uses Sage's documented
 # get_spendable_coin_count endpoint. This duplicate used get_coins with
-# filter_mode=selectable approximation. See Codex audit item 4.3.
+# filter_mode=selectable approximation.
 
 
 def get_sage_version() -> str:

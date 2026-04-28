@@ -1,15 +1,15 @@
 # CATalyst — Manual Test Checklist
 
-One-page script for a new Claude (or human) session to verify every user-facing
-flow against the running bot. Designed to be re-used after any significant
-change — see the **"Feature-specific smoke tests"** section at the bottom for
-the subset that matches a recent commit.
+One-page script for a tester or browser-automation session to verify every
+user-facing flow against the running bot. Designed to be re-used after any
+significant change — see the **"Feature-specific smoke tests"** section at the
+bottom for the subset that matches a recent commit.
 
 > **Setup preamble** (30 seconds)
 > * Make sure Sage wallet is open with RPC enabled (`Settings → Advanced → Start RPC Client`)
 > * Launch: `python desktop_app.py --flask` (or the desktop shortcut)
-> * Open `http://127.0.0.1:5000` in a browser (or via the Preview MCP:
->   `preview_start` with the `api-server` config in `.claude/launch.json`)
+> * Open `http://127.0.0.1:5000` in a browser, or point your browser automation
+>   tool at that URL
 > * Click through: **Continue** → **Connect to Sage** → pick your test wallet
 >   **by fingerprint** (see §0 gotcha 1) → **Skip** the Splash P2P prompt → **Use Free Tier**
 >   on the Spacescan prompt (or **Save & Verify** with a Pro key)
@@ -19,7 +19,7 @@ the subset that matches a recent commit.
 
 ## Table of contents
 
-0. [Test environment — how Claude runs these tests](#test-env)
+0. [Test environment — recommended setup](#test-env)
 1. [Dashboard tab](#dashboard)
 2. [Settings tab](#settings)
 3. [Liquidity Mode feature](#liquidity-mode)
@@ -40,57 +40,45 @@ the subset that matches a recent commit.
 ---
 
 <a id="test-env"></a>
-## 0. Test environment — how Claude runs these tests
+## 0. Test environment — recommended setup
 
-This is the toolchain Claude uses to drive the app autonomously. Replicate
-this setup if you want to take over a session or reproduce a result.
+This is the recommended process layout for manual QA or browser automation.
+Replicate this setup if you want to take over a session or reproduce a result.
 
 ### 0.1 Process layout
 
 | Component | Where it runs | How to start |
 |---|---|---|
 | **Sage wallet** | User's machine, separate process | Manual — must be open with RPC on, port 9257 |
-| **Flask API server** | `python desktop_app.py --flask` (no PyWebView window) | Started via Preview MCP using `.claude/launch.json` config name `api-server` |
-| **Browser** | Headless Chromium driven by the Preview MCP | `preview_start({name: "api-server"})` returns a `serverId` |
+| **Flask API server** | `python desktop_app.py --flask` (no PyWebView window) | Start from a terminal when testing in a browser |
+| **Browser** | Visible browser or browser automation | Open `http://127.0.0.1:5000` and use stable element IDs for automation |
 | **Splash node** | Spawned by CATalyst on demand (`splash.exe` subprocess) | "Start Splash Node" button OR auto-spawn via env |
 
-### 0.2 Preview MCP cheat-sheet
+### 0.2 Browser automation notes
 
-The Preview MCP is the headless browser. Tools:
+Any browser automation tool is fine as long as it drives the same local UI a
+user sees. Prefer stable IDs for buttons and fields, capture browser console
+warnings/errors, and keep a screenshot when a visual state matters.
 
-| Tool | Purpose | Notes |
-|---|---|---|
-| `preview_start({name})` | Boot a server from `.claude/launch.json` | Returns `serverId` used by every other call |
-| `preview_eval({serverId, expression})` | Run JS in the page | Best for snapshotting state, calling internal functions |
-| `preview_click({serverId, selector})` | CSS-selector click | Use for `#stableId` buttons |
-| `preview_fill({serverId, selector, value})` | Set `<input>` value | Triggers `change` automatically |
-| `preview_logs({serverId, search, lines})` | Tail Flask stdout/stderr | Use `level: "error"` to filter |
-| `preview_console_logs({serverId, level})` | Tail browser console | Filter by `error`/`warn` |
-| `preview_screenshot({serverId})` | Visual snapshot | JPEG; use sparingly |
-| `preview_snapshot({serverId})` | Accessibility tree | More structured than screenshot — good for asserting state |
-| `preview_stop({serverId})` | Kill the server | Use before restarts to pick up Python code changes |
+### 0.3 Browser visibility
 
-### 0.3 Browser is headless from your perspective
+If your automation runs headless, capture a screenshot and console log for any
+failure. For state inspection, prefer structured DOM/API reads over screenshots.
 
-The Preview MCP runs Chromium without a visible window — you don't see the
-browser drive. To prove what's happening, take a `preview_screenshot` and
-attach it. For state inspection, prefer `preview_eval` (returns JSON) over
-screenshots.
-
-### 0.4 Standard test flow Claude follows
+### 0.4 Standard test flow
 
 ```
-1. preview_start({name: "api-server"})        → server up
-2. preview_eval(navigate to localhost:5000)
-3. preview_eval / preview_click               → dismiss disclaimer + connect Sage
-4. preview_eval                               → select fingerprint by ID (NOT name)
-5. preview_eval / preview_click               → walk through gates
-6. preview_fill                               → set reserves
-7. preview_eval(handleSaveClick())            → save settings
-8. preview_click("#cpConfirmBtn")             → start coin prep
+1. Start `python desktop_app.py --flask`      → server up
+2. Navigate to http://127.0.0.1:5000
+3. Dismiss disclaimer and connect Sage
+4. Select wallet by fingerprint, not display name
+5. Walk through the startup gates
+6. Set reserves
+7. Save settings
+8. Click "#cpConfirmBtn"                      → start coin prep
 9. (5–10 min wait while monitoring logs)
-10. preview_click("#startBtn")                → start bot
-11. preview_logs (search="cycle_complete")    → confirm ladder built
+10. Click "#startBtn"                         → start bot
+11. Search logs for "cycle_complete"          → confirm ladder built
 ```
 
 ### 0.5 Where data lives during tests
@@ -106,7 +94,7 @@ screenshots.
 The repo's `C:\catalyst\.env` is **NOT** the active config — only the per-user
 copy at `%APPDATA%\Catalyst\.env` is loaded at runtime.
 
-### 0.6 Verification commands Claude reaches for first
+### 0.6 Verification commands to run first
 
 Always-safe one-liners. Copy-paste, no setup.
 
@@ -494,16 +482,17 @@ Use when verifying a specific recent commit:
 
 These will silently waste 30 minutes if you don't know about them.
 
-### G1. Two TEST-named wallets — pick by fingerprint
+### G1. Similar wallet names — pick by fingerprint
 
-The wallet selection list contains both `"6"` (fingerprint 418341895) and
-`"TEST 6"` (fingerprint 2981073251). Selecting by visible text is ambiguous.
-**Always select by fingerprint** in the wallet card click.
+The wallet selection list can contain similarly named test wallets. Selecting
+by visible text is ambiguous. **Always select by fingerprint** in the wallet
+card click.
 
 ```js
 // Correct selector pattern
+const targetFingerprint = 'YOUR_TEST_WALLET_FINGERPRINT';
 Array.from(document.querySelectorAll('.fp-card'))
-     .filter(el => el.offsetParent && el.innerText.includes('2981073251'))[0]
+     .filter(el => el.offsetParent && el.innerText.includes(targetFingerprint))[0]
      ?.click();
 ```
 

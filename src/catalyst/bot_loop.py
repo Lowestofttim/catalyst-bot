@@ -5585,9 +5585,8 @@ class BotLoop:
                     # attempt," which hid stale quotes at the old mid from
                     # the next cycle's drift detection — the bot could
                     # appear to have re-anchored at the new price while
-                    # old wrong-side offers were still live (exactly the
-                    # scenario Codex's Cat7 audit flagged). Keeping the
-                    # old baseline on a no-progress/partial outcome means
+                    # old wrong-side offers were still live. Keeping the old
+                    # baseline on a no-progress/partial outcome means
                     # the next cycle re-fires the emergency path, which
                     # chips away at the residual stale offers on each
                     # subsequent pass.
