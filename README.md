@@ -91,17 +91,7 @@ py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-notepad .env
 python desktop_app.py --flask
-```
-
-In `.env`, fill in `SAGE_CERT_PATH` and `SAGE_KEY_PATH` for that user's own
-Sage wallet. Typical Windows paths look like:
-
-```env
-SAGE_CERT_PATH=C:/Users/YOU/.sage/ssl/client.crt
-SAGE_KEY_PATH=C:/Users/YOU/.sage/ssl/client.key
 ```
 
 Then open `http://127.0.0.1:5000/` in a browser on that same PC. For the native
@@ -116,12 +106,16 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-cp .env.example .env
-${EDITOR:-nano} .env
 python desktop_app.py --flask
 ```
 
 Then open `http://127.0.0.1:5000/` in a browser on that same machine.
+
+On first launch CATalyst creates a per-user `.env` automatically in the app data
+directory. Normal users should not need to copy or edit `.env` by hand. The
+startup flow looks for Sage, waits for RPC if needed, and asks the user to pick
+their wallet fingerprint in the GUI. After that, CAT selection and Smart Settings
+write the trading settings as the user configures the app.
 
 If port `5000` is already in use, set `CATALYST_FLASK_PORT` before starting.
 Windows PowerShell:
@@ -147,8 +141,9 @@ request from the same machine. Check that:
 - CATalyst is running locally on the computer opening the browser.
 - You are using `http://127.0.0.1:5000/`, not another PC's IP address, a
   Codespaces/browser-preview URL, or a port-forwarded URL.
-- Sage wallet RPC is enabled locally and the `.env` cert/key paths belong to
-  that same user's wallet.
+- Sage wallet RPC is enabled locally in Sage Settings -> Advanced.
+- If Sage certificate auto-detection fails, use the in-app setup prompt or edit
+  that user's local `.env` as a fallback.
 
 Direct API clients also need CATalyst's per-run local write token. The normal
 web page handles this automatically; hand-written scripts must supply the token.
@@ -157,17 +152,18 @@ web page handles this automatically; hand-written scripts must supply the token.
 
 ## Configuration
 
-All settings live in `.env`, but you rarely edit it by hand. The required fields are just the wallet paths:
+CATalyst creates a per-user `.env` on first launch and updates it through the
+GUI. You rarely edit it by hand:
 
 | Setting | What it does |
 |---------|-------------|
 | `SAGE_RPC_URL` | Sage wallet RPC endpoint (default `https://127.0.0.1:9257`) |
-| `SAGE_CERT_PATH` / `SAGE_KEY_PATH` | Path to Sage's mTLS client cert and key |
-| `CAT_ASSET_ID` | The CAT you want to trade (filled in automatically when you pick a token in the GUI) |
+| `SAGE_CERT_PATH` / `SAGE_KEY_PATH` | Optional fallback paths if Sage cert auto-detection fails |
+| `CAT_ASSET_ID` | The CAT you want to trade, written when you pick a token in the GUI |
 
 Every other trading parameter (spread, offer count, tier sizes, reserves, topup budgets) is configured via **Smart Settings** in the GUI. Smart Settings reads your wallet balance and current market volatility and emits a validated configuration in one click. You can override any individual field afterwards.
 
-> **Security:** `.env` contains wallet cert paths. Never commit it. The `.gitignore` excludes it by default.
+> **Security:** `.env` can contain local wallet paths. Never commit it. The `.gitignore` excludes it by default.
 
 ---
 

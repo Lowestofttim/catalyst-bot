@@ -17,10 +17,41 @@ trading-loop writes stay consistent.
 """
 
 import os
+import sys
 import threading
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 from dotenv import load_dotenv, set_key
+
+
+def _find_env_example_path(install_dir: str) -> str:
+    """Find the bundled `.env.example` across source and frozen layouts."""
+    roots = []
+
+    def add_root(path: str) -> None:
+        if not path:
+            return
+        root = os.path.abspath(path)
+        if root not in roots:
+            roots.append(root)
+
+    add_root(install_dir)
+    # Source layout: src/catalyst -> src -> repo root.
+    add_root(os.path.dirname(install_dir))
+    add_root(os.path.dirname(os.path.dirname(install_dir)))
+    # PyInstaller onedir layout: modules live in _internal, while build.py
+    # copies .env.example beside Catalyst.exe.
+    if getattr(sys, "frozen", False):
+        add_root(os.path.dirname(sys.executable))
+        add_root(getattr(sys, "_MEIPASS", ""))
+    # Dev fallback when launched from the repo root.
+    add_root(os.getcwd())
+
+    for root in roots:
+        candidate = os.path.join(root, ".env.example")
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +69,8 @@ try:
     # install dir, seed the data-dir .env from .env.example so first-run
     # users start with sensible defaults.
     if not os.path.exists(_ENV_PATH):
-        _example = os.path.join(_install_dir(), ".env.example")
-        if os.path.isfile(_example):
+        _example = _find_env_example_path(_install_dir())
+        if _example:
             try:
                 import shutil as _shutil
                 _tmp_env = f"{_ENV_PATH}.{os.getpid()}.tmp"
