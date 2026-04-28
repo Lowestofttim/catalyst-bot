@@ -91,7 +91,7 @@ failure. For state inspection, prefer structured DOM/API reads over screenshots.
 | `%APPDATA%\Catalyst\user_secrets.json` | Pro Spacescan key (if set via Save & Verify) | `clear_secret()` in spacescan.py |
 | `tests/.e2e_data/` | Isolated DB for e2e Playwright tests | Auto, doesn't touch user data |
 
-The repo's `C:\catalyst\.env` is **NOT** the active config — only the per-user
+The repo-root `.env` is **NOT** the active config — only the per-user
 copy at `%APPDATA%\Catalyst\.env` is loaded at runtime.
 
 ### 0.6 Verification commands to run first
@@ -100,7 +100,7 @@ Always-safe one-liners. Copy-paste, no setup.
 
 ```bash
 # Active offer count straight from Sage (bypasses the bot's view)
-cd C:/catalyst/src/catalyst && python -c "
+cd src/catalyst && python -c "
 import wallet_sage as ws
 r = ws.rpc('get_offers', {'offset':0,'limit':100,'include_completed':True}, timeout=10)
 from collections import Counter
@@ -116,7 +116,7 @@ curl -s http://127.0.0.1:5000/api/coins | python -c "import json,sys; d=json.loa
 curl -s http://127.0.0.1:5000/api/offers/cancel_all/status | python -m json.tool
 
 # Live cfg flags
-cd C:/catalyst/src/catalyst && python -c "from config import cfg; print({k:getattr(cfg,k,None) for k in ['SPACESCAN_API_KEY','SPACESCAN_ENABLED','CAT_WALLET_ID','XCH_RESERVE','CAT_RESERVE','SPLASH_ENABLED']})"
+cd src/catalyst && python -c "from config import cfg; print({k:getattr(cfg,k,None) for k in ['SPACESCAN_API_KEY','SPACESCAN_ENABLED','CAT_WALLET_ID','XCH_RESERVE','CAT_RESERVE','SPLASH_ENABLED']})"
 ```
 
 ---
@@ -326,7 +326,7 @@ actually Y"), these scripts are the source of truth comparison.
 ### 13.1 Coin reconciliation — DB vs Sage
 
 ```bash
-cd C:/catalyst/src/catalyst && python -c "
+cd src/catalyst && python -c "
 import sys, os, sqlite3
 sys.path.insert(0, '.')
 import wallet_sage as ws
@@ -394,7 +394,7 @@ tail -f %APPDATA%\Catalyst\bot_superlog_*.log | grep -E "reserve_floor_breached|
 ### 14.1 pytest unit suite
 
 ```bash
-cd C:/catalyst/tests
+cd tests
 python -m pytest -q --tb=line
 ```
 
@@ -409,7 +409,7 @@ pip install -r requirements-dev.txt
 python -m playwright install chromium
 
 # Run (against a temporary Flask server on its own data dir)
-cd C:/catalyst/tests
+cd tests
 python -m pytest e2e/ --e2e -v
 # Add --headed to watch the browser drive
 ```
@@ -504,7 +504,7 @@ signature is invalid). The bot will report `bulk cancel: 7 succeeded, 0 failed`
 but the offers won't actually go away. Verify via:
 
 ```bash
-cd C:/catalyst/src/catalyst && python -c "
+cd src/catalyst && python -c "
 import wallet_sage as ws
 r = ws.rpc('get_offers', {'offset':0,'limit':100,'include_completed':False}, timeout=10)
 print(len([o for o in (r or {}).get('offers', []) if o.get('status')=='active']), 'active')"
@@ -512,7 +512,7 @@ print(len([o for o in (r or {}).get('offers', []) if o.get('status')=='active'])
 
 ### G3. The active `.env` is in `%APPDATA%`, NOT the repo
 
-`C:\catalyst\.env` is read for `dotenv` defaults during local dev runs but
+The repo-root `.env` is read for `dotenv` defaults during local dev runs but
 gets **overridden** by `%APPDATA%\Catalyst\.env` (loaded by `user_paths.env_file()`
 in `config.py:36`). When something looks misconfigured, check the user-data
 copy first.
@@ -524,7 +524,7 @@ it does NOT clear `SPACESCAN_API_KEY`. So if Pro fields show "Unknown" it's
 because no key was ever stored, not because Free Tier nuked it. To verify:
 
 ```bash
-cd C:/catalyst/src/catalyst && python -c "
+cd src/catalyst && python -c "
 from config import cfg
 print('API key set?', bool((cfg.SPACESCAN_API_KEY or '').strip()))"
 ```
