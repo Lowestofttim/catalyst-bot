@@ -5,6 +5,7 @@ import sys
 import os
 import unittest
 from decimal import Decimal
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -421,6 +422,74 @@ class TestPartitionCoinsForDesignation(unittest.TestCase):
 
         self.assertEqual(len(assigned["fees"]), 2)
         self.assertEqual([coin["coin_id"] for coin in unmatched], ["reserve"])
+
+
+class TestWaitForExpectedLocalCoinCounts(unittest.TestCase):
+
+    def _worker_with_counts(self, xch_counts, cat_counts):
+        worker = object.__new__(CoinPrepWorker)
+        worker.xch_wallet_id = 1
+        worker.cat_wallet_id = 2
+        worker.xch_expected_total_coins = 120
+        worker.cat_expected_total_coins = 70
+        worker.status_counts = []
+        worker.status_messages = []
+        worker.log_lines = []
+
+        xch_iter = iter(xch_counts)
+        cat_iter = iter(cat_counts)
+        state = {"xch": xch_counts[-1], "cat": cat_counts[-1]}
+
+        def get_confirmed_coin_count(wallet_id):
+            if wallet_id == worker.xch_wallet_id:
+                try:
+                    state["xch"] = next(xch_iter)
+                except StopIteration:
+                    pass
+                return state["xch"]
+            try:
+                state["cat"] = next(cat_iter)
+            except StopIteration:
+                pass
+            return state["cat"]
+
+        worker.get_confirmed_coin_count = get_confirmed_coin_count
+        worker._set_status_coin_counts = (
+            lambda xch_total=None, cat_total=None: worker.status_counts.append(
+                (xch_total, cat_total)
+            )
+        )
+        worker.update_status = (
+            lambda phase, progress, message: worker.status_messages.append(
+                (phase, progress, message)
+            )
+        )
+        worker.log = lambda message: worker.log_lines.append(message)
+        return worker
+
+    def test_returns_false_when_sage_local_counts_remain_short(self):
+        worker = self._worker_with_counts([120, 120, 120], [61, 61, 61])
+
+        with patch("coin_prep_worker.time.sleep", lambda _seconds: None):
+            result = worker._wait_for_expected_local_coin_counts(
+                timeout_s=2,
+                poll_s=1,
+            )
+
+        self.assertFalse(result)
+        self.assertIn("Local wallet still short", "\n".join(worker.log_lines))
+
+    def test_returns_true_after_sage_local_counts_catch_up(self):
+        worker = self._worker_with_counts([119, 120], [61, 70])
+
+        with patch("coin_prep_worker.time.sleep", lambda _seconds: None):
+            result = worker._wait_for_expected_local_coin_counts(
+                timeout_s=5,
+                poll_s=1,
+            )
+
+        self.assertTrue(result)
+        self.assertIn((120, 70), worker.status_counts)
 
 
 if __name__ == "__main__":
