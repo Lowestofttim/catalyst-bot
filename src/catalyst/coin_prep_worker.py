@@ -2115,16 +2115,14 @@ class CoinPrepWorker:
         """Consolidate coins via Sage's native endpoints.
 
         Strategy (in order of preference):
-        1. auto_combine_xch / auto_combine_cat — Sage auto-selects optimal coins
-        2. /combine — manual combine with explicit coin IDs (fallback)
-        3. send-to-self — last resort (original Chia workaround)
+        1. /combine — manual combine with explicit coin IDs
+        2. send-to-self — last resort (original Chia workaround)
+
+        Coin prep needs deterministic full-wallet consolidation. Sage's
+        auto-combine helpers may submit successfully while leaving the wallet
+        in a many-coin shape, so prep uses explicit coin IDs instead.
         """
         try:
-            from wallet_sage import auto_combine_xch, auto_combine_cat
-
-            is_cat = (wallet_id != self.xch_wallet_id)
-
-            # Log current coin count for context
             coin_count = self.get_coin_count(wallet_id)
             self.log(f"Current {name} coins: {coin_count}")
 
@@ -2132,34 +2130,11 @@ class CoinPrepWorker:
                 self.log(f"✅ {name} already consolidated ({coin_count} coin)")
                 return True
 
-            # F61: scale the fee up for large combines to get faster block
-            # inclusion. Without this bump, a 71-coin XCH combine can sit
-            # in the mempool for 5+ blocks (~2m 30s) while smaller txes
-            # land in the first block.
-            combine_fee = self._priority_combine_fee_mojos(coin_count)
-            base_fee = self._tx_fee_mojos()
-            if combine_fee > base_fee:
-                fee_multiplier = combine_fee // max(1, base_fee)
-                self.log(f"Submitting auto-combine via Sage RPC "
-                         f"(max_coins={coin_count}, fee={combine_fee:,} mojos, "
-                         f"{fee_multiplier}× base for priority block inclusion)...")
-            else:
-                self.log(f"Submitting auto-combine via Sage RPC (max_coins={coin_count})...")
-
-            if is_cat:
-                result = auto_combine_cat(fee_mojos=combine_fee, max_coins=coin_count)
-            else:
-                result = auto_combine_xch(fee_mojos=combine_fee, max_coins=coin_count)
-
-            if self._sage_submit_succeeded(result):
-                self.log(f"✅ {name} auto-combine submitted via Sage (was {coin_count} coins)")
-                return True
-            else:
-                self.log("⚠️ Sage auto-combine returned None — trying /combine endpoint...")
-                return self._consolidate_wallet_sage_combine(wallet_id, name)
+            self.log("Submitting deterministic Sage /combine with explicit coin IDs...")
+            return self._consolidate_wallet_sage_combine(wallet_id, name)
 
         except Exception as e:
-            self.log(f"⚠️ Sage auto-combine error: {e} — trying /combine endpoint...")
+            self.log(f"⚠️ Sage consolidation setup error: {e} — trying /combine endpoint...")
             return self._consolidate_wallet_sage_combine(wallet_id, name)
 
     def _consolidate_wallet_sage_combine(self, wallet_id: int, name: str) -> bool:
@@ -5679,7 +5654,7 @@ class CoinPrepWorker:
                 if max_verify_wait and elapsed_verify >= max_verify_wait:
                     self.log(f"Consolidation verification timeout after {elapsed_verify}s")
                     self.log(f"   XCH: {self.get_coin_count(self.xch_wallet_id)} coins, CAT: {self.get_coin_count(self.cat_wallet_id)} coins")
-                    self.log("   Continuing anyway - transactions may still be pending")
+                    self.log("   Final check will abort if consolidation is still incomplete")
                     break
 
                 xch_check = self.get_coin_count(self.xch_wallet_id)
@@ -5764,8 +5739,13 @@ class CoinPrepWorker:
             
             xch_final_ready = (1 <= final_xch <= 2) if self._tx_fee_mojos() > 0 else (final_xch == 1)
             if not xch_final_ready or final_cat != 1:
-                self.log(f"⚠️ Consolidation verification timeout: XCH={final_xch}, CAT={final_cat}")
-                self.log("   Continuing anyway - transactions may still be pending")
+                message = (
+                    f"Consolidation did not complete: XCH={final_xch}, CAT={final_cat}. "
+                    "Wait for Sage transactions to settle, then retry coin prep."
+                )
+                self.log(f"❌ {message}")
+                self.update_status(PrepPhase.ERROR, 0.0, f"Error: {message}", error=message)
+                raise Exception(message)
 
             # Designate consolidated coins as reserve in DB
             # (they'll get consumed by pool creation, but this establishes the DB record)
