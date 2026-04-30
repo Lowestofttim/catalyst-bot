@@ -1657,6 +1657,50 @@ class CoinPrepWorker:
         """Get the true spendable/confirmed coin count for confirmation gates."""
         return self.get_coin_count(wallet_id)
 
+    def _wait_for_expected_local_coin_counts(self, timeout_s: int = 300, poll_s: int = 10) -> bool:
+        """Wait until Sage's local wallet coin list reaches the prepared targets."""
+        xch_expected = int(getattr(self, "xch_expected_total_coins", 0) or 0)
+        cat_expected = int(getattr(self, "cat_expected_total_coins", 0) or 0)
+        poll_s = max(1, int(poll_s or 1))
+        attempts = max(1, int(timeout_s / poll_s) + 1)
+
+        last_counts = None
+        xch_short = xch_expected
+        cat_short = cat_expected
+        for attempt in range(attempts):
+            xch_final = self.get_confirmed_coin_count(self.xch_wallet_id)
+            cat_final = self.get_confirmed_coin_count(self.cat_wallet_id)
+            self._set_status_coin_counts(xch_total=xch_final, cat_total=cat_final)
+
+            xch_short = max(0, xch_expected - xch_final)
+            cat_short = max(0, cat_expected - cat_final)
+            if xch_short == 0 and cat_short == 0:
+                self.log(f"   Local wallet coin view caught up - XCH: {xch_final}, CAT: {cat_final}")
+                return True
+
+            counts = (xch_final, cat_final)
+            if counts != last_counts or attempt == 0 or attempt == attempts - 1:
+                self.log(
+                    f"   Waiting for local wallet coin view: "
+                    f"XCH {xch_final}/{xch_expected}, CAT {cat_final}/{cat_expected}"
+                )
+                self.update_status(
+                    PrepPhase.SPLITTING,
+                    0.92,
+                    f"Waiting for Sage coins: XCH={xch_final}/{xch_expected}, "
+                    f"CAT={cat_final}/{cat_expected}",
+                )
+                last_counts = counts
+
+            if attempt < attempts - 1:
+                time.sleep(poll_s)
+
+        self.log(
+            f"   Local wallet still short after {timeout_s}s - "
+            f"XCH missing {xch_short}, CAT missing {cat_short}"
+        )
+        return False
+
     def get_balance(self, wallet_id: int) -> Decimal:
         """Get wallet balance — uses RPC for Sage, CLI for Chia."""
         # Sage: use wallet RPC directly
@@ -4302,15 +4346,25 @@ class CoinPrepWorker:
             f"XCH={xch_expected} ({total_xch_target} prepared + 1 reserve), "
             f"CAT={cat_expected} ({total_cat_target} prepared + 1 reserve)"
         )
-        # Single snapshot — splits are already confirmed on-chain (Step 4 passed).
-        # The selectable view can lag for the CAT reserve change coin; that's fine.
-        # The DB designation sweep has its own polling, and Sage handles offer coin
-        # selection internally. No need to wait here.
+        # Splits are already confirmed on-chain (Step 4 passed).
+        # The selectable view can lag behind chain confirmation.
+        # The bot can only spend coins once Sage exposes them locally, so keep
+        # prep open until the local wallet view reaches the expected totals.
         xch_final = self.get_confirmed_coin_count(self.xch_wallet_id)
         cat_final = self.get_confirmed_coin_count(self.cat_wallet_id)
         self._set_status_coin_counts(xch_total=xch_final, cat_total=cat_final)
         xch_short = max(0, xch_expected - xch_final)
         cat_short = max(0, cat_expected - cat_final)
+        if xch_short or cat_short:
+            if not self._wait_for_expected_local_coin_counts(timeout_s=300, poll_s=10):
+                self.log("   Split transactions confirmed, but Sage local coin view did not reach target.")
+                self.log("   Coin prep cannot be marked complete until the wallet can see the prepared coins.")
+                return False
+            xch_final = self.get_confirmed_coin_count(self.xch_wallet_id)
+            cat_final = self.get_confirmed_coin_count(self.cat_wallet_id)
+            self._set_status_coin_counts(xch_total=xch_final, cat_total=cat_final)
+            xch_short = max(0, xch_expected - xch_final)
+            cat_short = max(0, cat_expected - cat_final)
         if xch_short == 0 and cat_short == 0:
             self.log(f"   ✅ All coins confirmed — XCH: {xch_final}, CAT: {cat_final}")
         else:
