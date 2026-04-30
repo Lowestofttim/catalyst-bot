@@ -155,7 +155,7 @@ jobs:
           cd dist && tar -czf "$package" Catalyst/
 
       - name: Upload zip/tar to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ matrix.artifact }}-${{ github.ref_name }}${{ matrix.ext }}
         env:
@@ -163,7 +163,7 @@ jobs:
 
       - name: Upload Windows Installer to Release
         if: matrix.os == 'windows-latest'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: Catalyst-Setup-${{ github.ref_name }}.exe
         env:
