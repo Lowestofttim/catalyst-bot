@@ -26,6 +26,7 @@ def should_retry_unconsumed_split(
     max_retries: int = 1,
     owned_output_high_water: int = 0,
     expected_count: int = 0,
+    owned_output_high_water_is_durable: bool = True,
 ) -> bool:
     """Return True when a split looks silently missed and is worth retrying once.
 
@@ -40,7 +41,11 @@ def should_retry_unconsumed_split(
         return False
     if outputs_selectable:
         return False
-    if expected_count > 0 and owned_output_high_water >= expected_count:
+    if (
+        owned_output_high_water_is_durable
+        and expected_count > 0
+        and owned_output_high_water >= expected_count
+    ):
         return False
     return pool_coin_visible and pool_coin_selectable
 

@@ -2115,27 +2115,42 @@ class CoinPrepWorker:
         """Consolidate coins via Sage's native endpoints.
 
         Strategy (in order of preference):
-        1. /combine — manual combine with explicit coin IDs
-        2. send-to-self — last resort (original Chia workaround)
+        1. send-to-self — wallet-visible full-balance consolidation
+        2. /combine — manual combine with explicit coin IDs (fallback)
 
-        Coin prep needs deterministic full-wallet consolidation. Sage's
-        auto-combine helpers may submit successfully while leaving the wallet
-        in a many-coin shape, so prep uses explicit coin IDs instead.
+        Sage's auto-combine and generic /combine endpoints can return
+        success without producing a durable wallet-visible reset for large
+        already-prepared coin sets. Coin prep needs a fresh start every run,
+        so the primary Sage path is the same operation an operator would
+        perform manually: send the wallet balance back to our own address.
         """
-        try:
-            coin_count = self.get_coin_count(wallet_id)
-            self.log(f"Current {name} coins: {coin_count}")
+        coin_count = self.get_coin_count(wallet_id)
+        self.log(f"Current {name} coins: {coin_count}")
 
-            if coin_count <= 1:
-                self.log(f"✅ {name} already consolidated ({coin_count} coin)")
-                return True
+        if coin_count <= 1:
+            self.log(f"✅ {name} already consolidated ({coin_count} coin)")
+            return True
 
-            self.log("Submitting deterministic Sage /combine with explicit coin IDs...")
-            return self._consolidate_wallet_sage_combine(wallet_id, name)
+        large_threshold = 40 if wallet_id == self.xch_wallet_id else 20
+        large_consolidation = coin_count > large_threshold
 
-        except Exception as e:
-            self.log(f"⚠️ Sage consolidation setup error: {e} — trying /combine endpoint...")
-            return self._consolidate_wallet_sage_combine(wallet_id, name)
+        self._sage_consolidation_submitted = False
+        if self._consolidate_wallet_sage_fallback(wallet_id, name):
+            return True
+
+        if getattr(self, "_sage_consolidation_submitted", False):
+            self.log(
+                f"{name} send-to-self was submitted but never verified as one coin; "
+                "not retrying with another consolidation method"
+            )
+            return False
+
+        if large_consolidation:
+            self.log(f"Large {name} consolidation failed; not retrying as one giant /combine")
+            return False
+
+        self.log("⚠️ Send-to-self consolidation failed — trying /combine endpoint...")
+        return self._consolidate_wallet_sage_combine(wallet_id, name)
 
     def _consolidate_wallet_sage_combine(self, wallet_id: int, name: str) -> bool:
         """Consolidate via Sage's /combine endpoint with explicit coin IDs.
@@ -2156,7 +2171,11 @@ class CoinPrepWorker:
             # Filter unspent
             unspent = [r for r in records if r.get("spent_block_index", 0) == 0]
 
-            if len(unspent) <= 1:
+            if len(unspent) == 0:
+                self.log(f"{name} has 0 spendable coins for /combine; not treating as consolidated")
+                return False
+
+            if len(unspent) == 1:
                 self.log(f"✅ {name} already consolidated ({len(unspent)} coin)")
                 return True
 
@@ -2193,44 +2212,232 @@ class CoinPrepWorker:
             self.log(f"⚠️ /combine error: {e} — falling back to send-to-self")
             return self._consolidate_wallet_sage_fallback(wallet_id, name)
 
+    def _wait_for_sage_consolidation(self, wallet_id: int, name: str,
+                                     before_count: int,
+                                     max_wait_seconds: int = 360,
+                                     poll_interval: int = 5) -> bool:
+        """Wait until a Sage self-send has really reset the wallet to one coin."""
+        saw_pending_lock = False
+        restored_for = 0
+        last_count = None
+
+        for elapsed in range(0, max_wait_seconds + poll_interval, poll_interval):
+            if elapsed:
+                time.sleep(poll_interval)
+
+            observed_count = self.get_coin_count(wallet_id)
+            if wallet_id == self.xch_wallet_id:
+                self._set_status_coin_counts(xch_total=observed_count)
+            else:
+                self._set_status_coin_counts(cat_total=observed_count)
+            self.update_status(
+                PrepPhase.CONSOLIDATING,
+                0.20,
+                f"Consolidating {name}: {observed_count} coins",
+            )
+
+            if observed_count == 1:
+                self.log(f"OK: {name} consolidation confirmed: {before_count} -> 1 coin")
+                return True
+
+            if observed_count == 0:
+                saw_pending_lock = True
+                restored_for = 0
+            elif saw_pending_lock and observed_count >= before_count:
+                if observed_count == last_count:
+                    restored_for += poll_interval
+                else:
+                    restored_for = poll_interval
+
+                if restored_for >= 30:
+                    self.log(
+                        f"{name} consolidation wallet view returned to {observed_count} coins "
+                        "after a pending lock; forcing Sage resync before failing"
+                    )
+                    if self._resync_sage_after_stale_consolidation(wallet_id, name):
+                        return True
+                    self.log(
+                        f"ERROR: {name} consolidation was rejected or dropped: "
+                        f"wallet returned to {observed_count} coins after a pending lock"
+                    )
+                    return False
+            else:
+                restored_for = 0
+
+            last_count = observed_count
+            if elapsed > 0 and elapsed % 30 == 0:
+                self.log(
+                    f"Waiting for {name} consolidation confirmation "
+                    f"({elapsed}s, {observed_count} coins visible)"
+                )
+
+        final_count = self.get_coin_count(wallet_id)
+        self.log(
+            f"ERROR: {name} consolidation did not complete within {max_wait_seconds}s "
+            f"({before_count} -> {final_count} coins)"
+        )
+        return False
+
+    def _resync_sage_after_stale_consolidation(self, wallet_id: int, name: str) -> bool:
+        """Force Sage to rescan when it shows spent consolidation inputs as spendable."""
+        try:
+            from wallet_sage import get_current_key, sage_login
+
+            key = get_current_key() or {}
+            fingerprint = key.get("fingerprint")
+            if fingerprint is None:
+                self.log(f"Sage resync skipped for {name}: active fingerprint unavailable")
+                return False
+
+            self.log(f"Forcing Sage resync for {name} after stale consolidation view...")
+            if not sage_login(int(fingerprint), force_resync=True):
+                self.log(f"Sage resync failed for {name}")
+                return False
+
+            for elapsed in range(0, 180 + 5, 5):
+                if elapsed:
+                    time.sleep(5)
+
+                observed_count = self.get_coin_count(wallet_id)
+                if wallet_id == self.xch_wallet_id:
+                    self._set_status_coin_counts(xch_total=observed_count)
+                else:
+                    self._set_status_coin_counts(cat_total=observed_count)
+                self.update_status(
+                    PrepPhase.CONSOLIDATING,
+                    0.22,
+                    f"Resyncing Sage {name} view: {observed_count} coins",
+                )
+
+                if observed_count == 1:
+                    self.log(f"OK: Sage resync recovered {name} consolidation view")
+                    return True
+
+                if elapsed > 0 and elapsed % 30 == 0:
+                    self.log(
+                        f"Waiting for Sage resync to surface {name} consolidation "
+                        f"({elapsed}s, {observed_count} coins visible)"
+                    )
+
+            self.log(f"Sage resync did not recover {name} consolidation view")
+            return False
+
+        except Exception as e:
+            self.log(f"Sage resync recovery failed for {name}: {e}")
+            return False
+
     def _consolidate_wallet_sage_fallback(self, wallet_id: int, name: str) -> bool:
         """Fallback consolidation: send entire balance to self.
         Used if Sage's auto_combine fails (e.g. older Sage version).
         """
         try:
-            from wallet_sage import get_next_address, send_transaction, get_wallet_balance
+            from wallet_sage import get_next_address, get_spendable_coins_rpc, send_transaction
 
-            # Get receive address
-            addr_result = get_next_address(wallet_id, new_address=False)
+            # Get an address from the XCH wallet. CATs can be sent to the
+            # same puzzle hash; this avoids CAT-wallet address endpoint quirks.
+            addr_result = get_next_address(self.xch_wallet_id, new_address=False)
             if not addr_result or not addr_result.get("address"):
                 self.log("❌ Could not get Sage address for fallback")
                 return False
             address = addr_result["address"]
 
-            # Get balance in mojos
-            bal_result = get_wallet_balance(wallet_id)
-            if not bal_result or not bal_result.get("success"):
-                self.log("❌ Could not get Sage balance for fallback")
-                return False
-            wb = bal_result.get("wallet_balance", {})
-            mojos = wb.get("spendable_balance", wb.get("confirmed_wallet_balance", 0))
+            def _coin_id(record: dict) -> str:
+                coin = record.get("coin") if isinstance(record.get("coin"), dict) else {}
+                raw = (
+                    record.get("coin_id")
+                    or record.get("id")
+                    or record.get("coinId")
+                    or record.get("name")
+                    or coin.get("coin_id")
+                    or coin.get("id")
+                    or coin.get("coinId")
+                    or coin.get("name")
+                    or ""
+                )
+                cid = str(raw).strip().lower()
+                return cid[2:] if cid.startswith("0x") else cid
 
-            if mojos <= 0:
-                self.log(f"⚠️ {name} balance is 0 — coins may still be locked. Skipping.")
+            def _coin_amount(record: dict) -> int:
+                coin = record.get("coin") if isinstance(record.get("coin"), dict) else {}
+                for raw in (
+                    record.get("amount"),
+                    record.get("amt"),
+                    record.get("value"),
+                    coin.get("amount"),
+                    coin.get("amt"),
+                    coin.get("value"),
+                ):
+                    if raw is not None and raw != "":
+                        try:
+                            return int(raw)
+                        except (TypeError, ValueError):
+                            return 0
+                return 0
+
+            def _spendable_inputs(source_wallet_id: int, label: str) -> list[tuple[str, int]]:
+                coins_result = get_spendable_coins_rpc(source_wallet_id)
+                if not coins_result or not coins_result.get("success"):
+                    self.log(f"Could not get spendable {label} coin IDs for send-to-self")
+                    return []
+
+                records = (
+                    coins_result.get("confirmed_records")
+                    or coins_result.get("records")
+                    or coins_result.get("coins")
+                    or coins_result.get("data")
+                    or []
+                )
+                inputs: list[tuple[str, int]] = []
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    if int(record.get("spent_block_index", 0) or 0) != 0:
+                        continue
+                    cid = _coin_id(record)
+                    amount = _coin_amount(record)
+                    if cid and amount > 0:
+                        inputs.append((cid, amount))
+                return inputs
+
+            target_inputs = _spendable_inputs(wallet_id, name)
+            if not target_inputs:
+                self.log(f"{name} has no spendable coin IDs for send-to-self consolidation")
                 return False
 
-            self.log("Submitting send-to-self consolidation...")
-            result = send_transaction(wallet_id, mojos, address, fee_mojos=self._tx_fee_mojos())
+            before_count = len(target_inputs)
+            fee_mojos = self._priority_combine_fee_mojos(before_count)
+            source_coin_ids = [cid for cid, _amount in target_inputs]
+            send_amount = sum(amount for _cid, amount in target_inputs)
 
-            if self._sage_submit_succeeded(result):
-                self.log("✅ Fallback consolidation submitted via Sage RPC")
-                return True
-            else:
-                self.log("❌ Sage fallback consolidation returned None")
+            if wallet_id == self.xch_wallet_id:
+                send_amount -= fee_mojos
+                if send_amount <= 0:
+                    self.log(f"ERROR: {name} balance is too low for fee {fee_mojos:,}")
+                    return False
+
+            self.log(
+                f"Submitting {name} balance self-send "
+                f"({before_count} input coins, amount={send_amount:,} mojos, "
+                f"fee={fee_mojos:,})..."
+            )
+            result = send_transaction(
+                wallet_id=wallet_id,
+                amount_mojos=int(send_amount),
+                address=address,
+                fee_mojos=int(fee_mojos),
+                source_coin_ids=source_coin_ids,
+            )
+
+            if not self._sage_submit_succeeded(result):
+                self.log(f"ERROR: Sage {name} send-to-self consolidation was not accepted")
                 return False
+
+            self._sage_consolidation_submitted = True
+            self.log(f"OK: {name} send-to-self submitted; waiting for one-coin reset")
+            return self._wait_for_sage_consolidation(wallet_id, name, before_count)
 
         except Exception as e:
-            self.log(f"❌ Sage fallback consolidation error: {e}")
+            self.log(f"❌ Sage send-to-self consolidation error: {e}")
             return False
     
     def create_trading_pool(self, wallet_id: int, name: str, amount: Decimal) -> bool:
@@ -3337,6 +3544,7 @@ class CoinPrepWorker:
             owned_ready_logged = set()
             grace_extensions = {}  # pending index -> number of pending-tx grace extensions used
             owned_high_water = {}  # idx -> max owned_output_count ever seen
+            pool_consumed_seen = set()  # idx -> source coin was observed consumed at least once
             chain_confirmed = set()  # idx -> coinset confirmed split landed on chain
             chain_check_failures = {}  # idx -> consecutive coinset query failures
             split_deadlines = {idx: timeout_s for idx in range(len(pending_splits))}
@@ -3382,7 +3590,7 @@ class CoinPrepWorker:
                 # When the source coin is already consumed but exact-amount search finds
                 # nothing, retry with a ±15% tolerance (minimum 1 M-mojo / 0.000001 XCH).
                 fuzzy_match = False
-                if owned_output_count == 0 and not pool_still_visible:
+                if owned_output_count == 0 and (not pool_still_visible or idx in pool_consumed_seen):
                     _tol = max(coin_size // 7, 1_000_000)  # ~14% or 0.000001 XCH
                     fuzzy_ids = sorted(
                         cid for cid, amount in owned_coin_map.items()
@@ -3460,16 +3668,26 @@ class CoinPrepWorker:
                         wid, cnt, pm, pcid, idx, owned_coin_map, selectable_coin_ids
                     )
                     tx_state = self._get_transaction_confirmation_state(tx_ids)
-                    # High-water mark: once we've observed `cnt` exact-amount
-                    # outputs, that's durable evidence the split landed.
-                    # Sage's owned view occasionally drops a coin (e.g. when
-                    # a pre-existing same-amount coin gets consumed by an
-                    # unrelated TX), and without this mark we'd reset the
-                    # confirmation gate and wait until the 300s timeout.
+                    if split_state["pool_consumed"]:
+                        pool_consumed_seen.add(idx)
+                    pool_consumed_effective = split_state["pool_consumed"] or idx in pool_consumed_seen
+                    # High-water mark: remember the best output count Sage has
+                    # ever shown. It is only durable once the source coin has
+                    # also been observed consumed or chain/tx truth confirms it;
+                    # pending Sage outputs can disappear if a split TX is
+                    # dropped.
                     prev_hw = owned_high_water.get(idx, 0)
                     cur_owned = split_state["owned_output_count"]
                     if cur_owned > prev_hw:
                         owned_high_water[idx] = cur_owned
+                    durable_high_water_complete = (
+                        owned_high_water.get(idx, 0) >= cnt
+                        and (
+                            pool_consumed_effective
+                            or idx in chain_confirmed
+                            or tx_state["confirmed"]
+                        )
+                    )
                     later_same_batch_confirmed = any(
                         prev_idx in confirmed and
                         prev_wid == wid and
@@ -3486,7 +3704,7 @@ class CoinPrepWorker:
                         tx_confirmed_logged.add(idx)
 
                     if (
-                        split_state["pool_consumed"]
+                        pool_consumed_effective
                         and split_state["owned_output_count"] >= cnt
                         and idx not in owned_ready_logged
                     ):
@@ -3507,7 +3725,7 @@ class CoinPrepWorker:
                     # outer timeout. We only call out if the local view
                     # can't make a decision on its own.
                     needs_chain_check = (
-                        split_state["pool_consumed"]
+                        pool_consumed_effective
                         and idx not in chain_confirmed
                         and not tx_state["confirmed"]
                         and elapsed_s >= 30
@@ -3543,13 +3761,13 @@ class CoinPrepWorker:
                     #   (c) Pool consumed AND chain-truth confirmed AND we
                     #       have at least cnt-1 outputs owned locally
                     sage_view_complete = (
-                        split_state["pool_consumed"]
+                        pool_consumed_effective
                         and split_state["owned_output_count"] >= cnt
                         and (split_state["outputs_selectable"] or tx_state["confirmed"])
                     )
                     chain_view_complete = (
                         idx in chain_confirmed
-                        and split_state["pool_consumed"]
+                        and pool_consumed_effective
                         and (
                             owned_high_water.get(idx, 0) >= cnt
                             or split_state["owned_output_count"] >= max(1, cnt - 1)
@@ -3574,12 +3792,10 @@ class CoinPrepWorker:
                         )
                         anomaly_reported.add(idx)
 
-                    high_water_complete = owned_high_water.get(idx, 0) >= cnt
-
                     force_retry_now = (
                         later_same_batch_confirmed and
                         retry_counts.get(idx, 0) < 1 and
-                        not high_water_complete and
+                        not durable_high_water_complete and
                         split_state["pool_still_visible"] and
                         split_state["pool_still_selectable"] and
                         not split_state["outputs_selectable"]
@@ -3595,6 +3811,7 @@ class CoinPrepWorker:
                         max_retries=1,
                         owned_output_high_water=owned_high_water.get(idx, 0),
                         expected_count=cnt,
+                        owned_output_high_water_is_durable=durable_high_water_complete,
                     ):
                         # ────────────────────────────────────────────────────────
                         # AUTHORITATIVE on-chain check (Option B fix 2026-04-07):
@@ -3719,8 +3936,8 @@ class CoinPrepWorker:
                     if should_extend_pending_consumed_split_grace(
                         elapsed_s=elapsed_s,
                         current_deadline_s=split_deadlines.get(idx, timeout_s),
-                        pool_coin_visible=split_state["pool_still_visible"],
-                        pool_coin_selectable=split_state["pool_still_selectable"],
+                        pool_coin_visible=split_state["pool_still_visible"] and not pool_consumed_effective,
+                        pool_coin_selectable=split_state["pool_still_selectable"] and not pool_consumed_effective,
                         tx_known=tx_state["known"],
                         tx_confirmed=tx_state["confirmed"],
                         owned_output_count=split_state["owned_output_count"],
@@ -3791,9 +4008,14 @@ class CoinPrepWorker:
                         wid, cnt, pm, pcid, idx, owned_coin_map, selectable_coin_ids
                     )
                     tx_state = self._get_transaction_confirmation_state(tx_ids)
-                    if split_state["pool_still_visible"] and split_state["pool_still_selectable"]:
+                    pool_consumed_effective = split_state["pool_consumed"] or idx in pool_consumed_seen
+                    if (
+                        split_state["pool_still_visible"]
+                        and split_state["pool_still_selectable"]
+                        and not pool_consumed_effective
+                    ):
                         pool_state = "source coin still selectable"
-                    elif split_state["pool_still_visible"]:
+                    elif split_state["pool_still_visible"] and not pool_consumed_effective:
                         pool_state = "source coin visible but not selectable"
                     else:
                         pool_state = "source coin already consumed"
@@ -3807,7 +4029,7 @@ class CoinPrepWorker:
                     # Optional tier (fees/sniper) whose on-chain TX completed: treat
                     # as a soft failure — coins exist but wallet view lagged behind.
                     # Non-optional tiers or unconsumed source coins are hard failures.
-                    if tn in _optional_tiers and split_state["pool_consumed"]:
+                    if tn in _optional_tiers and pool_consumed_effective:
                         _soft_failures.append((sl, tn))
                         self.log(
                             f"      ⚠️ {sl} {tn} split unconfirmed after {timeout_s}s but TX went through "

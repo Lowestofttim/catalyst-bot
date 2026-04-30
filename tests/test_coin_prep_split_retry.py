@@ -53,6 +53,34 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
             )
         )
 
+    def test_retries_when_output_high_water_was_only_pending_wallet_state(self):
+        self.assertTrue(
+            should_retry_unconsumed_split(
+                elapsed_s=120,
+                pool_coin_visible=True,
+                pool_coin_selectable=True,
+                outputs_selectable=False,
+                retries_used=0,
+                owned_output_high_water=25,
+                expected_count=25,
+                owned_output_high_water_is_durable=False,
+            )
+        )
+
+    def test_does_not_retry_when_output_high_water_was_durable(self):
+        self.assertFalse(
+            should_retry_unconsumed_split(
+                elapsed_s=120,
+                pool_coin_visible=True,
+                pool_coin_selectable=True,
+                outputs_selectable=False,
+                retries_used=0,
+                owned_output_high_water=25,
+                expected_count=25,
+                owned_output_high_water_is_durable=True,
+            )
+        )
+
     def test_extends_when_consumed_split_is_almost_complete_and_still_pending(self):
         self.assertTrue(
             should_extend_pending_consumed_split_grace(
@@ -170,6 +198,12 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
         self.assertIn("_prepare_cat_split_fee_coins", source)
         self.assertIn("fee_coin_id=fee_coin_id", source)
         self.assertIn("has_dedicated_fee_coin=bool(fee_coin_id)", source)
+
+    def test_worker_distinguishes_pending_output_high_water_from_durable_split(self):
+        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        self.assertIn("pool_consumed_seen", source)
+        self.assertIn("durable_high_water_complete", source)
+        self.assertIn("owned_output_high_water_is_durable", source)
 
 
 if __name__ == "__main__":
