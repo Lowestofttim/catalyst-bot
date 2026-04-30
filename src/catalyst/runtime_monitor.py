@@ -32,6 +32,19 @@ from database import get_events_since, get_open_offers, log_event
 from event_taxonomy import EventCategory, categorize_event
 
 
+CONFIRMED_FILL_EVENT_TYPES = {
+    "fills_detected",
+    "offer_filled",
+    "fill_verified",
+    "fill_verified_via_sage",
+    "fill_verified_via_dexie",
+    "fill_recovered_late",
+    "fill_recovered_via_dexie",
+    "spacescan_fill_confirmed",
+    "sage_fill_backfill",
+}
+
+
 _SLOW_CALL_RE = re.compile(
     r"\[\s*[^\]]+\]\s+\[[^\]]+\]\s+\[[^\]]+\]\s+\[\s*(?P<level>[A-Z]+)\]\s+"
     r"\[(?P<category>[^\]]+)\]\s+<<<\s+(?P<method>[^\s]+)\s+::\s+time_ms=(?P<ms>[\d.]+)"
@@ -344,10 +357,11 @@ class RuntimeMonitor:
         if event_type == "dexie_repost_done":
             self._dexie_reconcile_grace_until = 0.0
 
-        # Fill activity: OFFER category fills + explicit fill event types
-        if category == EventCategory.OFFER and "fill" in event_type:
-            self._last_fill_activity_at = time.time()
-        elif event_type in {"spacescan_fill_confirmed", "sage_fill_backfill"}:
+        # Fill activity: only confirmed-fill events. Several non-fill guard
+        # events intentionally contain "fill" in their name (for example
+        # offer_closed_nonfill and fill_dexie_still_open), so substring
+        # matching makes the dashboard imply fills that did not happen.
+        if event_type in CONFIRMED_FILL_EVENT_TYPES:
             self._last_fill_activity_at = time.time()
 
         # Coin prep tracking (COIN category catches future prep event names)

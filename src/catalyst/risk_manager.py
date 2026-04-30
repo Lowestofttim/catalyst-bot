@@ -122,7 +122,10 @@ class RiskManager:
         Returns current inventory state.
         """
         try:
-            new_pos = get_net_position(cfg.CAT_ASSET_ID)
+            new_pos = get_net_position(
+                cfg.CAT_ASSET_ID,
+                since=getattr(cfg, "RUN_HISTORY_CUTOFF", None),
+            )
         except Exception as e:
             log_event("warning", "inventory_update_failed",
                       f"Failed to get net position: {e}")

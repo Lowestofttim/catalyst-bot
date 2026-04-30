@@ -597,8 +597,13 @@ def should_check_balance() -> bool:
     """Helper for bot_loop: should we run the periodic balance check this loop?
 
     Free tier: balance checks are disabled entirely (budget reserved for fills).
-    Paid-key mode: always OK here; bot_loop controls frequency separately.
+    Sage mode: disabled because Sage reports whole-wallet balances while the
+    Spacescan endpoint checks one address. Comparing those creates false drift
+    warnings whenever prepared coins or live offers sit on other puzzle hashes.
+    Paid-key mode for compatible wallets: bot_loop controls frequency separately.
     """
+    if str(getattr(cfg, "WALLET_TYPE", "") or "").lower() == "sage":
+        return False
     if not is_pro_tier():
         return False  # Free tier: skip balance checks, save budget for fills
     return True

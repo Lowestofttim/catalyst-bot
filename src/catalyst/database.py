@@ -3819,19 +3819,28 @@ def record_inventory_snapshot(cat_asset_id: str, net_position: Decimal,
         return False
 
 
-def get_net_position(cat_asset_id: str) -> Decimal:
+def get_net_position(cat_asset_id: str, since: str = None) -> Decimal:
     """Get the current net position for a CAT pair.
 
     Calculated from fills: sum of buy sizes minus sum of sell sizes.
     Positive = long CAT (accumulated more than sold).
     Negative = short CAT (sold more than accumulated).
+    If `since` is provided, only fills from that timestamp onward are used.
     """
     conn = get_connection()
 
-    rows = conn.execute(
+    query = (
         "SELECT side, size_cat FROM fills WHERE cat_asset_id=? "
-        "AND COALESCE(verification_status, 'legacy') != 'phantom'",
-        (cat_asset_id,)
+        "AND COALESCE(verification_status, 'legacy') != 'phantom'"
+    )
+    params = [cat_asset_id]
+    if since:
+        query += " AND filled_at>=?"
+        params.append(_sqlite_ts(since))
+
+    rows = conn.execute(
+        query,
+        params,
     ).fetchall()
     net = sum(
         Decimal(str(r["size_cat"])) * (Decimal("1") if r["side"] == "buy" else Decimal("-1"))
@@ -4259,7 +4268,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
 
     # Net position
     if cat_asset_id:
-        stats["net_position"] = str(get_net_position(cat_asset_id))
+        stats["net_position"] = str(get_net_position(cat_asset_id, since=since))
     else:
         stats["net_position"] = "0"
 

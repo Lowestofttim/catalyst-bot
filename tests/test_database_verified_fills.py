@@ -142,6 +142,36 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
             ],
         )
 
+    def test_stats_net_position_honors_fresh_run_cutoff(self):
+        asset_id = "asset-test"
+
+        database.record_fill(
+            trade_id="old-run-buy",
+            side="buy",
+            price_xch=Decimal("0.1"),
+            size_xch=Decimal("1.0"),
+            size_cat=Decimal("1000"),
+            cat_asset_id=asset_id,
+            tier="mid",
+            filled_at="2026-03-27T20:00:00+00:00",
+        )
+        database.record_fill(
+            trade_id="fresh-run-sell",
+            side="sell",
+            price_xch=Decimal("0.1"),
+            size_xch=Decimal("0.2"),
+            size_cat=Decimal("200"),
+            cat_asset_id=asset_id,
+            tier="mid",
+            filled_at="2026-03-28T22:10:00+00:00",
+        )
+
+        stats = database.get_stats(asset_id, since="2026-03-28T22:07:28+00:00")
+
+        self.assertEqual(stats["total_fills"], 1)
+        self.assertEqual(stats["net_position"], "-200")
+        self.assertEqual(stats["net_cat_flow"], "-200")
+
     def test_fill_upgrade_clears_cancelled_timestamp(self):
         conn = database.get_connection()
         asset_id = "asset-test"

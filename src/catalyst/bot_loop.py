@@ -9529,7 +9529,11 @@ class BotLoop:
         self._last_daily_reconcile_at = now
 
         try:
-            backfilled = backfill_verified_fills_from_offers(limit=200)
+            run_history_cutoff = getattr(cfg, "RUN_HISTORY_CUTOFF", None)
+            backfilled = backfill_verified_fills_from_offers(
+                limit=200,
+                since=run_history_cutoff,
+            )
             backfilled = backfilled or []
             # F48 (2026-04-09): distinguish between newly-inserted rows and
             # existing rows whose verification_status was upgraded from
@@ -10934,7 +10938,11 @@ class BotLoop:
         state["dexie"] = self.dexie_manager.get_stats()
         try:
             from database import get_fills
-            recent_fills = get_fills(cat_asset_id=cfg.CAT_ASSET_ID, limit=10)
+            recent_fills = get_fills(
+                cat_asset_id=cfg.CAT_ASSET_ID,
+                limit=10,
+                since=getattr(cfg, "RUN_HISTORY_CUTOFF", None),
+            )
         except Exception:
             recent_fills = []
         state["fills"] = {

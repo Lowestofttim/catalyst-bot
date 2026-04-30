@@ -21,6 +21,8 @@ except ModuleNotFoundError as exc:
 
 
 class _FakeCfg:
+    CAT_ASSET_ID = "asset-test"
+    RUN_HISTORY_CUTOFF = None
     INVENTORY_ENABLED = True
     MAX_POSITION_XCH = Decimal("100")
     SKEW_INTENSITY = Decimal("0.3")
@@ -111,6 +113,34 @@ class TestCircuitBreakerTrip(unittest.TestCase):
         rm._clear_circuit_breaker()  # clear so we can re-trip as price
         rm._trip_circuit_breaker("price", cb_type="price")
         self.assertEqual(rm._circuit_breaker_type, "price")
+
+
+@unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
+class TestUpdateInventory(unittest.TestCase):
+    """update_inventory — session-scoped net position."""
+
+    def setUp(self):
+        self._p = patch.object(_rm_mod, "cfg", _fake_cfg)
+        self._p.start()
+
+    def tearDown(self):
+        self._p.stop()
+
+    def test_uses_fresh_run_cutoff_for_net_position(self):
+        cfg_patch = _FakeCfg()
+        cfg_patch.CAT_ASSET_ID = "asset-test"
+        cfg_patch.RUN_HISTORY_CUTOFF = "2026-03-28T22:07:28+00:00"
+
+        with patch.object(_rm_mod, "cfg", cfg_patch), \
+             patch.object(_rm_mod, "get_net_position", return_value=Decimal("42")) as get_net_position:
+            rm = _make_rm()
+            state = rm.update_inventory()
+
+        get_net_position.assert_called_once_with(
+            "asset-test",
+            since="2026-03-28T22:07:28+00:00",
+        )
+        self.assertEqual(state["net_position_cat"], "42")
 
 
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")

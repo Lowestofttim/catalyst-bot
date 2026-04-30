@@ -307,6 +307,38 @@ class RuntimeMonitorTests(unittest.TestCase):
         finally:
             os.remove(tmp_path)
 
+    def test_nonfill_events_do_not_refresh_last_fill_activity(self):
+        bot = _FakeBot()
+        monitor = RuntimeMonitor(bot)
+        monitor.reset_session()
+
+        monitor._handle_event({
+            "timestamp": "2026-04-30T19:20:20+00:00",
+            "event_type": "offer_closed_nonfill",
+            "event_category": "offer",
+            "severity": "info",
+            "message": "BUY offer retired after Dexie confirmed cancel",
+        })
+        monitor._handle_event({
+            "timestamp": "2026-04-30T19:20:21+00:00",
+            "event_type": "fill_dexie_still_open",
+            "event_category": "offer",
+            "severity": "info",
+            "message": "Dexie still shows offer OPEN; not a fill",
+        })
+
+        self.assertEqual(monitor._last_fill_activity_at, 0.0)
+
+        monitor._handle_event({
+            "timestamp": "2026-04-30T19:20:22+00:00",
+            "event_type": "offer_filled",
+            "event_category": "offer",
+            "severity": "info",
+            "message": "BUY offer filled",
+        })
+
+        self.assertGreater(monitor._last_fill_activity_at, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

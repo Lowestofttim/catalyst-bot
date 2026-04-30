@@ -109,6 +109,12 @@ class SpacescanVerifyFillTests(unittest.TestCase):
         self.assertFalse(result)
         self.assertTrue(any(evt == "spacescan_self_spend" for _, evt, _ in self.logged))
 
+    def test_sage_does_not_run_single_address_balance_check(self):
+        sys.modules["config"].cfg.SPACESCAN_API_KEY = "pro-key"
+        sys.modules["config"].cfg.WALLET_TYPE = "sage"
+
+        self.assertFalse(self.spacescan.should_check_balance())
+
 
 if __name__ == "__main__":
     unittest.main()
