@@ -2,18 +2,37 @@ flowchart LR
     UI["Desktop / browser UI"] -->|REST + bridge calls| API["Flask API + AppBridge"]
     API -->|settings + commands| CFG["Config + Smart Settings"]
     CFG --> BL["Bot Loop"]
-    BL <--> DB[("SQLite WAL state")]
 
-    TS["TibetSwap pool data"] --> PE["Price Engine"]
-    DXM["Dexie market data"] --> PE
-    DXM --> MI["Market Intel"]
-    CS["Coinset.org / local full node"] --> MW["Mempool watcher"]
-    MW -->|pending spends| BL
+    subgraph External["External market signals"]
+        TS["TibetSwap pool data"]
+        DXM["Dexie market data"]
+        CS["Coinset.org / local full node"]
+    end
+
+    subgraph Intelligence["Pricing and risk intelligence"]
+        PE["Price Engine"]
+        AMM["AMM monitor"]
+        MI["Market Intel"]
+        MW["Mempool watcher"]
+        RM["Risk Manager"]
+    end
+
+    TS --> PE
+    TS --> AMM
+    AMM -->|fresh reserves + drift| PE
+    DXM --> PE
+    DXM --> MI
+    CS --> MW
+
     PE -->|mid price + arb gap| BL
-    MI -->|order book + depth| BL
-
-    BL --> RM["Risk Manager"]
+    PE -->|price + volatility| RM
+    MI -->|competitor depth| RM
+    BL -->|inventory + cycle state| RM
+    AMM -->|shock / requote signal| BL
+    MW -->|pending spends| BL
     RM -->|spreads + safety gates| BL
+
+    BL <--> DB[("SQLite WAL state")]
     BL --> OM["Offer Manager"]
     BL --> CM["Coin Manager"]
     BL --> FT["Fill Tracker"]
