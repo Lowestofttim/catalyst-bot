@@ -2389,6 +2389,30 @@ def get_free_coins(wallet_type: str) -> List[Dict]:
     return [dict(row) for row in rows]
 
 
+def get_smallest_free_tier_spare(wallet_type: str) -> Optional[Dict]:
+    """Return the smallest free tier-spare coin for a wallet type."""
+    conn = get_connection()
+    row = conn.execute(
+        """
+        SELECT coin_id, amount_mojos, assigned_tier
+        FROM coins
+        WHERE status='free'
+          AND designation='tier_spare'
+          AND wallet_type=?
+        ORDER BY amount_mojos ASC, coin_id ASC
+        LIMIT 1
+        """,
+        (wallet_type,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "coin_id": row["coin_id"],
+        "amount_mojos": int(row["amount_mojos"]),
+        "assigned_tier": row["assigned_tier"],
+    }
+
+
     # NOTE: get_all_coins_state() is defined once, further below (after get_coin_summary).
     # A duplicate first definition was removed here.
 

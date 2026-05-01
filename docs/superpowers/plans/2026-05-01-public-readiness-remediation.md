@@ -36,7 +36,8 @@ Update this table after each completed task.
 | Task 5 build reproducibility | 2026-05-01 | codex/public-readiness | 2e3fa9c | `python -m pip install -r requirements-dev.txt`; `python -m py_compile build.py`; `python -m ruff check . --select E9,F821`; `python build.py --no-clean` | partial | Install command hit local pywebview permission issue in user site-packages; build.py compiles; Ruff passed; PyInstaller build succeeded. |
 | Task 6 Splash runtime safety | 2026-05-01 | codex/public-readiness | 876fb8e | `python -m pytest tests/test_splash_runtime_paths.py tests/test_splash_receive.py tests/test_plan_04_22_splash_settings.py tests/test_bot_health_splash_daemon.py -q`; `python -m ruff check . --select E9,F821`; `python -m py_compile src\catalyst\splash_setup.py src\catalyst\splash_node.py` | passed | Splash binaries install under user data; node prefers user-data binary; downloads fail closed without SHA256 unless explicit override is set. |
 | Task 7 local API route/security | 2026-05-01 | codex/public-readiness | d95a025 | `python -m pytest tests/test_security_guardrails_source.py tests/test_api_local_guard.py tests/test_plan_04_22_splash_settings.py tests/test_plan_03_15_splash_receive_path_integration.py -q`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `python scripts/check_env_example.py`; `python -m py_compile src\catalyst\api_server.py src\catalyst\blueprints\splash.py` | passed | 77 tests passed. `/console` safely returns 404, startup external links are direct URLs, CORS reflects loopback origins only, and Splash incoming rejects non-loopback Origin plus non-JSON requests. Manual browser click-through not run in this session. |
-| Task 8 tooling/CI tightening | 2026-05-01 | codex/public-readiness | pending | `python -m ruff check .`; `python -m bandit -r src --ini .bandit -ll`; `python -m pip_audit -r requirements.txt -r requirements-dev.txt`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py --cov=..\src\catalyst --cov-report=term-missing; Pop-Location` | partial | Ruff config narrowed to the passing public gate (`E9`, `F821`); CI now uses config-based Ruff and coverage reporting. Full Ruff remains 234 findings and Ruff format would touch 249 files, so full lint/formatter enforcement is deferred. Coverage run reported 2806 passed, 4 skipped, 41% total coverage. |
+| Task 8 tooling/CI tightening | 2026-05-01 | codex/public-readiness | 16b7da5 | `python -m ruff check .`; `python -m bandit -r src --ini .bandit -ll`; `python -m pip_audit -r requirements.txt -r requirements-dev.txt`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py --cov=..\src\catalyst --cov-report=term-missing; Pop-Location` | partial | Ruff config narrowed to the passing public gate (`E9`, `F821`); CI now uses config-based Ruff and coverage reporting. Full Ruff remains 234 findings and Ruff format would touch 249 files, so full lint/formatter enforcement is deferred. Coverage run reported 2806 passed, 4 skipped, 41% total coverage. |
+| Task 9 database boundary first pass | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_market_db_boundary.py -q`; `python -m pytest tests -q -k "market or database"`; `python -m pytest tests/test_market_db_boundary.py tests/test_plan_02_30_database_unit.py tests/test_plan_04_16_to_20_remaining_endpoints.py -q`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location`; `python -m ruff check .`; `python -m py_compile src\catalyst\database.py src\catalyst\blueprints\market.py` | partial | Removed the direct `sqlite3.connect(DB_PATH)` from `blueprints/market.py` and moved the spare-coin query behind `database.get_smallest_free_tier_spare()`. Main suite passed with 2807 passed, 4 skipped. Wider direct `conn.execute` cleanup remains. |
 
 ## Recovery Checklist
 
@@ -606,15 +607,15 @@ git commit -m "ci: enforce public quality checks"
   - `src/catalyst/blueprints/offers.py`
 - Add or update tests under `tests/`
 
-- [ ] Identify direct SQL outside `database.py`:
+- [x] Identify direct SQL outside `database.py`:
 
 ```powershell
 rg -n "sqlite3\.connect|get_connection\(\).*execute|\bconn\.execute\(" src\catalyst -g "*.py"
 ```
 
-- [ ] Start with the direct `sqlite3.connect(DB_PATH)` use in `src/catalyst/blueprints/market.py`.
+- [x] Start with the direct `sqlite3.connect(DB_PATH)` use in `src/catalyst/blueprints/market.py`.
 
-- [ ] Add database helper functions for the specific queries being moved. Keep helpers narrow and named by intent, for example:
+- [x] Add database helper functions for the specific queries being moved. Keep helpers narrow and named by intent, for example:
 
 ```python
 def get_latest_market_snapshot():
@@ -627,15 +628,19 @@ def get_latest_market_snapshot():
 
 Use actual table and column names from the existing query when implementing.
 
-- [ ] Replace caller SQL with database helper calls.
+- [x] Replace caller SQL with database helper calls.
 
-- [ ] Run targeted tests for the touched blueprint:
+Result on 2026-05-01: added `database.get_smallest_free_tier_spare()` and changed `/api/debug/sage-single-offer-test` to use it. Broader `conn.execute` callers in `api_server.py`, `blueprints/offers.py`, and other modules remain for later slices.
+
+- [x] Run targeted tests for the touched blueprint:
 
 ```powershell
 python -m pytest tests -q -k "market or database"
 ```
 
-- [ ] Run main suite:
+Result on 2026-05-01: 173 passed, 2638 deselected, 3 collection warnings from the known ignored live-integration test classes.
+
+- [x] Run main suite:
 
 ```powershell
 Push-Location tests
@@ -643,7 +648,9 @@ python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ig
 Pop-Location
 ```
 
-- [ ] Commit:
+Result on 2026-05-01: 2807 passed, 4 skipped in 180.09s.
+
+- [x] Commit:
 
 ```powershell
 git add src/catalyst/database.py src/catalyst/blueprints/market.py src/catalyst/api_server.py src/catalyst/blueprints/offers.py tests

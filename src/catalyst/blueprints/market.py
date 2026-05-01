@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import time
 from decimal import Decimal
 
@@ -818,32 +817,7 @@ def api_debug_sage_single_offer_test():
         if get_wallet_type() != "sage":
             return jsonify({"ok": False, "error": "sage_only_debug_route"}), 400
 
-        from database import DB_PATH
-
-        def _pick_smallest_spare(wallet_type: str):
-            conn = sqlite3.connect(DB_PATH, timeout=10)
-            try:
-                row = conn.execute(
-                    """
-                    select coin_id, amount_mojos, assigned_tier
-                    from coins
-                    where status='free'
-                      and designation='tier_spare'
-                      and wallet_type=?
-                    order by amount_mojos asc, coin_id asc
-                    limit 1
-                    """,
-                    (wallet_type,),
-                ).fetchone()
-                if not row:
-                    return None
-                return {
-                    "coin_id": row[0],
-                    "amount_mojos": int(row[1]),
-                    "assigned_tier": row[2],
-                }
-            finally:
-                conn.close()
+        from database import get_smallest_free_tier_spare
 
         def _extract_trade_id(result: dict) -> str:
             if not isinstance(result, dict):
@@ -894,8 +868,8 @@ def api_debug_sage_single_offer_test():
             result["cancel_result"] = cancel_res
             return result
 
-        xch_coin = _pick_smallest_spare("xch")
-        cat_coin = _pick_smallest_spare("cat")
+        xch_coin = get_smallest_free_tier_spare("xch")
+        cat_coin = get_smallest_free_tier_spare("cat")
         if not xch_coin or not cat_coin:
             return jsonify({
                 "ok": False,
