@@ -37,7 +37,8 @@ Update this table after each completed task.
 | Task 6 Splash runtime safety | 2026-05-01 | codex/public-readiness | 876fb8e | `python -m pytest tests/test_splash_runtime_paths.py tests/test_splash_receive.py tests/test_plan_04_22_splash_settings.py tests/test_bot_health_splash_daemon.py -q`; `python -m ruff check . --select E9,F821`; `python -m py_compile src\catalyst\splash_setup.py src\catalyst\splash_node.py` | passed | Splash binaries install under user data; node prefers user-data binary; downloads fail closed without SHA256 unless explicit override is set. |
 | Task 7 local API route/security | 2026-05-01 | codex/public-readiness | d95a025 | `python -m pytest tests/test_security_guardrails_source.py tests/test_api_local_guard.py tests/test_plan_04_22_splash_settings.py tests/test_plan_03_15_splash_receive_path_integration.py -q`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `python scripts/check_env_example.py`; `python -m py_compile src\catalyst\api_server.py src\catalyst\blueprints\splash.py` | passed | 77 tests passed. `/console` safely returns 404, startup external links are direct URLs, CORS reflects loopback origins only, and Splash incoming rejects non-loopback Origin plus non-JSON requests. Manual browser click-through not run in this session. |
 | Task 8 tooling/CI tightening | 2026-05-01 | codex/public-readiness | 16b7da5 | `python -m ruff check .`; `python -m bandit -r src --ini .bandit -ll`; `python -m pip_audit -r requirements.txt -r requirements-dev.txt`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py --cov=..\src\catalyst --cov-report=term-missing; Pop-Location` | partial | Ruff config narrowed to the passing public gate (`E9`, `F821`); CI now uses config-based Ruff and coverage reporting. Full Ruff remains 234 findings and Ruff format would touch 249 files, so full lint/formatter enforcement is deferred. Coverage run reported 2806 passed, 4 skipped, 41% total coverage. |
-| Task 9 database boundary first pass | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_market_db_boundary.py -q`; `python -m pytest tests -q -k "market or database"`; `python -m pytest tests/test_market_db_boundary.py tests/test_plan_02_30_database_unit.py tests/test_plan_04_16_to_20_remaining_endpoints.py -q`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location`; `python -m ruff check .`; `python -m py_compile src\catalyst\database.py src\catalyst\blueprints\market.py` | partial | Removed the direct `sqlite3.connect(DB_PATH)` from `blueprints/market.py` and moved the spare-coin query behind `database.get_smallest_free_tier_spare()`. Main suite passed with 2807 passed, 4 skipped. Wider direct `conn.execute` cleanup remains. |
+| Task 9 database boundary first pass | 2026-05-01 | codex/public-readiness | 7a38439 | `python -m pytest tests/test_market_db_boundary.py -q`; `python -m pytest tests -q -k "market or database"`; `python -m pytest tests/test_market_db_boundary.py tests/test_plan_02_30_database_unit.py tests/test_plan_04_16_to_20_remaining_endpoints.py -q`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location`; `python -m ruff check .`; `python -m py_compile src\catalyst\database.py src\catalyst\blueprints\market.py` | partial | Removed the direct `sqlite3.connect(DB_PATH)` from `blueprints/market.py` and moved the spare-coin query behind `database.get_smallest_free_tier_spare()`. Main suite passed with 2807 passed, 4 skipped. Wider direct `conn.execute` cleanup remains. |
+| Task 10 logging/frontend safety first pass | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_security_guardrails_source.py::SecurityGuardrailSourceTests::test_frontend_console_calls_are_debug_gated -q`; `python -m pytest tests/test_security_guardrails_source.py tests/test_frontend_diagnostics_layout.py tests/test_api_local_guard.py -q`; JS extracted from `bot_gui.html` through `node --check`; `python -m ruff check .`; `git diff --check` | partial | Red test failed before implementation, then targeted tests passed with 32 passed. Direct frontend `console.*` calls are now gated behind `window.__CATALYST_DEBUG_LOGS`; current counts are `print_count=604`, `console_count=0`, `html_safety_count=340`. Python print cleanup and broad `innerHTML` hardening remain deferred to smaller slices. |
 
 ## Recovery Checklist
 
@@ -666,7 +667,7 @@ git commit -m "refactor: centralize high-risk database access"
 - Modify: `bot_gui.html`
 - Add or update tests where behavior changes
 
-- [ ] Count current logging cleanup scope:
+- [x] Count current logging cleanup scope:
 
 ```powershell
 rg -n "print\(" src\catalyst desktop_app.py
@@ -676,9 +677,11 @@ rg -n "innerHTML|insertAdjacentHTML|onclick=" bot_gui.html
 
 - [ ] In Python application code under `src/catalyst`, replace production `print()` with `slog(category, message, data=None, level="info")`.
 
-- [ ] Keep intentional CLI/build output in `build.py` and guarded desktop startup output in `desktop_app.py` unless changing it is low-risk.
+Deferred on 2026-05-01: current scope is 604 matches across `src\catalyst` and `desktop_app.py`, including startup and integration-style output. This should be split by module instead of changed mechanically.
 
-- [ ] In `bot_gui.html`, gate diagnostic `console.*` calls behind a debug flag:
+- [x] Keep intentional CLI/build output in `build.py` and guarded desktop startup output in `desktop_app.py` unless changing it is low-risk.
+
+- [x] In `bot_gui.html`, gate diagnostic `console.*` calls behind a debug flag:
 
 ```javascript
 const DEBUG_LOGS = Boolean(window.__CATALYST_DEBUG_LOGS);
@@ -689,12 +692,16 @@ function debugLog(...args) {
 
 - [ ] Do not rewrite all `innerHTML` at once. Start with server-sourced data paths and convert to `textContent`, DOM node creation, or escaped rendering.
 
-- [ ] Verify:
+Deferred on 2026-05-01: current scope is 340 `innerHTML` / `insertAdjacentHTML` / inline `onclick=` matches in `bot_gui.html`; no broad rewrite was made in this pass.
+
+- [x] Verify:
 
 ```powershell
 python -m ruff check . --select E9,F821
 python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py
 ```
+
+Result on 2026-05-01: source-guard red test failed before implementation, then `python -m pytest tests/test_security_guardrails_source.py tests/test_frontend_diagnostics_layout.py tests/test_api_local_guard.py -q` passed with 32 passed; extracted JS from `bot_gui.html` passed `node --check`; `python -m ruff check .` passed; `git diff --check` reported only CRLF normalization warnings.
 
 - [ ] Commit:
 

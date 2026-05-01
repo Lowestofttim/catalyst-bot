@@ -55,6 +55,11 @@ class SecurityGuardrailSourceTests(unittest.TestCase):
         self.assertIn("def _get_sage_signing_block_reason", api_source)
         self.assertIn("bot_start_blocked_watch_only", bot_loop_source)
 
+    def test_frontend_console_calls_are_debug_gated(self):
+        source = (REPO_ROOT / "bot_gui.html").read_text(encoding="utf-8")
+        self.assertIn("window.__CATALYST_DEBUG_LOGS", source)
+        self.assertNotRegex(source, r"\bconsole\.(log|warn|error|debug)\(")
+
 
 if __name__ == "__main__":
     unittest.main()

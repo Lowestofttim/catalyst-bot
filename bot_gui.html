@@ -12329,6 +12329,16 @@
     </style>
 
     <script>
+        const DEBUG_LOGS = Boolean(window.__CATALYST_DEBUG_LOGS);
+        function debugConsole(level, ...args) {
+            if (!DEBUG_LOGS || !window.console || typeof window.console[level] !== 'function') return;
+            window.console[level](...args);
+        }
+        function debugLog(...args) { debugConsole('log', ...args); }
+        function debugWarn(...args) { debugConsole('warn', ...args); }
+        function debugError(...args) { debugConsole('error', ...args); }
+        function debugDebug(...args) { debugConsole('debug', ...args); }
+
         // VERSION: v0.4.0-beta.1 — Desktop App Build
 
         // =================================================================
@@ -12347,7 +12357,7 @@
             if (IS_DESKTOP) return;  // Already activated
             IS_DESKTOP = true;
             document.body.classList.add('desktop-mode');
-            console.log('[V4] Desktop mode activated - ' + bridgeName + ' bridge ready');
+            debugLog('[V4] Desktop mode activated - ' + bridgeName + ' bridge ready');
         }
 
         function _getTauriWindow() {
@@ -12359,7 +12369,7 @@
                     return window.__TAURI__.window.getCurrentWindow();
                 }
             } catch (error) {
-                console.warn('[V4] Could not access Tauri window bridge:', error);
+                debugWarn('[V4] Could not access Tauri window bridge:', error);
             }
             return null;
         }
@@ -12373,7 +12383,7 @@
                     return await window.__TAURI__.tauri.invoke(command, args || {});
                 }
             } catch (error) {
-                console.warn('[V4] Tauri invoke failed for ' + command + ':', error);
+                debugWarn('[V4] Tauri invoke failed for ' + command + ':', error);
                 throw error;
             }
             throw new Error('Tauri invoke bridge unavailable');
@@ -12398,10 +12408,10 @@
                     clearTimeout(TAURI_CLOSE_HANDLER_RETRY_TIMER);
                     TAURI_CLOSE_HANDLER_RETRY_TIMER = null;
                 }
-                console.log('[V4] Tauri close handler registered');
+                debugLog('[V4] Tauri close handler registered');
                 return true;
             } catch (error) {
-                console.warn('[V4] Could not register Tauri close handler:', error);
+                debugWarn('[V4] Could not register Tauri close handler:', error);
                 return false;
             }
         }
@@ -12455,7 +12465,7 @@
                     _activateTauriMode();
                 } else if (attempts >= maxAttempts) {
                     clearInterval(interval);
-                    console.log('[V4] Browser mode — no desktop bridge detected after 3s');
+                    debugLog('[V4] Browser mode — no desktop bridge detected after 3s');
                 }
             }, 100);
         })();
@@ -12583,9 +12593,9 @@
                 if (!response.ok || result?.success === false) {
                     throw new Error(result?.error || 'Fresh-start reset failed');
                 }
-                console.log('[RESUME] Fresh-start session reset from settings flow:', result);
+                debugLog('[RESUME] Fresh-start session reset from settings flow:', result);
             } catch (err) {
-                console.warn('[RESUME] Fresh-start reset failed from settings flow:', err);
+                debugWarn('[RESUME] Fresh-start reset failed from settings flow:', err);
                 showToast('Start Fresh reset failed: ' + formatError(err), 'warning');
             }
 
@@ -13144,7 +13154,7 @@
                         snapshotSettings();
                         attachUnsavedListeners();
                         clearInlineValidation();
-                    } catch (e) { console.warn('[settings] Config load failed:', e); }
+                    } catch (e) { debugWarn('[settings] Config load failed:', e); }
                 })();
             }
         }
@@ -13885,7 +13895,7 @@
                     _v4TrimPriceHistory();
                 }
             } catch (err) {
-                console.warn('[PRICE HISTORY] Fetch failed:', err.message || err);
+                debugWarn('[PRICE HISTORY] Fetch failed:', err.message || err);
             } finally {
                 _v4PriceHistoryLoading = false;
                 _v4UpdatePriceHistoryTitle();
@@ -14610,7 +14620,7 @@
                             }
                         };
                     } catch (err) {
-                        console.warn('[apiFetch] Bridge call failed for ' + bridgeMethod + ':', err);
+                        debugWarn('[apiFetch] Bridge call failed for ' + bridgeMethod + ':', err);
                         // Fall through to HTTP fetch on bridge error
                     }
                 }
@@ -14625,12 +14635,12 @@
             try {
                 parsed = new URL(String(url || ''), window.location.origin);
             } catch (error) {
-                console.warn('[V4] Invalid external URL:', url, error);
+                debugWarn('[V4] Invalid external URL:', url, error);
                 return false;
             }
 
             if (!/^https?:$/i.test(parsed.protocol)) {
-                console.warn('[V4] Refusing non-http external URL:', parsed.toString());
+                debugWarn('[V4] Refusing non-http external URL:', parsed.toString());
                 return false;
             }
 
@@ -14648,9 +14658,9 @@
                 if (resp.ok) {
                     return true;
                 }
-                console.warn('[V4] /open-external failed:', resp.status);
+                debugWarn('[V4] /open-external failed:', resp.status);
             } catch (error) {
-                console.warn('[V4] /open-external request error:', error);
+                debugWarn('[V4] /open-external request error:', error);
             }
 
             // Fallback: standard browser open (works in plain browser mode)
@@ -14686,7 +14696,7 @@
 
             const href = sanitizeExternalHref(rawHref);
             if (!href) {
-                console.warn('[V4] Dashboard external link missing or invalid:', anchorEl);
+                debugWarn('[V4] Dashboard external link missing or invalid:', anchorEl);
                 return false;
             }
 
@@ -14889,7 +14899,7 @@
                 }
             } catch (e) {
                 // Risk check itself errored — fail-open (allow the change)
-                console.warn('[lcToggleRiskCheck] failed:', e);
+                debugWarn('[lcToggleRiskCheck] failed:', e);
             }
             // No risk found → proceed
             return true;
@@ -15240,7 +15250,7 @@
                 localStorage.setItem(PRESETS_LS_KEY, JSON.stringify(obj || {}));
                 return true;
             } catch (e) {
-                console.warn('[PRESETS] localStorage write failed:', e);
+                debugWarn('[PRESETS] localStorage write failed:', e);
                 return false;
             }
         }
@@ -16635,7 +16645,7 @@
                     display.title = 'No wallet connected — click to select one';
                 }
             } catch (error) {
-                console.error('Failed to fetch fingerprint:', error);
+                debugError('Failed to fetch fingerprint:', error);
                 const valEl = document.getElementById('fingerprintValue');
                 if (valEl) valEl.textContent = 'Connect ▸';
             }
@@ -16683,7 +16693,7 @@
                         return { ok: false, message: data?.message || 'Wallet switch failed' };
                     }
                 } catch (error) {
-                    console.warn('[FINGERPRINT] Waiting for wallet switch result failed:', error.message);
+                    debugWarn('[FINGERPRINT] Waiting for wallet switch result failed:', error.message);
                 }
                 await new Promise(resolve => setTimeout(resolve, pollMs));
             }
@@ -16876,7 +16886,7 @@
             if (typeof refreshReserveDisplays === 'function') refreshReserveDisplays();
             if (typeof updateCoinPrepPreview === 'function') updateCoinPrepPreview();
             if (typeof validateSettingsForm === 'function') validateSettingsForm();
-            console.log(`[CAT SWITCH] Accepted ${source} for ${assetId.slice(0, 12)}...`);
+            debugLog(`[CAT SWITCH] Accepted ${source} for ${assetId.slice(0, 12)}...`);
         }
 
         function selectorHasAssetId(selector, assetId) {
@@ -16994,7 +17004,7 @@
                     }
                 }
                 select.removeEventListener('change', onPick);
-                try { await selectCAT(); } catch (e) { console.warn('[settings pair switch] selectCAT failed:', e); }
+                try { await selectCAT(); } catch (e) { debugWarn('[settings pair switch] selectCAT failed:', e); }
                 // Collapse picker back behind the trigger
                 select.classList.add('v4-settings-hidden-select');
                 select.setAttribute('aria-hidden', 'true');
@@ -17797,7 +17807,7 @@
             }
             _catSwitchGateTimer = setTimeout(() => {
                 if (_catSwitchTargetAssetId === assetId) {
-                    console.warn('[CAT SWITCH] Timed out waiting for matching /status payload; releasing stale-status gate');
+                    debugWarn('[CAT SWITCH] Timed out waiting for matching /status payload; releasing stale-status gate');
                     _catSwitchTargetAssetId = '';
                 }
                 _catSwitchGateTimer = null;
@@ -17930,7 +17940,7 @@
                     if (msg.length && msg.length < 200 && !/TypeError|ReferenceError/.test(msg)) {
                         return msg;
                     }
-                    console.warn('formatError: masking internal error', err);
+                    debugWarn('formatError: masking internal error', err);
                     return fallback;
                 }
                 return fallback;
@@ -18297,7 +18307,7 @@
                     _dbxCapChoice = !!choice;
                 }
             } catch (_dbxPromptErr) {
-                console.warn('[SmartDefaults] DBX pre-prompt skipped:', _dbxPromptErr);
+                debugWarn('[SmartDefaults] DBX pre-prompt skipped:', _dbxPromptErr);
             }
 
             const sdBtn = document.getElementById('smartDefaultsBtn');
@@ -18345,7 +18355,7 @@
                         await refreshBalances(true, _assetId);
                     }
                 } catch (_prefetchErr) {
-                    console.warn('[SmartDefaults] Pre-flight balance refresh failed:', _prefetchErr);
+                    debugWarn('[SmartDefaults] Pre-flight balance refresh failed:', _prefetchErr);
                     // Continue anyway — /smart-defaults will still run, and
                     // the post-write gate below will hold the preview until
                     // data catches up on the next poll.
@@ -18388,7 +18398,7 @@
                 }
 
                 const src = data._data_sources || {};
-                console.log('[SmartDefaults] Backend returned:', data);
+                debugLog('[SmartDefaults] Backend returned:', data);
 
                 // Update bot_state pricing for other GUI components
                 if (src.mid_price > 0) {
@@ -18750,7 +18760,7 @@
                         await new Promise(r => setTimeout(r, _pollIntervalMs));
                     }
                     if (!_previewDepsReady()) {
-                        console.warn('[SmartDefaults] Preview deps still not ready after 8s — rendering anyway.');
+                        debugWarn('[SmartDefaults] Preview deps still not ready after 8s — rendering anyway.');
                     }
                 }
 
@@ -18932,7 +18942,7 @@
                 markSmartSettingsApplied();
 
             } catch (error) {
-                console.error('Failed to get smart settings:', error);
+                debugError('Failed to get smart settings:', error);
                 showToast('Smart Settings failed: ' + formatError(error), 'error');
             } finally {
                 // Clear loading state
@@ -19445,7 +19455,7 @@
                     feeStatusCache = data;
                 }
             } catch (e) {
-                console.warn('[fees] status fetch failed:', e);
+                debugWarn('[fees] status fetch failed:', e);
             }
             updateFeeSettingsUi();
         }
@@ -21642,9 +21652,9 @@
                             }
                             : null;
                         if (_resumeCandidateCAT) {
-                            console.log('[INIT] Stored previous CAT for optional resume:', _resumeCandidateCAT.name || _resumeCandidateCAT.asset_id);
+                            debugLog('[INIT] Stored previous CAT for optional resume:', _resumeCandidateCAT.name || _resumeCandidateCAT.asset_id);
                         } else {
-                            console.log('[INIT] No active CAT restored at startup - waiting for explicit pair selection.');
+                            debugLog('[INIT] No active CAT restored at startup - waiting for explicit pair selection.');
                         }
                         resetPairSelectionState('Choose a CAT pair for this wallet.');
                         clearPairScopedDashboardState('selected pair');
@@ -21674,7 +21684,7 @@
                                 decimals: serverCat.decimals || 3,
                                 ticker_id: serverCat.ticker_id || ''
                             };
-                            console.log('[INIT] Restored active CAT from server:', currentCAT.name);
+                            debugLog('[INIT] Restored active CAT from server:', currentCAT.name);
                             // Refresh the Volume & Token Info strip now that
                             // currentCAT is populated — without this, a restart
                             // with a persisted pair left the strip stuck on
@@ -21699,24 +21709,24 @@
                             // coinPrepStatus stays 'none' until user saves settings or resumes
 
                             // Resume check deferred to finalDismiss() — after Splash gate completes
-                            console.log('[INIT] CAT restored — resume check will run after startup gates');
+                            debugLog('[INIT] CAT restored — resume check will run after startup gates');
                             updateStartupChecklist(bot_state);
                         } else {
-                            console.log('[INIT] Server active CAT is not present in the current wallet list.');
+                            debugLog('[INIT] Server active CAT is not present in the current wallet list.');
                             resetPairSelectionState('Choose a CAT pair for this wallet.');
                         }
                     } else {
-                        console.log('[INIT] No active CAT on server, waiting for user to choose.');
+                        debugLog('[INIT] No active CAT on server, waiting for user to choose.');
                         resetPairSelectionState('Choose a CAT pair for this wallet.');
                         updateStartupChecklist(bot_state);
                     }
                 } catch (e) {
-                    console.warn('[INIT] Could not restore active CAT:', e.message);
+                    debugWarn('[INIT] Could not restore active CAT:', e.message);
                 }
                 await fetchStatus();
                 
             } catch (error) {
-                console.error('Failed to load CATs:', error);
+                debugError('Failed to load CATs:', error);
                 showToast('Failed to load CATs', 'error');
             }
         }
@@ -21840,27 +21850,27 @@
                     startMarketSummaryPolling();
                     fetchDashboard(assetId);
                     refreshBalances(true, assetId).catch((refreshError) => {
-                        console.warn('[CAT SWITCH] Balance refresh had issues:', refreshError);
+                        debugWarn('[CAT SWITCH] Balance refresh had issues:', refreshError);
                     });
                     fetchStatus()
                         .then((statusData) => {
                             if (statusData?.current_cat?.asset_id === assetId) {
-                                console.log(`[CAT SWITCH] Updated to ${name} - data refreshed`);
+                                debugLog(`[CAT SWITCH] Updated to ${name} - data refreshed`);
                             }
                         })
                         .catch((refreshError) => {
-                            console.warn('[CAT SWITCH] Background status refresh had issues:', refreshError);
+                            debugWarn('[CAT SWITCH] Background status refresh had issues:', refreshError);
                         });
 
                     // Resume check: if startup gates already passed, check now; otherwise deferred to finalDismiss()
                     if (_startupGatesComplete && !_resumeHandled) {
-                        console.log('[CAT SWITCH] Gates already complete — checking for resume now');
+                        debugLog('[CAT SWITCH] Gates already complete — checking for resume now');
                         const hasSession = await checkForResume();
                         if (hasSession) {
-                            console.log('[CAT SWITCH] Session found — modal shown');
+                            debugLog('[CAT SWITCH] Session found — modal shown');
                         }
                     } else {
-                        console.log('[CAT SWITCH] Resume check deferred to after startup gates');
+                        debugLog('[CAT SWITCH] Resume check deferred to after startup gates');
                     }
                 } else {
                     restorePairSelectors(previousCAT.asset_id || '');
@@ -21883,7 +21893,7 @@
                 if (typeof refreshReserveDisplays === 'function') refreshReserveDisplays();
                 if (typeof updateCoinPrepPreview === 'function') updateCoinPrepPreview();
                 if (typeof validateSettingsForm === 'function') validateSettingsForm();
-                console.error('[CAT SWITCH] Error:', error);
+                debugError('[CAT SWITCH] Error:', error);
                 showToast('Error selecting CAT: ' + formatError(error), 'error');
             } finally {
                 const minOverlayMs = 2000;
@@ -22015,7 +22025,7 @@
                     }
                 }
             } catch (err) {
-                console.warn('[MARKET SUMMARY] Fetch failed:', err.message);
+                debugWarn('[MARKET SUMMARY] Fetch failed:', err.message);
             }
         }
 
@@ -22187,7 +22197,7 @@
                 const response = await apiFetch(`${API_URL}/balances/refresh`, { method: 'POST' });
                 const data = await response.json();
                 if (requestAssetId && currentCAT?.asset_id && currentCAT.asset_id !== requestAssetId) {
-                    console.log('[CAT SWITCH] Ignoring stale balance refresh for old pair:', requestAssetId);
+                    debugLog('[CAT SWITCH] Ignoring stale balance refresh for old pair:', requestAssetId);
                     return data;
                 }
                 if (data.success && data.balances) {
@@ -22214,7 +22224,7 @@
                     if (!silent) showToast('Failed to refresh balances', 'error');
                 }
             } catch (error) {
-                console.error('Balance refresh error:', error);
+                debugError('Balance refresh error:', error);
                 if (!silent) showToast('Failed to refresh balances', 'error');
             }
         }
@@ -22233,7 +22243,7 @@
                 setTimeout(() => updateFingerprint(), 1000);
                 if (!silent) showToast('CAT list & balances refreshed!', 'success');
             } catch (error) {
-                console.error('[CAT SWITCH] Error:', error);
+                debugError('[CAT SWITCH] Error:', error);
                 if (!silent) showToast('Failed to refresh CATs', 'error');
             }
         }
@@ -22261,7 +22271,7 @@
                     }
                 }
             } catch (error) {
-                console.error('Failed to fetch fingerprint:', error);
+                debugError('Failed to fetch fingerprint:', error);
                 const badge = document.getElementById('fingerprintBadge');
                 if (badge) badge.textContent = 'Error';
             }
@@ -22278,7 +22288,7 @@
                 if (_catSwitchTargetAssetId) {
                     const returnedAssetId = data?.current_cat?.asset_id || '';
                     if (!returnedAssetId || returnedAssetId !== _catSwitchTargetAssetId) {
-                        console.log('[CAT SWITCH] Ignoring stale status while waiting for target CAT:', returnedAssetId || '(none)');
+                        debugLog('[CAT SWITCH] Ignoring stale status while waiting for target CAT:', returnedAssetId || '(none)');
                         return null;
                     }
                     if (_catSwitchGateTimer) {
@@ -22286,7 +22296,7 @@
                         _catSwitchGateTimer = null;
                     }
                     _catSwitchTargetAssetId = '';
-                    console.log('[CAT SWITCH] Matching status payload confirmed for new pair');
+                    debugLog('[CAT SWITCH] Matching status payload confirmed for new pair');
                 }
                 // Merge status data into bot_state (preserve SSE-provided fields like spread_bps)
                 const sseFields = ['spread_bps', 'arb_gap_bps', 'mid_price'];
@@ -22312,7 +22322,7 @@
                             decimals: data.current_cat.decimals || 3,
                             ticker_id: data.current_cat.ticker_id || ''
                         };
-                        console.log('[SYNC] Ignoring idle startup current_cat until the user confirms a trading pair:', _resumeCandidateCAT.name || _resumeCandidateCAT.asset_id);
+                        debugLog('[SYNC] Ignoring idle startup current_cat until the user confirms a trading pair:', _resumeCandidateCAT.name || _resumeCandidateCAT.asset_id);
                         resetPairSelectionState('Choose a CAT pair for this wallet.');
                     } else {
                     const mainSelector = document.getElementById('catSelector');
@@ -22330,11 +22340,11 @@
                         const _missingId = data.current_cat.asset_id;
                         if (window._catReloadAttempted !== _missingId) {
                             window._catReloadAttempted = _missingId;
-                            console.log('[SYNC] current_cat missing from dropdown — triggering loadCATs() refresh:', _missingId);
+                            debugLog('[SYNC] current_cat missing from dropdown — triggering loadCATs() refresh:', _missingId);
                             (typeof loadCATs === 'function' ? loadCATs() : Promise.resolve())
-                                .catch(e => console.warn('[SYNC] loadCATs() retry failed:', e?.message || e));
+                                .catch(e => debugWarn('[SYNC] loadCATs() retry failed:', e?.message || e));
                         } else {
-                            console.log('[SYNC] Ignoring status current_cat that is not present in the current wallet CAT list:', _missingId);
+                            debugLog('[SYNC] Ignoring status current_cat that is not present in the current wallet CAT list:', _missingId);
                         }
                     } else {
                     // Merge server CAT data — don't overwrite fields we already have
@@ -22376,7 +22386,7 @@
                         const hasDropdownSelection = selector && selector.value && !selector.options[selector.selectedIndex]?.disabled;
                         
                         if (!hasDropdownSelection && currentCAT.asset_id && selector) {
-                            console.log('[SYNC] Bot running, syncing dropdown to:', currentCAT.asset_id);
+                            debugLog('[SYNC] Bot running, syncing dropdown to:', currentCAT.asset_id);
                             let synced = false;
                             for (let i = 0; i < selector.options.length; i++) {
                                 const optVal = selector.options[i].value;
@@ -22384,12 +22394,12 @@
                                     selector.selectedIndex = i;
                                     selector.value = optVal;
                                     synced = true;
-                                    console.log('[SYNC] Matched option index:', i, 'value:', optVal);
+                                    debugLog('[SYNC] Matched option index:', i, 'value:', optVal);
                                     break;
                                 }
                             }
                             if (!synced) {
-                                console.log('[SYNC] Not found in dropdown, injecting.');
+                                debugLog('[SYNC] Not found in dropdown, injecting.');
                                 const opt = document.createElement('option');
                                 opt.value = currentCAT.asset_id;
                                 opt.setAttribute('data-wallet', currentCAT.wallet_id || '0');
@@ -22437,7 +22447,7 @@
             } catch (error) {
                 // Suppress AbortError (expected when Sage wallet RPC is slow)
                 if (error.name !== 'AbortError') {
-                    console.error('Failed to fetch status:', error);
+                    debugError('Failed to fetch status:', error);
                 }
                 return null;
             }
@@ -22491,7 +22501,7 @@
             // Buttons — respect _botStarting flag so we don't overwrite "⏳ Starting..."
             // Safety: if _botStarting has been true for >120s, force-clear it (startup sync can be slow)
             if (_botStarting && _botStartingAt && (Date.now() - _botStartingAt > 120000)) {
-                console.warn('[START] _botStarting safety timeout (120s) — force-clearing');
+                debugWarn('[START] _botStarting safety timeout (120s) — force-clearing');
                 _botStarting = false;
             }
             const startBtn = document.getElementById('startBtn');
@@ -22909,7 +22919,7 @@
                 const closerName = el.id && MODAL_CLOSER_NAMES[el.id];
                 if (closerName && typeof window[closerName] === 'function') {
                     try { window[closerName](); return true; }
-                    catch (err) { console.warn('Modal closer failed for', el.id, err); }
+                    catch (err) { debugWarn('Modal closer failed for', el.id, err); }
                 }
                 // Fallback: simply remove the active class
                 el.classList.remove('active');
@@ -24066,15 +24076,15 @@
                 const payload = await resp.json();
                 const returnedAssetId = payload?.current_cat?.asset_id || '';
                 if (_catSwitchTargetAssetId && returnedAssetId && returnedAssetId !== _catSwitchTargetAssetId) {
-                    console.log('[CAT SWITCH] Ignoring stale dashboard payload while waiting for target CAT:', returnedAssetId);
+                    debugLog('[CAT SWITCH] Ignoring stale dashboard payload while waiting for target CAT:', returnedAssetId);
                     return null;
                 }
                 if (requestAssetId && returnedAssetId && returnedAssetId !== requestAssetId) {
-                    console.log('[CAT SWITCH] Ignoring mismatched dashboard payload for old pair:', returnedAssetId);
+                    debugLog('[CAT SWITCH] Ignoring mismatched dashboard payload for old pair:', returnedAssetId);
                     return null;
                 }
                 if (requestAssetId && currentCAT?.asset_id && currentCAT.asset_id !== requestAssetId) {
-                    console.log('[CAT SWITCH] Ignoring stale dashboard payload for old pair:', requestAssetId);
+                    debugLog('[CAT SWITCH] Ignoring stale dashboard payload for old pair:', requestAssetId);
                     return null;
                 }
                 _dashboardData = payload;
@@ -24117,7 +24127,7 @@
                 }
                 return _dashboardData;
             } catch (e) {
-                console.warn('[Dashboard] fetch failed:', e.message);
+                debugWarn('[Dashboard] fetch failed:', e.message);
                 return null;
             }
         }
@@ -24939,7 +24949,7 @@
         // subscriber queue but the HTTP connection stays alive via keepalives.
         setInterval(() => {
             if (_lastSseEventTime && (Date.now() - _lastSseEventTime > 60000)) {
-                console.warn('[SSE] No events for 60s — forcing reconnect');
+                debugWarn('[SSE] No events for 60s — forcing reconnect');
                 _lastSseEventTime = Date.now(); // prevent rapid-fire reconnects
                 connectSSE();
                 loadAlerts(); // refresh alert state that may have been missed
@@ -27381,7 +27391,7 @@
                 _sysLogShowing = _sysLogPage;
                 _renderSysLog();
             } catch (error) {
-                console.warn('[LOGS] Could not load recent session logs:', error);
+                debugWarn('[LOGS] Could not load recent session logs:', error);
             }
         }
 
@@ -27673,7 +27683,7 @@
                     v4SwitchView('logs');
                 }
             } catch (e) {
-                console.warn('[CONSOLE] Could not switch to Logs view:', e);
+                debugWarn('[CONSOLE] Could not switch to Logs view:', e);
             }
         }
 
@@ -27956,7 +27966,7 @@
             
             // Skip if element doesn't exist (e.g., Close the Gap removed)
             if (!container) {
-                console.log(`[updateOffers] Element ${elementId} not found, skipping`);
+                debugLog(`[updateOffers] Element ${elementId} not found, skipping`);
                 return;
             }
             
@@ -27991,7 +28001,7 @@
                 sortedOffers.sort((a, b) => (b.age_seconds || 0) - (a.age_seconds || 0));  // Descending age = oldest first
             }
             
-            console.log('[SORT] Sorted ' + offers.length + ' offers, newest=' + pagination.sortNewest);
+            debugLog('[SORT] Sorted ' + offers.length + ' offers, newest=' + pagination.sortNewest);
             
             // Apply pagination
             showing = Math.min(pagination.showing, sortedOffers.length);
@@ -28336,12 +28346,12 @@
                                 headers: { 'Content-Type': 'application/json' }
                             });
                         } catch (resetErr) {
-                            console.warn('[RESUME] Failed to auto-start fresh session on no-resume path:', resetErr);
+                            debugWarn('[RESUME] Failed to auto-start fresh session on no-resume path:', resetErr);
                         }
                         clearResumeSessionSummary();
                         setFreshStartTemplateState(true);
                     }
-                    console.log('[RESUME] No session to resume:', data.reason || 'no offers');
+                    debugLog('[RESUME] No session to resume:', data.reason || 'no offers');
                     return false;
                 }
 
@@ -28394,11 +28404,11 @@
 
                 // Show the modal
                 document.getElementById('resumeSessionModal').classList.add('active');
-                console.log(`[RESUME] Showing modal: ${data.offer_count} offers (${data.buy_count} buy, ${data.sell_count} sell)`);
+                debugLog(`[RESUME] Showing modal: ${data.offer_count} offers (${data.buy_count} buy, ${data.sell_count} sell)`);
                 return true;
                 
             } catch (error) {
-                console.error('[RESUME] Check failed:', error);
+                debugError('[RESUME] Check failed:', error);
                 return false;
             }
         }
@@ -28487,7 +28497,7 @@
                         if (selector.options[i].value === currentCAT.asset_id) {
                             selector.selectedIndex = i;
                             found = true;
-                            console.log('[RESUME] Dropdown synced to:', currentCAT.name);
+                            debugLog('[RESUME] Dropdown synced to:', currentCAT.name);
                             break;
                         }
                     }
@@ -28502,7 +28512,7 @@
                         opt.textContent = currentCAT.name + ' (' + (currentCAT.ticker_id || '') + ') [resumed]';
                         selector.appendChild(opt);
                         selector.value = currentCAT.asset_id;
-                        console.log('[RESUME] Injected CAT into dropdown:', currentCAT.name);
+                        debugLog('[RESUME] Injected CAT into dropdown:', currentCAT.name);
                     }
 
                     // Also sync settings modal selector
@@ -28545,7 +28555,7 @@
                         })
                     });
                 } catch (e) {
-                    console.warn('[RESUME] /cat/select call failed (non-fatal):', e);
+                    debugWarn('[RESUME] /cat/select call failed (non-fatal):', e);
                 }
 
                 // Step 4: Force status refresh (gets balances, prices, offers, Tibet data)
@@ -28628,7 +28638,7 @@
                 `;
 
             } catch (error) {
-                console.error('[RESUME] Start failed:', error);
+                debugError('[RESUME] Start failed:', error);
                 // Show error in the modal itself
                 statusEl.textContent = 'Failed to restore session. Close this and try Start Fresh.';
                 statusEl.style.color = 'var(--sell-color)';
@@ -28658,7 +28668,7 @@
             if (startBtn) { startBtn.disabled = !settingsReviewed; startBtn.innerHTML = '▶ Start Bot'; }
             updateStartupChecklist(bot_state);
             updateDashboardStartupLayout(bot_state);
-            console.log('[RESUME] User chose Start Fresh — settingsReviewed:', settingsReviewed);
+            debugLog('[RESUME] User chose Start Fresh — settingsReviewed:', settingsReviewed);
             // Normal flow continues — user will see settings banner if needed
         }
 
@@ -28675,9 +28685,9 @@
                 if (!response.ok || result?.success === false) {
                     throw new Error(result?.error || 'Fresh-start reset failed');
                 }
-                console.log('[RESUME] Fresh-start session reset:', result);
+                debugLog('[RESUME] Fresh-start session reset:', result);
             } catch (err) {
-                console.warn('[RESUME] Fresh-start reset failed:', err);
+                debugWarn('[RESUME] Fresh-start reset failed:', err);
                 showToast('Start Fresh reset failed: ' + formatError(err), 'warning');
             }
 
@@ -28692,7 +28702,7 @@
             updateStartupChecklist(bot_state);
             updateDashboardStartupLayout(bot_state);
             fetchDashboard();
-            console.log('[RESUME] User chose Start Fresh \u2014 settingsReviewed:', settingsReviewed);
+            debugLog('[RESUME] User chose Start Fresh \u2014 settingsReviewed:', settingsReviewed);
             showToast('Fresh run started \u2014 review settings and run coin prep for the new setup.', 'info');
         }
 
@@ -28706,7 +28716,7 @@
             updateStartupChecklist(bot_state);
             updateDashboardStartupLayout(bot_state);
             showToast(settingsReviewed ? 'Session loading skipped — press Start Bot when ready' : 'Please review Settings before starting', settingsReviewed ? 'info' : 'warning');
-            console.log('[RESUME] User skipped loading — settingsReviewed:', settingsReviewed);
+            debugLog('[RESUME] User skipped loading — settingsReviewed:', settingsReviewed);
         }
 
         // Called from the "Start Fresh for Changes" button in the post-load modal
@@ -28757,13 +28767,13 @@
             updateDashboardStartupLayout(bot_state);
             showToast('Starting bot — running pre-flight checks...', 'info');
 
-            console.log('[START] Checking for existing offers...');
+            debugLog('[START] Checking for existing offers...');
 
             try {
                 // Check for resume (existing offers)
                 const needsResume = await checkForResume();
                 if (needsResume) {
-                    console.log('[START] Resume modal shown, waiting for user choice...');
+                    debugLog('[START] Resume modal shown, waiting for user choice...');
                     _botStarting = false;
                     startBtn.innerHTML = originalText;
                     startBtn.disabled = false;
@@ -28772,7 +28782,7 @@
                     return; // User will choose resume or reset
                 }
 
-                console.log('[START] No existing offers, starting bot...');
+                debugLog('[START] No existing offers, starting bot...');
 
                 // If coin prep was skipped without existing offers, show warning modal
                 if (coinPrepStatus === 'skipped-unsafe') {
@@ -28822,7 +28832,7 @@
                             fee_coin_size_xch: parseFloat(g('FEE_COIN_SIZE_XCH') || 0),
                         };
                     } catch (cfgError) {
-                        console.warn('[START] Falling back to localStorage botConfig for coin prep modal:', cfgError);
+                        debugWarn('[START] Falling back to localStorage botConfig for coin prep modal:', cfgError);
                         config = JSON.parse(localStorage.getItem('botConfig') || '{}');
                     }
                     if (config.default_trade_xch) {
@@ -28856,7 +28866,7 @@
                     updateDashboardStartupLayout(bot_state);
                 }
             } catch (error) {
-                console.error('[START] Error:', error);
+                debugError('[START] Error:', error);
                 showToast('Could not start the bot — ' + formatError(error, 'check Sage is running and try again.'), 'error');
                 _botStarting = false;
                 startBtn.innerHTML = originalText;
@@ -28928,7 +28938,7 @@
                     showToast('Failed to start bot: ' + formatError(result), 'error');
                 }
             } catch (error) {
-                console.error('[START] Error:', error);
+                debugError('[START] Error:', error);
                 showToast('Failed to start bot', 'error');
             }
         }
@@ -29282,11 +29292,11 @@
                 if (shouldRefreshOffers) {
                     _cancelAllLastOfferRefreshKey = offerRefreshKey;
                     fetchStatus().catch(error => {
-                        console.warn('[CANCEL ALL] Offer refresh failed:', error);
+                        debugWarn('[CANCEL ALL] Offer refresh failed:', error);
                     });
                 }
             } catch (error) {
-                console.warn('[CANCEL ALL] Progress poll failed:', error);
+                debugWarn('[CANCEL ALL] Progress poll failed:', error);
             }
         }
 
@@ -30212,7 +30222,7 @@
 
                 showToast('Fills exported successfully!', 'success');
             } catch (error) {
-                console.error('Export error:', error);
+                debugError('Export error:', error);
                 showToast('Error exporting fills: ' + formatError(error), 'error');
             }
         }
@@ -30227,7 +30237,7 @@
                     container.innerHTML = '<div class="empty-state">Logs cleared.</div>';
                 }
             } catch (error) {
-                console.error('Failed to clear logs:', error);
+                debugError('Failed to clear logs:', error);
             }
         }
 
@@ -30295,7 +30305,7 @@
                     return;
                 }
             } catch (error) {
-                console.error('Failed to download debug logs:', error);
+                debugError('Failed to download debug logs:', error);
                 showToast('Failed to download debug logs: ' + (error && error.message ? error.message : error), 'error');
             }
         }
@@ -31128,7 +31138,7 @@
                         preopenedCoinPrepLoading = true;
                     }
                 } catch (_preopenErr) {
-                    console.warn('[SAVE] showCoinPrepConfirmLoading threw:', _preopenErr);
+                    debugWarn('[SAVE] showCoinPrepConfirmLoading threw:', _preopenErr);
                     preopenedCoinPrepLoading = false;
                 }
             }
@@ -31147,7 +31157,7 @@
                 });
                 const validation = await validationResponse.json();
                 
-                console.log('[VALIDATION]', validation);
+                debugLog('[VALIDATION]', validation);
                 
                 if (!validation.valid) {
                     // Show first error message
@@ -31158,7 +31168,7 @@
                     return;
                 }
                 
-                console.log('[VALIDATION] ✅ Passed');
+                debugLog('[VALIDATION] ✅ Passed');
 
                 if (validation.warnings && validation.warnings.length > 0) {
                     const warnItems = validation.warnings
@@ -31213,7 +31223,7 @@
                             await _saveCurrentAsPresetPostSave();
                         }
                     } catch (_presetErr) {
-                        console.warn('[saveConfig] post-save preset capture failed:', _presetErr);
+                        debugWarn('[saveConfig] post-save preset capture failed:', _presetErr);
                     }
 
                     const _wasRunning = !!(bot_state && bot_state.running);
@@ -31242,7 +31252,7 @@
                     // coins and incorrectly demand re-preparation.
                     if (activeOffers > 0) {
                         if (preopenedCoinPrepLoading) dismissCoinPrepConfirmLoading();
-                        console.log(`[SAVE] Skipping coin prep check — ${activeOffers} active offers exist`);
+                        debugLog(`[SAVE] Skipping coin prep check — ${activeOffers} active offers exist`);
                         setCoinPrepStatus('done');
                         showToast(`Settings updated. ${activeOffers} offers still active — new spreads apply on next requote.`, 'success');
                         setSaveConfigButtonState(false);
@@ -31355,7 +31365,7 @@ function closeCtgErrorModal() {
                 modal.classList.add('active');
                 _coinPrepConfirmLoadingActive = true;
             } catch (e) {
-                console.warn('[CoinPrep] showCoinPrepConfirmLoading failed:', e);
+                debugWarn('[CoinPrep] showCoinPrepConfirmLoading failed:', e);
             }
         }
 
@@ -31372,7 +31382,7 @@ function closeCtgErrorModal() {
                     cpConfirmBtn.style.cursor = '';
                 }
             } catch (e) {
-                console.warn('[CoinPrep] dismissCoinPrepConfirmLoading failed:', e);
+                debugWarn('[CoinPrep] dismissCoinPrepConfirmLoading failed:', e);
             }
         }
 
@@ -31426,7 +31436,7 @@ function closeCtgErrorModal() {
 
                 const resp = await apiFetch(`${API_URL}/coin-prep/verify?${params.toString()}`);
                 const result = await resp.json();
-                console.log('[COIN-PREP] verify result:', result);
+                debugLog('[COIN-PREP] verify result:', result);
 
                 // The verify endpoint returns sufficient/all_sufficient/insufficient
                 // depending on whether prep is required. If the wallet already has
@@ -31451,7 +31461,7 @@ function closeCtgErrorModal() {
                     || 'Your wallet needs to be split into the right coin sizes for the new settings.';
                 showCoinPrepConfirm(config, reason, reasonMessage);
             } catch (err) {
-                console.warn('[COIN-PREP] checkIfCoinPrepNeeded failed:', err);
+                debugWarn('[COIN-PREP] checkIfCoinPrepNeeded failed:', err);
                 // On error, fall back to showing the confirm view so the user
                 // can choose to run prep manually rather than getting stuck.
                 _coinPrepConfirmLoadingActive = false;
@@ -31839,7 +31849,7 @@ function closeCtgErrorModal() {
                     pollCoinPrepProgress(); // Immediate first poll
                 } else if (data.error && data.error.includes('already running')) {
                     // Stale flag - try resetting and retrying once
-                    console.log('[COIN PREP] Stale running flag detected, resetting...');
+                    debugLog('[COIN PREP] Stale running flag detected, resetting...');
                     try {
                         await apiFetch(`${API_URL}/coin-prep/reset`, { method: 'POST' });
                         // Retry trigger
@@ -31865,7 +31875,7 @@ function closeCtgErrorModal() {
                     }
                 }
             } catch (error) {
-                console.error('Coin prep trigger error:', error);
+                debugError('Coin prep trigger error:', error);
                 showToast('Failed to start coin prep: ' + formatError(error), 'error');
                 if (btn) {
                     btn.disabled = false;
@@ -32011,7 +32021,7 @@ function closeCtgErrorModal() {
                     || (!status.running && progress >= 100 && status.phase !== 'idle')
                     || (progress >= 100 && typeof status.message === 'string' && /complete/i.test(status.message));
                 if (isComplete) {
-                    console.log('[CoinPrep] Completion detected:', status.phase, status.success, status.running, progress, status.complete);
+                    debugLog('[CoinPrep] Completion detected:', status.phase, status.success, status.running, progress, status.complete);
                 }
                 if (isComplete) {
                     // Stop polling
@@ -32052,7 +32062,7 @@ function closeCtgErrorModal() {
                 }
                 
             } catch (error) {
-                console.error('Coin prep poll error:', error);
+                debugError('Coin prep poll error:', error);
                 // Don't close on network errors - keep polling
             }
         }
@@ -32068,7 +32078,7 @@ function closeCtgErrorModal() {
             try {
                 await apiFetch(`${API_URL}/coin-prep/reset`, { method: 'POST' });
             } catch (e) {
-                console.log('Reset call failed (may not exist yet):', e);
+                debugLog('Reset call failed (may not exist yet):', e);
             }
 
             // Show confirm view again
@@ -32120,7 +32130,7 @@ function closeCtgErrorModal() {
                     if (btn) { btn.disabled = false; btn.textContent = 'Cancel Coin Prep'; }
                 }
             } catch (e) {
-                console.error('cancelCoinPrepInProgress failed:', e);
+                debugError('cancelCoinPrepInProgress failed:', e);
                 if (typeof showToast === 'function') {
                     showToast('Cancel request failed: ' + e.message, 'error');
                 }
@@ -32309,7 +32319,7 @@ function previewCtgOffers() {
     const numOffers = parseInt(document.getElementById('ctgNumOffers').value);
     
     // Show preview in console or another modal
-    console.log('Close the Gap Preview:', {
+    debugLog('Close the Gap Preview:', {
         capital_pct: capitalPct,
         aggressiveness: aggressPct,
         num_offers: numOffers
@@ -32446,7 +32456,7 @@ function pollBotStatus() {
             // Update other status displays if needed
         })
         .catch(err => {
-            console.error('Status poll error:', err);
+            debugError('Status poll error:', err);
         });
 }
 
@@ -32897,7 +32907,7 @@ async function startupAcceptRiskDisclosure() {
             const data = await resp.json();
             sageRunning = data.running === true;
         } catch (e) {
-            console.warn('[STARTUP] Sage running check failed:', e.message);
+            debugWarn('[STARTUP] Sage running check failed:', e.message);
         }
 
         // Hide disclaimer, restore buttons for next time
@@ -33015,7 +33025,7 @@ async function closeDesktopWindowAfterShutdown({ backendStopped = false, extraWa
             try {
                 await _invokeTauriCommand('allow_main_window_close');
             } catch (invokeErr) {
-                console.warn('[STARTUP] Could not mark main window closable in Tauri:', invokeErr);
+                debugWarn('[STARTUP] Could not mark main window closable in Tauri:', invokeErr);
             }
             const attempts = backendStopped ? 2 : 4;
             for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -33029,7 +33039,7 @@ async function closeDesktopWindowAfterShutdown({ backendStopped = false, extraWa
             }
         }
     } catch (err) {
-        console.warn('[STARTUP] Tauri close failed:', err);
+        debugWarn('[STARTUP] Tauri close failed:', err);
     }
 
     try {
@@ -33047,13 +33057,13 @@ async function closeDesktopWindowAfterShutdown({ backendStopped = false, extraWa
             }
         }
     } catch (err) {
-        console.warn('[STARTUP] Desktop close failed:', err);
+        debugWarn('[STARTUP] Desktop close failed:', err);
     }
 
     try {
         window.close();
     } catch (err) {
-        console.warn('[STARTUP] Browser close failed:', err);
+        debugWarn('[STARTUP] Browser close failed:', err);
     }
     return false;
 }
@@ -33105,7 +33115,7 @@ async function startupCloseFromRiskDisclosure() {
             }
         }
     } catch (err) {
-        console.warn('[STARTUP] Shutdown request failed:', err);
+        debugWarn('[STARTUP] Shutdown request failed:', err);
     }
 
     const closed = await closeDesktopWindowAfterShutdown({
@@ -33122,7 +33132,7 @@ async function startupCloseFromRiskDisclosure() {
 }
 
 function startupContinueToSplash() {
-    console.log('[STARTUP] Dismissing Sage modal → launching Splash gate');
+    debugLog('[STARTUP] Dismissing Sage modal → launching Splash gate');
 
     // V3: Start the Splash gate BEFORE hiding the startup overlay
     // so there's no flash of the bare GUI in between.
@@ -33155,7 +33165,7 @@ async function startupMaybeShowChangeAddressPrompt() {
             return false;
         }
     } catch (err) {
-        console.warn('[STARTUP] Could not check Sage change-address setting:', err);
+        debugWarn('[STARTUP] Could not check Sage change-address setting:', err);
         return false;
     }
 
@@ -33335,10 +33345,10 @@ async function startupDismiss(skipPrompt = false) {
                 return;
             }
         } catch (err) {
-            console.warn('[STARTUP] Change-address recommendation check failed:', err);
+            debugWarn('[STARTUP] Change-address recommendation check failed:', err);
         }
     }
-    console.log('[STARTUP] Dismissing Sage modal → launching Splash gate');
+    debugLog('[STARTUP] Dismissing Sage modal → launching Splash gate');
 
     // V3: Start the Splash gate BEFORE hiding the startup overlay
     // so there's no flash of the bare GUI in between.
@@ -33353,7 +33363,7 @@ async function startupDismiss(skipPrompt = false) {
 // Original dismiss (skips Splash gate — used when Splash gate completes)
 let _startupGatesComplete = false;
 function finalDismiss() {
-    console.log('[STARTUP] All gates passed — showing main GUI');
+    debugLog('[STARTUP] All gates passed — showing main GUI');
     _startupGatesComplete = true;
     setTimeout(() => {
         Promise.allSettled([
@@ -33364,7 +33374,7 @@ function finalDismiss() {
         ]).catch(() => {});
     }, 50);
     setTimeout(() => {
-        loadCATs().catch((e) => console.warn('[STARTUP] Post-startup CAT load failed:', e.message));
+        loadCATs().catch((e) => debugWarn('[STARTUP] Post-startup CAT load failed:', e.message));
     }, 100);
     // Scroll to top so the GUI opens at the correct position
     window.scrollTo(0, 0);
@@ -33385,17 +33395,17 @@ function finalDismiss() {
     setTimeout(async () => {
         if (!_resumeHandled && !hasCheckedResumeOnLoad) {
             hasCheckedResumeOnLoad = true;
-            console.log('[STARTUP] Gates complete — checking for resume...');
+            debugLog('[STARTUP] Gates complete — checking for resume...');
             try {
                 const hasOffers = await checkForResume();
                 if (hasOffers) {
-                    console.log('[STARTUP] Resume modal shown after gates');
+                    debugLog('[STARTUP] Resume modal shown after gates');
                     // Button stays disabled — modal blocks interaction.
                     // resumeSession() will re-enable it when done.
                     return;
                 }
             } catch (e) {
-                console.error('[STARTUP] Resume check failed:', e);
+                debugError('[STARTUP] Resume check failed:', e);
             }
         }
         // No resume needed (or already handled) — only unlock if settings confirmed
@@ -33443,7 +33453,7 @@ function startupShowVersionInfo(sageVersion, minimumVersion = MIN_SUPPORTED_SAGE
     if (unsupportedEl) unsupportedEl.style.display = 'none';
     if (updateEl) updateEl.style.display = 'none';
 
-    console.log('[STARTUP] Sage v' + sageVersion + ' meets minimum supported version v' + minimumVersion);
+    debugLog('[STARTUP] Sage v' + sageVersion + ' meets minimum supported version v' + minimumVersion);
     startupCheckGitHubRelease(sageVersion, minimumVersion);
 }
 
@@ -33477,7 +33487,7 @@ async function startupCheckGitHubRelease(installedVersion, minimumVersion = MIN_
             return;
         }
         const latestVersion = data.tag;
-        console.log('[STARTUP] Sage latest release: v' + latestVersion + ', installed: v' + installedVersion);
+        debugLog('[STARTUP] Sage latest release: v' + latestVersion + ', installed: v' + installedVersion);
 
         if (!latestVersion) return;
 
@@ -33498,21 +33508,21 @@ async function startupCheckGitHubRelease(installedVersion, minimumVersion = MIN_
                 }
                 updateEl.style.display = 'block';
             }
-            console.log('[STARTUP] Update available: v' + installedVersion + ' → v' + latestVersion);
+            debugLog('[STARTUP] Update available: v' + installedVersion + ' → v' + latestVersion);
         } else if (comparison === 0) {
             if (badgeEl) {
                 badgeEl.innerHTML = buildSageVersionBadgeMarkup('ok', installedVersion, 'up to date');
             }
-            console.log('[STARTUP] Sage v' + installedVersion + ' is the latest release');
+            debugLog('[STARTUP] Sage v' + installedVersion + ' is the latest release');
         } else {
             if (badgeEl) {
                 badgeEl.innerHTML = buildSageVersionBadgeMarkup('ok', installedVersion, 'dev build');
             }
-            console.log('[STARTUP] Sage v' + installedVersion + ' is newer than latest release v' + latestVersion + ' (custom build)');
+            debugLog('[STARTUP] Sage v' + installedVersion + ' is newer than latest release v' + latestVersion + ' (custom build)');
         }
     } catch (err) {
         // GitHub unreachable or timeout — no problem, just skip the check
-        console.log('[STARTUP] GitHub release check failed (offline?): ' + (err.message || err));
+        debugLog('[STARTUP] GitHub release check failed (offline?): ' + (err.message || err));
     }
 }
 
@@ -33551,7 +33561,7 @@ function startupShowNotInstalled() {
 }
 
 async function startupBegin() {
-    console.log('[STARTUP] Beginning startup flow...');
+    debugLog('[STARTUP] Beginning startup flow...');
     _startupChangeAddressPromptShown = false;
     startupResetRiskDisclosure();
     startupResetChangeAddressPrompt();
@@ -33585,7 +33595,7 @@ async function startupBegin() {
             signal: AbortSignal.timeout(10000)
         });
         const status = await statusResp.json();
-        console.log('[STARTUP] Current status:', status);
+        debugLog('[STARTUP] Current status:', status);
 
         // Detect wallet type from backend
         _startupWalletType = status.wallet_type || 'sage';
@@ -33637,7 +33647,7 @@ async function startupBegin() {
         await startupShowFingerprints();
 
     } catch (err) {
-        console.error('[STARTUP] Error:', err);
+        debugError('[STARTUP] Error:', err);
         // If we can't reach the server at all, show not-installed state
         // (the API server is up but Sage wallet may not be)
         startupSetPhase('connecting', _startupWalletLabel + ' Wallet', 'Could not connect to wallet', '');
@@ -33687,13 +33697,13 @@ async function startupShowFingerprints() {
             data.fingerprints.length + ' wallet' + (data.fingerprints.length === 1 ? '' : 's') + ' found — tap one to start';
 
     } catch (err) {
-        console.error('[STARTUP] Fingerprint load error:', err);
+        debugError('[STARTUP] Fingerprint load error:', err);
         startupShowError('Could not load wallet list. ' + (err.message || ''));
     }
 }
 
 async function startupSelectFingerprint(fingerprint, cardEl) {
-    console.log('[STARTUP] Selected fingerprint:', fingerprint);
+    debugLog('[STARTUP] Selected fingerprint:', fingerprint);
 
     // Highlight selected card, disable all
     document.querySelectorAll('.fp-card').forEach(c => c.classList.add('disabled'));
@@ -33721,7 +33731,7 @@ async function startupSelectFingerprint(fingerprint, cardEl) {
         const result = await resp.json();
 
         if (result.success) {
-            console.log('[STARTUP] Start command accepted — beginning poll...');
+            debugLog('[STARTUP] Start command accepted — beginning poll...');
             document.getElementById('startupStartingText').textContent =
                 _startupWalletLabel + ' start command sent — waiting for services to come online...';
             startupPollUntilReady();
@@ -33735,7 +33745,7 @@ async function startupSelectFingerprint(fingerprint, cardEl) {
             startupShowError('Failed to start ' + _startupWalletLabel + ': ' + (result.error || 'Unknown error'));
         }
     } catch (err) {
-        console.error('[STARTUP] Start error:', err);
+        debugError('[STARTUP] Start error:', err);
         startupShowError('Could not send start command: ' + (err.message || ''));
     }
 }
@@ -33884,7 +33894,7 @@ function startupPollUntilReady() {
 
     async function doPoll() {
         pollCount++;
-        console.log('[STARTUP POLL] #' + pollCount + ' — fetching status...');
+        debugLog('[STARTUP POLL] #' + pollCount + ' — fetching status...');
 
         if (pollCount > maxPolls) {
             startupShowError(_startupWalletLabel + ' took too long to start. You can try again or skip and check later.');
@@ -33901,7 +33911,7 @@ function startupPollUntilReady() {
             clearTimeout(timeoutId);
             const status = await resp.json();
 
-            console.log('[STARTUP POLL] #' + pollCount + ' phase=' + status.phase +
+            debugLog('[STARTUP POLL] #' + pollCount + ' phase=' + status.phase +
                         ' msg=' + (status.message || '') +
                         ' fp=' + (status.fingerprint || 'none'));
 
@@ -33919,7 +33929,7 @@ function startupPollUntilReady() {
             }
 
             if (status.phase === 'ready') {
-                console.log('[STARTUP POLL] Ready! Dismissing modal.');
+                debugLog('[STARTUP POLL] Ready! Dismissing modal.');
                 startupSetPhase('done', 'Connected!', _startupWalletLabel + ' wallet is healthy and ready', '');
                 startupShowProgress(100);
                 document.getElementById('startupStartingFeedback').style.display = 'none';
@@ -33928,7 +33938,7 @@ function startupPollUntilReady() {
             }
 
             if (status.phase === 'waiting_fingerprint') {
-                console.log('[STARTUP POLL] Needs fingerprint — showing picker.');
+                debugLog('[STARTUP POLL] Needs fingerprint — showing picker.');
                 document.getElementById('startupStartingFeedback').style.display = 'none';
                 await startupShowFingerprints();
                 return;  // Stop polling
@@ -33936,7 +33946,7 @@ function startupPollUntilReady() {
 
             // Sage-specific: waiting for certificate setup
             if (status.phase === 'waiting_certs') {
-                console.log('[STARTUP POLL] Needs cert setup — showing cert UI.');
+                debugLog('[STARTUP POLL] Needs cert setup — showing cert UI.');
                 document.getElementById('startupStartingFeedback').style.display = 'none';
                 startupShowCertSetup();
                 return;  // Stop polling
@@ -33944,7 +33954,7 @@ function startupPollUntilReady() {
 
             // Sage RPC disabled: Sage is open but user hasn't enabled RPC
             if (status.phase === 'rpc_disabled') {
-                console.log('[STARTUP POLL] Sage open but RPC disabled — showing instructions.');
+                debugLog('[STARTUP POLL] Sage open but RPC disabled — showing instructions.');
                 document.getElementById('startupStartingFeedback').style.display = 'none';
                 startupShowRpcDisabled();
                 return;  // Stop polling — Rescan button restarts
@@ -33974,7 +33984,7 @@ function startupPollUntilReady() {
             }
 
         } catch (err) {
-            console.warn('[STARTUP POLL] #' + pollCount + ' error:', err.message || err);
+            debugWarn('[STARTUP POLL] #' + pollCount + ' error:', err.message || err);
             // Show the error in the UI too so user knows something is happening
             const feedbackEl = document.getElementById('startupStartingText');
             if (feedbackEl) {
@@ -33995,7 +34005,7 @@ function startupPollUntilReady() {
 // Main Page Initialization
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('[INIT] Page loading...');
+    debugLog('[INIT] Page loading...');
 
     // Risk disclosure is always the very first screen — show it immediately
     // so the user never sees "Connecting to Sage" before accepting risks.
@@ -34012,11 +34022,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             { signal: AbortSignal.timeout(2000) });
         const _statusData = await _statusResp.json();
         if ((_statusData.stats?.loop_count || 0) > 0) {
-            console.log('[INIT] Bot already running — skipping startup wizard');
+            debugLog('[INIT] Bot already running — skipping startup wizard');
             _skipWizard = true;
         }
     } catch(_e) {
-        console.log('[INIT] Bot status probe failed (will try Sage-ready check):', _e.message);
+        debugLog('[INIT] Bot status probe failed (will try Sage-ready check):', _e.message);
     }
     if (!_skipWizard) {
         try {
@@ -34024,7 +34034,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { signal: AbortSignal.timeout(3000) });
             const _sdata = await _sresp.json();
             if (_sdata.phase === 'ready' && _sdata.fingerprint) {
-                console.log('[INIT] Sage already ready (fp adopted) — skipping startup wizard');
+                debugLog('[INIT] Sage already ready (fp adopted) — skipping startup wizard');
                 _skipWizard = true;
             }
         } catch(_e2) { /* fall through to wizard */ }
@@ -34037,7 +34047,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Then fetch fingerprint
     setTimeout(() => {
-        try { updateFingerprint(); } catch(e) { console.warn('[INIT] fingerprint fetch failed:', e.message); }
+        try { updateFingerprint(); } catch(e) { debugWarn('[INIT] fingerprint fetch failed:', e.message); }
     }, 500);
 
     // Fetch wallet type and health on load (live check even when bot stopped)
@@ -34099,11 +34109,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             await fetchStatus();
         } catch (err) {
-            console.error('[STATUS POLL] Error:', err);
+            debugError('[STATUS POLL] Error:', err);
         }
     }, 20000); // Poll every 20 seconds (SSE provides real-time updates; Sage RPC is slow)
     
-    console.log('[INIT] Page loaded!');
+    debugLog('[INIT] Page loaded!');
 
     // V3: Splash install check now handled by Splash gate (splashGateBegin)
     // checkSplashInstalled() is called after splash gate dismisses
@@ -34140,7 +34150,7 @@ async function checkSplashInstalled() {
             msg.style.color = 'rgba(255,255,255,0.5)';
         }
     } catch (e) {
-        console.warn('[Splash] Setup check failed:', e);
+        debugWarn('[Splash] Setup check failed:', e);
     }
 }
 
@@ -34232,7 +34242,7 @@ async function pollSplashProgress() {
                 }
             }
         } catch (e) {
-            console.warn('[Splash] Progress poll error:', e);
+            debugWarn('[Splash] Progress poll error:', e);
             setTimeout(poll, 2000);
         }
     };
@@ -34294,7 +34304,7 @@ async function splashGateRetry() {
 }
 
 async function splashGateBegin() {
-    console.log('[SPLASH GATE] Beginning Splash startup gate...');
+    debugLog('[SPLASH GATE] Beginning Splash startup gate...');
 
     // Show the overlay
     const overlay = document.getElementById('splashGateOverlay');
@@ -34310,7 +34320,7 @@ async function splashGateBegin() {
             signal: AbortSignal.timeout(10000)
         });
         const checkData = await checkResp.json();
-        console.log('[SPLASH GATE] Install check:', checkData);
+        debugLog('[SPLASH GATE] Install check:', checkData);
 
         if (!checkData.installed) {
             // NOT INSTALLED — show install screen
@@ -34325,7 +34335,7 @@ async function splashGateBegin() {
             signal: AbortSignal.timeout(10000)
         });
         const nodeData = await nodeResp.json();
-        console.log('[SPLASH GATE] Node status:', nodeData);
+        debugLog('[SPLASH GATE] Node status:', nodeData);
 
         if (nodeData.process_running) {
             // Already running → success! Show brief info + link
@@ -34356,7 +34366,7 @@ async function splashGateBegin() {
         splashGateCheckForUpdate(checkData.version);
 
     } catch (err) {
-        console.error('[SPLASH GATE] Error:', err);
+        debugError('[SPLASH GATE] Error:', err);
         splashGateShowError('Could not check Splash status. Is the bot server running?');
     }
 }
@@ -34381,18 +34391,18 @@ async function splashGateCheckForUpdate(installedVersion) {
             const text = document.getElementById('splashGateUpdateText');
             if (text) text.textContent = 'v' + installed + ' installed — v' + latestTag + ' available';
             if (notice) notice.style.display = 'block';
-            console.log('[SPLASH GATE] Update available: v' + installed + ' → v' + latestTag);
+            debugLog('[SPLASH GATE] Update available: v' + installed + ' → v' + latestTag);
             return true;
         }
-        console.log('[SPLASH GATE] Splash v' + installed + ' is up to date (latest: v' + latestTag + ')');
+        debugLog('[SPLASH GATE] Splash v' + installed + ' is up to date (latest: v' + latestTag + ')');
     } catch (e) {
-        console.log('[SPLASH GATE] Update check failed (offline?): ' + (e.message || e));
+        debugLog('[SPLASH GATE] Update check failed (offline?): ' + (e.message || e));
     }
     return false;
 }
 
 async function splashGateInstall() {
-    console.log('[SPLASH GATE] Starting Splash install...');
+    debugLog('[SPLASH GATE] Starting Splash install...');
     const btn = document.getElementById('splashGateInstallBtn');
     const msg = document.getElementById('splashGateInstallMsg');
     const bar = document.getElementById('splashGateDownloadBar');
@@ -34457,7 +34467,7 @@ async function splashGatePollDownload() {
             } else if (data.result) {
                 if (data.result.success) {
                     // Download complete! Now transition to "Start" screen
-                    console.log('[SPLASH GATE] Install complete — showing start screen');
+                    debugLog('[SPLASH GATE] Install complete — showing start screen');
                     msg.textContent = 'Installed successfully!';
                     msg.style.color = 'var(--status-success)';
                     btn.textContent = 'Installed!';
@@ -34480,7 +34490,7 @@ async function splashGatePollDownload() {
                 }
             }
         } catch (e) {
-            console.warn('[SPLASH GATE] Progress poll error:', e);
+            debugWarn('[SPLASH GATE] Progress poll error:', e);
             setTimeout(poll, 2000);
         }
     };
@@ -34489,7 +34499,7 @@ async function splashGatePollDownload() {
 }
 
 async function splashGateStart() {
-    console.log('[SPLASH GATE] Starting Splash node...');
+    debugLog('[SPLASH GATE] Starting Splash node...');
     const btn = document.getElementById('splashGateStartBtn');
     btn.disabled = true;
     btn.textContent = 'Starting...';
@@ -34521,7 +34531,7 @@ async function splashGateStart() {
         }
 
     } catch (err) {
-        console.error('[SPLASH GATE] Start error:', err);
+        debugError('[SPLASH GATE] Start error:', err);
         splashGateShowError('Could not start Splash node: ' + (err.message || ''));
         document.getElementById('splashGateStartingFeedback').style.display = 'none';
     }
@@ -34543,7 +34553,7 @@ function splashGatePollUntilRunning() {
                 signal: AbortSignal.timeout(8000)
             });
             const data = await resp.json();
-            console.log('[SPLASH GATE POLL] #' + pollCount + ' running=' + data.process_running + ' api=' + data.api_reachable);
+            debugLog('[SPLASH GATE POLL] #' + pollCount + ' running=' + data.process_running + ' api=' + data.api_reachable);
 
             const feedbackEl = document.getElementById('splashGateStartingText');
 
@@ -34551,7 +34561,7 @@ function splashGatePollUntilRunning() {
                 // Node is running!
                 if (data.api_reachable) {
                     // Fully ready
-                    console.log('[SPLASH GATE] Node running + API reachable — success!');
+                    debugLog('[SPLASH GATE] Node running + API reachable — success!');
                     splashGateSetPhase('done', 'Splash Connected!', 'P2P node is running and accepting offers', '');
                     splashGateShowProgress(100);
                     document.getElementById('splashGateLogo').textContent = '✅';
@@ -34560,7 +34570,7 @@ function splashGatePollUntilRunning() {
                     return;
                 } else if (pollCount >= 3) {
                     // Running but API not confirmed — still good enough after 3 polls
-                    console.log('[SPLASH GATE] Node running (API not yet confirmed) — proceeding');
+                    debugLog('[SPLASH GATE] Node running (API not yet confirmed) — proceeding');
                     splashGateSetPhase('done', 'Splash Connected!', 'P2P node is running', '');
                     splashGateShowProgress(100);
                     document.getElementById('splashGateLogo').textContent = '✅';
@@ -34583,7 +34593,7 @@ function splashGatePollUntilRunning() {
             }
 
         } catch (err) {
-            console.error('[SPLASH GATE POLL] Error:', err);
+            debugError('[SPLASH GATE POLL] Error:', err);
             if (pollCount < maxPolls) {
                 _splashGatePollTimer = setTimeout(doPoll, 5000);
             } else {
@@ -34601,7 +34611,7 @@ function splashGateDismiss() {
         clearTimeout(_splashGatePollTimer);
         _splashGatePollTimer = null;
     }
-    console.log('[SPLASH GATE] Dismissing — handing off to Spacescan gate');
+    debugLog('[SPLASH GATE] Dismissing — handing off to Spacescan gate');
 
     // Don't hide splash yet — spacescanGateBegin will hide it
     // once the spacescan overlay is ready (or immediately if skipping)
@@ -34681,17 +34691,17 @@ function spacescanRenderPlanAdvice(advice) {
 }
 
 async function spacescanGateBegin() {
-    console.log('[SPACESCAN GATE] Checking Spacescan configuration...');
+    debugLog('[SPACESCAN GATE] Checking Spacescan configuration...');
 
     try {
         const resp = await apiFetch(API_URL + '/spacescan/status', {
             signal: AbortSignal.timeout(5000)
         });
         const data = await resp.json();
-        console.log('[SPACESCAN GATE] Status:', data);
+        debugLog('[SPACESCAN GATE] Status:', data);
 
         // Always show the modal — user may have acquired or changed a key
-        console.log('[SPACESCAN GATE] Showing setup modal (configured=' + data.configured + ', tier=' + data.tier + ')');
+        debugLog('[SPACESCAN GATE] Showing setup modal (configured=' + data.configured + ', tier=' + data.tier + ')');
         const overlay = document.getElementById('spacescanGateOverlay');
         overlay.classList.remove('hidden');
         overlay.classList.add('active');
@@ -34722,7 +34732,7 @@ async function spacescanGateBegin() {
         }
 
     } catch (err) {
-        console.error('[SPACESCAN GATE] Status check failed:', err);
+        debugError('[SPACESCAN GATE] Status check failed:', err);
         // If we can't check, dismiss splash and skip — don't block startup
         _dismissSplashOverlay();
         finalDismiss();
@@ -34731,7 +34741,7 @@ async function spacescanGateBegin() {
 
 function spacescanContinueExisting() {
     // User chose to keep their existing configured API key — just dismiss
-    console.log('[SPACESCAN GATE] Continuing with configured API key');
+    debugLog('[SPACESCAN GATE] Continuing with configured API key');
     spacescanGateDismiss();
 }
 
@@ -34778,7 +34788,7 @@ async function spacescanSaveKey() {
             saveBtn.textContent = 'Save & Verify';
         }
     } catch (err) {
-        console.error('[SPACESCAN GATE] Save error:', err);
+        debugError('[SPACESCAN GATE] Save error:', err);
         statusEl.textContent = 'Could not reach the bot server. Is it running?';
         statusEl.style.color = 'var(--sell-color)';
         saveBtn.disabled = false;
@@ -34799,7 +34809,7 @@ async function spacescanSkip() {
             signal: AbortSignal.timeout(5000)
         });
     } catch (err) {
-        console.warn('[SPACESCAN GATE] Skip notification failed:', err);
+        debugWarn('[SPACESCAN GATE] Skip notification failed:', err);
     }
 
     setTimeout(() => {
@@ -34808,7 +34818,7 @@ async function spacescanSkip() {
 }
 
 function spacescanGateDismiss() {
-    console.log('[SPACESCAN GATE] Dismissing — all startup gates complete');
+    debugLog('[SPACESCAN GATE] Dismissing — all startup gates complete');
     const overlay = document.getElementById('spacescanGateOverlay');
     overlay.classList.add('hidden');
     setTimeout(() => {
