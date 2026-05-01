@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply branch protection rules to master + test.
+# Apply branch protection rules to main.
 #
 # When to run:
 #   - As soon as the repo is made public, OR
@@ -11,16 +11,13 @@
 #
 # What this enforces:
 #
-#   master (the release branch — receives promotions from `test`):
+#   main (the release branch):
 #     - Required status checks: lint-and-syntax, unit-tests, security-scan
 #     - Linear history (no merge commits — squash/rebase only)
 #     - No force pushes, no deletions
 #     - PR review NOT required (solo dev workflow)
 #     - Admin override available (enforce_admins=false), so the user
 #       can still push version-bump commits at release time.
-#
-#   test (the integration branch — feature branches PR here):
-#     - Same rules as master.
 #
 # Usage:
 #   bash scripts/apply_branch_protection.sh
@@ -53,8 +50,7 @@ JSON
     echo "  OK: $branch"
 }
 
-apply_protection master
-apply_protection test
+apply_protection main
 
 echo
 echo "Branch protection applied. Verify at:"

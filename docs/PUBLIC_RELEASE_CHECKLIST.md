@@ -5,11 +5,10 @@ It is written for a non-developer maintainer.
 
 ## Current Repo State To Fix Before Going Public
 
-- GitHub's default branch is currently `test`, but the cleaned and tested code
-  is on `master`. Set the default branch to `master` before publishing, or
-  visitors will see stale files.
+- GitHub's default branch is `main`. Confirm the cleaned and tested code is on
+  `main` before publishing so visitors see the intended files.
 - Branch protection cannot currently be enabled on this private repo without a
-  paid plan. Once the repo is public, enable protection for `master`.
+  paid plan. Once the repo is public, enable protection for `main`.
 - Keep `.env`, wallet certs, database files, superlogs, and local scratch files
   out of git. The `.gitignore` already covers the important patterns.
 
@@ -29,7 +28,7 @@ It is written for a non-developer maintainer.
 
 ## GitHub Settings
 
-- Default branch: `master`
+- Default branch: `main`
 - Issues: enabled
 - Discussions: enabled
 - Wiki: disabled unless you decide to maintain it
@@ -38,7 +37,7 @@ It is written for a non-developer maintainer.
 - Dependabot updates: enabled through `.github/dependabot.yml`
 - GitHub Actions workflow permissions: read-only by default
 
-## Branch Protection For `master`
+## Branch Protection For `main`
 
 Enable these when GitHub allows it:
 
@@ -56,7 +55,7 @@ private branch protection.
 ## Release Flow
 
 1. Work on a feature or fix branch.
-2. Open a pull request into `master`.
+2. Open a pull request into `main`.
 3. Wait for tests and security checks to pass.
 4. Merge only reviewed changes.
 5. Tag a release such as `v1.2.2`.

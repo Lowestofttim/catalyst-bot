@@ -29,8 +29,9 @@ Update this table after each completed task.
 | Task | Date | Branch | Commit | Verification run | Result | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Plan created | 2026-05-01 | current | none | `Test-Path docs/superpowers/plans/2026-05-01-public-readiness-remediation.md` | passed | Durable checklist created for future work. |
-| Task 1 baseline | 2026-05-01 | codex/public-readiness | pending | `python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py` | passed | 2798 passed, 4 skipped in 183.32s. |
-| Task 2 git hygiene | 2026-05-01 | codex/public-readiness | pending | `python scripts/check_tracked_secrets.py`; `git ls-files --others --exclude-standard`; `gitleaks version` | partial | Secret scan passed; only plan doc is untracked and unignored; Gitleaks unavailable; remaining local files intentionally left for user review. |
+| Task 1 baseline | 2026-05-01 | codex/public-readiness | 407abcb | `python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py` | passed | 2798 passed, 4 skipped in 183.32s. |
+| Task 2 git hygiene | 2026-05-01 | codex/public-readiness | 407abcb | `python scripts/check_tracked_secrets.py`; `git ls-files --others --exclude-standard`; `gitleaks version` | partial | Secret scan passed; only plan doc was untracked and unignored before commit; Gitleaks unavailable; remaining local files intentionally left for user review. |
+| Task 3 branch/version consistency | 2026-05-01 | codex/public-readiness | pending | `rg -n "\bmaster\b|\btest\b" CONTRIBUTING.md docs scripts README.md`; `python desktop_app.py --help`; `python -m ruff check . --select E9,F821` | passed | No stale public branch references found outside expected test wording and the plan itself; app reports v1.2.4; Ruff crash-class lint passed. |
 
 ## Recovery Checklist
 
@@ -173,7 +174,7 @@ Expected: no findings. If Gitleaks is unavailable, record `Gitleaks unavailable`
 
 Result on 2026-05-01: `gitleaks` was not installed, so full-history scanning remains not completed.
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add .gitignore
@@ -191,11 +192,11 @@ git commit -m "chore: tighten public git hygiene"
 - Modify: `src/catalyst/_version.py`
 - Modify: `README.md` if it describes release/version behavior
 
-- [ ] Replace public branch instructions that say `master` or `test` with `main` where they describe the current repository branch.
+- [x] Replace public branch instructions that say `master` or `test` with `main` where they describe the current repository branch.
 
-- [ ] Update `scripts/apply_branch_protection.sh` so it protects `main` and uses current CI check names.
+- [x] Update `scripts/apply_branch_protection.sh` so it protects `main` and uses current CI check names.
 
-- [ ] Resolve the version mismatch. Choose one of these two explicit options and record the decision:
+- [x] Resolve the version mismatch. Choose one of these two explicit options and record the decision:
 
 Option A, source version matches latest public tag:
 
@@ -211,7 +212,9 @@ __version__ = "1.2.1"
 
 If Option B is used, add a README sentence explaining: "Release builds overwrite `src/catalyst/_version.py` from the Git tag during CI."
 
-- [ ] Verify stale branch references:
+Decision on 2026-05-01: Option A. `src/catalyst/_version.py` now reports `1.2.4`.
+
+- [x] Verify stale branch references:
 
 ```powershell
 rg "master|test" CONTRIBUTING.md docs scripts README.md
@@ -219,7 +222,7 @@ rg "master|test" CONTRIBUTING.md docs scripts README.md
 
 Expected: only intentional historical or command-output references remain.
 
-- [ ] Verify version behavior:
+- [x] Verify version behavior:
 
 ```powershell
 python desktop_app.py --help
@@ -227,7 +230,7 @@ python desktop_app.py --help
 
 Expected: reported version matches the chosen version policy.
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add CONTRIBUTING.md docs/PUBLIC_RELEASE_CHECKLIST.md scripts/apply_branch_protection.sh src/catalyst/_version.py README.md
