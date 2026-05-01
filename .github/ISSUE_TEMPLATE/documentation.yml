@@ -1,0 +1,30 @@
+name: Documentation issue
+description: Report unclear, missing, or incorrect documentation.
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make the docs clearer. Do not include wallet secrets,
+        private keys, certificate contents, or full `.env` values.
+  - type: textarea
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link, filename, heading, or screenshot.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear, missing, or incorrect?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested-change
+    attributes:
+      label: Suggested change
+    validations:
+      required: false
+

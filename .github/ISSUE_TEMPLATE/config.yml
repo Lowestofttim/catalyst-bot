@@ -6,6 +6,9 @@ contact_links:
   - name: Suggest a feature
     url: https://github.com/Lowestofttim/catalyst-bot/discussions/categories/ideas
     about: Open-ended feature ideas belong in Ideas Discussions before becoming issues.
+  - name: Report a security vulnerability
+    url: https://github.com/Lowestofttim/catalyst-bot/security/advisories/new
+    about: Please report suspected vulnerabilities privately. Do not open a public issue for security concerns.
   - name: Show off a config or result
     url: https://github.com/Lowestofttim/catalyst-bot/discussions/categories/show-and-tell
     about: Share dashboards, P&L, custom configs with the community.

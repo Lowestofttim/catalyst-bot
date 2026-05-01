@@ -7,6 +7,7 @@ wallet secrets, cert files, seed phrases, private keys, and full `.env` content.
 
 - Questions: use [GitHub Discussions](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/q-a).
 - Confirmed bugs: open a [GitHub Issue](https://github.com/Lowestofttim/catalyst-bot/issues/new/choose) with the bug report template.
+- Documentation problems: open a documentation issue from the issue template chooser.
 - Security concerns: follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 ## Helpful Bug Report Details

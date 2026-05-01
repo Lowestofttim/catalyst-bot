@@ -10,7 +10,7 @@ branch, `main`.
 
 ## Automated Checks
 
-Every push or pull request to `main` and `test` runs the normal quality gate:
+Every push or pull request to `main` runs the normal quality gate:
 syntax checks, crash-class Ruff linting, tests, a tracked-secret scan, Bandit,
 and Python dependency auditing with `pip-audit`.
 

@@ -17,6 +17,19 @@ CATalyst runs locally as a desktop application and connects to your
 
 ---
 
+## Tech Stack
+
+- Python 3.12
+- Flask HTTP API and Server-Sent Events
+- PyWebView desktop shell
+- SQLite WAL-mode local database
+- Vanilla HTML/CSS/JavaScript frontend
+- Sage wallet RPC integration
+- Dexie, TibetSwap, Spacescan, Coinset, and Splash integrations
+- PyInstaller desktop builds
+
+---
+
 ## What It Does
 
 Market making means posting both buy and sell offers around the current market
@@ -97,9 +110,27 @@ and market shocks.
 - XCH for fees and inventory, plus the CAT token you want to trade.
 - Python 3.12 if running from source. Packaged releases have no external Python
   requirement.
+- Linux source installs need the WebKit/GTK packages required by PyWebView.
+- Windows desktop use requires Microsoft Edge WebView2, which is present on most
+  supported Windows 10/11 systems.
+- End-to-end browser tests require Playwright's Chromium browser install.
 
 Release packages are published on the
 [Releases page](https://github.com/Lowestofttim/catalyst-bot/releases).
+
+---
+
+## Known Limitations
+
+- CATalyst is local desktop trading software, not a hosted service.
+- The app assumes a trusted local machine, a configured Sage wallet, and network
+  access to third-party market data and offer-posting services.
+- Trading and market making can lose funds through market movement, bad
+  configuration, wallet/API failures, or operator error.
+- Splash, Spacescan, Dexie, TibetSwap, and Coinset behavior can change outside
+  this repository.
+- The frontend is currently a single large `bot_gui.html` file; public
+  maintainability work is tracked separately.
 
 ---
 
@@ -291,6 +322,23 @@ when pending spends suggest a fill or price shock.
 
 ---
 
+## Project Structure
+
+| Path | Contents |
+|------|----------|
+| `desktop_app.py` | Main desktop/browser entry point. |
+| `bot_gui.html` | Single-file frontend UI. |
+| `src/catalyst/` | Python application modules used by the Flask API, bot loop, wallet adapters, and integrations. |
+| `src/catalyst/blueprints/` | Flask route groups split by feature area. |
+| `tests/` | Unit, integration, and API tests. |
+| `tests/e2e/` | Optional Playwright browser tests. |
+| `assets/` | App icons and third-party brand assets. |
+| `docs/` | Architecture diagrams, release checklist, and internal design notes. |
+| `scripts/` | Release, metadata, safety-check, and local diagnostic helpers. |
+| `.github/` | Issue templates, Dependabot, and GitHub Actions workflows. |
+
+---
+
 ## Running Modes
 
 | Mode | Command | Use case |
@@ -317,6 +365,7 @@ Override with the `CMM_DATA_DIR` environment variable.
 ## Building from Source
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python build.py              # full clean build, produces dist/Catalyst/
 python build.py --no-clean   # skip cleaning for faster iteration
 ```
@@ -331,7 +380,7 @@ uploads them to a new GitHub Release.
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt
 python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py
 python -m ruff check . --select E9,F821
 python -m bandit -r src --ini .bandit -ll
@@ -345,9 +394,11 @@ Standalone live-wallet scripts are excluded by `tests/conftest.py` and the expli
 ## Contributing and Security
 
 - Bug reports, feature ideas, and pull requests: see [CONTRIBUTING.md](CONTRIBUTING.md).
+- Release history: see [CHANGELOG.md](CHANGELOG.md).
 - Security reports: see [SECURITY.md](SECURITY.md). Do not open public issues for suspected vulnerabilities.
 - General support: see [SUPPORT.md](SUPPORT.md).
 - Community expectations: see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- Third-party asset and trademark notes: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 

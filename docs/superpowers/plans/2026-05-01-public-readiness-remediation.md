@@ -32,6 +32,7 @@ Update this table after each completed task.
 | Task 1 baseline | 2026-05-01 | codex/public-readiness | 407abcb | `python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py` | passed | 2798 passed, 4 skipped in 183.32s. |
 | Task 2 git hygiene | 2026-05-01 | codex/public-readiness | 407abcb | `python scripts/check_tracked_secrets.py`; `git ls-files --others --exclude-standard`; `gitleaks version` | partial | Secret scan passed; only plan doc was untracked and unignored before commit; Gitleaks unavailable; remaining local files intentionally left for user review. |
 | Task 3 branch/version consistency | 2026-05-01 | codex/public-readiness | pending | `rg -n "\bmaster\b|\btest\b" CONTRIBUTING.md docs scripts README.md`; `python desktop_app.py --help`; `python -m ruff check . --select E9,F821` | passed | No stale public branch references found outside expected test wording and the plan itself; app reports v1.2.4; Ruff crash-class lint passed. |
+| Task 4 public docs | 2026-05-01 | codex/public-readiness | pending | `rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack|Project Structure" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `git diff --check` | partial | Docs/community files added and checks passed. README screenshot/demo deferred because local screenshot folder is left for user review. |
 
 ## Recovery Checklist
 
@@ -251,7 +252,7 @@ git commit -m "docs: align public branch and version metadata"
 - Modify: `SECURITY.md`
 - Modify: `SUPPORT.md`
 
-- [ ] Add `CHANGELOG.md` with entries for the currently published tags. Use this structure:
+- [x] Add `CHANGELOG.md` with entries for the currently published tags. Use this structure:
 
 ```markdown
 # Changelog
@@ -267,9 +268,9 @@ All notable changes to CATalyst are recorded here.
 - Desktop application baseline with Flask, PyWebView, SQLite WAL, and Sage wallet integration.
 ```
 
-- [ ] Add `THIRD_PARTY_NOTICES.md` covering at least: Dexie, Sage, TibetSwap, Spacescan, MonkeyZoo, Google Fonts, and any bundled icons/images. For each asset, record source, owner/project, license or trademark note, and local file path.
+- [x] Add `THIRD_PARTY_NOTICES.md` covering at least: Dexie, Sage, TibetSwap, Spacescan, MonkeyZoo, Google Fonts, and any bundled icons/images. For each asset, record source, owner/project, license or trademark note, and local file path.
 
-- [ ] Add a documentation issue template:
+- [x] Add a documentation issue template:
 
 ```yaml
 name: Documentation issue
@@ -298,9 +299,9 @@ body:
       required: false
 ```
 
-- [ ] Add or update issue-template config so security reports point to `SECURITY.md` and private vulnerability reporting, not a public issue.
+- [x] Add or update issue-template config so security reports point to `SECURITY.md` and private vulnerability reporting, not a public issue.
 
-- [ ] Add `.gitattributes`:
+- [x] Add `.gitattributes`:
 
 ```gitattributes
 * text=auto
@@ -319,7 +320,7 @@ body:
 *.exe binary
 ```
 
-- [ ] Expand `README.md` with these sections near the top or in the existing setup area:
+- [x] Expand `README.md` with these sections near the top or in the existing setup area:
 
 ```markdown
 ## Tech Stack
@@ -338,17 +339,19 @@ body:
 CATalyst is a local desktop trading tool. It assumes a trusted local machine, a configured wallet, and network access to third-party market data services. Trading and market-making can lose funds.
 ```
 
-- [ ] Add setup notes for Linux WebKit/GTK, Windows WebView2, Playwright Chromium, Sage wallet, Splash, and optional external APIs.
+- [x] Add setup notes for Linux WebKit/GTK, Windows WebView2, Playwright Chromium, Sage wallet, Splash, and optional external APIs.
 
 - [ ] Add a screenshot or demo image near the top of the README after verifying the image is safe to publish and attributed.
 
-- [ ] Verify docs links:
+Deferred by user request on 2026-05-01: local screenshot material remains untouched for user review tomorrow.
+
+- [x] Verify docs links:
 
 ```powershell
 rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md .gitattributes .github/ISSUE_TEMPLATE
