@@ -25,6 +25,7 @@ import time
 import threading
 import traceback
 import requests
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Optional
 
@@ -583,6 +584,18 @@ class BotLoop:
             "sell": {"at": 0.0, "signature": ""},
         }
         self._create_disabled_log_cooldown: float = 60.0
+        self._adaptive_target_backoff_until: Dict[str, float] = {
+            "buy": 0.0,
+            "sell": 0.0,
+        }
+        self._last_adaptive_target_log: Dict[str, Dict] = {
+            "buy": {"at": 0.0, "signature": ""},
+            "sell": {"at": 0.0, "signature": ""},
+        }
+        self._last_adaptive_offer_targets: Dict[str, int] = {
+            "buy": 0,
+            "sell": 0,
+        }
 
         # Flag: __init__ complete — get_state() checks this to avoid
         # AttributeError when SSE connects before all attrs are set.
@@ -775,6 +788,206 @@ class BotLoop:
             targets[side] = max_offers
         return targets
 
+    def _wallet_type_for_offer_side(self, side: str) -> str:
+        return "xch" if str(side or "").lower() == "buy" else "cat"
+
+    def _available_tier_spares_for_side(self, side: str) -> Optional[int]:
+        """Return free tier-spare count for the asset that funds a side."""
+        wallet_type = self._wallet_type_for_offer_side(side)
+        tier_names = ("inner", "mid", "outer", "extreme")
+        spares = {}
+        known = False
+        try:
+            all_spares = getattr(self.coin_manager, "_tier_spares", None)
+            if isinstance(all_spares, dict) and wallet_type in all_spares:
+                spares = dict((all_spares.get(wallet_type, {}) or {}))
+                known = True
+        except Exception:
+            spares = {}
+        if not known:
+            try:
+                from database import get_tier_spare_counts
+                spares = dict(get_tier_spare_counts(wallet_type) or {})
+                known = True
+            except Exception:
+                spares = {}
+        if not known:
+            return None
+        return sum(max(0, int(spares.get(tier, 0) or 0)) for tier in tier_names)
+
+    def _log_adaptive_target_reduction(
+        self,
+        side: str,
+        target: int,
+        full_target: int,
+        current_count: int,
+        spare_count: int,
+        backoff_remaining: float,
+    ) -> None:
+        side_norm = str(side or "").lower()
+        if target >= full_target:
+            return
+        signature = f"{target}/{full_target}:{current_count}:{spare_count}:{int(backoff_remaining > 0)}"
+        try:
+            now = time.time()
+            last = self._last_adaptive_target_log.get(side_norm, {})
+            cooldown = float(getattr(cfg, "ADAPTIVE_LADDER_TARGET_LOG_COOLDOWN_SECS", 120) or 120)
+            if (
+                str(last.get("signature") or "") == signature
+                and now - float(last.get("at") or 0) < cooldown
+            ):
+                return
+            self._last_adaptive_target_log[side_norm] = {"at": now, "signature": signature}
+        except Exception:
+            pass
+        reason = (
+            f"retry backoff {backoff_remaining:.0f}s"
+            if backoff_remaining > 0
+            else f"{spare_count} usable spare coin(s)"
+        )
+        log_event(
+            "info",
+            "adaptive_ladder_target_reduced",
+            f"{side_norm} ladder target reduced to {target}/{full_target} "
+            f"while coin inventory catches up ({reason})",
+            data={
+                "side": side_norm,
+                "target": int(target),
+                "full_target": int(full_target),
+                "current_count": int(current_count),
+                "spare_count": int(spare_count),
+                "backoff_remaining_secs": round(float(backoff_remaining), 1),
+            },
+        )
+
+    def _get_adaptive_offer_targets(
+        self,
+        mid_price: Decimal,
+        current_buy_count: int = 0,
+        current_sell_count: int = 0,
+    ) -> Dict[str, int]:
+        """Return active offer targets capped by verified depth and free spares.
+
+        This does not cancel healthy live offers when inventory is low. It only
+        limits how many missing slots Step 10 tries to replace until tier-spare
+        coins or wallet confirmation catch up.
+        """
+        targets = self._get_expected_offer_targets(mid_price)
+        try:
+            targets["buy"] = max(0, int(targets["buy"]) - int(self.offer_manager.get_suspended_slot_count("buy") or 0))
+        except Exception:
+            targets["buy"] = max(0, int(targets.get("buy", 0) or 0))
+        try:
+            targets["sell"] = max(0, int(targets["sell"]) - int(self.offer_manager.get_suspended_slot_count("sell") or 0))
+        except Exception:
+            targets["sell"] = max(0, int(targets.get("sell", 0) or 0))
+
+        if not bool(getattr(cfg, "ADAPTIVE_LADDER_TARGETS", True)):
+            self._last_adaptive_offer_targets = dict(targets)
+            return targets
+
+        now = time.time()
+        current = {
+            "buy": max(0, int(current_buy_count or 0)),
+            "sell": max(0, int(current_sell_count or 0)),
+        }
+        for side in ("buy", "sell"):
+            full_target = max(0, int(targets.get(side, 0) or 0))
+            if full_target <= 0:
+                targets[side] = 0
+                continue
+            live_count = min(current[side], full_target)
+            spare_count = self._available_tier_spares_for_side(side)
+            if spare_count is None:
+                targets[side] = full_target
+                continue
+            affordable_target = min(full_target, live_count + spare_count)
+            backoff_until = float(self._adaptive_target_backoff_until.get(side, 0.0) or 0.0)
+            backoff_remaining = max(0.0, backoff_until - now)
+            if backoff_remaining > 0:
+                affordable_target = min(affordable_target, live_count)
+            target = max(live_count, affordable_target)
+            targets[side] = int(target)
+            self._log_adaptive_target_reduction(
+                side,
+                target=int(target),
+                full_target=full_target,
+                current_count=live_count,
+                spare_count=spare_count,
+                backoff_remaining=backoff_remaining,
+            )
+
+        self._last_adaptive_offer_targets = dict(targets)
+        return targets
+
+    def _offer_age_seconds(self, offer: Dict, now_ts: float) -> float:
+        created_at = str((offer or {}).get("created_at") or "").strip()
+        if not created_at:
+            return 0.0
+        try:
+            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return max(0.0, float(now_ts) - dt.timestamp())
+        except Exception:
+            return 0.0
+
+    def _retire_wallet_missing_db_offers(
+        self,
+        db_buy_offers,
+        db_sell_offers,
+        wallet_buy_ids,
+        wallet_sell_ids,
+        wallet_sync_fresh: bool,
+        now_ts: Optional[float] = None,
+    ) -> Dict[str, set]:
+        """Expire DB-only offers once a fresh wallet view proves they never landed."""
+        retired = {"buy": set(), "sell": set()}
+        if not wallet_sync_fresh:
+            return retired
+        now = float(now_ts if now_ts is not None else time.time())
+        grace = max(15.0, float(getattr(cfg, "DB_ONLY_OFFER_CONFIRM_GRACE_SECS", 90) or 90))
+        retry_backoff = max(0.0, float(getattr(cfg, "DB_ONLY_OFFER_RETRY_BACKOFF_SECS", 300) or 300))
+        side_rows = {
+            "buy": (list(db_buy_offers or []), set(wallet_buy_ids or set())),
+            "sell": (list(db_sell_offers or []), set(wallet_sell_ids or set())),
+        }
+        for side, (rows, wallet_ids) in side_rows.items():
+            for offer in rows:
+                tid = str((offer or {}).get("trade_id") or "")
+                if not tid or tid in wallet_ids:
+                    continue
+                if str((offer or {}).get("tier") or "").lower() in ("sniper", "boost"):
+                    continue
+                age_secs = self._offer_age_seconds(offer, now)
+                if age_secs < grace:
+                    continue
+                if not update_offer_status(tid, "not_submitted"):
+                    continue
+                retired[side].add(tid)
+                try:
+                    self.offer_manager._recently_created.pop(tid, None)
+                    self.offer_manager._offer_details_cache.pop(tid, None)
+                except Exception:
+                    pass
+                log_event(
+                    "warning",
+                    "db_only_offer_not_submitted",
+                    f"{side} offer {tid[:16]}... was still absent from a fresh "
+                    f"wallet view after {age_secs:.0f}s; retiring DB row and "
+                    "freeing its locked coin",
+                    data={
+                        "side": side,
+                        "trade_id": tid,
+                        "age_secs": round(age_secs, 1),
+                        "grace_secs": round(grace, 1),
+                    },
+                )
+            if retired[side] and retry_backoff > 0:
+                current_until = float(self._adaptive_target_backoff_until.get(side, 0.0) or 0.0)
+                self._adaptive_target_backoff_until[side] = max(current_until, now + retry_backoff)
+        return retired
+
     def _enter_recovery_mode(self, reason: str, buy_deficit: int, sell_deficit: int):
         state = self._recovery_state
         if state.get("active"):
@@ -855,13 +1068,11 @@ class BotLoop:
                                 current_sell_count: int):
         """Enter or clear recovery mode based on persistent degraded state."""
         state = self._recovery_state
-        targets = self._get_expected_offer_targets(mid_price)
-        # Fix F: reduce targets by suspended slot count so coin-exhausted
-        # slots don't keep triggering recovery mode.
-        buy_suspended = self.offer_manager.get_suspended_slot_count("buy")
-        sell_suspended = self.offer_manager.get_suspended_slot_count("sell")
-        targets["buy"] = max(0, targets["buy"] - buy_suspended)
-        targets["sell"] = max(0, targets["sell"] - sell_suspended)
+        targets = self._get_adaptive_offer_targets(
+            mid_price,
+            current_buy_count=current_buy_count,
+            current_sell_count=current_sell_count,
+        )
         buy_effective = int(current_buy_count) + int(self.offer_manager.get_recently_created_count("buy"))
         sell_effective = int(current_sell_count) + int(self.offer_manager.get_recently_created_count("sell"))
         buy_deficit = max(0, int(targets["buy"]) - buy_effective)
@@ -2628,6 +2839,8 @@ class BotLoop:
         self._wallet_sync_was_stale = False
         self._consecutive_unhealthy = 0
         self._sweep_protection = {}
+        self._adaptive_target_backoff_until = {"buy": 0.0, "sell": 0.0}
+        self._last_adaptive_offer_targets = {"buy": 0, "sell": 0}
         self._last_pricing_success_ts = 0
         # Reset position baselines so stale wallet comparisons from the
         # previous CAT/session don't trigger false drift alarms.
@@ -5510,6 +5723,35 @@ class BotLoop:
             }
             _main_wallet_buy_ids  = current_buy_ids  - _db_sniper_ids
             _main_wallet_sell_ids = current_sell_ids - _db_sniper_ids
+            _retired_db_only = self._retire_wallet_missing_db_offers(
+                _db_buy_all,
+                _db_sell_all,
+                _main_wallet_buy_ids,
+                _main_wallet_sell_ids,
+                wallet_sync_fresh=(
+                    bool(wallet_sync_meta.get("fresh", True))
+                    and not bool(wallet_sync_meta.get("using_cache", False))
+                ),
+            )
+            if _retired_db_only["buy"]:
+                _db_buy_all = [
+                    o for o in _db_buy_all
+                    if o.get("trade_id") not in _retired_db_only["buy"]
+                ]
+            if _retired_db_only["sell"]:
+                _db_sell_all = [
+                    o for o in _db_sell_all
+                    if o.get("trade_id") not in _retired_db_only["sell"]
+                ]
+            if _retired_db_only["buy"] or _retired_db_only["sell"]:
+                _db_open_buy_ids = {
+                    o["trade_id"] for o in _db_buy_all
+                    if (o.get("tier") or "").lower() not in ("sniper", "boost")
+                }
+                _db_open_sell_ids = {
+                    o["trade_id"] for o in _db_sell_all
+                    if (o.get("tier") or "").lower() not in ("sniper", "boost")
+                }
             _zombie_buys  = len(_main_wallet_buy_ids)  - len(_db_open_buy_ids  & _main_wallet_buy_ids)
             _zombie_sells = len(_main_wallet_sell_ids) - len(_db_open_sell_ids & _main_wallet_sell_ids)
             _pending_cancel_wallet_ids_by_side = {
@@ -8059,6 +8301,16 @@ class BotLoop:
         effective_buy_count += self.offer_manager.get_recently_created_count("buy")
         effective_sell_count = max(0, current_sell_count - probe_slot_offsets["sell"])
         effective_sell_count += self.offer_manager.get_recently_created_count("sell")
+        adaptive_targets = self._get_adaptive_offer_targets(
+            mid_price,
+            current_buy_count=current_buy_count,
+            current_sell_count=current_sell_count,
+        )
+        buy_target = int(adaptive_targets.get("buy", 0) or 0)
+        sell_target = int(adaptive_targets.get("sell", 0) or 0)
+        _buy_under = bool(cfg.ENABLE_BUY and not skip_buy and effective_buy_count < buy_target)
+        _sell_under = bool(cfg.ENABLE_SELL and not skip_sell and effective_sell_count < sell_target)
+        _any_under = bool(_buy_under or _sell_under)
         # Skip creation on sides that were requoted this cycle — the
         # requote already consumed spare coins and created what it could.
         # Without this, step 10 attempts creation with no spares left,
@@ -8071,7 +8323,7 @@ class BotLoop:
                       "Skipping buy creation — already requoted this cycle",
                       data={"side": "buy",
                             "effective_count": effective_buy_count,
-                            "target": int(cfg.MAX_ACTIVE_BUY_OFFERS),
+                            "target": int(buy_target),
                             "recently_created": self.offer_manager.get_recently_created_count("buy")})
         if "sell" in _rq:
             skip_sell = True
@@ -8079,7 +8331,7 @@ class BotLoop:
                       "Skipping sell creation — already requoted this cycle",
                       data={"side": "sell",
                             "effective_count": effective_sell_count,
-                            "target": int(cfg.MAX_ACTIVE_SELL_OFFERS),
+                            "target": int(sell_target),
                             "recently_created": self.offer_manager.get_recently_created_count("sell")})
 
         _pending_buy_settle = self._pending_cancel_wallet_ids("buy")
@@ -8091,7 +8343,7 @@ class BotLoop:
                       data={"side": "buy",
                             "pending_count": len(_pending_buy_settle),
                             "effective_count": effective_buy_count,
-                            "target": int(cfg.MAX_ACTIVE_BUY_OFFERS)})
+                            "target": int(buy_target)})
 
         _pending_sell_settle = self._pending_cancel_wallet_ids("sell")
         if _pending_sell_settle and not skip_sell:
@@ -8102,7 +8354,7 @@ class BotLoop:
                       data={"side": "sell",
                             "pending_count": len(_pending_sell_settle),
                             "effective_count": effective_sell_count,
-                            "target": int(cfg.MAX_ACTIVE_SELL_OFFERS)})
+                            "target": int(sell_target)})
 
         _buy_backoff = self._requote_backoff_remaining("buy")
         if _buy_backoff > 0:
@@ -8113,7 +8365,7 @@ class BotLoop:
                       data={"side": "buy",
                             "remaining_secs": round(_buy_backoff, 1),
                             "effective_count": effective_buy_count,
-                            "target": int(cfg.MAX_ACTIVE_BUY_OFFERS)})
+                            "target": int(buy_target)})
         _sell_backoff = self._requote_backoff_remaining("sell")
         if _sell_backoff > 0:
             skip_sell = True
@@ -8123,13 +8375,13 @@ class BotLoop:
                       data={"side": "sell",
                             "remaining_secs": round(_sell_backoff, 1),
                             "effective_count": effective_sell_count,
-                            "target": int(cfg.MAX_ACTIVE_SELL_OFFERS)})
+                            "target": int(sell_target)})
 
         buy_enabled  = (cfg.ENABLE_BUY  and not skip_buy
-                        and effective_buy_count  < cfg.MAX_ACTIVE_BUY_OFFERS
+                        and effective_buy_count  < buy_target
                         and self.risk_manager.should_enable_side("buy",  mid_price))
         sell_enabled = (cfg.ENABLE_SELL and not skip_sell
-                        and effective_sell_count < cfg.MAX_ACTIVE_SELL_OFFERS
+                        and effective_sell_count < sell_target
                         and self.risk_manager.should_enable_side("sell", mid_price))
 
         # 2026-04-22: when a side is under target but disabled, log the
@@ -8142,10 +8394,10 @@ class BotLoop:
                 _reason.append("ENABLE_BUY=False")
             if skip_buy:
                 _reason.append("skip_buy=True")
-            if effective_buy_count >= cfg.MAX_ACTIVE_BUY_OFFERS:
+            if effective_buy_count >= buy_target:
                 _reason.append(
                     f"effective_count {effective_buy_count} >= target "
-                    f"{cfg.MAX_ACTIVE_BUY_OFFERS} (current={current_buy_count}, "
+                    f"{buy_target} (current={current_buy_count}, "
                     f"recently_created={_rc_buy})"
                 )
             if not self.risk_manager.should_enable_side("buy", mid_price):
@@ -8153,7 +8405,7 @@ class BotLoop:
             self._log_create_disabled_under_target(
                 "buy",
                 current_buy_count,
-                cfg.MAX_ACTIVE_BUY_OFFERS,
+                buy_target,
                 effective_buy_count,
                 _rc_buy,
                 skip_buy,
@@ -8167,10 +8419,10 @@ class BotLoop:
                 _reason.append("ENABLE_SELL=False")
             if skip_sell:
                 _reason.append("skip_sell=True")
-            if effective_sell_count >= cfg.MAX_ACTIVE_SELL_OFFERS:
+            if effective_sell_count >= sell_target:
                 _reason.append(
                     f"effective_count {effective_sell_count} >= target "
-                    f"{cfg.MAX_ACTIVE_SELL_OFFERS} (current={current_sell_count}, "
+                    f"{sell_target} (current={current_sell_count}, "
                     f"recently_created={_rc_sell})"
                 )
             if not self.risk_manager.should_enable_side("sell", mid_price):
@@ -8178,7 +8430,7 @@ class BotLoop:
             self._log_create_disabled_under_target(
                 "sell",
                 current_sell_count,
-                cfg.MAX_ACTIVE_SELL_OFFERS,
+                sell_target,
                 effective_sell_count,
                 _rc_sell,
                 skip_sell,
@@ -8313,14 +8565,10 @@ class BotLoop:
             )
             _parallel_results[side] = offers or []
 
-        # Fix F: reduce effective target by suspended slot count so the bot
-        # doesn't enter recovery mode for slots that are known coin-exhausted.
-        buy_suspended = self.offer_manager.get_suspended_slot_count("buy")
-        sell_suspended = self.offer_manager.get_suspended_slot_count("sell")
-
+        # Targets are already adjusted for suspended slots and observed spare
+        # capacity; build only the missing slots that are actually fundable.
         work_items = []
         if buy_enabled:
-            buy_target = max(0, cfg.MAX_ACTIVE_BUY_OFFERS - buy_suspended)
             # Zombies are excluded from cap counting (they reference spent coins
             # and can't be filled), so they must also be excluded here.  Counting
             # them against buy_needed would prevent the bot from filling empty
@@ -8331,7 +8579,7 @@ class BotLoop:
                 work_items.append(("buy", buy_needed, buy_spread))
             self._clear_alert("buy_disabled")
         else:
-            if cfg.ENABLE_BUY and effective_buy_count < cfg.MAX_ACTIVE_BUY_OFFERS and not self.risk_manager.should_enable_side("buy", mid_price):
+            if cfg.ENABLE_BUY and effective_buy_count < buy_target and not self.risk_manager.should_enable_side("buy", mid_price):
                 self._emit_alert("buy_disabled", "warning",
                     "Buys disabled — position limit",
                     "Too much CAT held. Sell offers only until position reduces.",
@@ -8339,14 +8587,13 @@ class BotLoop:
                     action_label="View Position")
 
         if sell_enabled:
-            sell_target = max(0, cfg.MAX_ACTIVE_SELL_OFFERS - sell_suspended)
             sell_needed = max(0, sell_target - effective_sell_count)
             sell_spread = self.risk_manager.get_adjusted_spread("sell")
             if sell_needed > 0:
                 work_items.append(("sell", sell_needed, sell_spread))
             self._clear_alert("sell_disabled")
         else:
-            if cfg.ENABLE_SELL and effective_sell_count < cfg.MAX_ACTIVE_SELL_OFFERS and not self.risk_manager.should_enable_side("sell", mid_price):
+            if cfg.ENABLE_SELL and effective_sell_count < sell_target and not self.risk_manager.should_enable_side("sell", mid_price):
                 self._emit_alert("sell_disabled", "warning",
                     "Sells disabled — position limit",
                     "Too much XCH held. Buy offers only until position reduces.",

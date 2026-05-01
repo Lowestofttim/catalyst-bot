@@ -137,7 +137,7 @@ class TestAddOffer(_TempDB):
 
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestUpdateOfferStatus(_TempDB):
-    """update_offer_status — state transitions."""
+    """update_offer_status - state transitions."""
 
     def test_returns_true_on_success(self):
         _db.add_offer("t1", "buy", Decimal("1.00"), Decimal("0.5"),
@@ -156,6 +156,33 @@ class TestUpdateOfferStatus(_TempDB):
         # SQLite UPDATE of 0 rows is not an error; function returns True (no-op success)
         result = _db.update_offer_status("nonexistent", "cancelled")
         self.assertTrue(result)
+
+    def test_not_submitted_marks_offer_terminal_and_frees_locked_coin(self):
+        _db.upsert_coin("0xnot-submitted", "cat", 123456, designation="tier_spare", tier="inner")
+        _db.add_offer(
+            "t-not-submitted",
+            "sell",
+            Decimal("1.00"),
+            Decimal("0.5"),
+            Decimal("500"),
+            "assetid1",
+            tier="inner",
+            coin_id="0xnot-submitted",
+        )
+        _db.lock_coin("0xnot-submitted", "t-not-submitted")
+
+        result = _db.update_offer_status("t-not-submitted", "not_submitted")
+
+        offer = _db.get_offer("t-not-submitted")
+        coin = _db.get_connection().execute(
+            "SELECT status, trade_id FROM coins WHERE coin_id=?",
+            ("0xnot-submitted",),
+        ).fetchone()
+        self.assertTrue(result)
+        self.assertEqual(offer["status"], "expired")
+        self.assertEqual(offer["lifecycle_state"], "not_submitted")
+        self.assertEqual(coin["status"], "free")
+        self.assertIsNone(coin["trade_id"])
 
 
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")

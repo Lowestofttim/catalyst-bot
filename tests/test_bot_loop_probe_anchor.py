@@ -4,6 +4,7 @@ import unittest
 import io
 import contextlib
 import time
+from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import patch
 from reaction_strategy import RequoteSeverity
@@ -30,6 +31,9 @@ class _FakeCfg:
     SNIPER_TOP_BOOK_BPS = Decimal("1")
     SNIPER_RETRY_BACKOFF_BPS = Decimal("50")
     SNIPER_MAIN_BOOK_GUARD_BPS = Decimal("1")
+    ADAPTIVE_LADDER_TARGETS = True
+    DB_ONLY_OFFER_CONFIRM_GRACE_SECS = 90
+    DB_ONLY_OFFER_RETRY_BACKOFF_SECS = 300
 
 
 fake_config = types.ModuleType("config")
@@ -83,6 +87,8 @@ class _DummyOfferManager:
     def __init__(self):
         self.create_calls = []
         self.requote_calls = []
+        self._recently_created = {}
+        self._offer_details_cache = {}
 
     def get_recently_created_count(self, side):
         return 0
@@ -435,6 +441,70 @@ class ProbeAnchorTests(unittest.TestCase):
             current_sell_ids={"s1", "s2", "s3", "s4"},
             arb_gap=Decimal("1"),
         )
+
+    def test_adaptive_target_caps_short_side_to_verified_live_count_without_spares(self):
+        loop = bot_loop.BotLoop()
+        loop.coin_manager._tier_spares = {
+            "xch": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0},
+            "cat": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0},
+        }
+
+        targets = loop._get_adaptive_offer_targets(
+            Decimal("1.10"),
+            current_buy_count=4,
+            current_sell_count=2,
+        )
+
+        self.assertEqual(targets["buy"], 4)
+        self.assertEqual(targets["sell"], 2)
+
+    def test_adaptive_target_allows_regrowth_only_for_available_spares(self):
+        loop = bot_loop.BotLoop()
+        loop.coin_manager._tier_spares = {
+            "xch": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0},
+            "cat": {"inner": 2, "mid": 0, "outer": 0, "extreme": 0},
+        }
+
+        targets = loop._get_adaptive_offer_targets(
+            Decimal("1.10"),
+            current_buy_count=4,
+            current_sell_count=2,
+        )
+
+        self.assertEqual(targets["sell"], 4)
+
+    def test_wallet_missing_db_offers_are_retired_after_confirmation_grace(self):
+        loop = bot_loop.BotLoop()
+        now_ts = 1000.0
+        old_created = datetime.fromtimestamp(now_ts - 180, timezone.utc).isoformat()
+        fresh_created = datetime.fromtimestamp(now_ts - 20, timezone.utc).isoformat()
+        loop.offer_manager._recently_created = {"old-sell": now_ts - 180, "fresh-sell": now_ts - 20}
+        loop.offer_manager._offer_details_cache = {
+            "old-sell": {"side": "sell"},
+            "fresh-sell": {"side": "sell"},
+        }
+
+        with patch.object(bot_loop, "update_offer_status", return_value=True) as update_mock, \
+                patch.object(bot_loop, "log_event"):
+            result = loop._retire_wallet_missing_db_offers(
+                db_buy_offers=[],
+                db_sell_offers=[
+                    {"trade_id": "old-sell", "created_at": old_created, "tier": "inner"},
+                    {"trade_id": "fresh-sell", "created_at": fresh_created, "tier": "inner"},
+                    {"trade_id": "visible-sell", "created_at": old_created, "tier": "inner"},
+                ],
+                wallet_buy_ids=set(),
+                wallet_sell_ids={"visible-sell"},
+                wallet_sync_fresh=True,
+                now_ts=now_ts,
+            )
+
+        update_mock.assert_called_once_with("old-sell", "not_submitted")
+        self.assertEqual(result["sell"], {"old-sell"})
+        self.assertEqual(result["buy"], set())
+        self.assertNotIn("old-sell", loop.offer_manager._recently_created)
+        self.assertIn("fresh-sell", loop.offer_manager._recently_created)
+        self.assertGreater(loop._adaptive_target_backoff_until["sell"], now_ts)
 
     def test_immediate_sweep_protection_pauses_filled_side_same_cycle(self):
         loop = bot_loop.BotLoop()

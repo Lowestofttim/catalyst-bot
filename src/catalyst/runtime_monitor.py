@@ -753,17 +753,49 @@ class RuntimeMonitor:
                 suspended = 0
             return max(0, target - suspended)
 
-        buy_target = _expected_side_target("buy")
-        sell_target = _expected_side_target("sell")
-        buy_visible = max(
-            int(market["wallet_buy"]),
-            int(market["db_buy"]),
-            int(market["dexie_our_buy"]),
-        )
-        sell_visible = max(
-            int(market["wallet_sell"]),
-            int(market["db_sell"]),
-            int(market["dexie_our_sell"]),
+        full_buy_target = _expected_side_target("buy")
+        full_sell_target = _expected_side_target("sell")
+
+        # A DB-only offer row can look "full" even though Sage and Dexie
+        # never accepted it. When wallet sync is fresh, use wallet counts as
+        # the verified live-book view; DB remains diagnostic only.
+        if wallet_fresh:
+            buy_visible = int(market["wallet_buy"])
+            sell_visible = int(market["wallet_sell"])
+        else:
+            buy_visible = max(
+                int(market["wallet_buy"]),
+                int(market["db_buy"]),
+                int(market["dexie_our_buy"]),
+            )
+            sell_visible = max(
+                int(market["wallet_sell"]),
+                int(market["db_sell"]),
+                int(market["dexie_our_sell"]),
+            )
+
+        buy_target = full_buy_target
+        sell_target = full_sell_target
+        try:
+            adaptive = self._bot._get_adaptive_offer_targets(
+                _coerce_decimal(getattr(self._bot, "_current_mid_price", 0)),
+                current_buy_count=buy_visible,
+                current_sell_count=sell_visible,
+            )
+            buy_target = int(adaptive.get("buy", buy_target) or 0)
+            sell_target = int(adaptive.get("sell", sell_target) or 0)
+        except Exception:
+            pass
+
+        market["verified_buy_visible"] = int(buy_visible)
+        market["verified_sell_visible"] = int(sell_visible)
+        market["full_buy_target"] = int(full_buy_target)
+        market["full_sell_target"] = int(full_sell_target)
+        market["buy_target"] = int(buy_target)
+        market["sell_target"] = int(sell_target)
+        market["adaptive_target_active"] = (
+            int(buy_target) < int(full_buy_target)
+            or int(sell_target) < int(full_sell_target)
         )
         buy_deficit = max(0, buy_target - buy_visible)
         sell_deficit = max(0, sell_target - sell_visible)

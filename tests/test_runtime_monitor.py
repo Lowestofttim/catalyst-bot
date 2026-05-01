@@ -94,7 +94,7 @@ class _FakeDexieManager:
 class _FakeBot:
     def __init__(self, *, wallet_buys=30, wallet_sells=30, fresh=True,
                  market_snapshot=None, coin_status=None, free_counts=None,
-                 queue_size=0, sweep_protection=None):
+                 queue_size=0, sweep_protection=None, adaptive_targets=None):
         self._startup_complete = _FakeEvent()
         self._running = True
         self._bot_state = {"open_buys": wallet_buys, "open_sells": wallet_sells}
@@ -112,12 +112,20 @@ class _FakeBot:
         self.dexie_manager = _FakeDexieManager(queue_size=queue_size)
         self.alerts = []
         self.cleared = []
+        self._adaptive_targets = adaptive_targets
+        self.adaptive_target_calls = []
 
     def _emit_alert(self, alert_id, severity, title, message):
         self.alerts.append((alert_id, severity, title, message))
 
     def _clear_alert(self, alert_id):
         self.cleared.append(alert_id)
+
+    def _get_adaptive_offer_targets(self, mid_price, current_buy_count=0, current_sell_count=0):
+        self.adaptive_target_calls.append((mid_price, current_buy_count, current_sell_count))
+        if self._adaptive_targets is not None:
+            return dict(self._adaptive_targets)
+        return {"buy": 24, "sell": 24}
 
 
 def _open_offer_rows(buys, sells):
@@ -267,6 +275,47 @@ class RuntimeMonitorTests(unittest.TestCase):
         self.assertIn("book_under_target", active_codes)
         self.assertEqual(state["status"], "warning")
         self.assertTrue(any(
+            call.args[1] == "bot_health_book_under_target"
+            for call in log_event_mock.call_args_list
+        ))
+
+    def test_uses_adaptive_targets_when_db_only_rows_mask_wallet_shortfall(self):
+        bot = _FakeBot(
+            wallet_buys=24,
+            wallet_sells=20,
+            adaptive_targets={"buy": 24, "sell": 20},
+            market_snapshot={
+                "buy_count": 50,
+                "sell_count": 50,
+                "our_buy_count": 24,
+                "our_sell_count": 20,
+                "our_best_bid": "0.00011990",
+                "our_best_ask": "0.00012110",
+            },
+        )
+        monitor = RuntimeMonitor(bot)
+        monitor.reset_session()
+        monitor._last_post_activity_at = time.time() - 600
+
+        with patch("runtime_monitor.get_events_since", return_value=[]), \
+             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)), \
+             patch("runtime_monitor.log_event") as log_event_mock, \
+             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
+             patch("runtime_monitor.cfg.ENABLE_BUY", True), \
+             patch("runtime_monitor.cfg.ENABLE_SELL", True), \
+             patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24), \
+             patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24):
+            monitor._run_once()
+            monitor._run_once()
+
+        state = monitor.get_state()
+        active_codes = {item["code"] for item in state["active_conditions"]}
+        self.assertNotIn("book_under_target", active_codes)
+        self.assertEqual(state["market"]["verified_sell_visible"], 20)
+        self.assertEqual(state["market"]["sell_target"], 20)
+        self.assertEqual(state["market"]["full_sell_target"], 24)
+        self.assertTrue(bot.adaptive_target_calls)
+        self.assertFalse(any(
             call.args[1] == "bot_health_book_under_target"
             for call in log_event_mock.call_args_list
         ))

@@ -1468,6 +1468,8 @@ def update_offer_status(trade_id: str, status: str) -> bool:
       - expired → coin unlocked (no on-chain tx) → free_coin()
     """
     import time as _time
+    lifecycle_state = status
+    coarse_status = "expired" if status == "not_submitted" else status
     for _attempt in range(3):
         try:
             conn = get_connection()
@@ -1480,29 +1482,30 @@ def update_offer_status(trade_id: str, status: str) -> bool:
             # A real fill must win over any later cancel/expiry bookkeeping.
             # This avoids sniper-cleanup or cancel-retry races downgrading a
             # verified fill into a cancelled row.
-            if (row and status in ("cancelled", "expired")
+            if (row and coarse_status in ("cancelled", "expired")
                     and (row["status"] == "filled" or row["filled_at"])):
                 return True
 
             # Derive lifecycle_state from coarse status.
             # Callers can also set lifecycle_state directly via
             # update_offer_lifecycle_state() for finer-grained tracking.
-            lifecycle_state = status  # default: same as coarse status
+            # not_submitted is stored as status=expired to preserve the
+            # legacy CHECK constraint while keeping the precise lifecycle.
 
-            if status == "filled":
+            if coarse_status == "filled":
                 conn.execute(
                     "UPDATE offers SET status=?, lifecycle_state=?, filled_at=?, cancelled_at=NULL WHERE trade_id=?",
-                    (status, lifecycle_state, now, trade_id)
+                    (coarse_status, lifecycle_state, now, trade_id)
                 )
-            elif status in ("cancelled", "expired"):
+            elif coarse_status in ("cancelled", "expired"):
                 conn.execute(
                     "UPDATE offers SET status=?, lifecycle_state=?, cancelled_at=?, filled_at=NULL WHERE trade_id=?",
-                    (status, lifecycle_state, now, trade_id)
+                    (coarse_status, lifecycle_state, now, trade_id)
                 )
             else:
                 conn.execute(
                     "UPDATE offers SET status=?, lifecycle_state=? WHERE trade_id=?",
-                    (status, lifecycle_state, trade_id)
+                    (coarse_status, lifecycle_state, trade_id)
                 )
 
             conn.commit()
@@ -1523,14 +1526,14 @@ def update_offer_status(trade_id: str, status: str) -> bool:
                     coin_ids = [coin_id]
 
             for coin_id in coin_ids:
-                if status == "filled":
+                if coarse_status == "filled":
                     mark_coin_spent(coin_id)
-                elif status == "cancelled":
+                elif coarse_status == "cancelled":
                     # Secure cancel destroys the old coin and creates a new one.
                     # The new coin will be auto-discovered on next snapshot.
                     mark_coin_spent(coin_id)
-                elif status == "expired":
-                    # Expired offers just unlock the coin — no on-chain transaction.
+                elif coarse_status == "expired":
+                    # Expired/not-submitted offers unlock the coin; no on-chain tx.
                     free_coin(coin_id)
 
             return True

@@ -37,6 +37,7 @@ class OfferState(StrEnum):
     MEMPOOL_OBSERVED = "mempool_observed"       # potential take seen in mempool
     FILLED = "filled"                          # terminal: fill detected & verified
     EXPIRED = "expired"                        # terminal: time-expired
+    NOT_SUBMITTED = "not_submitted"             # terminal: local row never became wallet-visible
     PHANTOM_REJECTED = "phantom_rejected"      # terminal: self-spend/false fill rejected
 
 
@@ -69,6 +70,7 @@ _TERMINAL_STATES = frozenset({
     OfferState.CANCELLED,
     OfferState.FILLED,
     OfferState.EXPIRED,
+    OfferState.NOT_SUBMITTED,
     OfferState.PHANTOM_REJECTED,
 })
 
@@ -268,6 +270,7 @@ def coarse_status(lifecycle_state: str) -> str:
         "mempool_observed": "open",       # still live until confirmed
         "filled": "filled",
         "expired": "expired",
+        "not_submitted": "expired",       # no live offer exists; unlock local coin
         "phantom_rejected": "cancelled",  # treat as cancelled for legacy
     }
     return _map.get(lifecycle_state, "open")
@@ -275,5 +278,7 @@ def coarse_status(lifecycle_state: str) -> str:
 
 def is_terminal(state: str) -> bool:
     """Check if a lifecycle state is terminal (no further transitions)."""
-    return state in {"cancelled", "filled", "expired", "phantom_rejected"}
+    return state in {
+        "cancelled", "filled", "expired", "not_submitted", "phantom_rejected",
+    }
 
