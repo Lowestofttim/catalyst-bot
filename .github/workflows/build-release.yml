@@ -51,8 +51,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller
-          pip install -r requirements.txt
+          python -m pip install pyinstaller
+          python -m pip install -r requirements.txt
 
       - name: Sync release metadata to tag
         shell: bash

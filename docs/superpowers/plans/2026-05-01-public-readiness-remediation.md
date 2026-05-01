@@ -31,8 +31,9 @@ Update this table after each completed task.
 | Plan created | 2026-05-01 | current | none | `Test-Path docs/superpowers/plans/2026-05-01-public-readiness-remediation.md` | passed | Durable checklist created for future work. |
 | Task 1 baseline | 2026-05-01 | codex/public-readiness | 407abcb | `python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py` | passed | 2798 passed, 4 skipped in 183.32s. |
 | Task 2 git hygiene | 2026-05-01 | codex/public-readiness | 407abcb | `python scripts/check_tracked_secrets.py`; `git ls-files --others --exclude-standard`; `gitleaks version` | partial | Secret scan passed; only plan doc was untracked and unignored before commit; Gitleaks unavailable; remaining local files intentionally left for user review. |
-| Task 3 branch/version consistency | 2026-05-01 | codex/public-readiness | pending | `rg -n "\bmaster\b|\btest\b" CONTRIBUTING.md docs scripts README.md`; `python desktop_app.py --help`; `python -m ruff check . --select E9,F821` | passed | No stale public branch references found outside expected test wording and the plan itself; app reports v1.2.4; Ruff crash-class lint passed. |
-| Task 4 public docs | 2026-05-01 | codex/public-readiness | pending | `rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack|Project Structure" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `git diff --check` | partial | Docs/community files added and checks passed. README screenshot/demo deferred because local screenshot folder is left for user review. |
+| Task 3 branch/version consistency | 2026-05-01 | codex/public-readiness | 0f1709c | `rg -n "\bmaster\b|\btest\b" CONTRIBUTING.md docs scripts README.md`; `python desktop_app.py --help`; `python -m ruff check . --select E9,F821` | passed | No stale public branch references found outside expected test wording and the plan itself; app reports v1.2.4; Ruff crash-class lint passed. |
+| Task 4 public docs | 2026-05-01 | codex/public-readiness | 70afd95 | `rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack|Project Structure" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `git diff --check` | partial | Docs/community files added and checks passed. README screenshot/demo deferred because local screenshot folder is left for user review. |
+| Task 5 build reproducibility | 2026-05-01 | codex/public-readiness | pending | `python -m pip install -r requirements-dev.txt`; `python -m py_compile build.py`; `python -m ruff check . --select E9,F821`; `python build.py --no-clean` | partial | Install command hit local pywebview permission issue in user site-packages; build.py compiles; Ruff passed; PyInstaller build succeeded. |
 
 ## Recovery Checklist
 
@@ -370,13 +371,13 @@ git commit -m "docs: add public release documentation"
 - Modify: `.github/workflows/code-quality.yml`
 - Modify release workflow files under `.github/workflows/`
 
-- [ ] Add PyInstaller explicitly to the build/dev dependency path:
+- [x] Add PyInstaller explicitly to the build/dev dependency path:
 
 ```text
 pyinstaller>=6,<7
 ```
 
-- [ ] Replace the auto-install behavior in `build.py`. The new behavior should fail with a clear message if PyInstaller is missing:
+- [x] Replace the auto-install behavior in `build.py`. The new behavior should fail with a clear message if PyInstaller is missing:
 
 ```python
 def _ensure_pyinstaller():
@@ -391,17 +392,17 @@ def _ensure_pyinstaller():
         raise SystemExit(1)
 ```
 
-- [ ] Update docs to use `python -m pip`, `python -m pytest`, and the explicit build dependency install.
+- [x] Update docs to use `python -m pip`, `python -m pytest`, and the explicit build dependency install.
 
-- [ ] Update CI to call `python -m pytest` instead of bare `pytest`.
+- [x] Update CI to call `python -m pytest` instead of bare `pytest`.
 
-- [ ] Add a release build smoke step where practical:
+- [x] Add a release build smoke step where practical:
 
 ```powershell
 python build.py --no-clean
 ```
 
-- [ ] Verify:
+- [x] Verify:
 
 ```powershell
 python -m pip install -r requirements-dev.txt
@@ -410,7 +411,9 @@ python build.py --no-clean
 
 Expected: build completes or fails only for a documented platform prerequisite. Do not claim build readiness if this command is not run.
 
-- [ ] Commit:
+Result on 2026-05-01: `python -m pip install -r requirements-dev.txt` failed because the local user site-packages directory could not overwrite `webview\lib\Microsoft.Web.WebView2.Core.dll`. `python build.py --no-clean` succeeded with PyInstaller 6.19.0 and produced `dist\Catalyst\Catalyst.exe`.
+
+- [x] Commit:
 
 ```powershell
 git add requirements-dev.txt build.py README.md .github/workflows

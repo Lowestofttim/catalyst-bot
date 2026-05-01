@@ -58,15 +58,15 @@ def _run(cmd, **kwargs):
 
 
 def _ensure_pyinstaller():
-    """Check PyInstaller is importable; install it if not."""
+    """Check PyInstaller is importable and fail with setup guidance if missing."""
     try:
         import PyInstaller  # noqa: F401
         import PyInstaller.__main__  # noqa: F401
         print("  PyInstaller found.")
     except ImportError:
-        print("  PyInstaller not found — installing...")
-        _run([sys.executable, '-m', 'pip', 'install', 'pyinstaller', '--break-system-packages'])
-        print("  PyInstaller installed.")
+        print("  ERROR: PyInstaller is not installed.")
+        print("  Install build dependencies with: python -m pip install -r requirements-dev.txt")
+        raise SystemExit(1)
 
 
 def _clean():
