@@ -1259,6 +1259,7 @@ class CoinManager:
         self._recent_absorb_submissions: Dict[str, float] = {}
         self._recent_topup_split_submissions: Dict[str, float] = {}
         self._recent_consolidate_submissions: Dict[str, float] = {}
+        self._last_consolidate_not_submitted: bool = False
 
         # Warning throttle
         self._last_low_coin_warning: float = 0
@@ -1811,8 +1812,11 @@ class CoinManager:
                 log_event("warning", "coin_mgr_fingerprint_cli_fail",
                           f"CLI fingerprint detection failed: {e}")
 
-        log_event("error", "coin_mgr_no_fingerprint",
-                  "Could not determine wallet fingerprint from config, RPC, or CLI")
+        log_event(
+            "info",
+            "coin_mgr_no_fingerprint",
+            "Wallet fingerprint is not available yet; waiting for wallet selection or RPC readiness",
+        )
         return ""
 
     # -------------------------------------------------------------------
@@ -5909,6 +5913,13 @@ class CoinManager:
                               f"{name} consolidation already submitted — waiting for "
                               "wallet/chain state to settle")
                     return False
+                elif self._last_consolidate_not_submitted:
+                    log_event(
+                        "info",
+                        f"topup_{name.lower()}_consolidate_not_submitted",
+                        f"{name} consolidation was not submitted by Sage — will retry next topup cycle",
+                    )
+                    return False
                 else:
                     log_event("warning", f"topup_{name.lower()}_consolidate_fail",
                               f"{name} consolidation failed")
@@ -6103,6 +6114,13 @@ class CoinManager:
                     log_event("info", f"topup_{name.lower()}_pool_rebuild_wait",
                               f"{name} topup pool rebuild already submitted — "
                               "waiting for wallet/chain state to settle")
+                    return False
+                elif self._last_consolidate_not_submitted:
+                    log_event(
+                        "info",
+                        f"topup_{name.lower()}_pool_rebuild_not_submitted",
+                        f"{name} topup pool rebuild was not submitted by Sage — will retry next topup cycle",
+                    )
                     return False
                 else:
                     log_event("warning", f"topup_{name.lower()}_pool_rebuild_fail",
@@ -6846,7 +6864,7 @@ class CoinManager:
             )
             if pending_count == 0 and _source_still_selectable(selectable_now):
                 log_event(
-                    "warning",
+                    "info",
                     f"{tag}_osstep_not_submitted",
                     "/create_transaction returned no transaction id, Sage has no "
                     "pending transaction, and the source coin is still selectable; "
@@ -6922,7 +6940,7 @@ class CoinManager:
                 if pending_count == 0 and source_selectable:
                     _clear_split_debounce()
                     log_event(
-                        "warning",
+                        "info",
                         f"{tag}_osstep_not_submitted",
                         "/create_transaction returned no transaction id, no "
                         "pending transaction appeared after the submit grace "
@@ -6999,7 +7017,7 @@ class CoinManager:
             if source_selectable and pending_count in (0, None):
                 _clear_split_debounce()
                 log_event(
-                    "warning",
+                    "info",
                     f"{tag}_osstep_not_submitted",
                     "One-step split timed out with no transaction id and the "
                     "source coin still selectable; clearing the split debounce "
@@ -7575,8 +7593,8 @@ class CoinManager:
         return [{"coin_id": cid, "amount": after[cid]} for cid in new_ids]
 
     def _consolidate_coins(self, name: str, wallet_id: int,
-                            total_amount: int, is_cat: bool,
-                            source_coin_ids: Optional[List[str]] = None) -> bool:
+                           total_amount: int, is_cat: bool,
+                           source_coin_ids: Optional[List[str]] = None) -> bool:
         """Consolidate specific coins into one large coin using Sage's /combine.
 
         F68 FIX: switched from send_xch/send_cat (which silently ignore coin_ids
@@ -7589,6 +7607,7 @@ class CoinManager:
                 will spend only these. Pass None returns False (use a
                 different code path if you genuinely want Sage to pick).
         """
+        self._last_consolidate_not_submitted = False
         try:
             if not source_coin_ids:
                 log_event("warning", f"consolidate_{name.lower()}_no_ids",
@@ -7672,8 +7691,9 @@ class CoinManager:
                         "elapsed": submit_state.get("elapsed"),
                     }
                     if submit_state.get("state") == "not_submitted":
+                        self._last_consolidate_not_submitted = True
                         log_event(
-                            "warning",
+                            "info",
                             f"consolidate_{name.lower()}_combine_not_submitted",
                             "Sage /combine returned no transaction id, no pending "
                             "transaction, and all input coins are still selectable; "
@@ -8050,7 +8070,7 @@ class CoinManager:
                     }
                     if submit_state.get("state") == "not_submitted":
                         log_event(
-                            "warning",
+                            "info",
                             f"topup_{name.lower()}_absorb_not_submitted",
                             "Sage /combine returned no transaction id, no pending "
                             "transaction, and all input coins are still selectable; "

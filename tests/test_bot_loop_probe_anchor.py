@@ -485,7 +485,7 @@ class ProbeAnchorTests(unittest.TestCase):
         }
 
         with patch.object(bot_loop, "update_offer_status", return_value=True) as update_mock, \
-                patch.object(bot_loop, "log_event"):
+                patch.object(bot_loop, "log_event") as log_event_mock:
             result = loop._retire_wallet_missing_db_offers(
                 db_buy_offers=[],
                 db_sell_offers=[
@@ -505,6 +505,73 @@ class ProbeAnchorTests(unittest.TestCase):
         self.assertNotIn("old-sell", loop.offer_manager._recently_created)
         self.assertIn("fresh-sell", loop.offer_manager._recently_created)
         self.assertGreater(loop._adaptive_target_backoff_until["sell"], now_ts)
+        not_submitted_events = [
+            call for call in log_event_mock.call_args_list
+            if call.args[1] == "db_only_offer_not_submitted"
+        ]
+        self.assertEqual(len(not_submitted_events), 1)
+        self.assertEqual(not_submitted_events[0].args[0], "info")
+
+    def test_orphan_offer_cleanup_sets_adaptive_backoff_for_closed_side(self):
+        loop = bot_loop.BotLoop()
+
+        class _Conn:
+            def execute(self, *args, **kwargs):
+                return self
+
+            def fetchall(self):
+                return [
+                    {"trade_id": "dead-sell", "coin_id": "0xcoin", "side": "sell"}
+                ]
+
+        updates = []
+
+        def _update_offer_status(trade_id, status):
+            updates.append((trade_id, status))
+            return True
+
+        with patch.dict(sys.modules, {"database": fake_database, "wallet": fake_wallet}), \
+                patch.object(fake_database, "get_connection", return_value=_Conn(), create=True), \
+                patch.object(fake_database, "lock_coin", return_value=True, create=True), \
+                patch.object(fake_database, "update_offer_status",
+                             side_effect=_update_offer_status), \
+                patch.object(fake_wallet, "get_all_offers", return_value=[]), \
+                patch.object(bot_loop.time, "time", return_value=1000.0), \
+                patch.object(bot_loop, "log_event"):
+            loop._repair_unlinked_offer_coins()
+
+        self.assertEqual(updates, [("dead-sell", "cancelled")])
+        self.assertGreaterEqual(loop._adaptive_target_backoff_until["sell"], 1300.0)
+        self.assertEqual(loop._adaptive_target_backoff_until["buy"], 0.0)
+
+    def test_daily_reconcile_recent_db_only_offers_are_visibility_info(self):
+        loop = bot_loop.BotLoop()
+        now_ts = 1000.0
+        old_created = datetime.fromtimestamp(now_ts - 180, timezone.utc).isoformat()
+        fresh_created = datetime.fromtimestamp(now_ts - 20, timezone.utc).isoformat()
+        db_open = [
+            {"trade_id": f"visible-{idx}", "created_at": old_created, "tier": "inner"}
+            for idx in range(4)
+        ] + [
+            {"trade_id": f"fresh-{idx}", "created_at": fresh_created, "tier": "inner"}
+            for idx in range(4)
+        ]
+        wallet_open = [
+            {"trade_id": f"visible-{idx}", "status": "PENDING_ACCEPT"}
+            for idx in range(4)
+        ]
+
+        with patch.dict(sys.modules, {"database": fake_database}), \
+                patch.object(bot_loop, "backfill_verified_fills_from_offers", return_value=[]), \
+                patch.object(fake_database, "get_open_offers", return_value=db_open), \
+                patch.object(bot_loop, "get_all_offers", return_value=wallet_open), \
+                patch.object(bot_loop.time, "time", return_value=now_ts), \
+                patch.object(bot_loop, "log_event") as log_event_mock:
+            loop._maybe_run_daily_reconcile()
+
+        event_keys = [(call.args[0], call.args[1]) for call in log_event_mock.call_args_list]
+        self.assertIn(("info", "daily_reconcile_count_pending_visibility"), event_keys)
+        self.assertNotIn(("warning", "daily_reconcile_count_mismatch"), event_keys)
 
     def test_immediate_sweep_protection_pauses_filled_side_same_cycle(self):
         loop = bot_loop.BotLoop()

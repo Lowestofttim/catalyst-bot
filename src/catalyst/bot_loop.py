@@ -973,7 +973,7 @@ class BotLoop:
                 except Exception:
                     pass
                 log_event(
-                    "warning",
+                    "info",
                     "db_only_offer_not_submitted",
                     f"{side} offer {tid[:16]}... was still absent from a fresh "
                     f"wallet view after {age_secs:.0f}s; retiring DB row and "
@@ -10304,7 +10304,7 @@ class BotLoop:
             conn = get_connection()
             rows = conn.execute(
                 """
-                SELECT o.trade_id, o.coin_id
+                SELECT o.trade_id, o.coin_id, o.side
                 FROM offers o
                 LEFT JOIN coins c ON o.coin_id = c.coin_id
                 WHERE o.status = 'open'
@@ -10351,9 +10351,11 @@ class BotLoop:
 
         repaired = 0
         orphan_closed = 0
+        orphan_closed_by_side = {"buy": 0, "sell": 0}
         for row in rows:
             tid = row["trade_id"]
             cid = row["coin_id"]
+            side = str(row["side"] or "").lower()
             if not tid or not cid:
                 continue
             # If we have a reliable wallet snapshot and the offer isn't there,
@@ -10362,6 +10364,8 @@ class BotLoop:
                 try:
                     update_offer_status(tid, "cancelled")
                     orphan_closed += 1
+                    if side in orphan_closed_by_side:
+                        orphan_closed_by_side[side] += 1
                 except Exception:
                     pass
                 continue
@@ -10377,10 +10381,31 @@ class BotLoop:
                       f"existed but the coin row wasn't marked locked. Indicates "
                       f"a previous lock_coin call failed silently.")
         if orphan_closed > 0:
+            retry_backoff = max(
+                0.0,
+                float(getattr(cfg, "DB_ONLY_OFFER_RETRY_BACKOFF_SECS", 300) or 300),
+            )
+            if retry_backoff > 0:
+                now = time.time()
+                for side, count in orphan_closed_by_side.items():
+                    if count <= 0:
+                        continue
+                    current_until = float(
+                        self._adaptive_target_backoff_until.get(side, 0.0) or 0.0
+                    )
+                    self._adaptive_target_backoff_until[side] = max(
+                        current_until,
+                        now + retry_backoff,
+                    )
             log_event("info", "offer_coin_orphan_closed",
                       f"Closed {orphan_closed} DB offer(s) that no longer exist "
                       f"in the wallet — breaks the re-lock/free loop on dead "
-                      f"sniper/ladder offers.")
+                      f"sniper/ladder offers.",
+                      data={
+                          "buy": orphan_closed_by_side["buy"],
+                          "sell": orphan_closed_by_side["sell"],
+                          "adaptive_backoff_secs": retry_backoff,
+                      })
 
     def _maybe_run_daily_reconcile(self) -> None:
         """Run a deep DB↔wallet reconciliation once per 24 hours.
@@ -10465,19 +10490,61 @@ class BotLoop:
             db_count = len(db_open)
             wallet_offers = get_all_offers(include_completed=False, start=0, end=500)
             if wallet_offers:
-                wallet_open = sum(
-                    1 for o in wallet_offers
-                    if str(o.get("status", "")).lower() not in
-                       ("cancelled", "canceled", "completed", "expired", "failed")
+                terminal_statuses = (
+                    "cancelled", "canceled", "completed", "expired", "failed"
                 )
+                open_wallet_offers = [
+                    o for o in wallet_offers
+                    if str(o.get("status", "")).lower() not in terminal_statuses
+                ]
+                wallet_open = len(open_wallet_offers)
+                wallet_open_ids = {
+                    str(
+                        o.get("trade_id")
+                        or o.get("offer_id")
+                        or o.get("id")
+                        or ""
+                    ).lower()
+                    for o in open_wallet_offers
+                }
                 if abs(db_count - wallet_open) > 2:
-                    log_event(
-                        "warning",
-                        "daily_reconcile_count_mismatch",
-                        f"Daily reconcile: DB has {db_count} open offers, wallet has "
-                        f"{wallet_open}. Drift suggests DB is out of sync. "
-                        f"Recommend investigating offers table.",
+                    grace = max(
+                        15.0,
+                        float(getattr(cfg, "DB_ONLY_OFFER_CONFIRM_GRACE_SECS", 90) or 90),
                     )
+                    now_ts = time.time()
+                    recent_db_only = []
+                    for offer in db_open:
+                        tid = str((offer or {}).get("trade_id") or "").lower()
+                        if not tid or tid in wallet_open_ids:
+                            continue
+                        if str((offer or {}).get("tier") or "").lower() in ("sniper", "boost"):
+                            continue
+                        if self._offer_age_seconds(offer, now_ts) < grace:
+                            recent_db_only.append(tid)
+                    db_excess = max(0, db_count - wallet_open)
+                    if db_excess > 0 and len(recent_db_only) >= db_excess:
+                        log_event(
+                            "info",
+                            "daily_reconcile_count_pending_visibility",
+                            f"Daily reconcile: DB has {db_count} open offers, wallet has "
+                            f"{wallet_open}; {len(recent_db_only)} fresh DB-only offer(s) "
+                            "are still inside wallet visibility grace.",
+                            data={
+                                "db_count": db_count,
+                                "wallet_open": wallet_open,
+                                "recent_db_only": len(recent_db_only),
+                                "grace_secs": round(grace, 1),
+                            },
+                        )
+                    else:
+                        log_event(
+                            "warning",
+                            "daily_reconcile_count_mismatch",
+                            f"Daily reconcile: DB has {db_count} open offers, wallet has "
+                            f"{wallet_open}. Drift suggests DB is out of sync. "
+                            f"Recommend investigating offers table.",
+                        )
                 else:
                     log_event("info", "daily_reconcile_count_ok",
                               f"Daily reconcile count check OK: DB={db_count}, "

@@ -108,6 +108,24 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         with patch.object(coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"):
             return coin_manager.CoinManager()
 
+    def test_missing_fingerprint_is_startup_info_not_error(self):
+        manager = coin_manager.CoinManager.__new__(coin_manager.CoinManager)
+        fake_wallet = types.SimpleNamespace(get_current_key=lambda: None)
+
+        with patch.dict(sys.modules, {"wallet": fake_wallet}), \
+                patch.dict(coin_manager.os.environ, {"WALLET_TYPE": "sage"}), \
+                patch.object(coin_manager.cfg, "WALLET_FINGERPRINT", "", create=True), \
+                patch.object(coin_manager, "log_event") as log_event:
+            result = manager._resolve_fingerprint()
+
+        self.assertEqual(result, "")
+        fingerprint_events = [
+            call for call in log_event.call_args_list
+            if call.args[1] == "coin_mgr_no_fingerprint"
+        ]
+        self.assertEqual(len(fingerprint_events), 1)
+        self.assertEqual(fingerprint_events[0].args[0], "info")
+
     def test_extract_sage_transaction_ids_handles_nested_fields(self):
         tx_ids = coin_manager.CoinManager._extract_sage_transaction_ids({
             "transaction_id": "abc123",
@@ -449,6 +467,12 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         event_types = [call.args[1] for call in log_event.call_args_list]
         self.assertIn("topup_cat-inner_osstep_not_submitted", event_types)
         self.assertNotIn("topup_cat-inner_osstep_debounce", event_types)
+        not_submitted_levels = [
+            call.args[0] for call in log_event.call_args_list
+            if call.args[1] == "topup_cat-inner_osstep_not_submitted"
+        ]
+        self.assertTrue(not_submitted_levels)
+        self.assertTrue(all(level == "info" for level in not_submitted_levels))
 
     def test_one_step_split_without_txid_clears_debounce_after_grace(self):
         manager = self._make_manager()
@@ -851,6 +875,12 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         event_types = [call.args[1] for call in log_event.call_args_list]
         self.assertIn("topup_xch_absorb_not_submitted", event_types)
         self.assertNotIn("topup_xch_absorb_debounce", event_types)
+        not_submitted_levels = [
+            call.args[0] for call in log_event.call_args_list
+            if call.args[1] == "topup_xch_absorb_not_submitted"
+        ]
+        self.assertTrue(not_submitted_levels)
+        self.assertTrue(all(level == "info" for level in not_submitted_levels))
 
     def test_pool_rebuild_waits_quietly_when_consolidation_is_pending(self):
         manager = self._make_manager()
@@ -901,6 +931,59 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertIn("topup_cat-inner_pool_rebuild_wait", event_types)
         self.assertNotIn("topup_cat-inner_pool_rebuild_ok", event_types)
         self.assertNotIn("topup_cat-inner_pool_rebuild_fail", event_types)
+
+    def test_pool_rebuild_not_submitted_is_info_retry_not_warning_fail(self):
+        manager = self._make_manager()
+        reserve = _record("0xreserve", 150)
+        keep_mid = _record("0xmidkeep", 400)
+        excess_a = _record("0xmida", 400)
+        excess_b = _record("0xmidb", 400)
+        inventory = {
+            "reserve": [reserve],
+            "small": [],
+            "inner": [],
+            "mid": [excess_a, excess_b, keep_mid],
+            "outer": [],
+            "extreme": [],
+        }
+        fresh_result = {"confirmed_records": [reserve, excess_a, excess_b, keep_mid]}
+
+        class _Conn:
+            def execute(self, *args, **kwargs):
+                return self
+
+            def fetchall(self):
+                return []
+
+        def not_submitted_consolidate(*args, **kwargs):
+            manager._last_consolidate_not_submitted = True
+            return False
+
+        with patch.object(coin_manager, "_get_free_coins_rpc", return_value=fresh_result), \
+                patch.object(manager, "_configured_tier_sizes_xch", return_value={}), \
+                patch.object(coin_manager, "get_weighted_tier_prep_counts",
+                             return_value={"mid": 1}), \
+                patch("database.get_connection", return_value=_Conn()), \
+                patch.object(manager, "_consolidate_coins",
+                             side_effect=not_submitted_consolidate) as consolidate, \
+                patch.object(manager, "_record_topup_pool_refund") as refund, \
+                patch.object(coin_manager, "log_event") as log_event:
+            result = manager._smart_topup_wallet(
+                "CAT-inner",
+                2,
+                inventory,
+                trading_size_mojos=450,
+                needed=2,
+                is_cat=True,
+                tier_is_empty=True,
+            )
+
+        self.assertFalse(result)
+        consolidate.assert_called_once()
+        refund.assert_not_called()
+        events = [(call.args[0], call.args[1]) for call in log_event.call_args_list]
+        self.assertIn(("info", "topup_cat-inner_pool_rebuild_not_submitted"), events)
+        self.assertNotIn(("warning", "topup_cat-inner_pool_rebuild_fail"), events)
 
     def test_consolidate_coins_debounces_duplicate_pending_inputs(self):
         manager = self._make_manager()
@@ -971,6 +1054,12 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         event_types = [call.args[1] for call in log_event.call_args_list]
         self.assertIn("consolidate_cat-inner_combine_not_submitted", event_types)
         self.assertNotIn("consolidate_cat-inner_debounce", event_types)
+        not_submitted_levels = [
+            call.args[0] for call in log_event.call_args_list
+            if call.args[1] == "consolidate_cat-inner_combine_not_submitted"
+        ]
+        self.assertTrue(not_submitted_levels)
+        self.assertTrue(all(level == "info" for level in not_submitted_levels))
 
     def test_consolidate_coins_without_txid_keeps_hidden_inputs_pending(self):
         manager = self._make_manager()
