@@ -810,6 +810,70 @@ class ProbeAnchorTests(unittest.TestCase):
         self.assertIn("old-sell", loop.offer_manager._pending_cancel_retries)
         self.assertEqual(loop._pending_cancel_settle_seen["old-sell"]["first_seen"], 1000.0)
 
+    def test_dexie_terminal_pending_cancel_releases_sage_lag_after_two_hits(self):
+        loop = bot_loop.BotLoop()
+        loop._pending_cancel_dexie_terminal_confirmations = 2
+
+        def _fake_get_offer(tid):
+            return {"dexie_id": f"dexie-{tid}"}
+
+        with patch.object(bot_loop, "get_offer", side_effect=_fake_get_offer), \
+                patch.object(bot_loop, "get_offer_detail",
+                             return_value={"status": bot_loop.DEXIE_STATUS_CANCELLED}), \
+                patch.object(bot_loop.time, "time", return_value=1000.0):
+            first = loop._filter_pending_cancel_wallet_ids_by_dexie({
+                "buy": set(),
+                "sell": {"safe-sell"},
+            })
+
+        self.assertIn(
+            "safe-sell",
+            first["sell"],
+            "one Dexie terminal sample should not release the Sage-lag guard yet",
+        )
+
+        with patch.object(bot_loop, "get_offer", side_effect=_fake_get_offer), \
+                patch.object(bot_loop, "get_offer_detail",
+                             return_value={"status": bot_loop.DEXIE_STATUS_CANCELLED}), \
+                patch.object(bot_loop.time, "time", return_value=1001.0):
+            second = loop._filter_pending_cancel_wallet_ids_by_dexie({
+                "buy": set(),
+                "sell": {"safe-sell"},
+            })
+
+        self.assertNotIn(
+            "safe-sell",
+            second["sell"],
+            "two Dexie terminal samples should unblock replacement creation",
+        )
+
+    def test_dexie_active_or_completed_pending_cancel_stays_blocking(self):
+        for status in (
+            bot_loop.DEXIE_STATUS_ACTIVE,
+            bot_loop.DEXIE_STATUS_PENDING,
+            bot_loop.DEXIE_STATUS_COMPLETED,
+        ):
+            loop = bot_loop.BotLoop()
+            loop._pending_cancel_dexie_terminal_confirmations = 2
+
+            with patch.object(bot_loop, "get_offer", return_value={"dexie_id": "dexie-risky"}), \
+                    patch.object(bot_loop, "get_offer_detail", return_value={"status": status}):
+                first = loop._filter_pending_cancel_wallet_ids_by_dexie({
+                    "buy": {"risky-buy"},
+                    "sell": set(),
+                })
+                second = loop._filter_pending_cancel_wallet_ids_by_dexie({
+                    "buy": {"risky-buy"},
+                    "sell": set(),
+                })
+
+            self.assertIn("risky-buy", first["buy"])
+            self.assertIn(
+                "risky-buy",
+                second["buy"],
+                f"Dexie status {status} must keep the Sage-lag guard active",
+            )
+
     def test_forced_requote_waits_for_wallet_active_pending_cancels(self):
         loop = bot_loop.BotLoop()
         loop._loop_count = 6

@@ -530,6 +530,10 @@ class BotLoop:
             "buy": set(),
             "sell": set(),
         }
+        self._pending_cancel_dexie_terminal_seen: Dict[str, Dict] = {}
+        self._pending_cancel_dexie_terminal_confirmations: int = 2
+        self._pending_cancel_dexie_max_checks_per_cycle: int = 8
+        self._pending_cancel_dexie_detail_timeout_secs: float = 2.0
         self._pending_cancel_settle_seen: Dict[str, Dict] = {}
         self._pending_cancel_settle_retry_secs: float = 300.0
         self._pending_cancel_settle_max_retries: int = 5
@@ -3169,6 +3173,135 @@ class BotLoop:
         except Exception:
             return set()
 
+    def _filter_pending_cancel_wallet_ids_by_dexie(self, pending_by_side: Dict[str, set]) -> Dict[str, set]:
+        """Drop Sage-lagged IDs once Dexie repeatedly reports terminal cancel.
+
+        Sage can keep cancelled offers in the non-completed offer list after
+        Dexie has already removed them from the live book.  We still block on
+        Sage by default, but if Dexie's offer-detail endpoint reports the same
+        wallet-visible ID as CANCELLED/EXPIRED for a small number of consecutive
+        samples, allow replacement creation for that slot.  ACTIVE, PENDING,
+        COMPLETED, missing, and unreachable Dexie states remain blocking.
+        """
+        filtered = {
+            "buy": set((pending_by_side or {}).get("buy") or set()),
+            "sell": set((pending_by_side or {}).get("sell") or set()),
+        }
+        active_ids = (set(filtered["buy"]) | set(filtered["sell"]))
+        seen = getattr(self, "_pending_cancel_dexie_terminal_seen", {}) or {}
+        for tid in list(seen.keys()):
+            if tid not in active_ids:
+                seen.pop(tid, None)
+
+        min_hits = max(
+            1,
+            int(getattr(self, "_pending_cancel_dexie_terminal_confirmations", 2) or 2),
+        )
+        max_checks = max(
+            0,
+            int(getattr(self, "_pending_cancel_dexie_max_checks_per_cycle", 8) or 8),
+        )
+        detail_timeout = max(
+            0.5,
+            float(getattr(self, "_pending_cancel_dexie_detail_timeout_secs", 2.0) or 2.0),
+        )
+        now = time.time()
+        checks = 0
+
+        for side in ("buy", "sell"):
+            ordered_ids = sorted(
+                filtered[side],
+                key=lambda tid: (0 if tid in seen else 1, tid),
+            )
+            for tid in ordered_ids:
+                entry = seen.get(tid) or {}
+                if (
+                    int(entry.get("hits") or 0) >= min_hits
+                    and entry.get("status") in (DEXIE_STATUS_CANCELLED, DEXIE_STATUS_EXPIRED)
+                ):
+                    filtered[side].discard(tid)
+                    continue
+                if checks >= max_checks:
+                    continue
+                try:
+                    local_offer = get_offer(tid) or {}
+                    dexie_id = str(local_offer.get("dexie_id") or "").strip()
+                except Exception as e:
+                    dexie_id = ""
+                    seen.pop(tid, None)
+                    log_event("debug", "pending_cancel_dexie_lookup_failed",
+                              f"Could not load local offer {tid[:16]}... for "
+                              f"Dexie cancel-settle check: {e}")
+
+                if not dexie_id:
+                    continue
+
+                try:
+                    checks += 1
+                    dexie_offer = get_offer_detail(
+                        dexie_id,
+                        timeout=detail_timeout,
+                        cache_ttl_secs=3,
+                    )
+                except Exception as e:
+                    seen.pop(tid, None)
+                    log_event("debug", "pending_cancel_dexie_lookup_failed",
+                              f"Could not fetch Dexie detail for {tid[:16]}...: {e}")
+                    continue
+
+                if not isinstance(dexie_offer, dict):
+                    seen.pop(tid, None)
+                    continue
+
+                raw_status = dexie_offer.get("status")
+                try:
+                    status = int(raw_status)
+                except Exception:
+                    status = raw_status
+
+                if status not in (DEXIE_STATUS_CANCELLED, DEXIE_STATUS_EXPIRED):
+                    seen.pop(tid, None)
+                    continue
+
+                entry = seen.get(tid) or {}
+                if entry.get("status") == status:
+                    entry["hits"] = int(entry.get("hits") or 0) + 1
+                else:
+                    entry["hits"] = 1
+                entry.update({
+                    "side": side,
+                    "status": status,
+                    "dexie_id": dexie_id,
+                    "last_seen": now,
+                })
+                seen[tid] = entry
+
+                if int(entry.get("hits") or 0) < min_hits:
+                    continue
+
+                filtered[side].discard(tid)
+                if not entry.get("released_logged"):
+                    label = "cancelled" if status == DEXIE_STATUS_CANCELLED else "expired"
+                    log_event(
+                        "info",
+                        "pending_cancel_dexie_terminal_release",
+                        f"{side} offer {tid[:16]}... still appears active in "
+                        f"Sage, but Dexie confirmed {label} across "
+                        f"{entry['hits']} sample(s); allowing replacement "
+                        f"creation for that slot",
+                        data={
+                            "trade_id": tid,
+                            "side": side,
+                            "dexie_id": dexie_id,
+                            "dexie_status": status,
+                            "confirmations": int(entry["hits"]),
+                        },
+                    )
+                    entry["released_logged"] = True
+
+        self._pending_cancel_dexie_terminal_seen = seen
+        return filtered
+
     def _pending_cancel_settle_first_seen(self, trade_id: str, now: float) -> float:
         """Prefer DB cancel-attempt age when starting a settle-watch entry."""
         try:
@@ -5061,10 +5194,15 @@ class BotLoop:
             _main_wallet_sell_ids = current_sell_ids - _db_sniper_ids
             _zombie_buys  = len(_main_wallet_buy_ids)  - len(_db_open_buy_ids  & _main_wallet_buy_ids)
             _zombie_sells = len(_main_wallet_sell_ids) - len(_db_open_sell_ids & _main_wallet_sell_ids)
-            self._pending_cancel_wallet_ids_by_side = {
+            _pending_cancel_wallet_ids_by_side = {
                 "buy": _main_wallet_buy_ids - _db_open_buy_ids,
                 "sell": _main_wallet_sell_ids - _db_open_sell_ids,
             }
+            self._pending_cancel_wallet_ids_by_side = (
+                self._filter_pending_cancel_wallet_ids_by_dexie(
+                    _pending_cancel_wallet_ids_by_side
+                )
+            )
             self._track_pending_cancel_settle_watchdog(
                 self._pending_cancel_wallet_ids_by_side
             )
