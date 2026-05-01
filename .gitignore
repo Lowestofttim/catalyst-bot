@@ -57,6 +57,7 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/
@@ -68,6 +69,13 @@ dist2/
 
 # --- Runtime test/state files ---
 smoke_test_state.json
+CODEX_REVIEW_REPORT.md
+.coverage
+coverage/
+htmlcov/
+test-results/
+playwright-report/
+startup.log
 
 # --- Backup and archive directories (large, no public value) ---
 _backups/
@@ -81,6 +89,9 @@ desktop.ini
 *.swp
 *.swo
 *~
+*.orig
+*.rej
+*.bak
 .idea/
 .vscode/settings.json
 *.iml
@@ -110,6 +121,7 @@ tmp_greenfloor_review/
 tools/
 website
 website screenshots/
+website-screenshots/
 simulation/
 # Personal launcher with hardcoded paths — not useful off the dev machine
 CATalyst.vbs
