@@ -1,5 +1,4 @@
 import os
-import subprocess
 import sys
 import unittest
 from unittest.mock import patch
@@ -26,13 +25,14 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
             patch.object(win_subprocess.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),
             patch.object(win_subprocess.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True),
         ):
+            breakaway_flag = win_subprocess.subprocess.CREATE_BREAKAWAY_FROM_JOB
             default_flags = win_subprocess.hidden_subprocess_kwargs()["creationflags"]
             breakaway_flags = win_subprocess.hidden_subprocess_kwargs(
                 breakaway_from_job=True
             )["creationflags"]
 
-        self.assertFalse(default_flags & subprocess.CREATE_BREAKAWAY_FROM_JOB)
-        self.assertTrue(breakaway_flags & subprocess.CREATE_BREAKAWAY_FROM_JOB)
+        self.assertFalse(default_flags & breakaway_flag)
+        self.assertTrue(breakaway_flags & breakaway_flag)
 
     def test_sage_launch_requests_breakaway_from_catalyst_job(self):
         calls = {}
@@ -45,6 +45,7 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
             pid = 1234
 
         with (
+            patch.object(sys, "platform", "win32"),
             patch.object(sage_node.os.path, "isfile", return_value=True),
             patch.object(sage_node, "hidden_subprocess_kwargs", side_effect=fake_hidden_kwargs),
             patch.object(sage_node.subprocess, "Popen", return_value=DummyProcess()),
