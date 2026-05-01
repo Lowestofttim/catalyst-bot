@@ -7,7 +7,7 @@ CLI flags, captures stdout for status, and restarts on crash up to a
 configured maximum.
 
 Key responsibilities:
-    - Locate splash.exe (project folder, PATH, or configured path)
+    - Locate splash.exe (configured path, user data dir, bundled path, or PATH)
     - Clean stale listeners on the submission port (default 4000)
     - Launch as a hidden subprocess and pipe stdout into logs
     - Health/status reporting and crash-restart up to a max count
@@ -28,6 +28,7 @@ from typing import Dict, Optional
 
 from config import cfg
 from database import log_event
+from user_paths import data_dir
 from win_subprocess import hidden_subprocess_kwargs
 
 
@@ -80,8 +81,9 @@ class SplashNode:
     def find_binary(self) -> Optional[str]:
         """Find the Splash binary. Search order:
         1. SPLASH_BINARY_PATH from .env (explicit config)
-        2. Same directory as this script (V3 folder)
-        3. System PATH
+        2. Per-user CATalyst data dir
+        3. Same directory as this script or packaged bundle
+        4. System PATH
         """
         # 1. Explicit config
         configured = getattr(cfg, "SPLASH_BINARY_PATH", "")
@@ -89,7 +91,13 @@ class SplashNode:
             self._binary_path = configured
             return configured
 
-        # 2. Same directory as this script
+        # 2. Per-user data dir (where splash_setup downloads runtime binaries)
+        data_path = os.path.join(data_dir(), "splash", _BINARY_NAME)
+        if os.path.isfile(data_path):
+            self._binary_path = data_path
+            return data_path
+
+        # 3. Same directory as this script
         script_dir = os.path.dirname(os.path.abspath(__file__))
         local_path = os.path.join(script_dir, _BINARY_NAME)
         if os.path.isfile(local_path):
@@ -102,7 +110,7 @@ class SplashNode:
             self._binary_path = subdir_path
             return subdir_path
 
-        # 3. System PATH
+        # 4. System PATH
         import shutil
         found = shutil.which(_BINARY_NAME)
         if found:

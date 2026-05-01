@@ -33,7 +33,8 @@ Update this table after each completed task.
 | Task 2 git hygiene | 2026-05-01 | codex/public-readiness | 407abcb | `python scripts/check_tracked_secrets.py`; `git ls-files --others --exclude-standard`; `gitleaks version` | partial | Secret scan passed; only plan doc was untracked and unignored before commit; Gitleaks unavailable; remaining local files intentionally left for user review. |
 | Task 3 branch/version consistency | 2026-05-01 | codex/public-readiness | 0f1709c | `rg -n "\bmaster\b|\btest\b" CONTRIBUTING.md docs scripts README.md`; `python desktop_app.py --help`; `python -m ruff check . --select E9,F821` | passed | No stale public branch references found outside expected test wording and the plan itself; app reports v1.2.4; Ruff crash-class lint passed. |
 | Task 4 public docs | 2026-05-01 | codex/public-readiness | 70afd95 | `rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack|Project Structure" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `git diff --check` | partial | Docs/community files added and checks passed. README screenshot/demo deferred because local screenshot folder is left for user review. |
-| Task 5 build reproducibility | 2026-05-01 | codex/public-readiness | pending | `python -m pip install -r requirements-dev.txt`; `python -m py_compile build.py`; `python -m ruff check . --select E9,F821`; `python build.py --no-clean` | partial | Install command hit local pywebview permission issue in user site-packages; build.py compiles; Ruff passed; PyInstaller build succeeded. |
+| Task 5 build reproducibility | 2026-05-01 | codex/public-readiness | 2e3fa9c | `python -m pip install -r requirements-dev.txt`; `python -m py_compile build.py`; `python -m ruff check . --select E9,F821`; `python build.py --no-clean` | partial | Install command hit local pywebview permission issue in user site-packages; build.py compiles; Ruff passed; PyInstaller build succeeded. |
+| Task 6 Splash runtime safety | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_splash_runtime_paths.py tests/test_splash_receive.py tests/test_plan_04_22_splash_settings.py tests/test_bot_health_splash_daemon.py -q`; `python -m ruff check . --select E9,F821`; `python -m py_compile src\catalyst\splash_setup.py src\catalyst\splash_node.py` | passed | Splash binaries install under user data; node prefers user-data binary; downloads fail closed without SHA256 unless explicit override is set. |
 
 ## Recovery Checklist
 
@@ -430,7 +431,7 @@ git commit -m "build: make desktop build dependencies explicit"
 - Modify: `src/catalyst/user_paths.py` only if a small helper is useful
 - Add tests under `tests/` for install-path behavior
 
-- [ ] Write a failing test proving Splash install paths use user data, not `src/catalyst`.
+- [x] Write a failing test proving Splash install paths use user data, not `src/catalyst`.
 
 Suggested test file: `tests/test_splash_setup_paths.py`
 
@@ -449,7 +450,7 @@ def test_splash_install_path_lives_under_user_data(monkeypatch, tmp_path):
     assert "src" not in os.path.relpath(install_path, os.getcwd()).split(os.sep)
 ```
 
-- [ ] Run the failing test:
+- [x] Run the failing test:
 
 ```powershell
 python -m pytest tests/test_splash_setup_paths.py -q
@@ -457,24 +458,26 @@ python -m pytest tests/test_splash_setup_paths.py -q
 
 Expected before implementation: FAIL because install path currently points under `src/catalyst`.
 
-- [ ] Change Splash install location to a dedicated folder under `user_paths.data_dir()`, such as:
+Result on 2026-05-01: failed as expected. `detect_platform()` returned `C:\catalyst\src\catalyst\splash.exe` and `SplashNode.find_binary()` preferred the local source binary.
+
+- [x] Change Splash install location to a dedicated folder under `user_paths.data_dir()`, such as:
 
 ```text
 %APPDATA%\Catalyst\splash\
 ```
 
-- [ ] Update `splash_node.py` to find Splash in the new user-data location.
+- [x] Update `splash_node.py` to find Splash in the new user-data location.
 
-- [ ] Make checksum verification fail closed unless a checksum or signature is available. If a developer override is needed, name it explicitly, such as `CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD=1`, and document it as unsafe.
+- [x] Make checksum verification fail closed unless a checksum or signature is available. If a developer override is needed, name it explicitly, such as `CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD=1`, and document it as unsafe.
 
-- [ ] Run targeted tests:
+- [x] Run targeted tests:
 
 ```powershell
 python -m pytest tests/test_splash_setup_paths.py -q
 python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add src/catalyst/splash_setup.py src/catalyst/splash_node.py src/catalyst/user_paths.py tests/test_splash_setup_paths.py

@@ -129,6 +129,10 @@ Release packages are published on the
   configuration, wallet/API failures, or operator error.
 - Splash, Spacescan, Dexie, TibetSwap, and Coinset behavior can change outside
   this repository.
+- CATalyst refuses to auto-install a downloaded Splash binary if the release
+  does not provide a SHA256 checksum sidecar. Developers can override this with
+  `CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD=1`, but that should not be used for
+  normal release or operator installs.
 - The frontend is currently a single large `bot_gui.html` file; public
   maintainability work is tracked separately.
 

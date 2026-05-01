@@ -2,9 +2,10 @@
 
 Picks the right asset for the current OS and architecture, downloads it
 from the dexie-space/splash GitHub release, optionally verifies a SHA-256
-checksum when the release ships a `.sha256` sidecar, and drops the
-binary next to this module. Exposes a non-blocking background download
-with a progress callback so the GUI can show a progress bar.
+checksum when the release ships a `.sha256` sidecar, and stores the
+binary under the per-user CATalyst data directory. Exposes a non-blocking
+background download with a progress callback so the GUI can show a
+progress bar.
 
 Key responsibilities:
     - Detect OS/arch and pick the matching release asset
@@ -25,6 +26,7 @@ import threading
 from typing import Dict, Optional, Callable
 
 from database import log_event
+from user_paths import data_dir
 from win_subprocess import hidden_subprocess_kwargs
 
 
@@ -38,8 +40,9 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 #   Linux:    splash-linux-amd64   /  splash-linux-arm64
 #   FreeBSD:  splash-freebsd-amd64
 
-# Where to save the binary (same directory as this script = V3 folder)
-INSTALL_DIR = os.path.dirname(os.path.abspath(__file__))
+# Where to save the binary. Keep downloaded/runtime binaries in the per-user
+# writable data dir so source checkouts and packaged install dirs stay clean.
+INSTALL_DIR = os.path.join(data_dir(), "splash")
 
 
 def detect_platform() -> Dict:
@@ -213,9 +216,21 @@ def download_splash(progress_callback: Callable = None) -> Dict:
         log_event("warning", "splash_setup", msg)
         return {"success": False, "message": msg, "path": ""}
 
+    allow_unverified = os.environ.get(
+        "CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD", ""
+    ).strip() == "1"
+    if not sha256_url and not allow_unverified:
+        msg = (
+            f"No SHA256 checksum found for '{target_asset}'. "
+            "Refusing to install an unverified Splash binary."
+        )
+        log_event("error", "splash_setup", msg)
+        return {"success": False, "message": msg, "path": ""}
+
     # Download the binary
     _progress(25, f"Downloading {target_asset} ({download_size / 1024 / 1024:.1f} MB)...")
     install_path = info["install_path"]
+    os.makedirs(os.path.dirname(install_path), exist_ok=True)
 
     try:
         # (connect, read) — a 30s stall on the body is enough to declare the
