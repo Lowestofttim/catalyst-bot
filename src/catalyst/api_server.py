@@ -1076,7 +1076,7 @@ def add_no_cache_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     # CORS — restrict to loopback origin only (prevents any webpage from reading API)
-    response.headers["Access-Control-Allow-Origin"] = "http://127.0.0.1:5000"
+    response.headers["Access-Control-Allow-Origin"] = _cors_origin_for_request()
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Bot-Local-Token"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     if response.content_type and "text/html" in response.content_type:
@@ -1126,8 +1126,8 @@ def serve_gui():
 
 @app.route("/console")
 def serve_console():
-    """Serve the live console popup window."""
-    return _serve_bootstrapped_html("bot_console.html")
+    """Legacy console page removed; keep a safe 404 instead of a missing file."""
+    return Response("Console page removed", status=404, mimetype="text/plain")
 
 
 @app.route("/brand/<path:filename>")
@@ -1410,6 +1410,27 @@ def _is_allowed_external_url(raw_url: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _is_loopback_origin(raw_origin: str) -> bool:
+    """Return True when an Origin header points at this local machine."""
+    try:
+        parsed = urlparse(str(raw_origin or "").strip())
+    except Exception:
+        return False
+    return parsed.scheme in {"http", "https"} and _is_loopback_addr(parsed.hostname)
+
+
+def _cors_origin_for_request() -> str:
+    """Reflect loopback browser origins, otherwise use the configured default."""
+    origin = request.headers.get("Origin", "")
+    if origin and _is_loopback_origin(origin):
+        return origin
+    try:
+        port = int(os.environ.get("CATALYST_FLASK_PORT", "5000"))
+    except (TypeError, ValueError):
+        port = 5000
+    return f"http://127.0.0.1:{port}"
+
+
 def _launch_external_url(raw_url: str) -> bool:
     """Best-effort launch in the OS default browser without touching bot state."""
     url = str(raw_url or "").strip()
@@ -1440,17 +1461,11 @@ def api_open_external():
     url = str(raw_url or "").strip()
 
     if not _is_allowed_external_url(url):
-        if request.method == "GET":
-            return Response("Only absolute http/https URLs are allowed", status=400, mimetype="text/plain")
         return jsonify({"success": False, "error": "Only absolute http/https URLs are allowed"}), 400
 
     if not _launch_external_url(url):
-        if request.method == "GET":
-            return Response("Could not open URL in the default browser", status=500, mimetype="text/plain")
         return jsonify({"success": False, "error": "Could not open URL in the default browser"}), 500
 
-    if request.method == "GET":
-        return Response("Opened external link", mimetype="text/plain")
     return jsonify({"success": True, "url": url})
 
 

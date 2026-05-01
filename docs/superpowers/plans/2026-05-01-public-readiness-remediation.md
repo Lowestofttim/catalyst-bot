@@ -34,7 +34,8 @@ Update this table after each completed task.
 | Task 3 branch/version consistency | 2026-05-01 | codex/public-readiness | 0f1709c | `rg -n "\bmaster\b|\btest\b" CONTRIBUTING.md docs scripts README.md`; `python desktop_app.py --help`; `python -m ruff check . --select E9,F821` | passed | No stale public branch references found outside expected test wording and the plan itself; app reports v1.2.4; Ruff crash-class lint passed. |
 | Task 4 public docs | 2026-05-01 | codex/public-readiness | 70afd95 | `rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack|Project Structure" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `git diff --check` | partial | Docs/community files added and checks passed. README screenshot/demo deferred because local screenshot folder is left for user review. |
 | Task 5 build reproducibility | 2026-05-01 | codex/public-readiness | 2e3fa9c | `python -m pip install -r requirements-dev.txt`; `python -m py_compile build.py`; `python -m ruff check . --select E9,F821`; `python build.py --no-clean` | partial | Install command hit local pywebview permission issue in user site-packages; build.py compiles; Ruff passed; PyInstaller build succeeded. |
-| Task 6 Splash runtime safety | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_splash_runtime_paths.py tests/test_splash_receive.py tests/test_plan_04_22_splash_settings.py tests/test_bot_health_splash_daemon.py -q`; `python -m ruff check . --select E9,F821`; `python -m py_compile src\catalyst\splash_setup.py src\catalyst\splash_node.py` | passed | Splash binaries install under user data; node prefers user-data binary; downloads fail closed without SHA256 unless explicit override is set. |
+| Task 6 Splash runtime safety | 2026-05-01 | codex/public-readiness | 876fb8e | `python -m pytest tests/test_splash_runtime_paths.py tests/test_splash_receive.py tests/test_plan_04_22_splash_settings.py tests/test_bot_health_splash_daemon.py -q`; `python -m ruff check . --select E9,F821`; `python -m py_compile src\catalyst\splash_setup.py src\catalyst\splash_node.py` | passed | Splash binaries install under user data; node prefers user-data binary; downloads fail closed without SHA256 unless explicit override is set. |
+| Task 7 local API route/security | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_security_guardrails_source.py tests/test_api_local_guard.py tests/test_plan_04_22_splash_settings.py tests/test_plan_03_15_splash_receive_path_integration.py -q`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `python scripts/check_env_example.py`; `python -m py_compile src\catalyst\api_server.py src\catalyst\blueprints\splash.py` | passed | 77 tests passed. `/console` safely returns 404, startup external links are direct URLs, CORS reflects loopback origins only, and Splash incoming rejects non-loopback Origin plus non-JSON requests. Manual browser click-through not run in this session. |
 
 ## Recovery Checklist
 
@@ -433,7 +434,7 @@ git commit -m "build: make desktop build dependencies explicit"
 
 - [x] Write a failing test proving Splash install paths use user data, not `src/catalyst`.
 
-Suggested test file: `tests/test_splash_setup_paths.py`
+Suggested test file: `tests/test_splash_runtime_paths.py`
 
 ```python
 import os
@@ -453,7 +454,7 @@ def test_splash_install_path_lives_under_user_data(monkeypatch, tmp_path):
 - [x] Run the failing test:
 
 ```powershell
-python -m pytest tests/test_splash_setup_paths.py -q
+python -m pytest tests/test_splash_runtime_paths.py -q
 ```
 
 Expected before implementation: FAIL because install path currently points under `src/catalyst`.
@@ -473,14 +474,14 @@ Result on 2026-05-01: failed as expected. `detect_platform()` returned `C:\catal
 - [x] Run targeted tests:
 
 ```powershell
-python -m pytest tests/test_splash_setup_paths.py -q
+python -m pytest tests/test_splash_runtime_paths.py -q
 python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py
 ```
 
 - [x] Commit:
 
 ```powershell
-git add src/catalyst/splash_setup.py src/catalyst/splash_node.py src/catalyst/user_paths.py tests/test_splash_setup_paths.py
+git add src/catalyst/splash_setup.py src/catalyst/splash_node.py tests/test_splash_runtime_paths.py
 git commit -m "fix: store splash runtime files in user data"
 ```
 
@@ -493,24 +494,24 @@ git commit -m "fix: store splash runtime files in user data"
 - Modify: `bot_gui.html`
 - Add or update API/frontend tests under `tests/`
 
-- [ ] Add or update tests for `/console`. Decide the behavior first:
+- [x] Add or update tests for `/console`. Decide the behavior first:
   - remove the route and expect 404, or
   - restore `bot_console.html` and expect 200.
 
 Preferred public behavior: remove or disable the stale route and return 404.
 
-- [ ] Add a test for `/api/open-external` showing GET links do not break browser-only use. Preferred behavior: browser mode uses direct external URLs; desktop mode uses POST through the existing JS helper.
+- [x] Add a test for `/api/open-external` showing GET links do not break browser-only use. Preferred behavior: browser mode uses direct external URLs; desktop mode uses POST through the existing JS helper.
 
-- [ ] Fix startup links in `bot_gui.html` that currently point to `/api/open-external?url=...` as normal GET links.
+- [x] Fix startup links in `bot_gui.html` that currently point to `/api/open-external?url=...` as normal GET links.
 
-- [ ] Harden `/api/splash/incoming`. Add one of:
+- [x] Harden `/api/splash/incoming`. Add one of:
   - a random per-run local hook token,
   - a shared local secret configured in the Splash integration,
   - strict Origin plus Content-Type checks and explicit documentation of the residual local-machine risk.
 
-- [ ] Replace hardcoded CORS origin with the configured local server origin or remove it where same-origin browser calls do not need it.
+- [x] Replace hardcoded CORS origin with the configured local server origin or remove it where same-origin browser calls do not need it.
 
-- [ ] Verify:
+- [x] Verify:
 
 ```powershell
 python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py
@@ -525,7 +526,7 @@ python desktop_app.py --flask
 
 Expected: startup page loads; external links open or navigate without 405 errors; stale `/console` no longer 500s.
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add src/catalyst/api_server.py bot_gui.html tests

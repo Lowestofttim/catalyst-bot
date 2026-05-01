@@ -39,6 +39,28 @@ class TestApiLocalGuard(unittest.TestCase):
         resp = self.client.get("/api/events", environ_base=self.loopback)
         self.assertEqual(resp.status_code, 401)
 
+    def test_console_route_returns_404_when_console_removed(self):
+        resp = self.client.get("/console", environ_base=self.loopback)
+        self.assertEqual(resp.status_code, 404)
+
+    def test_gui_contains_direct_external_links_not_open_external_get_proxy(self):
+        resp = self.client.get("/", environ_base=self.loopback)
+        body = resp.get_data(as_text=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('/api/open-external?url=', body)
+        self.assertNotIn('startupExternalLinkFrame', body)
+        self.assertIn('href="https://sagewallet.net/"', body)
+
+    def test_cors_reflects_loopback_origin_with_custom_port(self):
+        origin = "http://127.0.0.1:5010"
+        resp = self.client.get("/", headers={"Origin": origin}, environ_base=self.loopback)
+        self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
+
+    def test_cors_does_not_reflect_non_loopback_origin(self):
+        origin = "https://example.invalid"
+        resp = self.client.get("/", headers={"Origin": origin}, environ_base=self.loopback)
+        self.assertNotEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
+
     def test_post_with_token_reaches_handler(self):
         resp = self.client.post(
             "/api/bot/stop",
@@ -59,6 +81,18 @@ class TestApiLocalGuard(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
         self.assertTrue(body["ok"])
+
+    def test_splash_incoming_rejects_non_loopback_origin(self):
+        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True), \
+                patch.object(api_server, "bot", None), \
+                patch("database.record_splash_incoming", return_value=True):
+            resp = self.client.post(
+                "/api/splash/incoming",
+                json={"offer": "offer1qqqq"},
+                headers={"Origin": "https://example.invalid"},
+                environ_base=self.loopback,
+            )
+        self.assertEqual(resp.status_code, 403)
 
     def test_splash_incoming_is_not_hit_by_generic_rate_limit(self):
         with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True), \
