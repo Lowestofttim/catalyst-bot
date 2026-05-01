@@ -8,4 +8,4 @@ pip-audit>=2.10,<3
 # E2E browser tests against the live Flask GUI. After install run:
 #     python -m playwright install chromium
 playwright>=1.58,<2
-pytest-playwright>=0.7,<1
+pytest-playwright>=0.7.2,<1
