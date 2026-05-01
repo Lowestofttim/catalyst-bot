@@ -35,7 +35,8 @@ Update this table after each completed task.
 | Task 4 public docs | 2026-05-01 | codex/public-readiness | 70afd95 | `rg "THIRD_PARTY_NOTICES|CHANGELOG|SECURITY|SUPPORT|Known Limitations|Tech Stack|Project Structure" README.md SECURITY.md SUPPORT.md CHANGELOG.md THIRD_PARTY_NOTICES.md`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `git diff --check` | partial | Docs/community files added and checks passed. README screenshot/demo deferred because local screenshot folder is left for user review. |
 | Task 5 build reproducibility | 2026-05-01 | codex/public-readiness | 2e3fa9c | `python -m pip install -r requirements-dev.txt`; `python -m py_compile build.py`; `python -m ruff check . --select E9,F821`; `python build.py --no-clean` | partial | Install command hit local pywebview permission issue in user site-packages; build.py compiles; Ruff passed; PyInstaller build succeeded. |
 | Task 6 Splash runtime safety | 2026-05-01 | codex/public-readiness | 876fb8e | `python -m pytest tests/test_splash_runtime_paths.py tests/test_splash_receive.py tests/test_plan_04_22_splash_settings.py tests/test_bot_health_splash_daemon.py -q`; `python -m ruff check . --select E9,F821`; `python -m py_compile src\catalyst\splash_setup.py src\catalyst\splash_node.py` | passed | Splash binaries install under user data; node prefers user-data binary; downloads fail closed without SHA256 unless explicit override is set. |
-| Task 7 local API route/security | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_security_guardrails_source.py tests/test_api_local_guard.py tests/test_plan_04_22_splash_settings.py tests/test_plan_03_15_splash_receive_path_integration.py -q`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `python scripts/check_env_example.py`; `python -m py_compile src\catalyst\api_server.py src\catalyst\blueprints\splash.py` | passed | 77 tests passed. `/console` safely returns 404, startup external links are direct URLs, CORS reflects loopback origins only, and Splash incoming rejects non-loopback Origin plus non-JSON requests. Manual browser click-through not run in this session. |
+| Task 7 local API route/security | 2026-05-01 | codex/public-readiness | d95a025 | `python -m pytest tests/test_security_guardrails_source.py tests/test_api_local_guard.py tests/test_plan_04_22_splash_settings.py tests/test_plan_03_15_splash_receive_path_integration.py -q`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `python scripts/check_env_example.py`; `python -m py_compile src\catalyst\api_server.py src\catalyst\blueprints\splash.py` | passed | 77 tests passed. `/console` safely returns 404, startup external links are direct URLs, CORS reflects loopback origins only, and Splash incoming rejects non-loopback Origin plus non-JSON requests. Manual browser click-through not run in this session. |
+| Task 8 tooling/CI tightening | 2026-05-01 | codex/public-readiness | pending | `python -m ruff check .`; `python -m bandit -r src --ini .bandit -ll`; `python -m pip_audit -r requirements.txt -r requirements-dev.txt`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py --cov=..\src\catalyst --cov-report=term-missing; Pop-Location` | partial | Ruff config narrowed to the passing public gate (`E9`, `F821`); CI now uses config-based Ruff and coverage reporting. Full Ruff remains 234 findings and Ruff format would touch 249 files, so full lint/formatter enforcement is deferred. Coverage run reported 2806 passed, 4 skipped, 41% total coverage. |
 
 ## Recovery Checklist
 
@@ -543,9 +544,11 @@ git commit -m "fix: repair local API route behavior"
 - Modify: `.github/workflows/code-quality.yml`
 - Modify affected Python files only when fixing lint findings
 
-- [ ] Decide whether full `ruff.toml` is the standard. Preferred public behavior: make full Ruff pass or narrow `ruff.toml` to the rules CI actually enforces.
+- [x] Decide whether full `ruff.toml` is the standard. Preferred public behavior: make full Ruff pass or narrow `ruff.toml` to the rules CI actually enforces.
 
-- [ ] Run full Ruff:
+Decision on 2026-05-01: narrow `ruff.toml` to the public CI gate that already passes (`E9`, `F821`). Full Ruff currently reports 234 findings and should be handled as a separate cleanup pass rather than mixed into public-readiness fixes.
+
+- [x] Run full Ruff:
 
 ```powershell
 python -m ruff check .
@@ -553,7 +556,11 @@ python -m ruff check .
 
 Expected before cleanup: currently reports many unused-import and Bugbear findings.
 
+Result on 2026-05-01: 234 findings, mostly legacy unused imports and Bugbear findings. Deferred by explicit scope decision above.
+
 - [ ] Fix or explicitly suppress intentional unused imports. For blueprint registration imports, prefer a clear registration function or a narrow `# noqa: F401` block with a comment.
+
+Deferred on 2026-05-01: no broad lint edits made. The current public gate is narrowed to runtime-breaking checks only.
 
 - [ ] Add formatter check to CI:
 
@@ -561,13 +568,15 @@ Expected before cleanup: currently reports many unused-import and Bugbear findin
 python -m ruff format --check .
 ```
 
-- [ ] Add coverage reporting without a threshold first:
+Deferred on 2026-05-01: `python -m ruff format --check .` would reformat 249 files. Formatter adoption should be its own mechanical PR after behavior-sensitive public-readiness fixes land.
+
+- [x] Add coverage reporting without a threshold first:
 
 ```powershell
 python -m pytest --cov=src/catalyst --cov-report=term-missing
 ```
 
-- [ ] Verify:
+- [x] Verify:
 
 ```powershell
 python -m ruff check .
@@ -576,7 +585,9 @@ python -m bandit -r src --ini .bandit -ll
 python -m pip_audit -r requirements.txt -r requirements-dev.txt
 ```
 
-- [ ] Commit:
+Result on 2026-05-01: `python -m ruff check .`, Bandit medium/high scan, pip-audit, and main pytest with coverage all passed. `python -m ruff format --check .` remains intentionally deferred as noted above.
+
+- [x] Commit:
 
 ```powershell
 git add ruff.toml pyproject.toml .github/workflows/code-quality.yml src tests
