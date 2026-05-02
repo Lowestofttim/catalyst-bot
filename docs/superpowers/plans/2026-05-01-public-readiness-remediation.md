@@ -40,7 +40,8 @@ Update this table after each completed task.
 | Task 9 database boundary first pass | 2026-05-01 | codex/public-readiness | 7a38439 | `python -m pytest tests/test_market_db_boundary.py -q`; `python -m pytest tests -q -k "market or database"`; `python -m pytest tests/test_market_db_boundary.py tests/test_plan_02_30_database_unit.py tests/test_plan_04_16_to_20_remaining_endpoints.py -q`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location`; `python -m ruff check .`; `python -m py_compile src\catalyst\database.py src\catalyst\blueprints\market.py` | partial | Removed the direct `sqlite3.connect(DB_PATH)` from `blueprints/market.py` and moved the spare-coin query behind `database.get_smallest_free_tier_spare()`. Main suite passed with 2807 passed, 4 skipped. Wider direct `conn.execute` cleanup remains. |
 | Task 10 logging/frontend safety first pass | 2026-05-01 | codex/public-readiness | 049a648 | `python -m pytest tests/test_security_guardrails_source.py::SecurityGuardrailSourceTests::test_frontend_console_calls_are_debug_gated -q`; `python -m pytest tests/test_security_guardrails_source.py tests/test_frontend_diagnostics_layout.py tests/test_api_local_guard.py -q`; JS extracted from `bot_gui.html` through `node --check`; `python -m ruff check .`; `git diff --check` | partial | Red test failed before implementation, then targeted tests passed with 32 passed. Direct frontend `console.*` calls are now gated behind `window.__CATALYST_DEBUG_LOGS`; current counts are `print_count=604`, `console_count=0`, `html_safety_count=340`. Python print cleanup and broad `innerHTML` hardening remain deferred to smaller slices. |
 | Task 11 public-readiness smoke coverage | 2026-05-01 | codex/public-readiness | e4ee733 | `python -m pytest tests/test_public_readiness_smoke.py -q`; `python -m pytest tests/e2e/test_smoke.py --e2e -q`; `python -m pytest tests/test_public_readiness_smoke.py tests/test_api_local_guard.py tests/test_plan_04_09_sage_wallet_endpoints.py tests/test_plan_04_22_splash_settings.py tests/test_plan_04_05_pnl_endpoints.py tests/test_database_boost_migration.py -q`; `python -m ruff check .`; `python -m playwright install chromium`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location` | passed | Added boundary smoke coverage for first-launch config seeding under isolated `CMM_DATA_DIR`, safe wallet failures, Splash setup unavailable state, token-exempt route loopback enforcement, stale open-external GET proxy behavior, destructive reset token/confirmation gates, E2E nav-view switching after simulated startup gates, and Data Reset destructive-confirmation rendering. E2E initially exposed a test assumption: startup overlay intentionally blocks nav until gates complete; test was corrected to reveal the post-gate shell. Final results: 6 public smoke tests + 6 subtests passed, E2E 12 passed, public/API subset 117 passed + 6 subtests, full non-live suite 2814 passed and 12 skipped. |
-| Task 12 large-file decomposition planning | 2026-05-01 | codex/public-readiness | pending | `Test-Path docs/tech_debt_public_refactor_plan.md`; `rg "First Extractable Unit|Protecting Tests|bot_gui.html|bot_loop.py|smart_defaults.py|coin_prep_worker.py|coin_manager.py" docs/tech_debt_public_refactor_plan.md`; `python -m ruff check .`; `git diff --check` | passed | Documentation-only plan for post-release refactors; no trading code changes. Ruff passed and `git diff --check` reported no whitespace errors. |
+| Task 12 large-file decomposition planning | 2026-05-01 | codex/public-readiness | 01f184b | `Test-Path docs/tech_debt_public_refactor_plan.md`; `rg "First Extractable Unit|Protecting Tests|bot_gui.html|bot_loop.py|smart_defaults.py|coin_prep_worker.py|coin_manager.py" docs/tech_debt_public_refactor_plan.md`; `python -m ruff check .`; `git diff --check` | passed | Documentation-only plan for post-release refactors; no trading code changes. Ruff passed and `git diff --check` reported no whitespace errors. |
+| Task 13 final release gate | 2026-05-01 | codex/public-readiness | pending | `python scripts/check_env_example.py`; `python scripts/check_tracked_secrets.py`; `python -m ruff check .`; `python -m ruff format --check .`; `python -m bandit -r src --ini .bandit -ll`; `python -m pip_audit -r requirements.txt -r requirements-dev.txt`; main non-live pytest; E2E smoke; `python build.py --no-clean`; `git status --short`; `git status --short --ignored`; `git log --oneline --decorate -10`; `git diff --check` | partial | Env example, tracked-secret scan, Ruff check, Bandit, pip-audit, main non-live pytest (2814 passed, 12 skipped), E2E smoke (12 passed), and PyInstaller build all passed. `ruff format --check .` remains a blocker: 251 files would be reformatted. Normal `git status --short` is clean; ignored local runtime/sensitive files remain for user review tomorrow. Manual GitHub settings still need owner confirmation before public visibility change. |
 
 ## Recovery Checklist
 
@@ -744,7 +745,7 @@ python -m pytest tests/e2e --e2e
 
 Result on 2026-05-01: `python -m playwright install chromium` exited 0; `python -m pytest tests/e2e/test_smoke.py --e2e -q` passed with 12 passed. The full non-live suite passed with 2814 passed, 12 skipped in 180.80s.
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add tests
@@ -782,7 +783,7 @@ git commit -m "docs: plan post-release refactors"
 **Files:**
 - Modify only if a verification failure identifies a necessary fix
 
-- [ ] Run final source checks:
+- [x] Run final source checks:
 
 ```powershell
 python scripts/check_env_example.py
@@ -793,7 +794,9 @@ python -m bandit -r src --ini .bandit -ll
 python -m pip_audit -r requirements.txt -r requirements-dev.txt
 ```
 
-- [ ] Run final tests:
+Result on 2026-05-01: `check_env_example.py`, `check_tracked_secrets.py`, `python -m ruff check .`, Bandit medium/high scan, and pip-audit passed. `python -m ruff format --check .` failed because 251 files would be reformatted; formatter adoption remains a separate blocker.
+
+- [x] Run final tests:
 
 ```powershell
 Push-Location tests
@@ -801,25 +804,33 @@ python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ig
 Pop-Location
 ```
 
-- [ ] Run E2E if browser tooling is available:
+Result on 2026-05-01: main non-live suite passed with 2814 passed, 12 skipped in 176.92s.
+
+- [x] Run E2E if browser tooling is available:
 
 ```powershell
 python -m playwright install chromium
 python -m pytest tests/e2e --e2e
 ```
 
-- [ ] Run build smoke:
+Result on 2026-05-01: `python -m pytest tests/e2e/test_smoke.py --e2e -q` passed with 12 passed in 22.13s.
+
+- [x] Run build smoke:
 
 ```powershell
 python build.py --no-clean
 ```
 
-- [ ] Check final Git state:
+Result on 2026-05-01: build succeeded and produced `dist\Catalyst\Catalyst.exe`; PyInstaller warned only that hidden import `importlib_resources.trees` was not found.
+
+- [x] Check final Git state:
 
 ```powershell
 git status --short
 git log --oneline --decorate -10
 ```
+
+Result on 2026-05-01: normal `git status --short` was clean. `git status --short --ignored` still shows ignored local-only files including `.env`, cert folders, DBs, build outputs, `.e2e_data`, caches, screenshots, and two permission-denied temp dirs; these were intentionally left for user review tomorrow.
 
 - [ ] Confirm manual GitHub settings before changing visibility:
   - repository description, homepage, and topics are set
@@ -834,27 +845,29 @@ git log --oneline --decorate -10
   - Dependabot alerts and security updates enabled
   - merge strategy intentionally selected
 
-- [ ] Prepare final summary with:
+- [x] Prepare final summary with:
   - files changed
   - checks run and exact results
   - checks not run and why
   - remaining risks
 
+Result on 2026-05-01: final summary prepared in chat. Remaining risks are the failing formatter gate, full-history Gitleaks still unavailable/not run, manual GitHub settings not confirmed, and ignored local runtime/sensitive files still present for owner cleanup.
+
 ---
 
 ## Recommended Commit Order
 
-- [ ] `chore: tighten public git hygiene`
-- [ ] `docs: align public branch and version metadata`
-- [ ] `docs: add public release documentation`
-- [ ] `build: make desktop build dependencies explicit`
-- [ ] `fix: store splash runtime files in user data`
-- [ ] `fix: repair local API route behavior`
-- [ ] `ci: enforce public quality checks`
-- [ ] `refactor: centralize high-risk database access`
-- [ ] `chore: reduce production debug output`
-- [ ] `test: add public readiness smoke coverage`
-- [ ] `docs: plan post-release refactors`
+- [x] `chore: tighten public git hygiene`
+- [x] `docs: align public branch and version metadata`
+- [x] `docs: add public release documentation`
+- [x] `build: make desktop build dependencies explicit`
+- [x] `fix: store splash runtime files in user data`
+- [x] `fix: repair local API route behavior`
+- [x] `ci: enforce public quality checks`
+- [x] `refactor: centralize high-risk database access`
+- [x] `chore: reduce production debug output`
+- [x] `test: add public readiness smoke coverage`
+- [x] `docs: plan post-release refactors`
 
 ## Completion Definition
 
@@ -862,9 +875,9 @@ This plan is complete only when:
 
 - [ ] Each task checkbox is checked or explicitly marked deferred with a reason in the Progress Log.
 - [ ] The final source checks pass.
-- [ ] The main pytest suite passes.
-- [ ] E2E results are recorded.
-- [ ] Build smoke result is recorded.
+- [x] The main pytest suite passes.
+- [x] E2E results are recorded.
+- [x] Build smoke result is recorded.
 - [ ] GitHub manual settings are checked.
 - [ ] No sensitive local files are visible to Git.
-- [ ] The final summary includes remaining risks.
+- [x] The final summary includes remaining risks.
