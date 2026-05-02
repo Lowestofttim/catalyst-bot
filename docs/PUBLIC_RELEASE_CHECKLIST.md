@@ -11,6 +11,10 @@ It is written for a non-developer maintainer.
   paid plan. Once the repo is public, enable protection for `main`.
 - Keep `.env`, wallet certs, database files, superlogs, and local scratch files
   out of git. The `.gitignore` already covers the important patterns.
+- Gitleaks full-history scan passed on 2026-05-02 with 570 commits scanned and
+  no leaks found.
+- The README now includes a sanitized app screenshot generated from isolated
+  E2E data, with no wallet data or secrets.
 
 ## Before Switching Visibility To Public
 
@@ -18,24 +22,40 @@ It is written for a non-developer maintainer.
 - Run the unit suite.
 - Run the security scan.
 - Run `python scripts/check_tracked_secrets.py`.
+- Run Gitleaks over full history:
+
+```powershell
+gitleaks detect --source . --log-opts="--all" --redact --no-banner
+```
+
 - Check `git status --ignored` for any surprising local files.
 - Confirm no live database, wallet cert, token, or `.env` content is tracked.
-- Review tracked planning documents, especially `docs/partial_offers/*.docx`,
-  and remove or rewrite anything that is internal-only before switching the
-  repository public.
+- Review tracked planning documents and public roadmap files; move or rewrite
+  anything that is internal-only before switching the repository public.
 - Confirm the latest release artifacts were built from the intended tag.
 - Review README wording so users understand the beta and trading-risk status.
+- Review `THIRD_PARTY_NOTICES.md` and confirm third-party logos are acceptable
+  for the app UI. Replace any asset that an owner has not permitted.
 
 ## GitHub Settings
 
 - Default branch: `main`
+- Repository description: set
+- Repository topics: set
+- Homepage: latest release URL
 - Issues: enabled
 - Discussions: enabled
 - Wiki: disabled unless you decide to maintain it
 - Automatically delete head branches after merge: enabled
+- Merge commits: disabled
+- Rebase merges: disabled
+- Squash merges: enabled
 - Dependabot alerts: enabled
 - Dependabot updates: enabled through `.github/dependabot.yml`
 - GitHub Actions workflow permissions: read-only by default
+- Security policy: enabled
+- Private vulnerability reporting: enable manually if GitHub shows the option
+  after the repo is public
 
 ## Branch Protection For `main`
 

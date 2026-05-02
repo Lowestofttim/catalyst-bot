@@ -13,6 +13,8 @@ CATalyst runs locally as a desktop application and connects to your
 
 **Status:** Beta, actively used in production. No warranty. Use at your own risk.
 
+![CATalyst dashboard quick-start view](docs/screenshots/catalyst-dashboard.png)
+
 ### [Download the latest release](https://github.com/Lowestofttim/catalyst-bot/releases/latest)
 
 ---
