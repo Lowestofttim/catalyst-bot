@@ -1,6 +1,6 @@
 -r requirements.txt
 pytest>=9.0.3,<10
-pytest-xdist>=3.5,<4
+pytest-xdist>=3.8.0,<4
 pytest-cov>=7,<8
 ruff>=0.8,<1
 bandit>=1.7,<2
