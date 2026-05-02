@@ -38,7 +38,8 @@ Update this table after each completed task.
 | Task 7 local API route/security | 2026-05-01 | codex/public-readiness | d95a025 | `python -m pytest tests/test_security_guardrails_source.py tests/test_api_local_guard.py tests/test_plan_04_22_splash_settings.py tests/test_plan_03_15_splash_receive_path_integration.py -q`; `python -m ruff check . --select E9,F821`; `python scripts/check_tracked_secrets.py`; `python scripts/check_env_example.py`; `python -m py_compile src\catalyst\api_server.py src\catalyst\blueprints\splash.py` | passed | 77 tests passed. `/console` safely returns 404, startup external links are direct URLs, CORS reflects loopback origins only, and Splash incoming rejects non-loopback Origin plus non-JSON requests. Manual browser click-through not run in this session. |
 | Task 8 tooling/CI tightening | 2026-05-01 | codex/public-readiness | 16b7da5 | `python -m ruff check .`; `python -m bandit -r src --ini .bandit -ll`; `python -m pip_audit -r requirements.txt -r requirements-dev.txt`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py --cov=..\src\catalyst --cov-report=term-missing; Pop-Location` | partial | Ruff config narrowed to the passing public gate (`E9`, `F821`); CI now uses config-based Ruff and coverage reporting. Full Ruff remains 234 findings and Ruff format would touch 249 files, so full lint/formatter enforcement is deferred. Coverage run reported 2806 passed, 4 skipped, 41% total coverage. |
 | Task 9 database boundary first pass | 2026-05-01 | codex/public-readiness | 7a38439 | `python -m pytest tests/test_market_db_boundary.py -q`; `python -m pytest tests -q -k "market or database"`; `python -m pytest tests/test_market_db_boundary.py tests/test_plan_02_30_database_unit.py tests/test_plan_04_16_to_20_remaining_endpoints.py -q`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location`; `python -m ruff check .`; `python -m py_compile src\catalyst\database.py src\catalyst\blueprints\market.py` | partial | Removed the direct `sqlite3.connect(DB_PATH)` from `blueprints/market.py` and moved the spare-coin query behind `database.get_smallest_free_tier_spare()`. Main suite passed with 2807 passed, 4 skipped. Wider direct `conn.execute` cleanup remains. |
-| Task 10 logging/frontend safety first pass | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_security_guardrails_source.py::SecurityGuardrailSourceTests::test_frontend_console_calls_are_debug_gated -q`; `python -m pytest tests/test_security_guardrails_source.py tests/test_frontend_diagnostics_layout.py tests/test_api_local_guard.py -q`; JS extracted from `bot_gui.html` through `node --check`; `python -m ruff check .`; `git diff --check` | partial | Red test failed before implementation, then targeted tests passed with 32 passed. Direct frontend `console.*` calls are now gated behind `window.__CATALYST_DEBUG_LOGS`; current counts are `print_count=604`, `console_count=0`, `html_safety_count=340`. Python print cleanup and broad `innerHTML` hardening remain deferred to smaller slices. |
+| Task 10 logging/frontend safety first pass | 2026-05-01 | codex/public-readiness | 049a648 | `python -m pytest tests/test_security_guardrails_source.py::SecurityGuardrailSourceTests::test_frontend_console_calls_are_debug_gated -q`; `python -m pytest tests/test_security_guardrails_source.py tests/test_frontend_diagnostics_layout.py tests/test_api_local_guard.py -q`; JS extracted from `bot_gui.html` through `node --check`; `python -m ruff check .`; `git diff --check` | partial | Red test failed before implementation, then targeted tests passed with 32 passed. Direct frontend `console.*` calls are now gated behind `window.__CATALYST_DEBUG_LOGS`; current counts are `print_count=604`, `console_count=0`, `html_safety_count=340`. Python print cleanup and broad `innerHTML` hardening remain deferred to smaller slices. |
+| Task 11 public-readiness smoke coverage | 2026-05-01 | codex/public-readiness | pending | `python -m pytest tests/test_public_readiness_smoke.py -q`; `python -m pytest tests/e2e/test_smoke.py --e2e -q`; `python -m pytest tests/test_public_readiness_smoke.py tests/test_api_local_guard.py tests/test_plan_04_09_sage_wallet_endpoints.py tests/test_plan_04_22_splash_settings.py tests/test_plan_04_05_pnl_endpoints.py tests/test_database_boost_migration.py -q`; `python -m ruff check .`; `python -m playwright install chromium`; `Push-Location tests; python -m pytest -n 2 --dist=loadfile --tb=short --ignore=test_coin_prep.py --ignore=test_coin_prep_v2.py --ignore=test_offer_create.py; Pop-Location` | passed | Added boundary smoke coverage for first-launch config seeding under isolated `CMM_DATA_DIR`, safe wallet failures, Splash setup unavailable state, token-exempt route loopback enforcement, stale open-external GET proxy behavior, destructive reset token/confirmation gates, E2E nav-view switching after simulated startup gates, and Data Reset destructive-confirmation rendering. E2E initially exposed a test assumption: startup overlay intentionally blocks nav until gates complete; test was corrected to reveal the post-gate shell. Final results: 6 public smoke tests + 6 subtests passed, E2E 12 passed, public/API subset 117 passed + 6 subtests, full non-live suite 2814 passed and 12 skipped. |
 
 ## Recovery Checklist
 
@@ -703,7 +704,7 @@ python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_c
 
 Result on 2026-05-01: source-guard red test failed before implementation, then `python -m pytest tests/test_security_guardrails_source.py tests/test_frontend_diagnostics_layout.py tests/test_api_local_guard.py -q` passed with 32 passed; extracted JS from `bot_gui.html` passed `node --check`; `python -m ruff check .` passed; `git diff --check` reported only CRLF normalization warnings.
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add src/catalyst bot_gui.html tests
@@ -718,17 +719,19 @@ git commit -m "chore: reduce production debug output"
 - Add or modify tests under `tests/`
 - Add or modify E2E tests under `tests/e2e/`
 
-- [ ] Add tests for first-launch config behavior with isolated `CMM_DATA_DIR`.
-- [ ] Add tests for missing wallet or unavailable RPC returning user-safe errors.
-- [ ] Add tests for Splash unavailable and Splash install path.
-- [ ] Add tests for `/api/open-external` behavior.
-- [ ] Add tests for stale `/console` behavior.
-- [ ] Add tests for DB recovery or migration from an older schema fixture.
-- [ ] Add tests for destructive endpoints requiring local token and confirmation text.
-- [ ] Add tests for token-exempt route protections.
-- [ ] Add Playwright E2E smoke tests for startup, dashboard, settings, offers, logs, and destructive dialogs.
+- [x] Add tests for first-launch config behavior with isolated `CMM_DATA_DIR`.
+- [x] Add tests for missing wallet or unavailable RPC returning user-safe errors.
+- [x] Add tests for Splash unavailable and Splash install path.
+- [x] Add tests for `/api/open-external` behavior.
+- [x] Add tests for stale `/console` behavior.
+- [x] Add tests for DB recovery or migration from an older schema fixture.
+- [x] Add tests for destructive endpoints requiring local token and confirmation text.
+- [x] Add tests for token-exempt route protections.
+- [x] Add Playwright E2E smoke tests for startup, dashboard, settings, offers, logs, and destructive dialogs.
 
-- [ ] Run:
+Result on 2026-05-01: created `tests/test_public_readiness_smoke.py`; expanded `tests/e2e/test_smoke.py` with post-startup navigation checks for Dashboard, Offers, P&L, Market Intel, Settings, Logs, Data Reset, and the Data Reset destructive confirmation modal. Stale `/console`, DB migration, and some Splash install-path coverage already existed and were included in the verification subset rather than duplicated.
+
+- [x] Run:
 
 ```powershell
 Push-Location tests
@@ -737,6 +740,8 @@ Pop-Location
 python -m playwright install chromium
 python -m pytest tests/e2e --e2e
 ```
+
+Result on 2026-05-01: `python -m playwright install chromium` exited 0; `python -m pytest tests/e2e/test_smoke.py --e2e -q` passed with 12 passed. The full non-live suite passed with 2814 passed, 12 skipped in 180.80s.
 
 - [ ] Commit:
 

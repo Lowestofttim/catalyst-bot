@@ -26,6 +26,31 @@ from .conftest import dismiss_disclaimer
 pytestmark = pytest.mark.e2e
 
 
+def reveal_app_shell_for_nav(page) -> None:
+    """Hide startup gates so nav smoke tests can exercise the main shell.
+
+    The real first-run flow intentionally keeps the sidebar blocked until the
+    wallet/Splash/Spacescan gates complete. These tests are not validating
+    those gates; they validate that the public shell views still switch once
+    startup is past them.
+    """
+    dismiss_disclaimer(page)
+    page.evaluate(
+        """() => {
+            for (const id of ['startupOverlay', 'splashGateOverlay', 'spacescanGateOverlay']) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                el.classList.add('hidden');
+                el.classList.remove('active');
+                el.style.display = 'none';
+            }
+            if (typeof window.finalDismiss === 'function') {
+                window.finalDismiss();
+            }
+        }"""
+    )
+
+
 def test_app_loads_with_disclaimer(app_page):
     """The dashboard should boot, render the title, and show the disclaimer."""
     assert app_page.title() == "CATalyst"
@@ -72,6 +97,41 @@ def test_primary_nav_tabs_present(app_page):
     for label in expected:
         nav_btn = app_page.get_by_role("button", name=label, exact=True)
         assert nav_btn.count() >= 1, f"nav button '{label}' missing from DOM"
+
+
+@pytest.mark.parametrize(
+    ("label", "view_id"),
+    [
+        ("Dashboard", "v4View-dashboard"),
+        ("Offers", "v4View-offers"),
+        ("Profit and loss", "v4View-pnl"),
+        ("Market intelligence", "v4View-intel"),
+        ("Settings", "v4View-settings"),
+        ("Logs", "v4View-logs"),
+        ("Data reset", "v4View-data"),
+    ],
+)
+def test_primary_nav_views_switch_without_wallet(app_page, label, view_id):
+    """Core public UI views should switch once the startup gates are past."""
+    reveal_app_shell_for_nav(app_page)
+
+    app_page.get_by_role("button", name=label, exact=True).click(timeout=5_000)
+
+    expect(app_page.locator(f"#{view_id}")).to_have_class(re.compile(r"\bactive\b"))
+
+
+def test_data_reset_button_opens_destructive_confirmation(app_page):
+    """Data-reset actions should show a confirmation dialog before POSTing."""
+    reveal_app_shell_for_nav(app_page)
+    app_page.get_by_role("button", name="Data reset", exact=True).click(timeout=5_000)
+
+    app_page.locator("#btnResetPnl").click(timeout=5_000)
+
+    expect(app_page.locator("#styledConfirmOverlay")).to_have_class(
+        re.compile(r"\bactive\b")
+    )
+    expect(app_page.locator("#confirmTitle")).to_have_text("Reset P&L Counters")
+    expect(app_page.locator("#confirmOkBtn")).to_have_text("Reset P&L")
 
 
 def test_no_console_errors_on_initial_load(app_page):
