@@ -155,13 +155,13 @@ class SpacescanCollectorTests(unittest.TestCase):
                     "total_count": 321,
                 })
 
-            if url.endswith("/token/activity"):
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
                 raise requests.exceptions.Timeout("timed out")
 
-            if url.endswith("/token/activities/asset123"):
+            if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity":
                 return FakeResponse(data={
                     "status": "success",
-                    "activities": [{"id": 1}, {"id": 2}, {"id": 3}],
+                    "tokens": [{"id": 1}, {"id": 2}, {"id": 3}],
                 })
 
             raise AssertionError(f"Unexpected URL {url}")
@@ -177,7 +177,7 @@ class SpacescanCollectorTests(unittest.TestCase):
         # The often-404'ing pro-plural route is intentionally not retried.
         # Retries bumped from 1 to 2 for better transient-failure resilience.
         # In this test: pro-legacy (/token/activity) times out 3 times (retries=2),
-        # then free (/token/activities/asset123) succeeds on first try with
+        # then free (/token/activity) succeeds on first try with
         # 3 items, so activity_count=3.
         self.assertEqual(result["activity_count"], 3)
         self.assertEqual(calls[0]["url"], f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123")
@@ -191,7 +191,13 @@ class SpacescanCollectorTests(unittest.TestCase):
             if "/token/activity" in c["url"] or "/token/activities/" in c["url"]
         ]
         self.assertEqual(len(activity_calls), 4)
-        # Free tier succeeded, so pro-plural should NOT appear in the call log
+        self.assertEqual(activity_calls[-1]["url"], f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity")
+        self.assertEqual(activity_calls[-1]["params"], {
+            "asset_id": "asset123",
+            "type": "transfer",
+            "count": 100,
+        })
+        # Free tier succeeded, so pro-plural should NOT appear in the call log.
         pro_plural_calls = [
             c for c in activity_calls
             if mdc.cfg.SPACESCAN_PRO_URL in c["url"]
@@ -232,7 +238,7 @@ class SpacescanCollectorTests(unittest.TestCase):
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
                 return FakeResponse(data={"status": "success", "data": []})
 
-            if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activities/asset123":
+            if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity":
                 return FakeResponse(status_code=429, data={})
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activities/asset123":
@@ -251,6 +257,57 @@ class SpacescanCollectorTests(unittest.TestCase):
             if c["url"] == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activities/asset123"
         ]
         self.assertEqual(pro_plural_calls, [])
+
+    @patch("market_data_collector.time.sleep", return_value=None)
+    def test_fetch_spacescan_data_counts_pro_activity_tokens_without_free_fallback(self, _sleep):
+        mdc.cfg.SPACESCAN_API_KEY = "test-key"
+        calls = []
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            calls.append({
+                "url": url,
+                "params": dict(params or {}),
+            })
+
+            if url.endswith("/token/info/asset123"):
+                return FakeResponse(data={
+                    "status": "success",
+                    "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
+                    "price": {"usd": 0.01, "xch": 0.000125},
+                    "supply": {"total_supply": 1000, "circulating_supply": 750},
+                })
+
+            if url.endswith("/token/holders/asset123"):
+                return FakeResponse(data={
+                    "status": "success",
+                    "tokens": [{"address": "xch1..."}],
+                    "total_count": 321,
+                })
+
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
+                return FakeResponse(data={
+                    "status": "success",
+                    "tokens": [{"coin_id": "coin1"}, {"coin_id": "coin2"}],
+                })
+
+            if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity":
+                return FakeResponse(data={
+                    "status": "success",
+                    "tokens": [{"id": "free"}],
+                })
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        with patch.object(mdc._session, "get", side_effect=fake_get):
+            result = mdc._fetch_spacescan_data("asset123")
+
+        self.assertTrue(result["has_data"])
+        self.assertEqual(result["activity_count"], 2)
+        free_activity_calls = [
+            c for c in calls
+            if c["url"] == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity"
+        ]
+        self.assertEqual(free_activity_calls, [])
 
     @patch("market_data_collector.time.sleep", return_value=None)
     def test_fetch_spacescan_data_falls_back_to_free_info(self, _sleep):
@@ -282,9 +339,6 @@ class SpacescanCollectorTests(unittest.TestCase):
 
             if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity":
                 return FakeResponse(data={"status": "success", "data": []})
-
-            if url.endswith("/token/activities/asset123"):
-                return FakeResponse(data={"status": "success", "activities": []})
 
             raise AssertionError(f"Unexpected URL {url}")
 

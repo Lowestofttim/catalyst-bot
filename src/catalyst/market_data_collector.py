@@ -1237,7 +1237,7 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
     #
     # F77 (2026-04-17): reordered attempts and tightened retry:
     #   1. pro-legacy — `/token/activity?asset_id=X` — proven working
-    #   2. free       — `/token/activities/X` — community endpoint
+    #   2. free       — `/token/activity?asset_id=X` — documented community endpoint
     # The pro plural route (`/token/activities/X`) 404s for many tokens
     # (observed on MZ) and adds repeated health/log churn without improving
     # coverage, so do not use it as a fallback.
@@ -1255,8 +1255,9 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
              pro_headers, "pro-legacy")
         )
     activity_attempts.append(
-        (free_url, f"/token/activities/{asset_id}",
-         {"count": 100}, free_headers, "free")
+        (free_url, "/token/activity",
+         {"asset_id": asset_id, "type": "transfer", "count": 100},
+         free_headers, "free")
     )
     last_was_rate_limited = False
     for base_url, endpoint, params, headers, label in activity_attempts:
@@ -1272,7 +1273,7 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
             result["activity_count"] = _spacescan_count_from_payload(
                 data,
                 count_keys=["activity_count", "activities", "count", "total", "total_count"],
-                list_keys=["data", "activities", "items", "results"],
+                list_keys=["tokens", "data", "activities", "items", "results"],
             )
             if result["activity_count"] > 0:
                 break
