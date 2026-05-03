@@ -1313,6 +1313,93 @@ class BoostManager:
     # Single offer creation helper
     # -------------------------------------------------------------------
 
+    def _find_flexible_sniper_coin(self, side: str,
+                                   nominal_spend_mojos: int) -> Optional[Dict]:
+        """Find any currently selectable sniper-pool coin for a probe."""
+        if not self._offer_manager:
+            return None
+        try:
+            wallet_type = "xch" if side == "buy" else "cat"
+            wallet_id = cfg.WALLET_ID_XCH if side == "buy" else cfg.CAT_WALLET_ID
+
+            from coin_manager import _coin_id_from_record
+            from database import get_free_coins, get_reserve_coins
+            from wallet import get_exact_spendable_coins_rpc
+
+            rpc_result = get_exact_spendable_coins_rpc(wallet_id)
+            if not rpc_result or not rpc_result.get("success"):
+                return None
+            records = rpc_result.get("confirmed_records") or rpc_result.get("records") or []
+            spendable_amounts = {}
+            for record in records:
+                coin_id = _coin_id_from_record(record)
+                if not coin_id:
+                    continue
+                coin = record.get("coin", {}) if isinstance(record, dict) else {}
+                spendable_amounts[coin_id.lower()] = int(coin.get("amount", 0) or 0)
+
+            reserve_ids = {
+                str(coin.get("coin_id", "")).strip().lower()
+                for coin in get_reserve_coins(wallet_type)
+                if coin.get("coin_id")
+            }
+            excluded = set(getattr(self._offer_manager, "_inflight_coin_ids", set()) or set())
+            excluded.update(getattr(self._offer_manager, "_cycle_used_coin_ids", set()) or set())
+            excluded = {str(coin_id).lower() for coin_id in excluded if coin_id}
+
+            candidates = []
+            for coin in get_free_coins(wallet_type):
+                coin_id = str(coin.get("coin_id", "")).strip().lower()
+                if not coin_id or coin_id in reserve_ids or coin_id in excluded:
+                    continue
+                designation = str(coin.get("designation") or "").lower()
+                assigned_tier = str(coin.get("assigned_tier") or "").lower()
+                if designation not in ("tier_spare", "tier_active"):
+                    continue
+                if assigned_tier != "sniper":
+                    continue
+                amount = spendable_amounts.get(coin_id)
+                if not amount or amount <= 0:
+                    continue
+                candidates.append((amount, coin_id))
+
+            if not candidates:
+                return None
+
+            candidates.sort(key=lambda item: item[0])
+            not_larger = [item for item in candidates if item[0] <= nominal_spend_mojos]
+            amount, coin_id = not_larger[-1] if not_larger else candidates[0]
+            return {"coin_id": coin_id, "amount_mojos": amount}
+        except Exception as exc:
+            log_event("debug", "gap_closer_flexible_coin_failed",
+                      f"Flexible sniper coin lookup failed: {exc}")
+            return None
+
+    @staticmethod
+    def _amounts_for_probe_spend(side: str, price: Decimal,
+                                 spend_mojos: int) -> Optional[Dict]:
+        """Convert the selected spend coin amount into both offer legs."""
+        if spend_mojos <= 0 or price <= 0:
+            return None
+        if side == "buy":
+            size_xch = Decimal(spend_mojos) / Decimal("1000000000000")
+            cat_mojos = cat_to_mojos(size_xch / price, cfg.CAT_DECIMALS)
+            cat_amount = mojos_to_cat(cat_mojos, cfg.CAT_DECIMALS)
+            xch_mojos = int(spend_mojos)
+        else:
+            cat_mojos = int(spend_mojos)
+            cat_amount = mojos_to_cat(cat_mojos, cfg.CAT_DECIMALS)
+            xch_mojos = xch_to_mojos(cat_amount * price)
+            size_xch = Decimal(xch_mojos) / Decimal("1000000000000")
+        if int(cat_mojos) <= 0 or int(xch_mojos) <= 0:
+            return None
+        return {
+            "cat_amount": cat_amount,
+            "cat_mojos": int(cat_mojos),
+            "size_xch": size_xch,
+            "xch_mojos": int(xch_mojos),
+        }
+
     def _create_single_offer(self, side: str, price: Decimal,
                              size_xch: Decimal) -> Optional[Dict]:
         """Create a single gap-closer offer. Returns offer dict or None."""
@@ -1323,6 +1410,7 @@ class BoostManager:
         cat_mojos = cat_to_mojos(cat_amount, cfg.CAT_DECIMALS)
         cat_amount = mojos_to_cat(cat_mojos, cfg.CAT_DECIMALS)
         xch_mojos = xch_to_mojos(size_xch)
+        nominal_spend_mojos = xch_mojos if side == "buy" else cat_mojos
 
         # Amount validation — reject zero, negative, or absurdly large values
         if int(cat_mojos) <= 0 or int(xch_mojos) <= 0:
@@ -1368,6 +1456,53 @@ class BoostManager:
             preferred_tier="sniper",
             strict_preferred_tier=True,
         )
+
+        if (
+            (not res or not res.get("success"))
+            and (res or {}).get("error") == "no_preferred_tier_coin"
+            and cfg.COIN_IDS_ENABLED
+        ):
+            flexible = self._find_flexible_sniper_coin(side, nominal_spend_mojos)
+            if flexible:
+                flexible_coin_id = flexible.get("coin_id")
+                flexible_spend = min(
+                    int(nominal_spend_mojos),
+                    int(flexible.get("amount_mojos") or 0),
+                )
+                flexible_amounts = self._amounts_for_probe_spend(
+                    side, price, flexible_spend
+                )
+                if flexible_coin_id and flexible_amounts:
+                    cat_amount = flexible_amounts["cat_amount"]
+                    cat_mojos = flexible_amounts["cat_mojos"]
+                    size_xch = flexible_amounts["size_xch"]
+                    xch_mojos = flexible_amounts["xch_mojos"]
+                    if side == "buy":
+                        offer_dict = {
+                            str(cfg.WALLET_ID_XCH): -int(xch_mojos),
+                            str(cfg.CAT_WALLET_ID): int(cat_mojos)
+                        }
+                    else:
+                        offer_dict = {
+                            str(cfg.CAT_WALLET_ID): -int(cat_mojos),
+                            str(cfg.WALLET_ID_XCH): int(xch_mojos)
+                        }
+                    res = self._offer_manager.create_offer_with_retry(
+                        offer_dict,
+                        coin_ids_enabled=cfg.COIN_IDS_ENABLED,
+                        expiry_secs=offer_expiry,
+                        selected_coin_id=flexible_coin_id,
+                        preferred_tier="sniper",
+                        strict_preferred_tier=True,
+                    )
+                    if res and res.get("success"):
+                        log_event(
+                            "info",
+                            "gap_closer_flexible_size",
+                            f"Close the Gap {side} probe resized to "
+                            f"{size_xch} XCH / {cat_amount} CAT using "
+                            f"sniper coin {str(flexible_coin_id)[:16]}..."
+                        )
 
         if not res or not res.get("success"):
             log_event("warning", "gap_closer_create_failed",

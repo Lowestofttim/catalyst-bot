@@ -8,6 +8,7 @@ No offer creation, network calls, or database access.
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import patch
 
 try:
     import boost_manager as _bm_mod
@@ -26,6 +27,7 @@ class _FakeOfferManager:
             tid: {"price": price}
             for tid, price in (prices or {}).items()
         }
+        self._cycle_used_coin_ids = set()
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +116,67 @@ class TestFindStaleOffers(unittest.TestCase):
         result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
         self.assertIn("_distance_bps", result[0])
         self.assertGreater(result[0]["_distance_bps"], 0)
+
+
+@unittest.skipIf(_SKIP is not None, _SKIP_MSG)
+class TestFlexibleProbeSize(unittest.TestCase):
+    def test_sell_probe_retries_with_smaller_sniper_coin(self):
+        class FlexibleOfferManager:
+            def __init__(self):
+                self.calls = []
+                self._cycle_used_coin_ids = set()
+                self._offer_details_cache = {}
+
+            def create_offer_with_retry(self, offer_dict, **kwargs):
+                self.calls.append((offer_dict, kwargs))
+                if kwargs.get("selected_coin_id") == "cat-sniper-79000":
+                    return {
+                        "success": True,
+                        "trade_id": "tid-flex",
+                        "offer": "offer-flex",
+                        "locked_coin_id": "cat-sniper-79000",
+                    }
+                return {
+                    "success": False,
+                    "error": "no_preferred_tier_coin",
+                    "preferred_tier": "sniper",
+                }
+
+        fake_cfg = SimpleNamespace(
+            CAT_DECIMALS=3,
+            CAT_ASSET_ID="asset",
+            CAT_WALLET_ID=2,
+            COIN_IDS_ENABLED=True,
+            DEXIE_AUTO_POST=False,
+            DRY_RUN=False,
+            SNIPER_EXPIRY_SECS=600,
+            WALLET_ID_XCH=1,
+        )
+        offer_manager = FlexibleOfferManager()
+        mgr = BoostManager(offer_manager=offer_manager)
+
+        with (
+            patch.object(_bm_mod, "cfg", fake_cfg),
+            patch.object(_bm_mod, "add_offer", return_value=True),
+            patch.object(_bm_mod, "lock_coin"),
+            patch.object(
+                mgr,
+                "_find_flexible_sniper_coin",
+                return_value={"coin_id": "cat-sniper-79000", "amount_mojos": 79000},
+                create=True,
+            ),
+        ):
+            result = mgr._create_single_offer("sell", Decimal("0.0001175"), Decimal("0.01"))
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["trade_id"], "tid-flex")
+        self.assertEqual(result["size_cat"], Decimal("79"))
+        self.assertEqual(result["size_xch"], Decimal("0.0092825"))
+        self.assertEqual(len(offer_manager.calls), 2)
+
+        retry_offer, retry_kwargs = offer_manager.calls[1]
+        self.assertEqual(retry_offer[str(fake_cfg.CAT_WALLET_ID)], -79000)
+        self.assertEqual(retry_kwargs["selected_coin_id"], "cat-sniper-79000")
 
 
 if __name__ == "__main__":
