@@ -194,6 +194,14 @@ class NeedsTopupThresholdTests(unittest.TestCase):
         mgr._tier_spares = {"xch": xch, "cat": cat}
         mgr._last_topup_time = 0      # past the 600 s cooldown
         mgr._no_coins_backoff = False
+        mgr._xch_inventory = {
+            "reserve": [{"amount": 10_000_000_000_000_000}],
+            "small": [],
+        }
+        mgr._cat_inventory = {
+            "reserve": [{"amount": 10_000_000_000_000_000}],
+            "small": [],
+        }
         return mgr
 
     def _assert_fires(self, tier, count, msg=None):
@@ -264,7 +272,10 @@ class NeedsTopupThresholdTests(unittest.TestCase):
         self._ns.SNIPER_SIZE_XCH = "0.001"
         self._ns.TIER_DRIP_PCT = 100
 
-        mgr = self._manager(cat_overrides={"sniper": 24})
+        mgr = self._manager(
+            xch_overrides={"sniper": 25},
+            cat_overrides={"sniper": 24},
+        )
         mgr._last_topup_time = time.time()  # emergency is on cooldown
         mgr._last_drip_time = 0             # proactive refill is allowed
         mgr._cat_inventory = {
@@ -297,6 +308,29 @@ class NeedsTopupThresholdTests(unittest.TestCase):
         self.assertEqual(log_event.call_count, 2)
         self.assertEqual(log_event.call_args_list[0].args[2], "first")
         self.assertEqual(log_event.call_args_list[1].args[2], "hourly")
+
+    def test_emergency_topup_waits_when_triggered_tier_has_no_source(self):
+        """Do not launch the noisy worker when emergency topup cannot act."""
+        mgr = self._manager(cat_overrides={"mid": 1})
+        mgr._last_topup_time = 0
+        mgr._last_drip_time = time.time()
+        mgr._cat_inventory = {
+            "reserve": [],
+            "inner": [],
+            "mid": [{}],
+            "outer": [],
+            "extreme": [],
+            "small": [{"amount": 1_000}, {"amount": 1_000}],
+        }
+
+        with patch.object(mgr, "_get_tier_sizes_mojos",
+                          return_value={"mid": 24_129_000}), \
+                patch.object(self.cm, "log_event") as log_event:
+            self.assertFalse(mgr.needs_topup())
+
+        event_types = [call.args[1] for call in log_event.call_args_list]
+        self.assertIn("topup_source_unavailable", event_types)
+        self.assertNotIn("low_coins_adaptive", event_types)
 
 
 # ────────────────────────────────────────────────────────────────────────────

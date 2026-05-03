@@ -1479,12 +1479,21 @@ class CoinManager:
 
     def _log_drip_source_unavailable(self, key: str, message: str) -> None:
         """Rate-limit calm no-source notices for optional drip pools."""
+        self._log_source_unavailable("drip_source_unavailable", key, message)
+
+    def _log_topup_source_unavailable(self, key: str, message: str) -> None:
+        """Rate-limit calm no-source notices for emergency topups."""
+        self._log_source_unavailable("topup_source_unavailable", key, message)
+
+    def _log_source_unavailable(self, event_type: str, key: str, message: str) -> None:
+        """Rate-limit repeated no-source notices for the same pool."""
         now = time.time()
-        last = self._last_drip_source_unavailable_log.get(key, 0)
+        rate_key = f"{event_type}:{key}"
+        last = self._last_drip_source_unavailable_log.get(rate_key, 0)
         if now - last < _DRIP_SOURCE_NOTICE_INTERVAL:
             return
-        self._last_drip_source_unavailable_log[key] = now
-        log_event("info", "drip_source_unavailable", message)
+        self._last_drip_source_unavailable_log[rate_key] = now
+        log_event("info", event_type, message)
 
     def _configured_tier_names(self, include_sniper: bool = True) -> List[str]:
         tiers = ["inner", "mid", "outer", "extreme"]
@@ -4475,6 +4484,7 @@ class CoinManager:
             needs_any = False
             trigger_wallet_types: set[str] = set()
             trigger_log: list = []
+            trigger_source_checks: list[tuple[str, str, int, int, int]] = []
             max_per_side = max(
                 getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
                 getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25))
@@ -4515,8 +4525,16 @@ class CoinManager:
                     needs_any = True
                     if xch_trip:
                         trigger_wallet_types.add("xch")
+                        trigger_source_checks.append((
+                            "xch", tier_name, xch_spares_now,
+                            xch_spare_target, xch_threshold,
+                        ))
                     if cat_trip:
                         trigger_wallet_types.add("cat")
+                        trigger_source_checks.append((
+                            "cat", tier_name, cat_spares_now,
+                            cat_spare_target, cat_threshold,
+                        ))
                     trigger_log.append(
                         f"{tier_name} "
                         f"xch@{int(xch_pct*100)}%={xch_spares_now}/{xch_spare_target}(<{xch_threshold}) "
@@ -4539,8 +4557,16 @@ class CoinManager:
                     needs_any = True
                     if cfg.ENABLE_BUY and sniper_xch_now < sniper_threshold:
                         trigger_wallet_types.add("xch")
+                        trigger_source_checks.append((
+                            "xch", "sniper", sniper_xch_now,
+                            sniper_target, sniper_threshold,
+                        ))
                     if cfg.ENABLE_SELL and sniper_cat_now < sniper_threshold:
                         trigger_wallet_types.add("cat")
+                        trigger_source_checks.append((
+                            "cat", "sniper", sniper_cat_now,
+                            sniper_target, sniper_threshold,
+                        ))
                     trigger_log.append(
                         f"sniper@{int(sniper_pct*100)}% "
                         f"xch={sniper_xch_now}/{sniper_target}(<{sniper_threshold}) "
@@ -4556,12 +4582,52 @@ class CoinManager:
                 if fee_threshold > 0 and fee_xch_now < fee_threshold:
                     needs_any = True
                     trigger_wallet_types.add("xch")
+                    trigger_source_checks.append((
+                        "xch", "fees", fee_xch_now,
+                        fee_target, fee_threshold,
+                    ))
                     trigger_log.append(
                         f"fees@{int(fee_pct*100)}% "
                         f"xch={fee_xch_now}/{fee_target}(<{fee_threshold})"
                     )
 
             if needs_any and _emergency_ready:
+                source_ready_wallets: set[str] = set()
+                for wallet_type, tier_name, spares_now, spare_target, threshold in (
+                    trigger_source_checks
+                ):
+                    try:
+                        if tier_name == get_fee_tier_name():
+                            target_size_mojos = int(get_fee_coin_size_mojos())
+                        else:
+                            target_size_mojos = int(
+                                self._get_tier_sizes_mojos(
+                                    is_cat=(wallet_type == "cat")
+                                ).get(tier_name, 0) or 0
+                            )
+                    except Exception:
+                        target_size_mojos = 0
+                    if self._optional_topup_source_available(
+                        wallet_type,
+                        target_size_mojos,
+                    ):
+                        source_ready_wallets.add(wallet_type)
+                        continue
+                    label = wallet_type.upper()
+                    self._log_topup_source_unavailable(
+                        f"{wallet_type}:{tier_name}",
+                        f"{label} {tier_name} topup waiting: "
+                        f"{spares_now}/{spare_target} spares "
+                        f"(emergency threshold <{threshold}) but no "
+                        f"{label} reserve or useful small coins are "
+                        "available to split",
+                    )
+
+                if trigger_source_checks:
+                    trigger_wallet_types.intersection_update(source_ready_wallets)
+                    if not trigger_wallet_types:
+                        return False
+
                 log_event("info", "low_coins_adaptive",
                           f"Per-tier trigger fired (pace={pace}, scale={pace_scale:.2f}x). "
                           f"Trips: {'; '.join(trigger_log) if trigger_log else 'n/a'}")
