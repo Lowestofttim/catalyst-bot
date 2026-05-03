@@ -303,6 +303,28 @@ class TestDashboard(_FlaskBase):
         status_sync = status_sync.split("let _sseConnection")[0]
         self.assertIn("ensureFiatPricesFromDashboard", status_sync)
 
+    def test_fiat_price_summary_clears_snapshot_fields_when_prices_missing(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+                  encoding="utf-8") as handle:
+            html = handle.read()
+
+        self.assertIn("function resetFiatPriceSummary", html)
+        summary = html.split("function updateFiatPriceSummary")[1]
+        summary = summary.split("function updateCommandCentre")[0]
+        self.assertIn("resetFiatPriceSummary(currentCat);", summary)
+
+        reset = html.split("function resetFiatPriceSummary")[1]
+        reset = reset.split("function updateFiatPriceSummary")[0]
+        for field_id in (
+            "ccXchUsdPrice",
+            "ccCatUsdPrice",
+            "ccFiatPriceSource",
+            "snapshotXchUsd",
+            "snapshotCatUsd",
+            "snapshotCatUsdLabel",
+        ):
+            self.assertIn(field_id, reset)
+
 
 if __name__ == "__main__":
     unittest.main()

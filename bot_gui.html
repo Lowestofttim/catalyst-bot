@@ -24277,16 +24277,38 @@
             }
         }
 
+        function resetFiatPriceSummary(currentCat = {}) {
+            const section = document.getElementById('ccFiatPrices');
+            if (section) section.style.display = 'none';
+
+            const lowerCatLabel = currentCat?.name || currentCat?.ticker_id || 'CAT';
+            const snapshotCatLabel = currentCat?.ticker_id || currentCat?.name || 'CAT';
+            const setText = (id, value) => {
+                const node = document.getElementById(id);
+                if (node) node.textContent = value;
+            };
+
+            setText('ccXchUsdPrice', '--');
+            setText('ccCatUsdPrice', '--');
+            setText('ccCatUsdLabel', lowerCatLabel);
+            setText('ccFiatPriceSource', '--');
+            setText('snapshotXchUsd', '—');
+            setText('snapshotCatUsd', '—');
+            setText('snapshotCatUsdLabel', snapshotCatLabel + '/USD');
+        }
+
         function updateFiatPriceSummary(fiat = {}, currentCat = {}, spacescan = {}) {
             const section = document.getElementById('ccFiatPrices');
-            if (!section) return;
 
             const xchText = formatUsdPrice(fiat.xch_usd_price);
             const catText = formatUsdPrice(fiat.cat_usd_price || spacescan.price_usd);
             const hasAnyPrice = !!(xchText || catText);
 
-            section.style.display = hasAnyPrice ? 'block' : 'none';
-            if (!hasAnyPrice) return;
+            if (!hasAnyPrice) {
+                resetFiatPriceSummary(currentCat);
+                return;
+            }
+            if (section) section.style.display = 'block';
 
             const xchEl = document.getElementById('ccXchUsdPrice');
             const catEl = document.getElementById('ccCatUsdPrice');
