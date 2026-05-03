@@ -1448,6 +1448,7 @@ def api_diagnostics_api_stats():
             "tier": stats.get("tier", "unknown"),
             "calls_this_session": int(stats.get("calls_this_session", 0) or 0),
             "calls_today": int(stats.get("calls_today", 0) or 0),
+            "calls_by_endpoint": dict(stats.get("calls_by_endpoint", {}) or {}),
             "daily_budget": stats.get("daily_budget", "unknown"),
             "session_uptime_hours": float(stats.get("session_uptime_hours", 0) or 0),
             "call_interval_secs": float(stats.get("call_interval_secs", 0) or 0),
@@ -1462,6 +1463,24 @@ def api_diagnostics_api_stats():
                 )
         except Exception:
             pass
+        try:
+            asset_id = (
+                api_server._active_cat.get("asset_id")
+                or getattr(cfg, "CAT_ASSET_ID", "")
+                or ""
+            )
+            if asset_id:
+                from database import (
+                    get_market_analysis_cache,
+                    get_market_analysis_cache_age_secs,
+                )
+                cached = get_market_analysis_cache(asset_id, "spacescan")
+                payload["spacescan"]["token_context_cached"] = bool(cached)
+                age_secs = get_market_analysis_cache_age_secs(asset_id, "spacescan")
+                if age_secs is not None:
+                    payload["spacescan"]["token_context_cache_age_secs"] = int(age_secs)
+        except Exception as cache_err:
+            payload["spacescan"]["token_context_cache_error"] = str(cache_err)
     except Exception as e:
         payload["spacescan"]["error"] = str(e)
 

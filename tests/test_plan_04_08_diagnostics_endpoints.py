@@ -144,6 +144,27 @@ class TestDiagnosticsApiStats(_FlaskBase):
         body = resp.get_json()
         self.assertTrue(body["dexie"].get("available"))
 
+    def test_spacescan_includes_token_context_cache_age(self):
+        with patch.object(api_server, "bot", _make_bot()), \
+             patch.dict(api_server._active_cat, {"asset_id": "asset123"}, clear=False), \
+             patch("spacescan.get_api_stats", return_value={
+                 "tier": "paid",
+                 "calls_this_session": 1,
+                 "calls_today": 1,
+                 "session_uptime_hours": 2.0,
+                 "daily_budget": "plan-dependent",
+                 "call_interval_secs": 2.0,
+                 "calls_by_endpoint": {"/stats/price": 1},
+             }), \
+             patch("database.get_market_analysis_cache", return_value={"has_data": True}), \
+             patch("database.get_market_analysis_cache_age_secs", return_value=123):
+            resp = self.client.get("/api/diagnostics/api-stats",
+                                   environ_base=self._LOOPBACK)
+        body = resp.get_json()
+        self.assertTrue(body["spacescan"].get("token_context_cached"))
+        self.assertEqual(body["spacescan"].get("token_context_cache_age_secs"), 123)
+        self.assertEqual(body["spacescan"].get("calls_by_endpoint"), {"/stats/price": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

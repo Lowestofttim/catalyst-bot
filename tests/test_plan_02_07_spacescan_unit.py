@@ -60,6 +60,7 @@ class _SS(unittest.TestCase):
             "rate_until": _ss_mod._rate_limited_until,
             "calls_session": _ss_mod._calls_this_session,
             "calls_today": _ss_mod._calls_today,
+            "calls_by_endpoint": dict(getattr(_ss_mod, "_calls_by_endpoint", {})),
             "today_date": _ss_mod._today_date,
             "cache": set(_ss_mod._known_wallet_addresses_cache),
             "cache_at": _ss_mod._known_wallet_addresses_cache_at,
@@ -68,6 +69,7 @@ class _SS(unittest.TestCase):
         _ss_mod._rate_limited_until = 0.0
         _ss_mod._calls_this_session = 0
         _ss_mod._calls_today = 0
+        _ss_mod._calls_by_endpoint = {}
         _ss_mod._today_date = ""
         _ss_mod._known_wallet_addresses_cache = set()
         _ss_mod._known_wallet_addresses_cache_at = 0.0
@@ -79,6 +81,7 @@ class _SS(unittest.TestCase):
         _ss_mod._rate_limited_until = self._orig["rate_until"]
         _ss_mod._calls_this_session = self._orig["calls_session"]
         _ss_mod._calls_today = self._orig["calls_today"]
+        _ss_mod._calls_by_endpoint = self._orig["calls_by_endpoint"]
         _ss_mod._today_date = self._orig["today_date"]
         _ss_mod._known_wallet_addresses_cache = self._orig["cache"]
         _ss_mod._known_wallet_addresses_cache_at = self._orig["cache_at"]
@@ -201,6 +204,14 @@ class TestApiStats(_SS):
     def test_record_external_call_increments_daily_counter(self):
         record_external_call(5)
         self.assertEqual(_ss_mod._calls_today, 5)
+
+    def test_record_external_call_tracks_endpoint_breakdown(self):
+        record_external_call(endpoint="/token/info/asset123")
+        stats = get_api_stats()
+        self.assertEqual(
+            stats["calls_by_endpoint"],
+            {"/token/info/{asset_id}": 1},
+        )
 
 
 # ===========================================================================

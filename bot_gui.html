@@ -26796,19 +26796,29 @@
                     ? `${fmtN(ss.budget_remaining)} / ${fmtN(ss.daily_budget)}`
                     : (ss.daily_budget || '—');
 
+                const ssTokenContext = ss.token_context_cached
+                    ? `cached (${fmtAge(ss.token_context_cache_age_secs)})`
+                    : (ss.token_context_cached === false ? 'not cached' : 'unknown');
+                const ssEndpointBreakdown = ss.calls_by_endpoint || ss.direct_calls_by_endpoint;
+
                 const bodyHtml = `
                     <div class="v4-modal-panel">
                         <div class="v4-modal-panel-title">Spacescan ${ss.tier ? '(' + escapeHtml(ss.tier) + ')' : ''}</div>
                         ${ss.available ? `
                           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:0.92em;">
                             <div style="color:var(--text-secondary);">Calls this session</div><div>${fmtN(ss.calls_this_session)}</div>
-                            <div style="color:var(--text-secondary);">Calls today</div><div>${fmtN(ss.calls_today)}</div>
+                            <div style="color:var(--text-secondary);">Calls today (this run)</div><div>${fmtN(ss.calls_today)}</div>
                             <div style="color:var(--text-secondary);">Daily budget remaining</div><div>${escapeHtml(String(ssBudget))}</div>
+                            <div style="color:var(--text-secondary);">Token context</div><div>${escapeHtml(ssTokenContext)}</div>
                             <div style="color:var(--text-secondary);">Min interval</div><div>${fmtN(ss.call_interval_secs)}s</div>
                             <div style="color:var(--text-secondary);">Session uptime</div><div>${fmtN(ss.session_uptime_hours)}h</div>
                             <div style="color:var(--text-secondary);">Rate-limit cooldown</div><div>${escapeHtml(isCoolingDown(ss.rate_limited_until))}</div>
                           </div>
-                          ${fmtEndpointFooter('Direct calls', ss.direct_calls_by_endpoint)}
+                          ${ss.token_context_cached ? `
+                            <div style="margin-top:10px; padding:6px 10px; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 6px; font-size: 0.82em; color: var(--text-tertiary);">
+                              Low Spacescan calls can be normal while token health, holder count, activity, and CAT price are served from cache. Fill verification still calls Spacescan when a suspicious close needs chain confirmation.
+                            </div>` : ''}
+                          ${fmtEndpointFooter('Successful calls', ssEndpointBreakdown)}
                         ` : '<div style="color:var(--text-tertiary);">Spacescan stats unavailable.</div>'}
                     </div>
                     <div class="v4-modal-panel">

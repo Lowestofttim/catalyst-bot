@@ -1067,7 +1067,7 @@ def _spacescan_smart_get(base_url: str, endpoint: str, *,
                     # Count this call in the central Spacescan stats
                     try:
                         import spacescan as _ss
-                        _ss.record_external_call()
+                        _ss.record_external_call(endpoint=endpoint)
                     except Exception:
                         pass
                     return data, None
@@ -2217,4 +2217,3 @@ def _safe_float(val, default: float = 0.0) -> float:
         return float(val)
     except (ValueError, TypeError):
         return default
-

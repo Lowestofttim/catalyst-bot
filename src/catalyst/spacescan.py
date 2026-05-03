@@ -72,6 +72,7 @@ _FREE_CALL_INTERVAL = 12.0  # seconds between calls on the free tier
 # Monthly call budget tracking (resets on module load / bot restart)
 _calls_this_session = 0
 _session_start_time = time.time()
+_calls_by_endpoint: Dict[str, int] = {}
 
 # Free tier daily budget — reserve most for fill verification
 _FREE_DAILY_BUDGET = 30  # ~1000/month, leave headroom
@@ -106,6 +107,50 @@ def is_pro_tier() -> bool:
     return bool(cfg.SPACESCAN_API_KEY)
 
 
+def _reset_daily_counter_if_needed() -> None:
+    """Reset the runtime daily counter after midnight."""
+    global _calls_today, _today_date
+    import datetime
+    today = datetime.date.today().isoformat()
+    if today != _today_date:
+        _today_date = today
+        _calls_today = 0
+
+
+def _endpoint_label(endpoint: Optional[str]) -> str:
+    """Return a compact, non-identifying label for diagnostics."""
+    path = str(endpoint or "").split("?", 1)[0].strip() or "unknown"
+    replacements = (
+        ("/coin/info/", "/coin/info/{coin_id}"),
+        ("/address/xch-balance/", "/address/xch-balance/{address}"),
+        ("/address/token-balance/", "/address/token-balance/{address}"),
+        ("/token/info/", "/token/info/{asset_id}"),
+        ("/token/holders/", "/token/holders/{asset_id}"),
+        ("/cat/transactions/", "/cat/transactions/{asset_id}"),
+    )
+    for prefix, label in replacements:
+        if path.startswith(prefix):
+            return label
+    return path
+
+
+def _record_successful_call(count: int = 1, endpoint: Optional[str] = None) -> None:
+    """Increment counters for successful Spacescan responses."""
+    global _calls_this_session, _calls_today
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 1
+    if count <= 0:
+        return
+    _reset_daily_counter_if_needed()
+    _calls_this_session += count
+    _calls_today += count
+    if endpoint:
+        label = _endpoint_label(endpoint)
+        _calls_by_endpoint[label] = int(_calls_by_endpoint.get(label, 0) or 0) + count
+
+
 def _get_call_interval() -> float:
     """Return the appropriate rate limit interval for our tier."""
     return _PRO_CALL_INTERVAL if is_pro_tier() else _FREE_CALL_INTERVAL
@@ -119,18 +164,13 @@ def _check_daily_budget(call_type: str = "general") -> bool:
     Args:
         call_type: "fill_verify" (critical, always allowed) or "balance" (skipped if tight)
     """
-    global _calls_today, _today_date
+    global _calls_today
+
+    _reset_daily_counter_if_needed()
 
     # Paid-key mode: plan-specific quotas are not modeled here
     if is_pro_tier():
         return True
-
-    # Free tier: track daily budget
-    import datetime
-    today = datetime.date.today().isoformat()
-    if today != _today_date:
-        _today_date = today
-        _calls_today = 0
 
     # Fill verification is always allowed (the whole point of Spacescan)
     if call_type == "fill_verify":
@@ -254,8 +294,7 @@ def _spacescan_get(endpoint: str) -> Optional[Dict]:
                                 f"Spacescan returned non-success: {data.get('status')}")
                 return None
 
-            _calls_this_session += 1
-            _calls_today += 1
+            _record_successful_call(endpoint=endpoint)
             # Successful call — clear the dedup memory so a NEW failure
             # surfaces immediately instead of being silenced for 60s.
             _last_warned.clear()
@@ -616,7 +655,7 @@ def get_token_balance(address: str, asset_id: str = None) -> Optional[Decimal]:
         return None
 
 
-def record_external_call(count: int = 1) -> None:
+def record_external_call(count: int = 1, endpoint: Optional[str] = None) -> None:
     """Increment session/daily call counters from external modules.
 
     market_data_collector makes Spacescan HTTP requests through its own
@@ -624,18 +663,21 @@ def record_external_call(count: int = 1) -> None:
     this module.  This function lets it report those calls so the
     diagnostics panel shows accurate totals.
     """
-    global _calls_this_session, _calls_today
-    _calls_this_session += count
-    _calls_today += count
+    if isinstance(count, str) and endpoint is None:
+        endpoint = count
+        count = 1
+    _record_successful_call(count=count, endpoint=endpoint)
 
 
 def get_api_stats() -> Dict:
     """Return current API usage stats for monitoring/GUI display."""
+    _reset_daily_counter_if_needed()
     uptime_hours = (time.time() - _session_start_time) / 3600
     return {
         "tier": "paid" if is_pro_tier() else "free",
         "calls_this_session": _calls_this_session,
         "calls_today": _calls_today,
+        "calls_by_endpoint": dict(_calls_by_endpoint),
         "session_uptime_hours": round(uptime_hours, 1),
         "daily_budget": "plan-dependent" if is_pro_tier() else _FREE_DAILY_BUDGET,
         "call_interval_secs": _get_call_interval(),
@@ -784,4 +826,3 @@ def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
                           f"On-chain: {cat_onchain}, Diff: {result['cat_diff']}")
 
     return result
-
