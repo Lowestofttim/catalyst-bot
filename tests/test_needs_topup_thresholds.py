@@ -284,6 +284,20 @@ class NeedsTopupThresholdTests(unittest.TestCase):
         self.assertIn("drip_source_unavailable", event_types)
         self.assertNotIn("drip_trigger", event_types)
 
+    def test_drip_source_unavailable_notice_is_hourly(self):
+        """Repeated no-source drip notices should not fill the log."""
+        mgr = self._manager()
+
+        with patch.object(self.cm.time, "time", side_effect=[100000, 103599, 103600]), \
+                patch.object(self.cm, "log_event") as log_event:
+            mgr._log_drip_source_unavailable("cat:mid", "first")
+            mgr._log_drip_source_unavailable("cat:mid", "suppressed")
+            mgr._log_drip_source_unavailable("cat:mid", "hourly")
+
+        self.assertEqual(log_event.call_count, 2)
+        self.assertEqual(log_event.call_args_list[0].args[2], "first")
+        self.assertEqual(log_event.call_args_list[1].args[2], "hourly")
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Non-reversed ladder (BUY_LADDER_REVERSED=False)

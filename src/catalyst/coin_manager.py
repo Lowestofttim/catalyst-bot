@@ -115,7 +115,7 @@ _TOPUP_BACKOFF_MAX = 3600        # 60 minutes — ceiling for exponential backof
 # Old fixed 2-hour constant removed. Backoff is now exponential:
 # attempt 0 → 5 min, 1 → 10 min, 2 → 20 min, 3 → 40 min, 4+ → 60 min (capped)
 _TOPUP_DRIP_INTERVAL = 90        # 90 seconds between proactive drip checks
-_DRIP_SOURCE_NOTICE_INTERVAL = 1800  # 30 minutes between optional no-source notices
+_DRIP_SOURCE_NOTICE_INTERVAL = 3600  # 60 minutes between optional no-source notices
 
 
 class _TopupWalletDegraded(Exception):
