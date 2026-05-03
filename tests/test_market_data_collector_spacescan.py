@@ -352,6 +352,80 @@ class SpacescanCollectorTests(unittest.TestCase):
             f"{mdc.cfg.SPACESCAN_FREE_URL}/token/info/asset123",
         ])
 
+    @patch("market_data_collector.time.sleep", return_value=None)
+    def test_xch_usd_price_falls_back_to_spacescan_when_coingecko_fails(self, _sleep):
+        mdc.cfg.SPACESCAN_API_KEY = "test-key"
+        calls = []
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            calls.append({
+                "url": url,
+                "params": dict(params or {}),
+                "headers": dict(headers or {}),
+            })
+
+            if url == f"{mdc.COINGECKO_BASE}/simple/price":
+                return FakeResponse(status_code=503, data={})
+
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/stats/price":
+                return FakeResponse(data={
+                    "status": "success",
+                    "price": 2.5,
+                    "timestamp": 1770000000,
+                })
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        with patch.object(mdc._session, "get", side_effect=fake_get):
+            result = mdc._fetch_xch_usd_price()
+
+        self.assertTrue(result["has_data"])
+        self.assertEqual(result["source"], "spacescan")
+        self.assertEqual(result["xch_usd"], 2.5)
+        self.assertEqual(calls[1]["params"], {"cur": "USD"})
+        self.assertEqual(calls[1]["headers"]["x-api-key"], "test-key")
+
+    @patch("market_data_collector.time.sleep", return_value=None)
+    def test_fetch_spacescan_enhanced_data_summarises_fee_and_cat_transactions(self, _sleep):
+        mdc.cfg.SPACESCAN_API_KEY = "test-key"
+        calls = []
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            calls.append({
+                "url": url,
+                "params": dict(params or {}),
+            })
+
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/mempool/minfee":
+                return FakeResponse(data={
+                    "status": "success",
+                    "data": [
+                        {"timestamp": 1770000000, "minfees": 3, "fee": 9},
+                        {"timestamp": 1770000060, "minfees": 5, "fee": 10},
+                    ],
+                })
+
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/cat/transactions/asset123":
+                return FakeResponse(data={
+                    "status": "success",
+                    "data": [
+                        {"coin_name": "coin1", "timestamp": 1770000001},
+                        {"coin_name": "coin2", "timestamp": 1770000002},
+                    ],
+                })
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        with patch.object(mdc._session, "get", side_effect=fake_get):
+            result = mdc._fetch_spacescan_enhanced_data("asset123")
+
+        self.assertTrue(result["has_data"])
+        self.assertEqual(result["mempool_sample_count"], 2)
+        self.assertEqual(result["mempool_min_fee"], 5.0)
+        self.assertEqual(result["cat_tx_count"], 2)
+        self.assertEqual(result["cat_last_tx_timestamp"], 1770000002)
+        self.assertEqual(calls[1]["params"], {"count": 25})
+
 
 class MarketAnalysisCacheTests(unittest.TestCase):
     def test_clear_market_analysis_cache_can_keep_spacescan(self):

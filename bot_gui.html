@@ -23803,6 +23803,17 @@
             if (n === 0) return '0.0000';
             return (n >= 0 ? '+' : '') + formatXchAmount(val);
         }
+        function formatUsdAmount(val, opts = {}) {
+            const n = parseFloat(val);
+            if (!Number.isFinite(n)) return '';
+            const abs = Math.abs(n);
+            const decimals = abs > 0 && abs < 1 ? 4 : 2;
+            const sign = opts.signed && n > 0 ? '+' : n < 0 ? '-' : '';
+            return sign + '$' + abs.toLocaleString(undefined, {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals,
+            });
+        }
 
         // ============ PnL & INVENTORY UPDATE (V2 NEW) ============
         function applyPnlSummary(data = {}) {
@@ -23810,6 +23821,8 @@
             const verifiedFills = Number(data.total_fills || 0);
             const pendingCount = Number(data.pending_verification_count || 0);
             const fillRate = Number(data.fill_rate_per_hour || 0);
+            const xchUsdPrice = parseFloat(data.xch_usd_price || 0);
+            const hasUsdPrice = Number.isFinite(xchUsdPrice) && xchUsdPrice > 0;
             const sniperStats = data.sniper || ((_dashboardData && _dashboardData.sniper) ? _dashboardData.sniper : null);
             try { updatePnlFlowDiagnostics({ stats: data }); } catch (_) {}
 
@@ -23835,9 +23848,12 @@
                     : fillRate.toFixed(1) + '/hr';
             }
             if (el('pnlRealisedSub')) {
-                el('pnlRealisedSub').textContent = pendingCount > 0
-                    ? 'Verified only • ' + pendingCount + ' pending'
-                    : 'XCH realised';
+                const usdPnl = hasUsdPrice ? formatUsdAmount(data.realised_pnl_usd, { signed: true }) : '';
+                const source = data.xch_usd_source ? ' via ' + data.xch_usd_source : '';
+                const pendingSuffix = pendingCount > 0 ? ' • ' + pendingCount + ' pending' : '';
+                el('pnlRealisedSub').textContent = usdPnl
+                    ? usdPnl + ' realised' + source + pendingSuffix
+                    : (pendingCount > 0 ? 'Verified only • ' + pendingCount + ' pending' : 'XCH realised');
             }
             if (el('v4PnlChartStatus') && verifiedFills === 0 && _v4PnlHistory.length === 0) {
                 if (pendingCount > 0) {
@@ -23937,7 +23953,12 @@
             const volXch = parseFloat(data.volume_xch || 0);
             const volCat = parseFloat(data.volume_cat || 0);
             if (el('pnlVolumeXch')) el('pnlVolumeXch').textContent = formatXchAmount(volXch);
-            if (el('pnlVolumeCat')) el('pnlVolumeCat').textContent = volCat.toFixed(2) + ' CAT';
+            if (el('pnlVolumeCat')) {
+                const volumeUsd = hasUsdPrice ? formatUsdAmount(data.volume_usd) : '';
+                el('pnlVolumeCat').textContent = volumeUsd
+                    ? volumeUsd + ' traded • ' + volCat.toFixed(2) + ' CAT'
+                    : volCat.toFixed(2) + ' CAT';
+            }
 
             // Gross volume breakdown row — bought vs sold vs net flow.
             // Fields come from /api/pnl's new buy_volume_* / sell_volume_* /
@@ -24046,7 +24067,10 @@
                     if (avgTripSecs < 60) t = Math.round(avgTripSecs) + 's trip time';
                     else if (avgTripSecs < 3600) t = (avgTripSecs / 60).toFixed(1) + 'm trip time';
                     else t = (avgTripSecs / 3600).toFixed(1) + 'h trip time';
-                    el('pnlAvgTripTime').textContent = t;
+                    const avgTripUsd = hasUsdPrice
+                        ? formatUsdAmount(data.avg_pnl_per_trip_usd, { signed: true })
+                        : '';
+                    el('pnlAvgTripTime').textContent = avgTripUsd ? avgTripUsd + ' avg • ' + t : t;
                 } else {
                     el('pnlAvgTripTime').textContent = '— trip time';
                 }

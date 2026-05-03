@@ -36,6 +36,22 @@ def _api_server():
         return sys.modules.get("api_server", api_server)
 
 
+def _decimal_or_none(value) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
+def _usd_string(amount, usd_price: Decimal | None) -> str:
+    amount_dec = _decimal_or_none(amount)
+    if amount_dec is None or usd_price is None:
+        return ""
+    return str((amount_dec * usd_price).quantize(Decimal("0.0001")))
+
+
 def _build_fill_history_for_gui(asset_id: str, limit: int = 20) -> list:
     """Return DB-backed fill history in the shape the Offers history tab expects."""
     if not asset_id:
@@ -1363,8 +1379,30 @@ def api_pnl():
         inventory = bot.risk_manager.get_inventory_state()
         sniper_stats = bot.sniper.get_stats() if getattr(bot, "sniper", None) else {}
 
+        xch_usd_price = None
+        xch_usd_source = ""
+        cat_usd_price = None
+        try:
+            from market_data_collector import get_cached_xch_usd_price
+            xch_usd = get_cached_xch_usd_price() or {}
+            xch_usd_price = _decimal_or_none(xch_usd.get("xch_usd"))
+            xch_usd_source = str(xch_usd.get("source") or "")
+        except Exception:
+            pass
+
+        try:
+            from database import get_market_analysis_cache
+            spacescan_cache = get_market_analysis_cache(cfg.CAT_ASSET_ID, "spacescan") or {}
+            cat_usd_price = _decimal_or_none(spacescan_cache.get("price_usd"))
+        except Exception:
+            pass
+
         pnl_data = {
             "realised_pnl_xch": stats.get("realised_pnl_xch", "0"),
+            "realised_pnl_usd": _usd_string(stats.get("realised_pnl_xch", "0"), xch_usd_price),
+            "xch_usd_price": str(xch_usd_price) if xch_usd_price is not None else "",
+            "xch_usd_source": xch_usd_source,
+            "cat_usd_price": str(cat_usd_price) if cat_usd_price is not None else "",
             "total_fills": stats.get("total_fills", 0),
             "buy_fills": stats.get("buy_fills", 0),
             "sell_fills": stats.get("sell_fills", 0),
@@ -1380,7 +1418,9 @@ def api_pnl():
             "unmatched_buy_fills": stats.get("unmatched_buy_fills", 0),
             "unmatched_sell_fills": stats.get("unmatched_sell_fills", 0),
             "volume_xch": stats.get("volume_xch", "0"),
+            "volume_usd": _usd_string(stats.get("volume_xch", "0"), xch_usd_price),
             "volume_cat": stats.get("volume_cat", "0"),
+            "volume_cat_usd": _usd_string(stats.get("volume_cat", "0"), cat_usd_price),
             # Per-side gross volumes (new) — what the user actually traded:
             # buy_volume_xch = XCH we paid out to buy CAT
             # buy_volume_cat = CAT we received from those buys
@@ -1389,14 +1429,25 @@ def api_pnl():
             # net_xch_flow = sell_volume_xch - buy_volume_xch (gross XCH gain/loss)
             # net_cat_flow = buy_volume_cat - sell_volume_cat (inventory delta)
             "buy_volume_xch": stats.get("buy_volume_xch", "0"),
+            "buy_volume_usd": _usd_string(stats.get("buy_volume_xch", "0"), xch_usd_price),
             "buy_volume_cat": stats.get("buy_volume_cat", "0"),
+            "buy_volume_cat_usd": _usd_string(stats.get("buy_volume_cat", "0"), cat_usd_price),
             "sell_volume_xch": stats.get("sell_volume_xch", "0"),
+            "sell_volume_usd": _usd_string(stats.get("sell_volume_xch", "0"), xch_usd_price),
             "sell_volume_cat": stats.get("sell_volume_cat", "0"),
+            "sell_volume_cat_usd": _usd_string(stats.get("sell_volume_cat", "0"), cat_usd_price),
             "net_xch_flow": stats.get("net_xch_flow", "0"),
+            "net_xch_flow_usd": _usd_string(stats.get("net_xch_flow", "0"), xch_usd_price),
             "net_cat_flow": stats.get("net_cat_flow", "0"),
+            "net_cat_flow_usd": _usd_string(stats.get("net_cat_flow", "0"), cat_usd_price),
             "avg_fill_size_xch": stats.get("avg_fill_size_xch", "0"),
+            "avg_fill_size_usd": _usd_string(stats.get("avg_fill_size_xch", "0"), xch_usd_price),
             "avg_round_trip_secs": stats.get("avg_round_trip_secs", 0),
             "avg_pnl_per_trip_xch": stats.get("avg_pnl_per_trip_xch", "0"),
+            "avg_pnl_per_trip_usd": _usd_string(
+                stats.get("avg_pnl_per_trip_xch", "0"),
+                xch_usd_price,
+            ),
         }
 
         return jsonify(server._serialize_dict(pnl_data))

@@ -357,6 +357,55 @@ def is_known_wallet_address(address: str, explicit_addresses: Optional[set[str]]
     return addr in known_wallet_addresses
 
 
+def _known_wallet_addresses_for_verification(result: Dict, our_address: str,
+                                             explicit_addresses: Optional[set[str]] = None) -> Set[str]:
+    """Build the address set trusted for one coin verification.
+
+    Spacescan's related coin graph can reveal wallet change addresses through
+    parent/sibling entries. Learn those locally only when the graph is anchored
+    by an address we already trust. Child owners are deliberately excluded from
+    learning because they are the taker destinations on real fills.
+    """
+    known_wallet_addresses: Set[str] = set()
+    try:
+        known_wallet_addresses.update(_get_known_wallet_addresses())
+    except Exception:
+        pass
+
+    if explicit_addresses:
+        try:
+            known_wallet_addresses.update(
+                str(item or "").strip() for item in explicit_addresses if str(item or "").strip()
+            )
+        except Exception:
+            pass
+
+    our_addr = str(our_address or "").strip()
+    if our_addr:
+        known_wallet_addresses.add(our_addr)
+
+    related_owners: Set[str] = set()
+    for coin in result.get("child_coins") or []:
+        cointype = str(coin.get("cointype") or "").strip().lower()
+        if cointype not in {"parent", "sibling", "siblings"}:
+            continue
+        owner = str(coin.get("owner_address") or "").strip()
+        if owner:
+            related_owners.add(owner)
+
+    sender = str(result.get("sender_address") or "").strip()
+    receiver = str(result.get("receiver_address") or "").strip()
+    graph_is_ours = (
+        any(owner in known_wallet_addresses for owner in related_owners)
+        or (sender and sender in known_wallet_addresses)
+        or (receiver and receiver in known_wallet_addresses)
+    )
+    if graph_is_ours:
+        known_wallet_addresses.update(related_owners)
+
+    return known_wallet_addresses
+
+
 def verify_fill(coin_id: str, our_address: str,
                 explicit_addresses: Optional[set[str]] = None) -> Optional[bool]:
     """Verify that a coin was spent to an external address (= real fill).
@@ -448,16 +497,16 @@ def verify_fill(coin_id: str, our_address: str,
     # This catches cases where offer_info is absent (e.g. non-offer spends)
     # and handles partial fills correctly (some CAT to taker + change to us).
     # -----------------------------------------------------------------------
-    known_wallet_addresses = set(explicit_addresses or set())
-    if our_address:
-        known_wallet_addresses.add(our_address)
+    known_wallet_addresses = _known_wallet_addresses_for_verification(
+        result, our_address, explicit_addresses
+    )
 
     child_coins = result.get("child_coins") or []
     child_coin_entries = [c for c in child_coins if c.get("cointype") == "child"]
     if child_coin_entries:
         for child in child_coin_entries:
             owner = str(child.get("owner_address") or "").strip()
-            if owner and not is_known_wallet_address(owner, known_wallet_addresses):
+            if owner and owner not in known_wallet_addresses:
                 log_event("success", "spacescan_fill_via_child_coin",
                           f"Coin {coin_id[:16]}... child coin went to external "
                           f"address {owner[:16]}... — confirmed fill.")
@@ -476,7 +525,7 @@ def verify_fill(coin_id: str, our_address: str,
     # -----------------------------------------------------------------------
     receiver = result["receiver_address"]
 
-    if receiver and is_known_wallet_address(receiver, known_wallet_addresses):
+    if receiver and receiver in known_wallet_addresses:
         log_event("info", "spacescan_self_spend",
                   f"Coin {coin_id[:16]}... spent to known own address "
                   f"{receiver[:16]}... Not a fill.")

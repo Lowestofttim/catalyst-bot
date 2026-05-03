@@ -153,6 +153,27 @@ class TestPnlGet(_FlaskBase):
         body = resp.get_json()
         self.assertIn("sniper", body)
 
+    def test_response_includes_usd_values_when_xch_price_available(self):
+        with patch.object(api_server, "bot", _make_bot()), \
+             patch("api_server.get_stats", return_value=_fake_stats()), \
+             patch("market_data_collector.get_cached_xch_usd_price",
+                   return_value={
+                       "has_data": True,
+                       "xch_usd": 2.10,
+                       "source": "spacescan",
+                   },
+                   create=True), \
+             patch("database.get_market_analysis_cache",
+                   return_value={"price_usd": 0.01}):
+            resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
+        body = resp.get_json()
+        self.assertEqual(body["xch_usd_price"], "2.1")
+        self.assertEqual(body["xch_usd_source"], "spacescan")
+        self.assertEqual(body["realised_pnl_usd"], "0.1050")
+        self.assertEqual(body["avg_pnl_per_trip_usd"], "0.0336")
+        self.assertEqual(body["volume_usd"], "3.1500")
+        self.assertEqual(body["cat_usd_price"], "0.01")
+
 
 # ---------------------------------------------------------------------------
 # 2. GET /api/pnl/reset-preview

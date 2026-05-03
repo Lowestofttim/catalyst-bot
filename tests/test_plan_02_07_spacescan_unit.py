@@ -362,6 +362,38 @@ class TestVerifyFill(_SS):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertFalse(rv)
 
+    def test_child_coin_to_sibling_change_address_returns_false(self):
+        _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
+        _ss_mod._known_wallet_addresses_cache_at = time.time()
+        with self._mock_ics({
+            "spent": True,
+            "offer_info": [],
+            "child_coins": [
+                {"cointype": "parent", "owner_address": self.OUR_ADDR},
+                {"cointype": "siblings", "owner_address": "xch1changeaddress"},
+                {"cointype": "child", "owner_address": "xch1changeaddress"},
+            ],
+            "receiver_address": "",
+        }):
+            rv = verify_fill("coin1", self.OUR_ADDR)
+        self.assertFalse(rv)
+
+    def test_child_coin_to_external_address_still_returns_true_with_siblings(self):
+        _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
+        _ss_mod._known_wallet_addresses_cache_at = time.time()
+        with self._mock_ics({
+            "spent": True,
+            "offer_info": [],
+            "child_coins": [
+                {"cointype": "parent", "owner_address": self.OUR_ADDR},
+                {"cointype": "siblings", "owner_address": "xch1changeaddress"},
+                {"cointype": "child", "owner_address": "xch1takeraddress"},
+            ],
+            "receiver_address": "",
+        }):
+            rv = verify_fill("coin1", self.OUR_ADDR)
+        self.assertTrue(rv)
+
     def test_receiver_is_ours_returns_false(self):
         _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
         _ss_mod._known_wallet_addresses_cache_at = time.time()

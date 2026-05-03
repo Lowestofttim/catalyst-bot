@@ -42,6 +42,7 @@ COINSET_BASE_DEFAULT = "https://api.coinset.org"
 CACHE_TTL_TRADES = 60       # Dexie trade history — changes slowly
 CACHE_TTL_TICKER = 5        # Dexie ticker — changes frequently
 CACHE_TTL_SPACESCAN = 1440  # Spacescan token info — 24 hours (rate limited)
+CACHE_TTL_SPACESCAN_ENHANCED = 10  # Fees + CAT transaction context
 CACHE_TTL_TIBET = 30        # TibetSwap pool — matches price_engine cache
 CACHE_TTL_ANALYSIS = 30     # Full analysis result
 # F78 (2026-04-17):
@@ -99,6 +100,7 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
         "tibet_pool": None,
         "tibet_quote": None,
         "spacescan": None,
+        "spacescan_enhanced": None,
         "internal_db": None,
         # F78 (2026-04-17): XCH/USD, blockchain state, Dexie trending
         "xch_usd": None,
@@ -219,6 +221,30 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
     except Exception as e:
         print(f"[MARKET_DATA] Spacescan failed: {e}")
         meta["sources_failed"].append("spacescan")
+
+    # ---- 4b. Spacescan Enhanced Context (fees + CAT activity sample) ----
+    try:
+        cached = get_market_analysis_cache(asset_id, "spacescan_enhanced")
+        if cached:
+            result["spacescan_enhanced"] = cached
+            meta["cache_hits"].append("spacescan_enhanced")
+        else:
+            enhanced = _fetch_spacescan_enhanced_data(asset_id)
+            if enhanced and enhanced.get("has_data"):
+                result["spacescan_enhanced"] = enhanced
+                set_market_analysis_cache(
+                    asset_id,
+                    "spacescan_enhanced",
+                    enhanced,
+                    CACHE_TTL_SPACESCAN_ENHANCED,
+                )
+        if result["spacescan_enhanced"]:
+            meta["sources_ok"].append("spacescan_enhanced")
+        else:
+            meta["sources_ok"].append("spacescan_enhanced_empty")
+    except Exception as e:
+        print(f"[MARKET_DATA] Spacescan enhanced failed: {e}")
+        meta["sources_ok"].append("spacescan_enhanced_empty")
 
     # ---- 5. Internal Database History ----
     _progress(5, "Querying internal database...")
@@ -727,7 +753,7 @@ def _fetch_tibet_quote(pair_id: str, amount_mojos: int = 10000000000) -> Optiona
 # ---------------------------------------------------------------------------
 
 def _fetch_xch_usd_price() -> Optional[Dict]:
-    """Fetch XCH/USD fiat price from CoinGecko.
+    """Fetch XCH/USD fiat price from CoinGecko, falling back to Spacescan.
 
     Free, no API key required. Used by Smart Settings to:
       - Display settings + ladder values in USD alongside XCH
@@ -752,20 +778,107 @@ def _fetch_xch_usd_price() -> Optional[Dict]:
             timeout=8,
         )
         if resp.status_code != 200:
-            return None
+            return _fetch_spacescan_xch_usd_price()
         data = resp.json()
         chia = data.get("chia") or {}
         if not chia.get("usd"):
-            return None
+            return _fetch_spacescan_xch_usd_price()
         return {
             "has_data": True,
             "xch_usd": _safe_float(chia.get("usd", 0)),
             "xch_usd_24h_change_pct": _safe_float(chia.get("usd_24h_change", 0)),
             "last_updated_at": int(chia.get("last_updated_at", 0) or 0),
+            "source": "coingecko",
         }
     except Exception as e:
         print(f"[MARKET_DATA] CoinGecko XCH/USD fetch failed: {e}")
-        return None
+        return _fetch_spacescan_xch_usd_price()
+
+
+def _coerce_epoch_seconds(value: Any) -> int:
+    """Best-effort conversion for API timestamps."""
+    if value in (None, ""):
+        return 0
+    if isinstance(value, str) and not value.replace(".", "", 1).isdigit():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return int(parsed.timestamp())
+        except Exception:
+            return 0
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _fetch_spacescan_xch_usd_price() -> Optional[Dict]:
+    """Fetch XCH/USD from Spacescan's documented stats price endpoint."""
+    api_key = (cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else "").strip()
+    free_url = getattr(cfg, "SPACESCAN_FREE_URL", "https://api.spacescan.io")
+    pro_url = getattr(cfg, "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
+    attempts = []
+    if api_key:
+        attempts.append((pro_url, _spacescan_smart_headers(api_key)))
+    attempts.append((free_url, _spacescan_smart_headers()))
+
+    for base_url, headers in attempts:
+        data, _err = _spacescan_smart_get(
+            base_url,
+            "/stats/price",
+            params={"cur": "USD"},
+            headers=headers,
+            retries=1,
+        )
+        if not data:
+            continue
+        if not isinstance(data, dict):
+            continue
+
+        nested = data.get("data") if isinstance(data.get("data"), dict) else {}
+        price = _safe_float(
+            data.get("price")
+            or data.get("usd")
+            or data.get("xch_usd")
+            or nested.get("price")
+            or nested.get("usd")
+            or nested.get("xch_usd"),
+            0,
+        )
+        if price <= 0:
+            continue
+
+        updated_at = (
+            data.get("last_updated_at")
+            or data.get("timestamp")
+            or nested.get("last_updated_at")
+            or nested.get("timestamp")
+        )
+        return {
+            "has_data": True,
+            "xch_usd": price,
+            "xch_usd_24h_change_pct": 0.0,
+            "last_updated_at": _coerce_epoch_seconds(updated_at),
+            "source": "spacescan",
+        }
+    return None
+
+
+def get_cached_xch_usd_price() -> Optional[Dict]:
+    """Return cached XCH/USD data, refreshing through CoinGecko/Spacescan if needed."""
+    try:
+        cached = get_market_analysis_cache("_global_", "xch_usd")
+        if cached:
+            return cached
+    except Exception:
+        pass
+
+    price = _fetch_xch_usd_price()
+    if price:
+        try:
+            set_market_analysis_cache("_global_", "xch_usd", price, CACHE_TTL_XCH_USD)
+        except Exception:
+            pass
+    return price
 
 
 def _fetch_coinset_blockchain_state() -> Optional[Dict]:
@@ -1106,6 +1219,171 @@ def refresh_spacescan_cache(asset_id: str) -> Optional[Dict]:
         # Still return the fresh payload — caller may use it even if the
         # persist failed. Next refresh will retry the write naturally.
     return payload
+
+
+def _spacescan_rows_from_payload(payload: Any, list_keys: Optional[List[str]] = None) -> List[Dict]:
+    """Return the first list of dict rows found in a Spacescan payload."""
+    list_keys = list_keys or ["data", "transactions", "items", "results", "tokens"]
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if not isinstance(payload, dict):
+        return []
+
+    for key in list_keys:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [row for row in value if isinstance(row, dict)]
+        if isinstance(value, dict):
+            nested = _spacescan_rows_from_payload(value, list_keys)
+            if nested:
+                return nested
+    return []
+
+
+def _latest_spacescan_row(rows: List[Dict]) -> Dict:
+    """Pick the newest row by timestamp when available, else the last row."""
+    if not rows:
+        return {}
+
+    def _row_ts(row: Dict) -> int:
+        return _coerce_epoch_seconds(
+            row.get("timestamp")
+            or row.get("confirmed_time")
+            or row.get("created_at")
+            or row.get("time")
+        )
+
+    if any(_row_ts(row) > 0 for row in rows):
+        return max(rows, key=_row_ts)
+    return rows[-1]
+
+
+def _fee_pressure_label(min_fee: float) -> str:
+    if min_fee <= 0:
+        return "unknown"
+    if min_fee <= 1:
+        return "low"
+    if min_fee <= 10:
+        return "normal"
+    return "high"
+
+
+def _fetch_spacescan_enhanced_data(asset_id: str) -> Optional[Dict]:
+    """Fetch lightweight Spacescan extras: mempool fees and recent CAT txs.
+
+    These are informational signals for UX and diagnostics. They do not drive
+    quoting decisions directly.
+    """
+    if not asset_id:
+        return None
+
+    api_key = (cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else "").strip()
+    free_url = getattr(cfg, "SPACESCAN_FREE_URL", "https://api.spacescan.io")
+    pro_url = getattr(cfg, "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
+    attempts = []
+    if api_key:
+        attempts.append((pro_url, _spacescan_smart_headers(api_key), "pro"))
+    attempts.append((free_url, _spacescan_smart_headers(), "free"))
+
+    result = {
+        "has_data": False,
+        "mempool_sample_count": 0,
+        "mempool_min_fee": 0,
+        "mempool_fee_pressure": "unknown",
+        "mempool_latest_timestamp": 0,
+        "cat_tx_count": 0,
+        "cat_transfer_sample_count": 0,
+        "cat_last_tx_timestamp": 0,
+        "source": "",
+    }
+
+    for base_url, headers, label in attempts:
+        data, _err = _spacescan_smart_get(
+            base_url,
+            "/mempool/minfee",
+            headers=headers,
+            retries=1,
+        )
+        if not data:
+            continue
+
+        rows = _spacescan_rows_from_payload(data, ["data", "mempool", "items", "results"])
+        latest = _latest_spacescan_row(rows)
+        min_fee = _safe_float(
+            latest.get("minfees")
+            or latest.get("minfee")
+            or latest.get("min_fee")
+            or latest.get("fee"),
+            0,
+        )
+        result.update({
+            "has_data": True,
+            "mempool_sample_count": len(rows),
+            "mempool_min_fee": min_fee,
+            "mempool_fee_pressure": _fee_pressure_label(min_fee),
+            "mempool_latest_timestamp": _coerce_epoch_seconds(latest.get("timestamp")),
+            "source": label,
+        })
+        break
+
+    for base_url, headers, label in attempts:
+        data, _err = _spacescan_smart_get(
+            base_url,
+            f"/cat/transactions/{asset_id}",
+            params={"count": 25},
+            headers=headers,
+            retries=1,
+        )
+        if not data:
+            continue
+
+        rows = _spacescan_rows_from_payload(
+            data,
+            ["data", "transactions", "items", "results", "tokens"],
+        )
+        latest = _latest_spacescan_row(rows)
+        tx_count = _spacescan_count_from_payload(
+            data,
+            count_keys=["total_count", "count", "total"],
+            list_keys=["data", "transactions", "items", "results", "tokens"],
+        )
+        result.update({
+            "has_data": True,
+            "cat_tx_count": tx_count,
+            "cat_transfer_sample_count": len(rows),
+            "cat_last_tx_timestamp": _coerce_epoch_seconds(
+                latest.get("timestamp") or latest.get("confirmed_time")
+            ),
+            "source": result.get("source") or label,
+        })
+        break
+
+    return result if result.get("has_data") else None
+
+
+def get_cached_spacescan_enhanced_data(asset_id: str) -> Optional[Dict]:
+    """Return cached enhanced Spacescan context, refreshing if needed."""
+    if not asset_id:
+        return None
+    try:
+        cached = get_market_analysis_cache(asset_id, "spacescan_enhanced")
+        if cached:
+            return cached
+    except Exception:
+        pass
+
+    enhanced = _fetch_spacescan_enhanced_data(asset_id)
+    if enhanced:
+        try:
+            set_market_analysis_cache(
+                asset_id,
+                "spacescan_enhanced",
+                enhanced,
+                CACHE_TTL_SPACESCAN_ENHANCED,
+            )
+        except Exception:
+            pass
+    return enhanced
 
 
 def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
