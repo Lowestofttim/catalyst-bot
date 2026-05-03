@@ -6,6 +6,28 @@ GUI = ROOT / "bot_gui.html"
 RISK_MANAGER = ROOT / "src" / "catalyst" / "risk_manager.py"
 
 
+def test_dashboard_sse_keeps_advisor_performance_state_fresh():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert "_lcDashboardData.performance.loop_count = data.loop_count;" in html
+    assert "_lcDashboardData.performance.uptime_secs = data.uptime_secs;" in html
+    assert "_lcDashboardData.performance.open_buys = data.open_buys;" in html
+    assert "_lcDashboardData.performance.open_sells = data.open_sells;" in html
+    assert "_lcDashboardData.performance.open_offers = data.open_buys + data.open_sells;" in html
+
+
+def test_recommendations_clear_stale_rotator_cache_when_empty():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert """if (active.length === 0) {
+                _alertActiveCache = [];
+                _alertRotatorIdx = 0;
+                if (_alertRotatorTimer) {
+                    clearInterval(_alertRotatorTimer);
+                    _alertRotatorTimer = null;
+                }""" in html
+
+
 def test_diagnostics_are_distributed_across_existing_workflow_tabs():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 

@@ -25470,13 +25470,28 @@
                     _lcDashboardData.settings.safety.circuit_breaker_active = !!(mhm.circuit_breaker_active);
                     _lcDashboardData.settings.safety.circuit_breaker_reason = mhm.circuit_breaker_reason || '';
 
+                    _lcDashboardData.performance = _lcDashboardData.performance || {};
+                    if (data.loop_count !== undefined) {
+                        _lcDashboardData.performance.loop_count = data.loop_count;
+                    }
+                    if (data.uptime_secs !== undefined) {
+                        _lcDashboardData.performance.uptime_secs = data.uptime_secs;
+                    }
+                    if (data.open_buys !== undefined) {
+                        _lcDashboardData.performance.open_buys = data.open_buys;
+                    }
+                    if (data.open_sells !== undefined) {
+                        _lcDashboardData.performance.open_sells = data.open_sells;
+                    }
+                    if (data.open_buys !== undefined && data.open_sells !== undefined) {
+                        _lcDashboardData.performance.open_offers = data.open_buys + data.open_sells;
+                    }
+
                     // Propagate net_position from SSE so advisor doesn't wait for 120s dashboard poll
                     if (data.net_position !== undefined) {
-                        _lcDashboardData.performance = _lcDashboardData.performance || {};
                         _lcDashboardData.performance.net_position = data.net_position;
                     }
                     if (data.fills_per_hour !== undefined) {
-                        _lcDashboardData.performance = _lcDashboardData.performance || {};
                         _lcDashboardData.performance.fills_per_hour = data.fills_per_hour;
                     }
                     if (data.competitor_spread_bps !== undefined) {
@@ -27186,6 +27201,12 @@
             _lastAlertsRenderKey = renderKey;
 
             if (active.length === 0) {
+                _alertActiveCache = [];
+                _alertRotatorIdx = 0;
+                if (_alertRotatorTimer) {
+                    clearInterval(_alertRotatorTimer);
+                    _alertRotatorTimer = null;
+                }
                 body.innerHTML = '<div class="la-empty">Nothing you need to act on right now</div>';
                 badge.style.display = 'none';
                 pulse.className = 'la-pulse';

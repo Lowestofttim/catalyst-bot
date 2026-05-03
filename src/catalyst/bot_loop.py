@@ -38,6 +38,12 @@ from database import (
     backfill_verified_fills_from_offers,
 )
 try:
+    from database import get_offers_by_trade_ids
+except ImportError:
+    def get_offers_by_trade_ids(trade_ids):
+        del trade_ids
+        return []
+try:
     from super_log import slog, log_thread_start
 except ImportError:
     def slog(cat, msg, data=None): pass
@@ -1802,23 +1808,60 @@ class BotLoop:
         best_bid = Decimal("0")
         best_ask = Decimal("0")
 
+        def _trade_id(offer: Dict) -> str:
+            try:
+                return str((offer or {}).get("trade_id") or (offer or {}).get("offer_id") or "")
+            except Exception:
+                return ""
+
+        live_trade_ids = [
+            tid
+            for tid in (_trade_id(o) for o in list(open_buys or []) + list(open_sells or []))
+            if tid
+        ]
+        db_by_trade_id = {}
+        if live_trade_ids:
+            try:
+                db_by_trade_id = {
+                    str(row.get("trade_id") or ""): row
+                    for row in get_offers_by_trade_ids(live_trade_ids)
+                    if row.get("trade_id")
+                }
+            except Exception:
+                db_by_trade_id = {}
+
+        def _price_candidates(offers, side: str):
+            prices = []
+            for offer in offers or []:
+                raw_values = []
+                tid = _trade_id(offer)
+                db_offer = db_by_trade_id.get(tid) if tid else None
+                # Sage can briefly omit price_xch on a subset of open offers
+                # during startup/sync.  Use DB prices only for trade IDs that
+                # the wallet just confirmed live so stale DB rows cannot widen
+                # the displayed inner spread by themselves.
+                if db_offer and str(db_offer.get("side") or "").lower() == side:
+                    raw_values.append(db_offer.get("price_xch") or db_offer.get("price"))
+                raw_values.append((offer or {}).get("price_xch") or (offer or {}).get("price"))
+                for raw in raw_values:
+                    try:
+                        price = Decimal(str(raw or 0))
+                    except Exception:
+                        price = Decimal("0")
+                    if price > 0:
+                        prices.append(price)
+                        break
+            return prices
+
         try:
-            buy_prices = [
-                Decimal(str(o.get("price_xch") or 0))
-                for o in (open_buys or [])
-                if o.get("price_xch") not in (None, "")
-            ]
+            buy_prices = _price_candidates(open_buys, "buy")
             if buy_prices:
                 best_bid = max(buy_prices)
         except Exception:
             best_bid = Decimal("0")
 
         try:
-            sell_prices = [
-                Decimal(str(o.get("price_xch") or 0))
-                for o in (open_sells or [])
-                if o.get("price_xch") not in (None, "")
-            ]
+            sell_prices = _price_candidates(open_sells, "sell")
             positive_sell_prices = [p for p in sell_prices if p > 0]
             if positive_sell_prices:
                 best_ask = min(positive_sell_prices)

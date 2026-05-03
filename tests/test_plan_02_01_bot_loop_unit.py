@@ -82,6 +82,7 @@ _mod(
     get_open_offers=lambda *a, **kw: [],
     get_stats=lambda: {},
     get_offer=lambda *a, **kw: None,
+    get_offers_by_trade_ids=lambda *a, **kw: [],
     update_offer_status=lambda *a, **kw: True,
     backfill_verified_fills_from_offers=lambda *a, **kw: 0,
 )
@@ -596,6 +597,26 @@ class TestGetLiveOfferEdges(_PatchedCfg):
         buys = [{"price_xch": None}, {"price_xch": "1.05"}]
         result = bot_loop.BotLoop._get_live_offer_edges(buys, [])
         self.assertEqual(Decimal(result["our_best_bid"]), Decimal("1.05"))
+
+    def test_missing_wallet_prices_are_enriched_from_db_trade_ids(self):
+        buys = [
+            {"trade_id": "buy-inner", "price_xch": None},
+            {"trade_id": "buy-outer", "price_xch": "0.90"},
+        ]
+        sells = [
+            {"trade_id": "sell-inner", "price_xch": ""},
+            {"trade_id": "sell-outer", "price_xch": "1.30"},
+        ]
+        db_rows = [
+            {"trade_id": "buy-inner", "side": "buy", "price_xch": "1.05"},
+            {"trade_id": "sell-inner", "side": "sell", "price_xch": "1.10"},
+        ]
+
+        with patch.object(bot_loop, "get_offers_by_trade_ids", return_value=db_rows):
+            result = bot_loop.BotLoop._get_live_offer_edges(buys, sells)
+
+        self.assertEqual(Decimal(result["our_best_bid"]), Decimal("1.05"))
+        self.assertEqual(Decimal(result["our_best_ask"]), Decimal("1.10"))
 
     def test_none_inputs_treated_as_empty(self):
         result = bot_loop.BotLoop._get_live_offer_edges(None, None)
