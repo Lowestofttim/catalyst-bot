@@ -9200,6 +9200,23 @@
                     </div>
                 </div>
 
+                <!-- Fiat price context -->
+                <div class="cc-group" id="ccFiatPrices" style="display: none;">
+                    <div class="cc-group-label">Fiat Prices <span class="cc-help">?<span class="cc-tooltip">Estimated USD prices for quick wallet and PnL context. XCH uses the cached fiat feed; CAT uses Spacescan token data when available.</span></span></div>
+                    <div class="cc-row">
+                        <span class="cc-label">XCH/USD</span>
+                        <span class="cc-val" id="ccXchUsdPrice">--</span>
+                    </div>
+                    <div class="cc-row">
+                        <span class="cc-label"><span id="ccCatUsdLabel">CAT</span>/USD</span>
+                        <span class="cc-val" id="ccCatUsdPrice">--</span>
+                    </div>
+                    <div class="cc-row" style="font-size: 0.75em; opacity: 0.55;">
+                        <span class="cc-label">Source</span>
+                        <span class="cc-val" id="ccFiatPriceSource" style="font-family: var(--font-ui); font-weight: 500;">--</span>
+                    </div>
+                </div>
+
                 <!-- Coin breakdown -->
                 <div class="cc-group" id="coinTrackingSection" style="display: none;">
                     <div class="cc-group-label">Coins <span class="cc-help">?<span class="cc-tooltip">Spendable = all coins not locked in an active offer (includes fee pool &amp; sniper pool coins). Locked = committed to active offers. Total = spendable + locked.</span></span></div>
@@ -23814,6 +23831,20 @@
                 maximumFractionDigits: decimals,
             });
         }
+        function formatUsdPrice(val) {
+            const n = parseFloat(val);
+            if (!Number.isFinite(n) || n <= 0) return '';
+            const abs = Math.abs(n);
+            let decimals = 2;
+            if (abs < 1) decimals = 4;
+            if (abs < 0.01) decimals = 6;
+            if (abs < 0.0001) decimals = 8;
+            if (abs < 0.000001) decimals = 10;
+            return '$' + n.toLocaleString(undefined, {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals,
+            });
+        }
 
         // ============ PnL & INVENTORY UPDATE (V2 NEW) ============
         function applyPnlSummary(data = {}) {
@@ -24217,6 +24248,35 @@
             }
         }
 
+        function updateFiatPriceSummary(fiat = {}, currentCat = {}, spacescan = {}) {
+            const section = document.getElementById('ccFiatPrices');
+            if (!section) return;
+
+            const xchText = formatUsdPrice(fiat.xch_usd_price);
+            const catText = formatUsdPrice(fiat.cat_usd_price || spacescan.price_usd);
+            const hasAnyPrice = !!(xchText || catText);
+
+            section.style.display = hasAnyPrice ? 'block' : 'none';
+            if (!hasAnyPrice) return;
+
+            const xchEl = document.getElementById('ccXchUsdPrice');
+            const catEl = document.getElementById('ccCatUsdPrice');
+            const labelEl = document.getElementById('ccCatUsdLabel');
+            const sourceEl = document.getElementById('ccFiatPriceSource');
+            if (xchEl) xchEl.textContent = xchText || '--';
+            if (catEl) catEl.textContent = catText || '--';
+            if (labelEl) labelEl.textContent = currentCat?.name || currentCat?.ticker_id || 'CAT';
+
+            if (sourceEl) {
+                const sources = [];
+                if (xchText && fiat.xch_usd_source) sources.push('XCH ' + fiat.xch_usd_source);
+                if (catText && (fiat.cat_usd_source || spacescan.price_usd)) {
+                    sources.push('CAT ' + (fiat.cat_usd_source || 'spacescan'));
+                }
+                sourceEl.textContent = sources.length ? sources.join(' / ') : 'cached market data';
+            }
+        }
+
         function updateCommandCentre(d) {
             // Update all three panels of the Command Centre from dashboard data
             if (!d) return;
@@ -24325,6 +24385,8 @@
             }
 
             // === RIGHT PANEL: Wallet & Performance ===
+            updateFiatPriceSummary(d.fiat_prices || {}, d.current_cat || {}, d.spacescan_context || {});
+
             if (d.wallet) {
                 const w = d.wallet;
                 if (w.xch_spendable !== undefined) el('xchSpendable').textContent = parseFloat(w.xch_spendable).toFixed(4);
@@ -24357,7 +24419,14 @@
 
             if (d.performance) {
                 const p = d.performance;
-                applyPnlSummary({ ...p, sniper: d.sniper || p.sniper });
+                const fiat = d.fiat_prices || {};
+                applyPnlSummary({
+                    ...p,
+                    xch_usd_price: fiat.xch_usd_price,
+                    xch_usd_source: fiat.xch_usd_source,
+                    cat_usd_price: fiat.cat_usd_price,
+                    sniper: d.sniper || p.sniper,
+                });
                 if (p.uptime_secs !== undefined) {
                     const secs = p.uptime_secs;
                     const h = Math.floor(secs / 3600);

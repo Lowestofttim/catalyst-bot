@@ -30,6 +30,17 @@ def _empty_spacescan():
             "price_gap_bps": 0}
 
 
+def _priced_spacescan():
+    data = _empty_spacescan()
+    data.update({
+        "enabled": True,
+        "has_data": True,
+        "price_xch": "0.005",
+        "price_usd": "0.0125",
+    })
+    return data
+
+
 def _make_mock_db_conn():
     mock_conn = MagicMock()
     mock_cur = MagicMock()
@@ -83,6 +94,40 @@ class TestDashboard(_FlaskBase):
         for key in ("settings", "market_health", "wallet", "coins",
                     "performance", "current_cat", "links"):
             self.assertIn(key, body)
+
+    def test_response_has_fiat_price_summary(self):
+        fake_stats = {
+            "realised_pnl_xch": "0", "total_fills": 0, "buy_fills": 0,
+            "sell_fills": 0, "round_trips": 0, "win_rate": 0,
+            "fill_rate_per_hour": 0, "avg_spread_capture": "0",
+            "pending_verification_count": 0, "volume_xch": "0",
+        }
+        fake_summary = {"xch_free_count": 0, "cat_free_count": 0, "xch_total": 0, "cat_total": 0}
+        price_result = {
+            "has_data": True,
+            "xch_usd": 2.5,
+            "source": "spacescan",
+            "fetched_at": 1777824000.0,
+        }
+        with patch("database.get_stats", return_value=fake_stats), \
+             patch("database.get_coin_summary", return_value=fake_summary), \
+             patch("database.get_open_offers", return_value=[]), \
+             patch("database.get_connection", return_value=_make_mock_db_conn()), \
+             patch("market_data_collector.get_cached_xch_usd_price",
+                   return_value=price_result), \
+             patch.object(api_server, "_get_spacescan_market_context",
+                          return_value=_priced_spacescan()), \
+             patch.object(api_server, "bot", None):
+            resp = self.client.get("/api/dashboard",
+                                   environ_base=self._LOOPBACK)
+
+        self.assertEqual(resp.status_code, 200)
+        fiat = resp.get_json()["fiat_prices"]
+        self.assertEqual(fiat["xch_usd_price"], "2.5")
+        self.assertEqual(fiat["xch_usd_source"], "spacescan")
+        self.assertEqual(fiat["cat_usd_price"], "0.0125")
+        self.assertEqual(fiat["cat_price_xch"], "0.005")
+        self.assertEqual(fiat["cat_usd_source"], "spacescan")
 
     def test_settings_has_trading_section(self):
         resp = self._get_dashboard()
@@ -235,6 +280,16 @@ class TestDashboard(_FlaskBase):
         )
         self.assertIn("'reviewTopupPool'", html)
         self.assertIn("CAT top-up pool empty", html)
+
+    def test_dashboard_has_fiat_price_display_hooks(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+                  encoding="utf-8") as handle:
+            html = handle.read()
+
+        self.assertIn('id="ccFiatPrices"', html)
+        self.assertIn('id="ccXchUsdPrice"', html)
+        self.assertIn('id="ccCatUsdPrice"', html)
+        self.assertIn("updateFiatPriceSummary", html)
 
 
 if __name__ == "__main__":
