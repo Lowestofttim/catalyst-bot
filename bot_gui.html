@@ -13604,7 +13604,8 @@
             if (sellTotalEl) sellTotalEl.textContent = 'Sell: ' + (sellOffers || []).length + ' offers, ' + sellTotal.toFixed(2) + ' XCH';
         }
 
-        // Canvas depth chart — two-sided bar chart with price on Y axis.
+        // Canvas depth chart: two-sided step chart with price on X axis and
+        // cumulative XCH depth on Y axis.
         // `buys` and `sells` are [{price, size}] arrays sorted by distance
         // from mid (buys descending, sells ascending). `mid` centres the axis.
         function v4DrawOrderbookDepth(container, buys, sells, mid) {
@@ -13676,57 +13677,86 @@
                 0.0001
             );
 
-            // Determine price range for X axis (centred on mid)
-            const prices = [];
-            if (mid) prices.push(mid);
-            sells.forEach(s => prices.push(s.price));
-            buys .forEach(b => prices.push(b.price));
-            const minP = Math.min.apply(null, prices);
-            const maxP = Math.max.apply(null, prices);
-            const halfSpan = Math.max(
-                mid ? (maxP - mid) : 0,
-                mid ? (mid - minP) : 0,
-                (maxP - minP) / 2 || 1e-9
-            ) * 1.1;
-            const lowP  = mid ? (mid - halfSpan) : minP;
-            const highP = mid ? (mid + halfSpan) : maxP;
+            // Give each side its own price lane. A far-out sell ladder should
+            // not visually compress a tight buy ladder; the shared Y scale
+            // still shows which side has more cumulative XCH depth.
+            const sideLaneGap = Math.min(30, Math.max(18, plotW * 0.045));
+            const buyLaneLeft = padL;
+            const buyLaneRight = midX - sideLaneGap / 2;
+            const sellLaneLeft = midX + sideLaneGap / 2;
+            const sellLaneRight = padL + plotW;
 
-            const xAt = (price) => padL + ((price - lowP) / (highP - lowP)) * plotW;
+            function priceExtent(list, fallback) {
+                if (!list.length) return { low: fallback || 0, high: fallback || 0 };
+                const values = list.map(p => p.price);
+                return {
+                    low: Math.min.apply(null, values),
+                    high: Math.max.apply(null, values),
+                };
+            }
+            const buyExtent = priceExtent(buys, mid);
+            const sellExtent = priceExtent(sells, mid);
+            const buyLow = buyExtent.low;
+            const buyHigh = buyExtent.high;
+            const sellLow = sellExtent.low;
+            const sellHigh = sellExtent.high;
+
+            function clampUnit(value) {
+                return Math.max(0, Math.min(1, value));
+            }
+            function priceSpan(low, high) {
+                const span = high - low;
+                return Math.abs(span) > 1e-12 ? span : 0;
+            }
+            function xAtBuy(price) {
+                if (!buys.length) return buyLaneRight;
+                const buySpan = priceSpan(buyLow, buyHigh);
+                if (!buySpan) return buyLaneRight;
+                const t = clampUnit((price - buyLow) / buySpan);
+                return buyLaneLeft + t * (buyLaneRight - buyLaneLeft);
+            }
+            function xAtSell(price) {
+                if (!sells.length) return sellLaneLeft;
+                const sellSpan = priceSpan(sellLow, sellHigh);
+                if (!sellSpan) return sellLaneLeft;
+                const t = clampUnit((price - sellLow) / sellSpan);
+                return sellLaneLeft + t * (sellLaneRight - sellLaneLeft);
+            }
             const yAt = (cum) => padT + plotH - (cum / maxDepth) * plotH;
 
             // Draw filled step areas for each side
-            function drawStep(list, fillColor, strokeColor) {
+            function drawStep(list, fillColor, strokeColor, xForPrice) {
                 if (!list.length) return;
                 ctx.beginPath();
                 const baseY = padT + plotH;
                 // Start from the innermost point at baseline
                 const start = list[0];
-                ctx.moveTo(xAt(start.price), baseY);
-                ctx.lineTo(xAt(start.price), yAt(start.cumSize));
+                ctx.moveTo(xForPrice(start.price), baseY);
+                ctx.lineTo(xForPrice(start.price), yAt(start.cumSize));
                 for (let i = 1; i < list.length; i++) {
-                    ctx.lineTo(xAt(list[i].price), yAt(list[i - 1].cumSize));
-                    ctx.lineTo(xAt(list[i].price), yAt(list[i].cumSize));
+                    ctx.lineTo(xForPrice(list[i].price), yAt(list[i - 1].cumSize));
+                    ctx.lineTo(xForPrice(list[i].price), yAt(list[i].cumSize));
                 }
                 // Close at the baseline on the outermost edge
-                ctx.lineTo(xAt(list[list.length - 1].price), baseY);
+                ctx.lineTo(xForPrice(list[list.length - 1].price), baseY);
                 ctx.closePath();
                 ctx.fillStyle = fillColor;
                 ctx.fill();
                 // Stroke the step line
                 ctx.beginPath();
-                ctx.moveTo(xAt(list[0].price), yAt(list[0].cumSize));
+                ctx.moveTo(xForPrice(list[0].price), yAt(list[0].cumSize));
                 for (let i = 1; i < list.length; i++) {
-                    ctx.lineTo(xAt(list[i].price), yAt(list[i - 1].cumSize));
-                    ctx.lineTo(xAt(list[i].price), yAt(list[i].cumSize));
+                    ctx.lineTo(xForPrice(list[i].price), yAt(list[i - 1].cumSize));
+                    ctx.lineTo(xForPrice(list[i].price), yAt(list[i].cumSize));
                 }
                 ctx.strokeStyle = strokeColor;
                 ctx.lineWidth = 1.5;
                 ctx.stroke();
             }
 
-            // Sells = upper (right) side, buys = lower (left) side from mid
-            drawStep(buyCum, buyFill, buyLine);
-            drawStep(sellCum, sellFill, sellLine);
+            // Sells = right side, buys = left side from the mid divider.
+            drawStep(buyCum, buyFill, buyLine, xAtBuy);
+            drawStep(sellCum, sellFill, sellLine, xAtSell);
 
             // Mid line
             if (mid) {
@@ -13750,9 +13780,9 @@
             ctx.fillStyle = labelColor;
             ctx.font = '9px ' + _cssVar('--font-mono', 'monospace');
             ctx.textAlign = 'left';
-            ctx.fillText(lowP.toFixed(6), padL, h - padB + 8);
+            ctx.fillText(buyLow.toFixed(6), padL, h - padB + 8);
             ctx.textAlign = 'right';
-            ctx.fillText(highP.toFixed(6), w - padR, h - padB + 8);
+            ctx.fillText(sellHigh.toFixed(6), w - padR, h - padB + 8);
 
             // Depth scale on Y (top of chart = maxDepth XCH)
             ctx.textAlign = 'right';
