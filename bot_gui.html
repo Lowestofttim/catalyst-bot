@@ -11053,6 +11053,7 @@
             <div class="card-title" style="display: flex; align-items: center;">
                 System Logs <span class="cc-help">?<span class="cc-tooltip">Real-time operator log showing the most important bot events, fills, requotes, health warnings, and recovery steps. Debug Bundle downloads the current superlog plus supporting context for troubleshooting.</span></span>
                 <div style="margin-left: auto; display: flex; gap: var(--space-2);">
+                    <button class="btn-small" id="logsRunDoctorBtn" onclick="runDoctorFromLogs(this)">Run Doctor <span class="cc-help">?<span class="cc-tooltip">Runs the same preflight Doctor checks used before starting the bot and opens the Doctor Report modal.</span></span></button>
                     <button class="btn-small" onclick="showApiStatsReport()">API Stats <span class="cc-help">?<span class="cc-tooltip">Live counters for Spacescan / Coinset / Dexie usage — calls today, hit rates, queue depth, and rate-limit cooldowns.</span></span></button>
                     <button class="btn-small" onclick="downloadDebugLogs()">Debug Bundle <span class="cc-help">?<span class="cc-tooltip">Downloads a zip of recent logs and state snapshots. Share with support to diagnose trading issues.</span></span></button>
                     <button class="btn-small" onclick="clearLogs()">Clear</button>
@@ -26746,6 +26747,23 @@
                 });
             } catch (e) {
                 showToast('Could not load preflight report: ' + formatError(e), 'error');
+            }
+        }
+
+        async function runDoctorFromLogs(button) {
+            const btn = button || document.getElementById('logsRunDoctorBtn');
+            const originalHtml = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Running...';
+            }
+            try {
+                await showDoctorReport();
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml || 'Run Doctor';
+                }
             }
         }
 

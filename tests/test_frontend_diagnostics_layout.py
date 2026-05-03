@@ -172,3 +172,13 @@ def test_market_health_copy_distinguishes_recovery_from_market_health():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
     assert "Market healthy — bot rebuilding ladder" in html
+
+
+def test_logs_tab_has_run_doctor_button_wired_to_existing_modal():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert 'id="logsRunDoctorBtn"' in html
+    assert 'onclick="runDoctorFromLogs(this)"' in html
+    assert "async function runDoctorFromLogs" in html
+    assert "await showDoctorReport();" in html
+    assert "const resp = await apiFetch('/api/doctor?force=true');" in html
