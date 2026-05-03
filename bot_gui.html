@@ -8852,6 +8852,14 @@
                                 <div class="v4-data-strip-cell-label">7d Range</div>
                                 <div id="snapshotRange7d" class="v4-data-strip-cell-val v4-data-strip-cell-val--muted">—</div>
                             </div>
+                            <div class="v4-data-strip-cell">
+                                <div class="v4-data-strip-cell-label">XCH/USD</div>
+                                <div id="snapshotXchUsd" class="v4-data-strip-cell-val">—</div>
+                            </div>
+                            <div class="v4-data-strip-cell">
+                                <div id="snapshotCatUsdLabel" class="v4-data-strip-cell-label">CAT/USD</div>
+                                <div id="snapshotCatUsd" class="v4-data-strip-cell-val">—</div>
+                            </div>
                             <div id="snapshotDescWrap" class="v4-data-strip-cell v4-data-strip-cell--grow" style="display:none;">
                                 <div class="v4-data-strip-cell-label">About</div>
                                 <div id="snapshotDesc" class="v4-data-strip-cell-val v4-data-strip-cell-val--muted v4-data-strip-cell-val--truncate">—</div>
@@ -24137,6 +24145,27 @@
         // ============================================================
 
         let _dashboardData = null;  // Cache last dashboard response
+        let _fiatDashboardRefreshPending = false;
+
+        function ensureFiatPricesFromDashboard(reason = 'status') {
+            if (!_dashboardData || Object.prototype.hasOwnProperty.call(_dashboardData, 'fiat_prices')) return;
+            if (_fiatDashboardRefreshPending) return;
+
+            const activeCat = _dashboardData.current_cat || currentCAT || bot_state?.current_cat || {};
+            const assetId = activeCat?.asset_id || '';
+            if (!assetId) return;
+
+            _fiatDashboardRefreshPending = true;
+            setTimeout(async () => {
+                try {
+                    await fetchDashboard(assetId);
+                } catch (e) {
+                    debugWarn('[Dashboard] fiat price refresh failed after ' + reason + ':', e?.message || e);
+                } finally {
+                    _fiatDashboardRefreshPending = false;
+                }
+            }, 0);
+        }
 
         // Tooltip system — appends to body to escape stacking contexts (backdrop-filter)
         (function() {
@@ -24263,9 +24292,17 @@
             const catEl = document.getElementById('ccCatUsdPrice');
             const labelEl = document.getElementById('ccCatUsdLabel');
             const sourceEl = document.getElementById('ccFiatPriceSource');
+            const snapshotXchEl = document.getElementById('snapshotXchUsd');
+            const snapshotCatEl = document.getElementById('snapshotCatUsd');
+            const snapshotCatLabelEl = document.getElementById('snapshotCatUsdLabel');
             if (xchEl) xchEl.textContent = xchText || '--';
             if (catEl) catEl.textContent = catText || '--';
             if (labelEl) labelEl.textContent = currentCat?.name || currentCat?.ticker_id || 'CAT';
+            if (snapshotXchEl) snapshotXchEl.textContent = xchText || '—';
+            if (snapshotCatEl) snapshotCatEl.textContent = catText || '—';
+            if (snapshotCatLabelEl) {
+                snapshotCatLabelEl.textContent = (currentCat?.ticker_id || currentCat?.name || 'CAT') + '/USD';
+            }
 
             if (sourceEl) {
                 const sources = [];
@@ -25061,6 +25098,7 @@
                 health.metrics.arb_gap_bps = data.arb_gap_bps;
             }
 
+            ensureFiatPricesFromDashboard('status sync');
             updateCommandCentre(_dashboardData);
             lcSyncFromDashboard(_dashboardData);
             saUpdateAdvisor(_dashboardData);

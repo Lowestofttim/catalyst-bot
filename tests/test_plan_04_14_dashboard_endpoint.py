@@ -289,7 +289,19 @@ class TestDashboard(_FlaskBase):
         self.assertIn('id="ccFiatPrices"', html)
         self.assertIn('id="ccXchUsdPrice"', html)
         self.assertIn('id="ccCatUsdPrice"', html)
+        self.assertIn('id="snapshotXchUsd"', html)
+        self.assertIn('id="snapshotCatUsd"', html)
         self.assertIn("updateFiatPriceSummary", html)
+
+    def test_status_sync_requests_dashboard_fiat_prices_after_pair_loads(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+                  encoding="utf-8") as handle:
+            html = handle.read()
+
+        self.assertIn("function ensureFiatPricesFromDashboard", html)
+        status_sync = html.split("function syncCommandCentreFromStatus(data)")[1]
+        status_sync = status_sync.split("let _sseConnection")[0]
+        self.assertIn("ensureFiatPricesFromDashboard", status_sync)
 
 
 if __name__ == "__main__":
