@@ -329,6 +329,61 @@ class RecoveryModeTests(unittest.TestCase):
     def _log_event(self, severity, event_type, message, data=None):
         self.logged.append((severity, event_type, message, data))
 
+    def test_coin_watcher_skips_unreliable_snapshot_without_poisoning_baseline(self):
+        loop = bot_loop.BotLoop()
+        previous_snapshot = {
+            "xch-old": {
+                "amount": 2_000_000_000_000,
+                "wallet_type": "xch",
+                "source": "wallet",
+            },
+            "cat-old": {
+                "amount": 42_000,
+                "wallet_type": "cat",
+                "source": "wallet",
+            },
+        }
+        loop._coin_snapshot = dict(previous_snapshot)
+
+        partial_snapshot = {
+            "cat-locked": {
+                "amount": 25_000,
+                "wallet_type": "cat",
+                "source": "db_locked",
+            },
+        }
+
+        loop._handle_coin_watcher_snapshot(
+            partial_snapshot,
+            {"cat-locked": {"designation": "offer", "assigned_tier": "mid"}},
+            snapshot_reliable=False,
+        )
+
+        self.assertEqual(loop._coin_snapshot, previous_snapshot)
+        self.assertFalse(
+            any(evt == "coin_watcher_gone" for _, evt, _, _ in self.logged),
+            "unreliable wallet snapshots must not report existing coins as gone",
+        )
+        self.assertTrue(
+            any(evt == "coin_watcher_stale_snapshot_skipped" for _, evt, _, _ in self.logged)
+        )
+
+    def test_coin_watcher_snapshot_reliability_requires_live_wallet_results(self):
+        loop = bot_loop.BotLoop()
+        empty_result = {"success": True, "confirmed_records": []}
+
+        self.assertTrue(loop._is_coin_watcher_snapshot_reliable(empty_result, empty_result))
+        self.assertFalse(loop._is_coin_watcher_snapshot_reliable(None, empty_result))
+        self.assertFalse(
+            loop._is_coin_watcher_snapshot_reliable(
+                {"success": False, "error": "wallet offline"},
+                empty_result,
+            )
+        )
+
+        loop._wallet_sync_stale_cycle = True
+        self.assertFalse(loop._is_coin_watcher_snapshot_reliable(empty_result, empty_result))
+
     def test_recovery_mode_enters_after_persistent_under_target(self):
         loop = bot_loop.BotLoop()
         loop._running = True
