@@ -105,6 +105,39 @@ def _build_coin_recommendations(cfg, coins: dict, is_running: bool) -> list[dict
     }]
 
 
+def _positive_decimal_string(value) -> str:
+    try:
+        dec = Decimal(str(value))
+    except Exception:
+        return ""
+    if dec <= 0:
+        return ""
+    return str(dec)
+
+
+def _build_fiat_price_summary(spacescan_context: dict) -> dict:
+    """Build the dashboard's compact fiat price summary."""
+    xch_price = {}
+    try:
+        from market_data_collector import get_cached_xch_usd_price
+        xch_price = get_cached_xch_usd_price() or {}
+    except Exception:
+        xch_price = {}
+
+    xch_usd = _positive_decimal_string(xch_price.get("xch_usd"))
+    cat_usd = _positive_decimal_string((spacescan_context or {}).get("price_usd"))
+    cat_xch = _positive_decimal_string((spacescan_context or {}).get("price_xch"))
+
+    return {
+        "xch_usd_price": xch_usd,
+        "xch_usd_source": str(xch_price.get("source") or "") if xch_usd else "",
+        "xch_usd_last_updated_at": int(xch_price.get("last_updated_at") or 0) if xch_usd else 0,
+        "cat_usd_price": cat_usd,
+        "cat_price_xch": cat_xch,
+        "cat_usd_source": "spacescan" if cat_usd else "",
+    }
+
+
 @bp.route("/api/dashboard")
 def api_dashboard():
     """Aggregated endpoint for the Command Centre panel.
@@ -297,6 +330,7 @@ def api_dashboard():
             decimals=active_decimals,
             executable_mid_price=executable_mid,
         )
+        fiat_prices = _build_fiat_price_summary(spacescan_context)
         try:
             metrics = market_health.setdefault("metrics", {})
             metrics["spacescan_enabled"] = spacescan_context.get("enabled", False)
@@ -510,6 +544,7 @@ def api_dashboard():
             "sniper": sniper_stats,
             "boost": boost_stats,
             "spacescan_context": spacescan_context,
+            "fiat_prices": fiat_prices,
             "links": links,
             "cat_name": cfg.CAT_NAME if hasattr(cfg, 'CAT_NAME') else "CAT",
             "current_cat": api_server._active_cat,
