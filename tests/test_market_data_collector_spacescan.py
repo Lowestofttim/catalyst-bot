@@ -173,13 +173,12 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertEqual(result["name"], "Monkeyzoo")
         self.assertEqual(result["holder_count"], 321)
         # F39 (2026-04-08): activity fetching runs AFTER the holders block.
-        # F77 (2026-04-17): endpoint order reworked to pro-legacy → free →
-        # pro-plural so the free tier (community endpoint) gets first crack
-        # before we hit the often-404'ing pro-plural. Retries bumped from
-        # 1 → 2 for better transient-failure resilience.
-        # In this test: pro-legacy (/token/activity) times out 3× (retries=2),
+        # F77 (2026-04-17): endpoint order reworked to pro-legacy then free.
+        # The often-404'ing pro-plural route is intentionally not retried.
+        # Retries bumped from 1 to 2 for better transient-failure resilience.
+        # In this test: pro-legacy (/token/activity) times out 3 times (retries=2),
         # then free (/token/activities/asset123) succeeds on first try with
-        # 3 items → activity_count=3. Pro-plural is never reached.
+        # 3 items, so activity_count=3.
         self.assertEqual(result["activity_count"], 3)
         self.assertEqual(calls[0]["url"], f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123")
         # Holders endpoint uses count=1 to minimise response size (only total_count needed)
@@ -203,6 +202,55 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertEqual(calls[0]["headers"]["version"], "v1")
         self.assertEqual(calls[0]["headers"]["network"], "xch")
         self.assertEqual(calls[0]["timeout"], (5, 20))
+
+    @patch("market_data_collector.time.sleep", return_value=None)
+    def test_fetch_spacescan_data_skips_known_bad_pro_plural_after_free_rate_limit(self, _sleep):
+        mdc.cfg.SPACESCAN_API_KEY = "test-key"
+        calls = []
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            calls.append({
+                "url": url,
+                "params": dict(params or {}),
+            })
+
+            if url.endswith("/token/info/asset123"):
+                return FakeResponse(data={
+                    "status": "success",
+                    "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
+                    "price": {"usd": 0.01, "xch": 0.000125},
+                    "supply": {"total_supply": 1000, "circulating_supply": 750},
+                })
+
+            if url.endswith("/token/holders/asset123"):
+                return FakeResponse(data={
+                    "status": "success",
+                    "tokens": [{"address": "xch1..."}],
+                    "total_count": 321,
+                })
+
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
+                return FakeResponse(data={"status": "success", "data": []})
+
+            if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activities/asset123":
+                return FakeResponse(status_code=429, data={})
+
+            if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activities/asset123":
+                return FakeResponse(status_code=404, data={})
+
+            raise AssertionError(f"Unexpected URL {url}")
+
+        with patch.object(mdc._session, "get", side_effect=fake_get):
+            result = mdc._fetch_spacescan_data("asset123")
+
+        self.assertTrue(result["has_data"])
+        self.assertEqual(result["holder_count"], 321)
+        self.assertTrue(result.get("activity_fetch_failed"))
+        pro_plural_calls = [
+            c for c in calls
+            if c["url"] == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activities/asset123"
+        ]
+        self.assertEqual(pro_plural_calls, [])
 
     @patch("market_data_collector.time.sleep", return_value=None)
     def test_fetch_spacescan_data_falls_back_to_free_info(self, _sleep):

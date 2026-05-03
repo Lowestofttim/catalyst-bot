@@ -1238,13 +1238,13 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
     # F77 (2026-04-17): reordered attempts and tightened retry:
     #   1. pro-legacy — `/token/activity?asset_id=X` — proven working
     #   2. free       — `/token/activities/X` — community endpoint
-    #   3. pro-plural — `/token/activities/X` — pro endpoint, often 404s
-    #                   for many tokens (observed on MZ); keep as last
-    #                   resort so the preceding tiers get first crack.
+    # The pro plural route (`/token/activities/X`) 404s for many tokens
+    # (observed on MZ) and adds repeated health/log churn without improving
+    # coverage, so do not use it as a fallback.
     # Retries bumped from 1→2 (3 attempts per endpoint) and we
     # interject a 3s sleep between endpoints when the previous attempt
     # hit HTTP 429 — gives the free rate-limit a chance to clear before
-    # we waste another attempt on it.
+    # we try the next real endpoint.
     time.sleep(1)
     activity_errors: List[str] = []
     activity_attempts: List[tuple] = []
@@ -1258,11 +1258,6 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
         (free_url, f"/token/activities/{asset_id}",
          {"count": 100}, free_headers, "free")
     )
-    if api_key:
-        activity_attempts.append(
-            (pro_url, f"/token/activities/{asset_id}",
-             {"count": 100}, pro_headers, "pro-plural")
-        )
     last_was_rate_limited = False
     for base_url, endpoint, params, headers, label in activity_attempts:
         if last_was_rate_limited:
