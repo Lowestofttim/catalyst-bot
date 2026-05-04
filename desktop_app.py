@@ -1232,8 +1232,33 @@ def _wire_notifications(notifier):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+def _run_coin_prep_worker_mode(worker_args):
+    """Run the coin prep worker inside the packaged Catalyst executable."""
+    old_argv = list(sys.argv)
+    sys.argv = [old_argv[0] if old_argv else "Catalyst", *worker_args]
+    try:
+        from coin_prep_worker import main as coin_prep_main
+        try:
+            result = coin_prep_main()
+            return int(result or 0)
+        except SystemExit as exc:
+            if exc.code is None:
+                return 0
+            if isinstance(exc.code, int):
+                return exc.code
+            return 1
+    finally:
+        sys.argv = old_argv
+
+
 def main(argv=None):
     """Desktop app entry point for both .py and .pyw launchers."""
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if "--coin-prep-worker" in raw_argv:
+        worker_flag_index = raw_argv.index("--coin-prep-worker")
+        worker_args = raw_argv[:worker_flag_index] + raw_argv[worker_flag_index + 1:]
+        return _run_coin_prep_worker_mode(worker_args)
+
     # Set Windows AUMID as early as possible — must happen before any window
     # creation so that the taskbar groups all CATalyst windows together under
     # "com.monkeyzoo.catalyst" regardless of how the process was launched.

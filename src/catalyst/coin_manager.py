@@ -27,6 +27,7 @@ import subprocess
 import json
 import os
 import hashlib
+import sys
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
@@ -116,6 +117,18 @@ _TOPUP_BACKOFF_MAX = 3600        # 60 minutes — ceiling for exponential backof
 # attempt 0 → 5 min, 1 → 10 min, 2 → 20 min, 3 → 40 min, 4+ → 60 min (capped)
 _TOPUP_DRIP_INTERVAL = 90        # 90 seconds between proactive drip checks
 _DRIP_SOURCE_NOTICE_INTERVAL = 3600  # 60 minutes between optional no-source notices
+
+
+def _coin_prep_worker_command(worker_path: str) -> list[str]:
+    """Return the command used to launch the coin prep worker.
+
+    In a PyInstaller bundle, `coin_prep_worker.py` is not a normal Python
+    source tree with its helper modules beside it. Re-enter the bundled
+    Catalyst executable so imports resolve from the PyInstaller archive.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--coin-prep-worker"]
+    return [sys.executable, worker_path]
 
 
 class _TopupWalletDegraded(Exception):
@@ -8567,7 +8580,7 @@ class CoinManager:
             # Build CLI args to pass correct config to the worker.
             # This ensures the worker uses the ACTUAL bot settings
             # (from GUI) instead of stale .env values.
-            cmd = ["python", worker_path]
+            cmd = _coin_prep_worker_command(worker_path)
             max_buy = getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25)
             max_sell = getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25)
 

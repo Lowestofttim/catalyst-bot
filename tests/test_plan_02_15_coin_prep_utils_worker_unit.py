@@ -14,7 +14,22 @@ from coin_prep_worker import (
     CoinPrepWorker,
     CoinPrepStatus,
     PrepPhase,
+    parse_arguments,
 )
+
+
+# ---------------------------------------------------------------------------
+# CLI argument parsing
+# ---------------------------------------------------------------------------
+
+class TestCoinPrepWorkerCli(unittest.TestCase):
+
+    def test_help_exits_cleanly(self):
+        with patch.object(sys, "argv", ["coin_prep_worker.py", "--help"]):
+            with self.assertRaises(SystemExit) as cm:
+                parse_arguments()
+
+        self.assertEqual(cm.exception.code, 0)
 
 
 # ---------------------------------------------------------------------------

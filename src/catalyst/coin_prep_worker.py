@@ -6506,7 +6506,7 @@ def parse_arguments():
     parser.add_argument('--tier-counts-cat', type=str, default=None,
                         help='Per-side CAT tier counts (sell ladder): inner=4,mid=16,outer=16,extreme=14')
     parser.add_argument('--prep-headroom-pct', type=float, default=None,
-                        help='Extra % headroom to add to prepared coins above live offer size')
+                        help='Extra %% headroom to add to prepared coins above live offer size')
     parser.add_argument('--live-price', type=str, default=None,
                         help='Live XCH/CAT mid price (weighted Tibet+Dexie). Overrides the '
                              'subprocess\' own Dexie last_price fetch so prep sizes CAT coins '
@@ -6661,4 +6661,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

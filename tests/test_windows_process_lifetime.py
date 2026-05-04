@@ -1,8 +1,10 @@
 import os
 import sys
+import types
 import unittest
 from unittest.mock import patch
 
+import coin_manager
 import sage_node
 import win_subprocess
 
@@ -61,6 +63,57 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
                 "new_process_group": True,
                 "breakaway_from_job": True,
             },
+        )
+
+    def test_packaged_coin_prep_launch_uses_catalyst_worker_mode(self):
+        exe_path = os.path.join("C:\\Program Files", "CATalyst", "Catalyst.exe")
+        worker_path = os.path.join(
+            "C:\\Program Files", "CATalyst", "_internal", "coin_prep_worker.py"
+        )
+
+        with (
+            patch.object(coin_manager.sys, "executable", exe_path),
+            patch.object(coin_manager.sys, "frozen", True, create=True),
+        ):
+            command = coin_manager._coin_prep_worker_command(worker_path)
+
+        self.assertEqual(command, [exe_path, "--coin-prep-worker"])
+
+    def test_coin_prep_worker_mode_dispatches_remaining_args(self):
+        sys.modules.pop("desktop_app", None)
+        with patch.object(sys, "platform", "linux"):
+            import desktop_app
+
+        captured = {}
+        fake_worker = types.ModuleType("coin_prep_worker")
+
+        def fake_main():
+            captured["argv"] = list(sys.argv)
+            raise SystemExit(17)
+
+        fake_worker.main = fake_main
+        old_argv = list(sys.argv)
+        old_worker = sys.modules.get("coin_prep_worker")
+        sys.modules["coin_prep_worker"] = fake_worker
+        try:
+            result = desktop_app.main([
+                "--coin-prep-worker",
+                "--xch-target",
+                "3",
+                "--live-price",
+                "0.00012",
+            ])
+        finally:
+            sys.argv = old_argv
+            if old_worker is None:
+                sys.modules.pop("coin_prep_worker", None)
+            else:
+                sys.modules["coin_prep_worker"] = old_worker
+
+        self.assertEqual(result, 17)
+        self.assertEqual(
+            captured["argv"][1:],
+            ["--xch-target", "3", "--live-price", "0.00012"],
         )
 
 
