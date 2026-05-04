@@ -95,6 +95,10 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: python scripts/packaged_sage_rpc_smoke.py --exe dist/Catalyst/Catalyst.exe
 
+      - name: Smoke test packaged API runtime (Windows)
+        if: matrix.os == 'windows-latest'
+        run: python scripts/packaged_api_smoke.py --exe dist/Catalyst/Catalyst.exe
+
       - name: Package (Windows zip)
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -152,6 +156,39 @@ jobs:
           Copy-Item latest.json "update-manifest-$($env:RELEASE_REF).json"
           Copy-Item latest.json.sig "update-manifest-$($env:RELEASE_REF).json.sig"
         shell: pwsh
+
+      - name: Smoke test Windows installer payload
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          $installer = Resolve-Path "Catalyst-Setup-$($env:RELEASE_REF).exe"
+          $installDir = Join-Path $env:RUNNER_TEMP "CatalystInstall"
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+
+          $installArgs = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/NOICONS",
+            "/DIR=$installDir"
+          )
+          $install = Start-Process -FilePath $installer -ArgumentList $installArgs -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Installer exited with code $($install.ExitCode)"
+          }
+
+          python scripts/packaged_api_smoke.py --exe (Join-Path $installDir "Catalyst.exe")
+
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          if (Test-Path $uninstaller) {
+            Start-Process -FilePath $uninstaller -ArgumentList @(
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART"
+            ) -Wait | Out-Null
+          }
 
       - name: Package (macOS)
         if: matrix.os == 'macos-latest'
