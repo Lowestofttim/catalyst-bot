@@ -713,6 +713,31 @@ class TestReversed(NeedsTopupThresholdTests):
         self.assertIn("missing buy offers", topup_messages[0])
         self.assertNotIn("tier low", topup_messages[0])
 
+    def test_routine_topup_progress_events_are_debug_level(self):
+        """Keep the GUI logs focused on topup decisions, not every poll step."""
+        self.assertEqual(self.cm._topup_event_log_level("topup_inventory"), "debug")
+        self.assertEqual(
+            self.cm._topup_event_log_level("topup_cat-inner_refetch"),
+            "debug",
+        )
+        self.assertEqual(
+            self.cm._topup_event_log_level("topup_cat-inner_fee_coin_reserved"),
+            "debug",
+        )
+        self.assertEqual(
+            self.cm._topup_event_log_level("topup_cat-inner_osstep_wait"),
+            "debug",
+        )
+        self.assertEqual(
+            self.cm._topup_event_log_level("topup_cat-inner_osstep_outputs_owned"),
+            "debug",
+        )
+        self.assertEqual(
+            self.cm._topup_event_log_level("topup_cat-inner_osstep_submitted"),
+            "info",
+        )
+        self.assertEqual(self.cm._topup_event_log_level("topup_cat_inner"), "info")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

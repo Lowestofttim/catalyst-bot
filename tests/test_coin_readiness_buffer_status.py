@@ -120,6 +120,50 @@ class CoinReadinessBufferStatusTests(unittest.TestCase):
         finally:
             _restore_modules(originals)
 
+    def test_per_tier_readiness_lines_are_debug_but_summary_stays_info(self):
+        coin_manager, originals = _load_coin_manager_with_fakes()
+        try:
+            manager = coin_manager.CoinManager()
+            manager._xch_inventory.update({
+                "inner": [object()],
+                "mid": [],
+                "outer": [],
+                "extreme": [],
+            })
+            manager._cat_inventory.update({
+                "inner": [object()],
+                "mid": [],
+                "outer": [],
+                "extreme": [],
+            })
+
+            dist = {"inner": 2, "mid": 0, "outer": 0, "extreme": 0}
+            prep = {"inner": 4, "mid": 0, "outer": 0, "extreme": 0}
+            with patch.object(coin_manager, "get_tier_distribution", return_value=dist), \
+                    patch.object(coin_manager, "get_weighted_tier_prep_counts",
+                                 return_value=prep), \
+                    patch.object(coin_manager, "log_event") as log_event:
+                manager.coin_readiness_report()
+
+            readiness_calls = [
+                call for call in log_event.call_args_list
+                if len(call.args) >= 3 and call.args[1] == "coin_readiness"
+            ]
+            self.assertGreaterEqual(len(readiness_calls), 2)
+            tier_lines = [
+                call for call in readiness_calls
+                if "COIN READINESS:" not in call.args[2]
+            ]
+            summary_lines = [
+                call for call in readiness_calls
+                if "COIN READINESS:" in call.args[2]
+            ]
+            self.assertTrue(tier_lines)
+            self.assertEqual({call.args[0] for call in tier_lines}, {"debug"})
+            self.assertEqual({call.args[0] for call in summary_lines}, {"info"})
+        finally:
+            _restore_modules(originals)
+
 
 if __name__ == "__main__":
     unittest.main()
