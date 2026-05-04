@@ -100,6 +100,32 @@ class BulkCancelMethodTagTests(unittest.TestCase):
                              "submission_path must indicate the bulk-3step path "
                              "so debug logs can distinguish bulk vs sequential cancels")
 
+    def test_large_bulk_cancel_is_split_into_bounded_chunks(self):
+        trade_ids = [f"trade-{i}" for i in range(61)]
+        bulk_calls = []
+
+        def _record_bulk(ids, fee_mojos=0):
+            bulk_calls.append(list(ids))
+            return True
+
+        with patch.dict(wallet_sage.os.environ, {
+                "SAGE_BULK_CANCEL_BATCH_SIZE": "25",
+                "SAGE_BULK_CANCEL_BATCH_PAUSE_SECS": "0",
+             }, clear=False), \
+             patch.object(wallet_sage, "_cancel_offers_bulk_proper",
+                          side_effect=_record_bulk), \
+             patch.object(wallet_sage, "get_spendable_coin_count",
+                          return_value=10), \
+             patch.object(wallet_sage.time, "sleep", return_value=None):
+            results = wallet_sage.cancel_offers_batch(
+                trade_ids, secure=True, skip_confirmation=True)
+
+        self.assertEqual([len(c) for c in bulk_calls], [25, 25, 11])
+        self.assertEqual(len(results), len(trade_ids))
+        for tid in trade_ids:
+            self.assertTrue(results[tid]["success"])
+            self.assertEqual(results[tid]["method"], "submitted_pending_confirm")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3179,6 +3179,46 @@ def _get_still_locked_trade_ids(trade_ids: set, owned_coin_map: Optional[Dict]) 
     return still_locked
 
 
+def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        raw = os.getenv(name)
+        if raw is None or str(raw).strip() == "":
+            return default
+        return max(minimum, min(int(raw), maximum))
+    except Exception:
+        return default
+
+
+def _bounded_env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    try:
+        raw = os.getenv(name)
+        if raw is None or str(raw).strip() == "":
+            return default
+        return max(minimum, min(float(raw), maximum))
+    except Exception:
+        return default
+
+
+def _chunked(items: list, size: int) -> list:
+    size = max(1, int(size or 1))
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def _sage_bulk_cancel_batch_size() -> int:
+    return _bounded_env_int("SAGE_BULK_CANCEL_BATCH_SIZE", 25, 1, 100)
+
+
+def _sage_bulk_cancel_batch_pause_secs() -> float:
+    return _bounded_env_float("SAGE_BULK_CANCEL_BATCH_PAUSE_SECS", 0.5, 0.0, 10.0)
+
+
+def _is_no_spendable_coin_error(result: Optional[Dict]) -> bool:
+    if not isinstance(result, dict):
+        return False
+    error = str(result.get("error") or result.get("reason") or "").lower()
+    return "no spendable coins" in error or "coin selection error" in error
+
+
 def _cancel_offers_bulk_proper(offer_ids: list, fee_mojos: int = 0) -> bool:
     """Cancel multiple offers using the same 3-step path the Sage GUI uses.
 
@@ -3216,11 +3256,12 @@ def _cancel_offers_bulk_proper(offer_ids: list, fee_mojos: int = 0) -> bool:
 
     print(f"   [Bulk] Got {len(coin_spends)} coin_spends.  Step 2: sign_coin_spends...")
     try:
+        sign_timeout = max(30, min(180, len(coin_spends) * 2))
         sign_resp = _sage_post("sign_coin_spends", {
             "coin_spends": coin_spends,
             "auto_submit": False,
             "partial": False,
-        }, timeout=30)
+        }, timeout=sign_timeout)
     except Exception as e:
         print(f"   [Bulk] sign_coin_spends failed: {e}")
         return False
@@ -3372,56 +3413,82 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True, max_workers: int =
     # _cancel_offers_bulk_proper() replicates the exact GUI path.
     cancel_submitted = False
 
-    if num_offers >= 2:
-        print(f"📋 [Sage] Bulk cancel of {num_offers} offers (GUI 3-step path)...")
-        try:
-            bulk_ok = _cancel_offers_bulk_proper(trade_ids, fee_mojos=0)
-            if bulk_ok:
-                print("   ✅ [Sage] Bulk cancel submitted successfully")
-                cancel_submitted = True
-                # NOTE: bulk_3step only means submit_transaction returned HTTP 200
-                # — the cancel TX is in the mempool but NOT yet confirmed on-chain.
-                # With fee=0 (forced by Sage's BAD_AGGREGATE_SIGNATURE bug on
-                # multi-fee bundles) the TX has no priority and may sit forever
-                # or get displaced. Tag as submitted_pending_confirm so the
-                # CANCEL_PENDING_METHODS guard in offer_manager keeps DB status
-                # at "open" until the bot_health verifier confirms via Dexie.
-                # Previously this tagged "bulk_3step", which slipped past the
-                # guard and produced ghost-cancelled-but-still-live offers
-                # ("zombie offers" — DB cancelled, Dexie still active).
-                for tid in trade_ids:
-                    results[tid] = {"success": True,
-                                    "method": "submitted_pending_confirm",
-                                    "submission_path": "bulk_3step"}
-            else:
-                print("   ⚠️ [Sage] Bulk cancel failed — falling back to sequential")
-        except Exception as e:
-            print(f"   ⚠️ [Sage] Bulk cancel error: {e} — falling back to sequential")
+    def _mark_bulk_submitted(batch_ids: list) -> None:
+        for tid in batch_ids:
+            results[tid] = {"success": True,
+                            "method": "submitted_pending_confirm",
+                            "submission_path": "bulk_3step"}
 
-    # Sequential fallback: single offer or bulk failed
-    if not cancel_submitted:
+    def _cancel_sequential(batch_ids: list, batch_label: str = "") -> bool:
+        nonlocal cancel_submitted
         delay = 0.3
-        print(f"📋 [Sage] Cancelling {num_offers} offers sequentially ({delay}s delay)...")
-        for i, tid in enumerate(trade_ids):
+        label = f" {batch_label}" if batch_label else ""
+        print(f"📋 [Sage] Cancelling {len(batch_ids)} offers sequentially{label} ({delay}s delay)...")
+        any_submitted = False
+        for i, tid in enumerate(batch_ids):
             try:
                 result = cancel_offer(tid, secure, timeout=15, fee_mojos=resolved_fee)
+                if (
+                    resolved_fee > 0
+                    and result
+                    and not result.get("success")
+                    and _is_no_spendable_coin_error(result)
+                ):
+                    print(f"   ⚠️ [Sage] No fee coin for {tid[:16]}...; retrying cancel with fee=0")
+                    result = cancel_offer(tid, secure, timeout=15, fee_mojos=0)
                 results[tid] = result or {"success": False, "error": "RPC returned None"}
                 if result and result.get("success"):
                     cancel_submitted = True
-                    if (i + 1) % 10 == 0 or (i + 1) == num_offers:
-                        print(f"   ✅ [Sage] Cancelled {i + 1}/{num_offers}")
+                    any_submitted = True
+                    if (i + 1) % 10 == 0 or (i + 1) == len(batch_ids):
+                        print(f"   ✅ [Sage] Cancelled {i + 1}/{len(batch_ids)}")
                 else:
                     error = (result or {}).get("error", "unknown")
                     print(f"   ❌ [Sage] Failed {tid[:16]}...: {error}")
-                if i < num_offers - 1:
+                if i < len(batch_ids) - 1:
                     time.sleep(delay)
             except (SageAlreadyIncluding, SageMempoolConflict):
                 print(f"   ✅ [Sage] {tid[:16]}... already in mempool")
                 results[tid] = {"success": True, "method": "already_in_mempool"}
                 cancel_submitted = True
+                any_submitted = True
             except Exception as e:
                 print(f"   ❌ [Sage] Failed {tid[:16]}...: {e}")
                 results[tid] = {"success": False, "error": str(e)}
+        return any_submitted
+
+    bulk_batch_size = _sage_bulk_cancel_batch_size()
+    bulk_pause = _sage_bulk_cancel_batch_pause_secs()
+    batches = _chunked(trade_ids, bulk_batch_size)
+
+    if num_offers >= 2 and len(batches) > 1:
+        print(f"📋 [Sage] Splitting bulk cancel of {num_offers} offers "
+              f"into {len(batches)} batches of up to {bulk_batch_size}")
+
+    for batch_index, batch_ids in enumerate(batches, start=1):
+        batch_label = f"(batch {batch_index}/{len(batches)})"
+        batch_submitted = False
+
+        if len(batch_ids) >= 2:
+            print(f"📋 [Sage] Bulk cancel {batch_label}: "
+                  f"{len(batch_ids)} offers (GUI 3-step path)...")
+            try:
+                bulk_ok = _cancel_offers_bulk_proper(batch_ids, fee_mojos=0)
+                if bulk_ok:
+                    print(f"   ✅ [Sage] Bulk cancel {batch_label} submitted successfully")
+                    cancel_submitted = True
+                    batch_submitted = True
+                    _mark_bulk_submitted(batch_ids)
+                else:
+                    print(f"   ⚠️ [Sage] Bulk cancel {batch_label} failed — falling back to sequential")
+            except Exception as e:
+                print(f"   ⚠️ [Sage] Bulk cancel {batch_label} error: {e} — falling back to sequential")
+
+        if not batch_submitted:
+            _cancel_sequential(batch_ids, batch_label if len(batches) > 1 else "")
+
+        if bulk_pause > 0 and batch_index < len(batches):
+            time.sleep(bulk_pause)
 
     if not cancel_submitted:
         print("   ❌ [Sage] No cancel RPCs succeeded — aborting")

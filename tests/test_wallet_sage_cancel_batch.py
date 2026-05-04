@@ -116,6 +116,29 @@ class WalletSageCancelBatchTests(unittest.TestCase):
             "submitted_pending_confirm",
         )
 
+    def test_sequential_cancel_retries_without_fee_when_fee_coin_unavailable(self):
+        no_fee_coin = {
+            "success": False,
+            "error": "Sage HTTP 500: Wallet error: Coin selection error: no spendable coins",
+        }
+        accepted_without_fee = {"success": True}
+
+        with patch.object(wallet_sage, "cancel_offer",
+                          side_effect=[no_fee_coin, accepted_without_fee]) as cancel, \
+             patch.object(wallet_sage, "get_spendable_coin_count", return_value=100), \
+             patch("builtins.print"), \
+             patch.object(wallet_sage.time, "sleep", return_value=None):
+            results = wallet_sage.cancel_offers_batch(
+                ["0xabc123"],
+                secure=True,
+                fee_mojos=100,
+                skip_confirmation=True,
+            )
+
+        self.assertTrue(results["0xabc123"]["success"])
+        self.assertEqual(cancel.call_args_list[0].kwargs["fee_mojos"], 100)
+        self.assertEqual(cancel.call_args_list[1].kwargs["fee_mojos"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
