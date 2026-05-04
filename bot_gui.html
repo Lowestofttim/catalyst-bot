@@ -22895,7 +22895,10 @@
         let _latestReleaseUrl = null;
         let _latestUpdateInfo = null;
         let _updateInstallPollTimer = null;
+        let _updateAvailabilityPollTimer = null;
         let _updateShutdownStarted = false;
+        let _lastAnnouncedUpdateVersion = '';
+        const APP_UPDATE_POLL_INTERVAL_MS = 60 * 60 * 1000;  // one signed-manifest refresh per hour
 
         function formatUpdateSize(bytes) {
             const n = Number(bytes || 0);
@@ -22905,9 +22908,9 @@
             return n + ' bytes';
         }
 
-        async function checkForUpdates() {
+        async function checkForUpdates({ force = false, reason = 'manual' } = {}) {
             try {
-                const resp = await apiFetch(`${API_URL}/check-update`);
+                const resp = await apiFetch(`${API_URL}/check-update${force ? '?force=1' : ''}`);
                 const data = await resp.json();
                 if (!data || !data.success || !data.enabled) return;
                 _latestUpdateInfo = data;
@@ -22923,12 +22926,26 @@
                         about.textContent = 'CATalyst v' + data.current
                             + ' - new version ' + data.latest + ' available';
                     }
+                    if (_lastAnnouncedUpdateVersion !== data.latest && typeof showToast === 'function') {
+                        _lastAnnouncedUpdateVersion = data.latest;
+                        showToast(
+                            `CATalyst v${data.latest} is available. Use the update button when ready.`,
+                            'info'
+                        );
+                    }
                 } else if (badge) {
                     badge.style.display = 'none';
                 }
             } catch (_) {
                 // Network failure is non-fatal — just leave the badge hidden.
             }
+        }
+
+        function startUpdateAvailabilityPolling() {
+            if (_updateAvailabilityPollTimer) return;
+            _updateAvailabilityPollTimer = setInterval(() => {
+                checkForUpdates({ force: true, reason: 'periodic' });
+            }, APP_UPDATE_POLL_INTERVAL_MS);
         }
 
         function openUpdateRelease() {
@@ -34602,9 +34619,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (data.version) updateAppVersionDisplay(data.version);
             // Update sync indicator from live health check
             if (data.chia_health) updateSyncIndicator(data.chia_health);
-            // Fire-and-forget update check (cached server-side for 6h)
+            // Fire-and-forget startup update check; background poll force-refreshes hourly.
             checkForUpdates();
-        } catch(e) { /* will update from SSE state later */ }
+            startUpdateAvailabilityPolling();
+        } catch(e) {
+            startUpdateAvailabilityPolling();
+            /* will update from SSE state later */
+        }
     }, 600);
 
     // Fetch Command Centre dashboard data immediately

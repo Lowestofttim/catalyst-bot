@@ -1615,10 +1615,14 @@ def api_check_update():
 
     try:
         import app_update
+        force_refresh = str(request.args.get("force", "") or "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
         result = app_update.public_update_info(
             app_update.get_update_info(
                 get_app_version(),
                 str(os.environ.get("UPDATE_MANIFEST_URL", "") or ""),
+                force=force_refresh,
             )
         )
     except Exception as e:

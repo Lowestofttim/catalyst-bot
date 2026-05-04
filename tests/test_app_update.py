@@ -269,6 +269,28 @@ class TestAppUpdateApi(unittest.TestCase):
         self.assertEqual(body["latest"], "1.2.6")
         self.assertIn("Fixed Sage startup", body["release_notes"])
 
+    def test_check_update_force_query_bypasses_cache(self):
+        update_info = {
+            "success": True,
+            "enabled": True,
+            "current": "1.2.5",
+            "latest": "1.2.6",
+            "latest_tag": "v1.2.6",
+            "update_available": True,
+            "installer_ready": True,
+            "manifest_verified": True,
+            "url": "https://github.com/Lowestofttim/catalyst-releases/releases/tag/v1.2.6",
+            "release_notes": "New release.",
+        }
+        with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
+                patch("app_update.get_update_info", return_value=update_info) as get_update_info:
+            resp = self.client.get("/api/check-update?force=1", environ_base=self.loopback)
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertTrue(body["update_available"])
+        self.assertTrue(get_update_info.call_args.kwargs["force"])
+
 
 class TestAppUpdateFrontendAndReleaseWorkflow(unittest.TestCase):
     def test_gui_has_upgrade_modal_and_install_call(self):
@@ -278,6 +300,15 @@ class TestAppUpdateFrontendAndReleaseWorkflow(unittest.TestCase):
         self.assertIn("function startAppUpgrade()", html)
         self.assertIn("/api/update/install", html)
         self.assertIn("/api/update/status", html)
+
+    def test_gui_polls_for_update_availability_while_open(self):
+        html = (ROOT / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("const APP_UPDATE_POLL_INTERVAL_MS", html)
+        self.assertIn("function startUpdateAvailabilityPolling()", html)
+        self.assertIn("checkForUpdates({ force: true, reason: 'periodic' })", html)
+        self.assertIn("startUpdateAvailabilityPolling();", html)
+        self.assertIn("force=1", html)
 
     def test_release_workflow_publishes_signed_manifest_channel(self):
         workflow = (ROOT / ".github" / "workflows" / "build-release.yml").read_text(
