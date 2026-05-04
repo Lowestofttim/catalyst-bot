@@ -97,12 +97,12 @@ Source: "{#MySourceDir}\.env.example"; DestDir: "{app}"; Flags: ignoreversion on
 
 [Icons]
 ; Start Menu group entry
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startmenuicon; IconFilename: "{app}\assets\bot_icon_new.ico"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startmenuicon; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{autoprograms}\{#MyAppName} (Help)"; Filename: "{#MyAppURL}"; Tasks: startmenuicon
 Name: "{autoprograms}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
 
 ; Desktop shortcut (opt-in via task checkbox)
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\assets\bot_icon_new.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
 ; Offer to launch the app after install finishes.
