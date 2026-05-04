@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import sys
 import types
 import unittest
@@ -78,6 +79,18 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
             command = coin_manager._coin_prep_worker_command(worker_path)
 
         self.assertEqual(command, [exe_path, "--coin-prep-worker"])
+
+    def test_no_coin_prep_launcher_uses_plain_python_worker_script(self):
+        repo_root = Path(__file__).resolve().parent.parent
+        sources = [
+            repo_root / "src" / "catalyst" / "coin_manager.py",
+            repo_root / "src" / "catalyst" / "blueprints" / "coin_prep.py",
+        ]
+
+        for source_path in sources:
+            source = source_path.read_text(encoding="utf-8")
+            self.assertNotIn('"python", worker_path', source)
+            self.assertNotIn("'python', worker_path", source)
 
     def test_coin_prep_worker_mode_dispatches_remaining_args(self):
         sys.modules.pop("desktop_app", None)

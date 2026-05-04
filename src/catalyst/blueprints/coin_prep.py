@@ -1177,8 +1177,11 @@ def _api_coin_prep_trigger_locked():
                 # We rely on the DB/superlog/log file for debugging instead of
                 # popping a Windows terminal in front of the GUI.
                 import subprocess as _sp
+                from coin_manager import _coin_prep_worker_command
+
                 worker_dir = _PACKAGE_DIR
                 worker_path = os.path.join(worker_dir, "coin_prep_worker.py")
+                worker_cmd = _coin_prep_worker_command(worker_path)
 
                 if not os.path.exists(worker_path):
                     api_server._coin_prep_state["error"] = "coin_prep_worker.py not found"
@@ -1345,7 +1348,7 @@ def _api_coin_prep_trigger_locked():
                     # CAT sniper pool (sniper sell creation then fails).
                     _live_price_arg = api_server._get_live_mid_price_str()
                     cmd = [
-                        "python", worker_path,
+                        *worker_cmd,
                         "--xch-target", str(xch_total_coins),
                         "--cat-target", str(cat_total_coins),
                         "--tier-sizes", tier_sizes_str,       # legacy shared (kept for back-compat)
@@ -1370,7 +1373,7 @@ def _api_coin_prep_trigger_locked():
                     total_coins = int((max_buy + max_sell) * coin_multiplier)
                     _live_price_arg = api_server._get_live_mid_price_str()
                     cmd = [
-                        "python", worker_path,
+                        *worker_cmd,
                         "--xch-target", str(total_coins),
                         "--xch-size", trade_xch,
                         "--cat-target", str(total_coins),
