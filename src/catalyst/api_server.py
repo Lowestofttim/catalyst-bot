@@ -1584,12 +1584,12 @@ def api_crash_log():
 
 
 # ---------------------------------------------------------------------------
-# Version check against GitHub releases
+# Version check against the signed public update manifest
 # ---------------------------------------------------------------------------
 #
-# The updater pins the release source to the official CATalyst GitHub release
-# API. RELEASES_API_URL is still read for backward compatibility, but
-# app_update rejects any value outside that exact repository path.
+# The updater pins the manifest source to the official CATalyst public release
+# channel. UPDATE_MANIFEST_URL is read for deployment flexibility, but
+# app_update rejects any value outside that exact public manifest path.
 
 @app.route("/api/check-update", methods=["GET"])
 def api_check_update():
@@ -1618,7 +1618,7 @@ def api_check_update():
         result = app_update.public_update_info(
             app_update.get_update_info(
                 get_app_version(),
-                str(os.environ.get("RELEASES_API_URL", "") or ""),
+                str(os.environ.get("UPDATE_MANIFEST_URL", "") or ""),
             )
         )
     except Exception as e:
@@ -1630,6 +1630,7 @@ def api_check_update():
             "latest": None,
             "update_available": False,
             "installer_ready": False,
+            "manifest_verified": False,
             "url": None,
             "release_notes": "",
             "error": "Update check failed",
@@ -1678,7 +1679,7 @@ def api_update_install():
         import app_update
         result = app_update.start_update_install(
             get_app_version(),
-            str(os.environ.get("RELEASES_API_URL", "") or ""),
+            str(os.environ.get("UPDATE_MANIFEST_URL", "") or ""),
         )
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
