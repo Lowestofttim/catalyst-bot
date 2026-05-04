@@ -1177,7 +1177,10 @@ def _api_coin_prep_trigger_locked():
                 # We rely on the DB/superlog/log file for debugging instead of
                 # popping a Windows terminal in front of the GUI.
                 import subprocess as _sp
-                from coin_manager import _coin_prep_worker_command
+                from coin_manager import (
+                    _coin_prep_worker_command,
+                    _coin_prep_worker_environment,
+                )
 
                 worker_dir = _PACKAGE_DIR
                 worker_path = os.path.join(worker_dir, "coin_prep_worker.py")
@@ -1188,8 +1191,7 @@ def _api_coin_prep_trigger_locked():
                     api_server._coin_prep_state["running"] = False
                     return
 
-                env = os.environ.copy()
-                env["PYTHONIOENCODING"] = "utf-8"
+                env = _coin_prep_worker_environment()
 
                 # Build CLI args from LIVE config so the worker uses the
                 # actual GUI settings, not stale .env values.

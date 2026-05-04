@@ -131,6 +131,78 @@ def _coin_prep_worker_command(worker_path: str) -> list[str]:
     return [sys.executable, worker_path]
 
 
+def _set_sage_data_dir_from_cert_env(env: dict, cert_path: str) -> None:
+    if (env.get("SAGE_DATA_DIR") or "").strip():
+        return
+
+    try:
+        cert_dir = os.path.dirname(os.path.realpath(cert_path))
+        if os.path.basename(cert_dir).lower() == "ssl":
+            env["SAGE_DATA_DIR"] = os.path.dirname(cert_dir)
+    except Exception:
+        pass
+
+
+def _coin_prep_worker_environment(base_env: Optional[dict] = None) -> dict:
+    """Return the environment used when launching the coin-prep worker.
+
+    Sage's startup path can auto-detect the wallet TLS certificate at runtime
+    without writing it to the user's .env. The prep worker is a fresh process,
+    so make that detected RPC context explicit before spawning it.
+    """
+    env = dict(os.environ if base_env is None else base_env)
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    wallet_type = (
+        (env.get("WALLET_TYPE") or getattr(cfg, "WALLET_TYPE", "sage") or "sage")
+        .strip()
+        .lower()
+    )
+    if wallet_type != "sage":
+        return env
+
+    cert_path = (env.get("SAGE_CERT_PATH") or "").strip()
+    key_path = (env.get("SAGE_KEY_PATH") or "").strip()
+    if cert_path and key_path:
+        _set_sage_data_dir_from_cert_env(env, cert_path)
+        return env
+
+    try:
+        from sage_node import detect_sage_cert_path
+        detected_cert = detect_sage_cert_path()
+    except Exception as exc:
+        try:
+            log_event(
+                "warning",
+                "coin_prep_sage_cert_detect_failed",
+                f"Could not auto-detect Sage cert for coin prep worker: {exc}",
+            )
+        except Exception:
+            pass
+        return env
+
+    if not detected_cert:
+        return env
+
+    detected_cert = os.path.realpath(detected_cert)
+    detected_key = os.path.realpath(
+        os.path.join(os.path.dirname(detected_cert), "wallet.key")
+    )
+    env["SAGE_CERT_PATH"] = detected_cert
+    env["SAGE_KEY_PATH"] = detected_key
+    _set_sage_data_dir_from_cert_env(env, detected_cert)
+
+    try:
+        log_event(
+            "info",
+            "coin_prep_sage_rpc_context",
+            f"Passing auto-detected Sage RPC certificate to coin prep worker: {detected_cert}",
+        )
+    except Exception:
+        pass
+    return env
+
+
 class _TopupWalletDegraded(Exception):
     """Raised when wallet RPC becomes too degraded to continue topup safely."""
 
@@ -8574,8 +8646,7 @@ class CoinManager:
                 with self._lock:
                     self._prep_running = False
                 return False
-            env = os.environ.copy()
-            env["PYTHONIOENCODING"] = "utf-8"
+            env = _coin_prep_worker_environment()
 
             # Build CLI args to pass correct config to the worker.
             # This ensures the worker uses the ACTUAL bot settings

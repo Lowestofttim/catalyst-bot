@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import patch
@@ -91,6 +92,67 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
             source = source_path.read_text(encoding="utf-8")
             self.assertNotIn('"python", worker_path', source)
             self.assertNotIn("'python', worker_path", source)
+
+    def test_coin_prep_worker_environment_passes_autodetected_sage_certs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ssl_dir = Path(temp_dir) / "Sage" / "ssl"
+            ssl_dir.mkdir(parents=True)
+            cert_path = ssl_dir / "wallet.crt"
+            key_path = ssl_dir / "wallet.key"
+            cert_path.write_text("cert", encoding="utf-8")
+            key_path.write_text("key", encoding="utf-8")
+
+            base_env = {
+                "WALLET_TYPE": "sage",
+                "SAGE_CERT_PATH": "",
+                "SAGE_KEY_PATH": "",
+                "SAGE_DATA_DIR": "",
+            }
+            with (
+                patch("sage_node.detect_sage_cert_path", return_value=str(cert_path)),
+                patch.object(coin_manager, "log_event"),
+            ):
+                env = coin_manager._coin_prep_worker_environment(base_env)
+
+            self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+            self.assertEqual(env["SAGE_CERT_PATH"], os.path.realpath(cert_path))
+            self.assertEqual(env["SAGE_KEY_PATH"], os.path.realpath(key_path))
+            self.assertEqual(env["SAGE_DATA_DIR"], os.path.realpath(ssl_dir.parent))
+
+    def test_coin_prep_worker_environment_preserves_explicit_sage_certs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ssl_dir = Path(temp_dir) / "explicit" / "ssl"
+            ssl_dir.mkdir(parents=True)
+            cert_path = ssl_dir / "wallet.crt"
+            key_path = ssl_dir / "wallet.key"
+            cert_path.write_text("cert", encoding="utf-8")
+            key_path.write_text("key", encoding="utf-8")
+
+            base_env = {
+                "WALLET_TYPE": "sage",
+                "SAGE_CERT_PATH": str(cert_path),
+                "SAGE_KEY_PATH": str(key_path),
+            }
+            with patch("sage_node.detect_sage_cert_path") as detect_cert:
+                env = coin_manager._coin_prep_worker_environment(base_env)
+
+            detect_cert.assert_not_called()
+            self.assertEqual(env["SAGE_CERT_PATH"], str(cert_path))
+            self.assertEqual(env["SAGE_KEY_PATH"], str(key_path))
+            self.assertEqual(env["SAGE_DATA_DIR"], os.path.realpath(ssl_dir.parent))
+
+    def test_coin_prep_worker_environment_skips_sage_detection_for_chia(self):
+        with patch("sage_node.detect_sage_cert_path") as detect_cert:
+            env = coin_manager._coin_prep_worker_environment({
+                "WALLET_TYPE": "chia",
+                "SAGE_CERT_PATH": "",
+                "SAGE_KEY_PATH": "",
+            })
+
+        detect_cert.assert_not_called()
+        self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+        self.assertEqual(env["SAGE_CERT_PATH"], "")
+        self.assertEqual(env["SAGE_KEY_PATH"], "")
 
     def test_coin_prep_worker_mode_dispatches_remaining_args(self):
         sys.modules.pop("desktop_app", None)
