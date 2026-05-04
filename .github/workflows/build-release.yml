@@ -115,7 +115,11 @@ jobs:
           # Generate release notes for the in-app updater manifest.
           gh api "repos/$($env:GITHUB_REPOSITORY)/releases/generate-notes" `
             -f tag_name="$($env:RELEASE_REF)" `
-            --jq ".body" | Set-Content release_notes.md
+            --jq ".body" | Set-Content release_notes_generated.md
+          python scripts/sanitize_release_notes.py `
+            release_notes_generated.md `
+            release_notes.md `
+            --private-repo "$($env:GITHUB_REPOSITORY)"
           # Update version in installer script to match tag
           $version = $env:RELEASE_REF.TrimStart("v")
           (Get-Content installer.iss) -replace 'MyAppVersion     ".*"', "MyAppVersion     `"$version`"" | Set-Content installer.iss
