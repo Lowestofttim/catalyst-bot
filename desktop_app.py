@@ -1236,6 +1236,7 @@ def _run_coin_prep_worker_mode(worker_args):
     """Run the coin prep worker inside the packaged Catalyst executable."""
     old_argv = list(sys.argv)
     sys.argv = [old_argv[0] if old_argv else "Catalyst", *worker_args]
+    os.environ.setdefault("_CATALYST_PRESERVE_PROCESS_ENV", "1")
     try:
         from coin_prep_worker import main as coin_prep_main
         try:

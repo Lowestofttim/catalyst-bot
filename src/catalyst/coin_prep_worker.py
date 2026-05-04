@@ -135,6 +135,35 @@ class PrepPhase(Enum):
 _STRUCTURED_COIN_PREP_LINE_RE = re.compile(r"^\[\d{2}:\d{2}:\d{2}\]\s")
 
 
+class CoinPrepRpcUnavailable(Exception):
+    """Raised when coin prep cannot trust wallet RPC preflight data."""
+
+
+def _wallet_total_mojos_from_balance_response(response, label: str) -> int:
+    if not isinstance(response, dict):
+        raise CoinPrepRpcUnavailable(f"{label} balance query returned no response")
+    if response.get("success") is False:
+        raise CoinPrepRpcUnavailable(
+            f"{label} balance query failed: {response.get('error') or response!r}"
+        )
+
+    balance = response.get("wallet_balance")
+    if not isinstance(balance, dict):
+        raise CoinPrepRpcUnavailable(f"{label} balance response had no wallet_balance")
+
+    raw = balance.get("unconfirmed_wallet_balance")
+    if raw is None:
+        raw = balance.get("confirmed_wallet_balance")
+    if raw is None:
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise CoinPrepRpcUnavailable(
+            f"{label} balance response had invalid balance value: {raw!r}"
+        ) from exc
+
+
 class ApiMirrorStream:
     """
     Mirror raw worker stdout/stderr into the main API log stream.
@@ -5758,17 +5787,9 @@ class CoinPrepWorker:
                 from wallet_sage import get_wallet_balance as _get_wb
                 _xch_wb = _get_wb(self.xch_wallet_id) or {}
                 _cat_wb = _get_wb(self.cat_wallet_id) or {}
-                _xch_bal = (_xch_wb.get("wallet_balance") or {}) if isinstance(_xch_wb, dict) else {}
-                _cat_bal = (_cat_wb.get("wallet_balance") or {}) if isinstance(_cat_wb, dict) else {}
                 # Prefer unconfirmed (projected post-pending), fall back to confirmed.
-                _xch_total_mojos = int(
-                    _xch_bal.get("unconfirmed_wallet_balance")
-                    or _xch_bal.get("confirmed_wallet_balance") or 0
-                )
-                _cat_total_mojos = int(
-                    _cat_bal.get("unconfirmed_wallet_balance")
-                    or _cat_bal.get("confirmed_wallet_balance") or 0
-                )
+                _xch_total_mojos = _wallet_total_mojos_from_balance_response(_xch_wb, "XCH")
+                _cat_total_mojos = _wallet_total_mojos_from_balance_response(_cat_wb, "CAT")
                 _xch_reserve_xch = Decimal(str(os.getenv("XCH_RESERVE", "0") or "0"))
                 _xch_reserve_mojos = int((_xch_reserve_xch * Decimal("1000000000000")).quantize(Decimal("1")))
                 _cat_scale = Decimal(10) ** Decimal(self.cat_decimals)
@@ -5816,6 +5837,24 @@ class CoinPrepWorker:
                     except Exception:
                         pass
                     return
+            except CoinPrepRpcUnavailable as _oe:
+                self.log("")
+                self.log("=" * 60)
+                self.log("SAGE RPC UNAVAILABLE: coin prep could not verify wallet balance")
+                self.log("=" * 60)
+                self.log(str(_oe))
+                self.log("Wait for Sage to settle, confirm RPC is enabled, then retry coin prep.")
+                self.log("=" * 60)
+                try:
+                    self.update_status(
+                        PrepPhase.ERROR,
+                        0.05,
+                        "Sage RPC unavailable - retry after Sage settles",
+                        error="sage_rpc_unavailable"
+                    )
+                except Exception:
+                    pass
+                return
             except Exception as _oe:
                 # Don't fail the whole run on a precheck error; just log
                 # and continue with existing behaviour.
@@ -6513,8 +6552,56 @@ def parse_arguments():
                              'against the same mid the bot uses. Format: decimal string.')
     parser.add_argument('--run-id', type=str, default=None,
                         help='Unique run ID for status file tracking (prevents stale status reads)')
+    parser.add_argument('--sage-rpc-smoke', action='store_true',
+                        help='Verify packaged Sage RPC connectivity and exit without preparing coins')
 
     return parser.parse_args()
+
+
+def _safe_path_status(path: str) -> str:
+    if not path:
+        return "unset"
+    try:
+        return f"{os.path.basename(path)} exists={os.path.exists(path)}"
+    except Exception:
+        return f"{os.path.basename(path) or '<path>'} exists=unknown"
+
+
+def _run_sage_rpc_smoke() -> int:
+    """Exercise the worker's Sage RPC path without touching funds."""
+    try:
+        import wallet_sage
+
+        reload_settings = getattr(wallet_sage, "reload_connection_settings", None)
+        if callable(reload_settings):
+            reload_settings()
+
+        wallet_url = getattr(wallet_sage, "WALLET_URL", "")
+        cert_path = getattr(wallet_sage, "CERT_PATH", "")
+        key_path = getattr(wallet_sage, "KEY_PATH", "")
+        print(
+            "[SAGE_RPC_SMOKE] context "
+            f"url={wallet_url or 'unset'} "
+            f"cert={_safe_path_status(cert_path)} "
+            f"key={_safe_path_status(key_path)}"
+        )
+
+        if not wallet_sage.ensure_initialized(force_retry=True):
+            print("[SAGE_RPC_SMOKE] initialize failed")
+            return 1
+
+        key = wallet_sage.get_current_key()
+        fingerprint = key.get("fingerprint") if isinstance(key, dict) else None
+        if not fingerprint:
+            print(f"[SAGE_RPC_SMOKE] get_key failed: {key!r}")
+            return 1
+
+        print(f"[SAGE_RPC_SMOKE] ok fingerprint={fingerprint}")
+        return 0
+    except Exception as exc:
+        print(f"[SAGE_RPC_SMOKE] failed: {exc}")
+        return 1
+
 
 def main():
     """
@@ -6541,6 +6628,9 @@ def main():
 
     # Parse CLI arguments — only explicit overrides (defaults are all None)
     args = parse_arguments()
+
+    if args.sage_rpc_smoke:
+        sys.exit(_run_sage_rpc_smoke())
 
     # Only set env vars when a value was EXPLICITLY passed on command line.
     # Without this guard, stale .env defaults would override the smart

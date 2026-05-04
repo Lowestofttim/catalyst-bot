@@ -115,6 +115,7 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
                 env = coin_manager._coin_prep_worker_environment(base_env)
 
             self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+            self.assertEqual(env["_CATALYST_PRESERVE_PROCESS_ENV"], "1")
             self.assertEqual(env["SAGE_CERT_PATH"], os.path.realpath(cert_path))
             self.assertEqual(env["SAGE_KEY_PATH"], os.path.realpath(key_path))
             self.assertEqual(env["SAGE_DATA_DIR"], os.path.realpath(ssl_dir.parent))
@@ -137,9 +138,34 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
                 env = coin_manager._coin_prep_worker_environment(base_env)
 
             detect_cert.assert_not_called()
+            self.assertEqual(env["_CATALYST_PRESERVE_PROCESS_ENV"], "1")
             self.assertEqual(env["SAGE_CERT_PATH"], str(cert_path))
             self.assertEqual(env["SAGE_KEY_PATH"], str(key_path))
             self.assertEqual(env["SAGE_DATA_DIR"], os.path.realpath(ssl_dir.parent))
+
+    def test_coin_prep_worker_environment_logs_explicit_sage_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ssl_dir = Path(temp_dir) / "explicit" / "ssl"
+            ssl_dir.mkdir(parents=True)
+            cert_path = ssl_dir / "wallet.crt"
+            key_path = ssl_dir / "wallet.key"
+            cert_path.write_text("cert", encoding="utf-8")
+            key_path.write_text("key", encoding="utf-8")
+
+            base_env = {
+                "WALLET_TYPE": "sage",
+                "SAGE_CERT_PATH": str(cert_path),
+                "SAGE_KEY_PATH": str(key_path),
+            }
+            with patch.object(coin_manager, "log_event") as log_event:
+                coin_manager._coin_prep_worker_environment(base_env)
+
+            self.assertTrue(
+                any(
+                    call.args[1] == "coin_prep_sage_rpc_context"
+                    for call in log_event.call_args_list
+                )
+            )
 
     def test_coin_prep_worker_environment_skips_sage_detection_for_chia(self):
         with patch("sage_node.detect_sage_cert_path") as detect_cert:
@@ -151,6 +177,7 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
 
         detect_cert.assert_not_called()
         self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+        self.assertEqual(env["_CATALYST_PRESERVE_PROCESS_ENV"], "1")
         self.assertEqual(env["SAGE_CERT_PATH"], "")
         self.assertEqual(env["SAGE_KEY_PATH"], "")
 
@@ -164,11 +191,13 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
 
         def fake_main():
             captured["argv"] = list(sys.argv)
+            captured["preserve_env"] = os.environ.get("_CATALYST_PRESERVE_PROCESS_ENV")
             raise SystemExit(17)
 
         fake_worker.main = fake_main
         old_argv = list(sys.argv)
         old_worker = sys.modules.get("coin_prep_worker")
+        old_preserve = os.environ.pop("_CATALYST_PRESERVE_PROCESS_ENV", None)
         sys.modules["coin_prep_worker"] = fake_worker
         try:
             result = desktop_app.main([
@@ -184,8 +213,13 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
                 sys.modules.pop("coin_prep_worker", None)
             else:
                 sys.modules["coin_prep_worker"] = old_worker
+            if old_preserve is None:
+                os.environ.pop("_CATALYST_PRESERVE_PROCESS_ENV", None)
+            else:
+                os.environ["_CATALYST_PRESERVE_PROCESS_ENV"] = old_preserve
 
         self.assertEqual(result, 17)
+        self.assertEqual(captured["preserve_env"], "1")
         self.assertEqual(
             captured["argv"][1:],
             ["--xch-target", "3", "--live-price", "0.00012"],

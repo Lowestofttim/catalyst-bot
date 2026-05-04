@@ -143,6 +143,17 @@ def _set_sage_data_dir_from_cert_env(env: dict, cert_path: str) -> None:
         pass
 
 
+def _log_coin_prep_sage_rpc_context(cert_path: str, source: str) -> None:
+    try:
+        log_event(
+            "info",
+            "coin_prep_sage_rpc_context",
+            f"Passing {source} Sage RPC certificate to coin prep worker: {cert_path}",
+        )
+    except Exception:
+        pass
+
+
 def _coin_prep_worker_environment(base_env: Optional[dict] = None) -> dict:
     """Return the environment used when launching the coin-prep worker.
 
@@ -152,6 +163,7 @@ def _coin_prep_worker_environment(base_env: Optional[dict] = None) -> dict:
     """
     env = dict(os.environ if base_env is None else base_env)
     env["PYTHONIOENCODING"] = "utf-8"
+    env["_CATALYST_PRESERVE_PROCESS_ENV"] = "1"
 
     wallet_type = (
         (env.get("WALLET_TYPE") or getattr(cfg, "WALLET_TYPE", "sage") or "sage")
@@ -165,6 +177,7 @@ def _coin_prep_worker_environment(base_env: Optional[dict] = None) -> dict:
     key_path = (env.get("SAGE_KEY_PATH") or "").strip()
     if cert_path and key_path:
         _set_sage_data_dir_from_cert_env(env, cert_path)
+        _log_coin_prep_sage_rpc_context(cert_path, "configured")
         return env
 
     try:
@@ -192,14 +205,7 @@ def _coin_prep_worker_environment(base_env: Optional[dict] = None) -> dict:
     env["SAGE_KEY_PATH"] = detected_key
     _set_sage_data_dir_from_cert_env(env, detected_cert)
 
-    try:
-        log_event(
-            "info",
-            "coin_prep_sage_rpc_context",
-            f"Passing auto-detected Sage RPC certificate to coin prep worker: {detected_cert}",
-        )
-    except Exception:
-        pass
+    _log_coin_prep_sage_rpc_context(detected_cert, "auto-detected")
     return env
 
 

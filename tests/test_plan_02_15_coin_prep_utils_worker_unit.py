@@ -3,6 +3,7 @@
 import hashlib
 import sys
 import os
+import types
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
@@ -10,6 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import coin_prep_utils as _utils
+import coin_prep_worker as _worker_module
 from coin_prep_worker import (
     CoinPrepWorker,
     CoinPrepStatus,
@@ -30,6 +32,74 @@ class TestCoinPrepWorkerCli(unittest.TestCase):
                 parse_arguments()
 
         self.assertEqual(cm.exception.code, 0)
+
+    def test_sage_rpc_smoke_flag_is_available(self):
+        with patch.object(sys, "argv", ["coin_prep_worker.py", "--sage-rpc-smoke"]):
+            args = parse_arguments()
+
+        self.assertTrue(args.sage_rpc_smoke)
+
+
+class TestSageRpcSmoke(unittest.TestCase):
+
+    def test_returns_success_when_sage_initialize_and_key_succeed(self):
+        calls = []
+        fake_wallet_sage = types.ModuleType("wallet_sage")
+        fake_wallet_sage.WALLET_URL = "https://127.0.0.1:9257"
+        fake_wallet_sage.CERT_PATH = __file__
+        fake_wallet_sage.KEY_PATH = __file__
+        fake_wallet_sage.reload_connection_settings = lambda: calls.append("reload")
+        fake_wallet_sage.ensure_initialized = (
+            lambda force_retry=False: calls.append(("initialize", force_retry)) or True
+        )
+        fake_wallet_sage.get_current_key = (
+            lambda: calls.append("get_key") or {"fingerprint": 123456}
+        )
+
+        with patch.dict(sys.modules, {"wallet_sage": fake_wallet_sage}):
+            self.assertEqual(_worker_module._run_sage_rpc_smoke(), 0)
+
+        self.assertEqual(calls, ["reload", ("initialize", True), "get_key"])
+
+    def test_returns_failure_when_sage_initialize_fails(self):
+        calls = []
+        fake_wallet_sage = types.ModuleType("wallet_sage")
+        fake_wallet_sage.WALLET_URL = "https://127.0.0.1:9257"
+        fake_wallet_sage.CERT_PATH = __file__
+        fake_wallet_sage.KEY_PATH = __file__
+        fake_wallet_sage.reload_connection_settings = lambda: calls.append("reload")
+        fake_wallet_sage.ensure_initialized = (
+            lambda force_retry=False: calls.append(("initialize", force_retry)) or False
+        )
+        fake_wallet_sage.get_current_key = lambda: calls.append("get_key") or {"fingerprint": 123456}
+
+        with patch.dict(sys.modules, {"wallet_sage": fake_wallet_sage}):
+            self.assertEqual(_worker_module._run_sage_rpc_smoke(), 1)
+
+        self.assertEqual(calls, ["reload", ("initialize", True)])
+
+
+class TestWalletBalanceResponseParsing(unittest.TestCase):
+
+    def test_balance_response_uses_unconfirmed_before_confirmed(self):
+        response = {
+            "success": True,
+            "wallet_balance": {
+                "confirmed_wallet_balance": 100,
+                "unconfirmed_wallet_balance": 250,
+            },
+        }
+
+        self.assertEqual(
+            _worker_module._wallet_total_mojos_from_balance_response(response, "XCH"),
+            250,
+        )
+
+    def test_balance_response_rejects_rpc_failure_instead_of_zeroing(self):
+        response = {"success": False, "error": "EOF occurred in violation of protocol"}
+
+        with self.assertRaises(_worker_module.CoinPrepRpcUnavailable):
+            _worker_module._wallet_total_mojos_from_balance_response(response, "XCH")
 
 
 # ---------------------------------------------------------------------------

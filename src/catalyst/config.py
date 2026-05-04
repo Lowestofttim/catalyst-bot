@@ -96,6 +96,31 @@ except Exception as _e:
 load_dotenv(_ENV_PATH)
 
 
+_PRESERVE_PROCESS_ENV_FLAG = "_CATALYST_PRESERVE_PROCESS_ENV"
+_PRESERVED_PROCESS_ENV_KEYS = {
+    "WALLET_TYPE",
+    "SAGE_RPC_URL",
+    "SAGE_CERT_PATH",
+    "SAGE_KEY_PATH",
+    "SAGE_DATA_DIR",
+}
+
+
+def _capture_preserved_process_env() -> dict:
+    if os.getenv(_PRESERVE_PROCESS_ENV_FLAG) != "1":
+        return {}
+    return {
+        key: os.environ[key]
+        for key in _PRESERVED_PROCESS_ENV_KEYS
+        if key in os.environ
+    }
+
+
+def _restore_preserved_process_env(values: dict) -> None:
+    for key, value in values.items():
+        os.environ[key] = value
+
+
 def _strip_quotes(val: str) -> str:
     """Strip surrounding single or double quotes from .env values."""
     val = val.strip()
@@ -186,7 +211,9 @@ class Config:
     def _reload_inner(self):
         """Internal reload — called under lock."""
         # Force re-read of .env
+        _preserved_env = _capture_preserved_process_env()
         load_dotenv(_ENV_PATH, override=True)
+        _restore_preserved_process_env(_preserved_env)
 
         # ----- Wallet Backend Selection -----
         # "sage" = Sage light wallet (port 9257, no full node needed) — default
