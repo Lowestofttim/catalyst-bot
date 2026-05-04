@@ -163,11 +163,12 @@ def _smart_sniper_prep_plan(avail_xch: float, fills_per_day: float, sniper_size_
 
 def _smart_position_floor(xch_total: float, trade_size_xch: float) -> float:
     """Small-wallet-aware minimum for MAX_POSITION_XCH."""
+    xch_total = max(0.0, _smart_float(xch_total))
     trade_size_xch = max(0.0, _smart_float(trade_size_xch))
     if trade_size_xch > 0:
-        return round(trade_size_xch * 5, 1)
+        wallet_cap = xch_total * 0.50 if xch_total > 0 else 5.0
+        return round(max(0.1, min(5.0, trade_size_xch * 5, wallet_cap)), 1)
 
-    xch_total = max(0.0, _smart_float(xch_total))
     if xch_total <= 0:
         return 5.0
     return round(max(0.1, min(5.0, xch_total * 0.10)), 1)

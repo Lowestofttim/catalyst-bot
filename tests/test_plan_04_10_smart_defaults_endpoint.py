@@ -328,9 +328,16 @@ class TestSmartDefaultsSmallWalletSizing(unittest.TestCase):
     def test_small_wallet_position_limit_has_no_five_xch_floor(self):
         from blueprints.smart_defaults import _smart_initial_max_position
 
+        self.assertEqual(_smart_initial_max_position(1, 0, "healthy"), 0.4)
         self.assertEqual(_smart_initial_max_position(5, 0, "healthy"), 2.0)
         self.assertEqual(_smart_initial_max_position(5, 0, "moderate"), 1.5)
         self.assertLess(_smart_initial_max_position(5, 0, "healthy"), 5.0)
+
+    def test_stale_trade_size_floor_is_capped_by_small_wallet(self):
+        from blueprints.smart_defaults import _smart_initial_max_position
+
+        self.assertLessEqual(_smart_initial_max_position(1, 0.5, "healthy"), 0.5)
+        self.assertLessEqual(_smart_initial_max_position(5, 1.0, "healthy"), 2.5)
 
     def test_large_wallet_position_limit_keeps_existing_shape(self):
         from blueprints.smart_defaults import _smart_initial_max_position
@@ -344,7 +351,13 @@ class TestSmartDefaultsSmallWalletSizing(unittest.TestCase):
             _smart_sniper_prep_plan,
         )
 
+        self.assertLessEqual(_smart_fee_prep_count(1, 0.001), 10)
+
         self.assertLessEqual(_smart_fee_prep_count(5, 0.001), 20)
+
+        one_xch_sniper = _smart_sniper_prep_plan(1, fills_per_day=12, sniper_size_xch=0.01)
+        self.assertLessEqual(one_xch_sniper["count"], 2)
+        self.assertLessEqual(one_xch_sniper["pool_xch"], 0.02)
 
         sniper = _smart_sniper_prep_plan(5, fills_per_day=12, sniper_size_xch=0.01)
         self.assertLessEqual(sniper["count"], 12)
