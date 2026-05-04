@@ -19,19 +19,6 @@ CATalyst runs locally as a desktop application and connects to your
 
 ---
 
-## Tech Stack
-
-- Python 3.12
-- Flask HTTP API and Server-Sent Events
-- PyWebView desktop shell
-- SQLite WAL-mode local database
-- Vanilla HTML/CSS/JavaScript frontend
-- Sage wallet RPC integration
-- Dexie, TibetSwap, Spacescan, Coinset, and Splash integrations
-- PyInstaller desktop builds
-
----
-
 ## What It Does
 
 Market making means posting both buy and sell offers around the current market
@@ -104,6 +91,45 @@ and market shocks.
 
 ---
 
+## How It Works
+
+CATalyst runs locally. The UI talks to the local Flask API, the bot loop
+coordinates pricing, risk, offers, coins, and fills, and external services are
+used for wallet RPC, market data, offer posting, and on-chain verification.
+
+### App flow
+
+![CATalyst app flow](docs/diagrams/catalyst-app-flow-v2.svg)
+
+### Offer and fill flow
+
+![CATalyst offer and fill flow](docs/diagrams/catalyst-offer-fill-flow-v2.svg)
+
+### Coin prep and topup flow
+
+![CATalyst coin prep and topup flow](docs/diagrams/catalyst-coin-prep-topup-flow-v2.svg)
+
+The editable Mermaid source files live in `docs/diagrams/` next to the rendered
+SVG and PNG assets.
+
+The trading loop runs on the configurable `LOOP_SECONDS` cadence, defaulting
+to 90 seconds:
+
+1. Fetch and blend TibetSwap and Dexie pricing, then update market intelligence.
+2. Check risk limits, circuit breakers, inventory skew, and live market depth.
+3. Sync live offers from the wallet and detect fills using wallet, Dexie, and
+   Spacescan evidence.
+4. Cancel, requote, refill, or create offers through Sage wallet RPC.
+5. Persist offer state locally, then post/broadcast offer bech32 strings through
+   Dexie and Splash.
+6. Reconcile coins, top up tier spares, and run runtime health checks.
+
+Between cycles, coin prep/topup reshapes the wallet coin set, AMM monitoring
+keeps TibetSwap reserves fresh, and the mempool watcher can wake the loop early
+when pending spends suggest a fill or price shock.
+
+---
+
 ## Requirements
 
 - Windows 10/11 (64-bit), macOS, or Linux.
@@ -119,26 +145,6 @@ and market shocks.
 
 Release packages are published on the
 [Releases page](https://github.com/Lowestofttim/catalyst-bot/releases).
-
----
-
-## Known Limitations
-
-- CATalyst is local desktop trading software, not a hosted service.
-- The app assumes a trusted local machine, a configured Sage wallet, and network
-  access to third-party market data and offer-posting services.
-- Trading and market making can lose funds through market movement, bad
-  configuration, wallet/API failures, or operator error.
-- Splash, Spacescan, Dexie, TibetSwap, and Coinset behavior can change outside
-  this repository.
-- CATalyst refuses to auto-install a downloaded Splash binary if the release
-  does not provide a SHA256 checksum sidecar. Developers can override this with
-  `CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD=1`, but that should not be used for
-  normal release or operator installs.
-- The frontend is currently a single large `bot_gui.html` file; public
-  maintainability work is tracked separately.
-
----
 
 ## Quick Start
 
@@ -241,6 +247,24 @@ handles this automatically; custom scripts must supply the token themselves.
 
 ---
 
+## Known Limitations
+
+- CATalyst is local desktop trading software, not a hosted service.
+- The app assumes a trusted local machine, a configured Sage wallet, and network
+  access to third-party market data and offer-posting services.
+- Trading and market making can lose funds through market movement, bad
+  configuration, wallet/API failures, or operator error.
+- Splash, Spacescan, Dexie, TibetSwap, and Coinset behavior can change outside
+  this repository.
+- CATalyst refuses to auto-install a downloaded Splash binary if the release
+  does not provide a SHA256 checksum sidecar. Developers can override this with
+  `CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD=1`, but that should not be used for
+  normal release or operator installs.
+- The frontend is currently a single large `bot_gui.html` file; public
+  maintainability work is tracked separately.
+
+---
+
 ## Configuration
 
 CATalyst creates a per-user `.env` on first launch and updates it through the
@@ -260,45 +284,6 @@ fields afterwards.
 
 > **Security:** `.env` can contain local wallet paths. Never commit it. The
 > `.gitignore` excludes it by default.
-
----
-
-## How It Works
-
-CATalyst runs locally. The UI talks to the local Flask API, the bot loop
-coordinates pricing, risk, offers, coins, and fills, and external services are
-used for wallet RPC, market data, offer posting, and on-chain verification.
-
-### App flow
-
-![CATalyst app flow](docs/diagrams/catalyst-app-flow-v2.svg)
-
-### Offer and fill flow
-
-![CATalyst offer and fill flow](docs/diagrams/catalyst-offer-fill-flow-v2.svg)
-
-### Coin prep and topup flow
-
-![CATalyst coin prep and topup flow](docs/diagrams/catalyst-coin-prep-topup-flow-v2.svg)
-
-The editable Mermaid source files live in `docs/diagrams/` next to the rendered
-SVG and PNG assets.
-
-The trading loop runs on the configurable `LOOP_SECONDS` cadence, defaulting
-to 90 seconds:
-
-1. Fetch and blend TibetSwap and Dexie pricing, then update market intelligence.
-2. Check risk limits, circuit breakers, inventory skew, and live market depth.
-3. Sync live offers from the wallet and detect fills using wallet, Dexie, and
-   Spacescan evidence.
-4. Cancel, requote, refill, or create offers through Sage wallet RPC.
-5. Persist offer state locally, then post/broadcast offer bech32 strings through
-   Dexie and Splash.
-6. Reconcile coins, top up tier spares, and run runtime health checks.
-
-Between cycles, coin prep/topup reshapes the wallet coin set, AMM monitoring
-keeps TibetSwap reserves fresh, and the mempool watcher can wake the loop early
-when pending spends suggest a fill or price shock.
 
 ---
 
@@ -325,6 +310,19 @@ when pending spends suggest a fill or price shock.
 | `bot_health.py` | Self-healing watchdog. |
 | `database.py` | SQLite state layer using WAL mode. |
 | `config.py` | Typed `.env` loader with hot reload. |
+
+---
+
+## Tech Stack
+
+- Python 3.12
+- Flask HTTP API and Server-Sent Events
+- PyWebView desktop shell
+- SQLite WAL-mode local database
+- Vanilla HTML/CSS/JavaScript frontend
+- Sage wallet RPC integration
+- Dexie, TibetSwap, Spacescan, Coinset, and Splash integrations
+- PyInstaller desktop builds
 
 ---
 
