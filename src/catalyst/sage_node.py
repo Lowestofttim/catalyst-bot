@@ -626,10 +626,24 @@ def start_preload():
 
             # --- Step 3: Check certificate configuration ---
             cert_path = os.getenv("SAGE_CERT_PATH", "").strip()
+            key_path = os.getenv("SAGE_KEY_PATH", "").strip()
+            if cert_path:
+                ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
+                if ok:
+                    cert_path = cert_real
+                    os.environ["SAGE_CERT_PATH"] = cert_real
+                    os.environ["SAGE_KEY_PATH"] = key_real
+                else:
+                    log_event("warning", "sage_startup",
+                              f"Configured Sage certificates are not usable: {reason}")
+                    cert_path = ""
             if not cert_path:
-                detected = _detect_sage_cert_path()
+                detected = detect_sage_cert_path()
                 if detected:
                     cert_path = detected
+                    key_path = os.path.join(os.path.dirname(detected), "wallet.key")
+                    os.environ["SAGE_CERT_PATH"] = detected
+                    os.environ["SAGE_KEY_PATH"] = key_path
                     # Auto-detected — note for user but don't need to ask
                     log_event("info", "sage_startup",
                               f"Auto-detected cert: {cert_path}")
@@ -644,12 +658,23 @@ def start_preload():
                 # Wait for user to configure certs (via GUI or .env edit)
                 while _preload_running:
                     from dotenv import load_dotenv
-                    load_dotenv(override=True)
+                    try:
+                        from user_paths import env_file as _env_file
+                        load_dotenv(_env_file(), override=True)
+                    except Exception:
+                        load_dotenv(override=True)
                     cert_path = os.getenv("SAGE_CERT_PATH", "").strip()
-                    if cert_path and os.path.isfile(cert_path):
+                    key_path = os.getenv("SAGE_KEY_PATH", "").strip()
+                    ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
+                    if ok:
+                        os.environ["SAGE_CERT_PATH"] = cert_real
+                        os.environ["SAGE_KEY_PATH"] = key_real
                         log_event("success", "sage_startup",
-                                  f"Certificate configured: {cert_path}")
+                                  f"Certificate configured: {cert_real}")
                         break
+                    if cert_path:
+                        log_event("warning", "sage_startup",
+                                  f"Waiting for usable Sage certificate: {reason}")
                     time.sleep(5)
 
             version_gate = get_sage_version_requirement()
@@ -1146,34 +1171,156 @@ def _detect_sage_exe_path() -> Optional[str]:
     return None
 
 
-def _detect_sage_cert_path() -> Optional[str]:
-    """Auto-detect Sage TLS certificate location.
+def _split_env_paths(raw: str) -> List[str]:
+    """Split an env path list while tolerating comma-separated overrides."""
+    if not raw:
+        return []
+    pieces: List[str] = []
+    for chunk in raw.split(os.pathsep):
+        for part in chunk.split(","):
+            part = part.strip().strip('"').strip("'")
+            if part:
+                pieces.append(part)
+    return pieces
 
-    Searches the platform-specific Sage data directory for wallet.crt.
-    Returns cert path if found (key path inferred as same dir/wallet.key).
-    """
+
+def _normalise_path(path: str) -> str:
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(path.strip())))
+
+
+def _dedupe_paths(paths: List[str]) -> List[str]:
+    seen = set()
+    result: List[str] = []
+    for path in paths:
+        if not path:
+            continue
+        try:
+            normalised = _normalise_path(path)
+            key = os.path.normcase(os.path.realpath(normalised))
+        except Exception:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(normalised)
+    return result
+
+
+def _candidate_sage_data_dirs(extra_dirs: Optional[List[str]] = None) -> List[str]:
+    """Return known Sage data roots, including portable/custom overrides."""
     import platform
 
-    search_dirs = []
-    if platform.system() == "Windows":
-        search_dirs.append(
-            os.path.expandvars(r"%APPDATA%\com.rigidnetwork.sage\ssl"))
-    elif platform.system() == "Darwin":
-        search_dirs.append(
-            os.path.expanduser("~/Library/Application Support/com.rigidnetwork.sage/ssl"))
-    else:
-        search_dirs.append(
-            os.path.expanduser("~/.config/com.rigidnetwork.sage/ssl"))
+    roots: List[str] = []
+    if extra_dirs:
+        roots.extend(extra_dirs)
 
-    for d in search_dirs:
+    roots.extend(_split_env_paths(os.getenv("SAGE_DATA_DIR", "")))
+    roots.extend(_split_env_paths(os.getenv("SAGE_HOME", "")))
+    roots.extend(_split_env_paths(os.getenv("SAGE_ALLOWED_CERT_ROOTS", "")))
+
+    system = platform.system()
+    if system == "Windows":
+        appdata = os.environ.get("APPDATA")
+        localappdata = os.environ.get("LOCALAPPDATA")
+        userprofile = os.environ.get("USERPROFILE")
+        if appdata:
+            roots.append(os.path.join(appdata, "com.rigidnetwork.sage"))
+        if localappdata:
+            roots.append(os.path.join(localappdata, "com.rigidnetwork.sage"))
+            roots.append(os.path.join(localappdata, "Sage"))
+            roots.append(os.path.join(localappdata, "sage"))
+        if userprofile:
+            roots.append(os.path.join(userprofile, "AppData", "Roaming", "com.rigidnetwork.sage"))
+            roots.append(os.path.join(userprofile, "AppData", "Local", "com.rigidnetwork.sage"))
+    elif system == "Darwin":
+        roots.append(os.path.expanduser("~/Library/Application Support/com.rigidnetwork.sage"))
+        roots.append(os.path.expanduser("~/Library/Application Support/Sage"))
+    else:
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        xdg_data = os.environ.get("XDG_DATA_HOME", "").strip()
+        if xdg_config:
+            roots.append(os.path.join(xdg_config, "com.rigidnetwork.sage"))
+        if xdg_data:
+            roots.append(os.path.join(xdg_data, "com.rigidnetwork.sage"))
+        roots.append(os.path.expanduser("~/.config/com.rigidnetwork.sage"))
+        roots.append(os.path.expanduser("~/.local/share/com.rigidnetwork.sage"))
+
+    return _dedupe_paths(roots)
+
+
+def _candidate_sage_ssl_dirs(extra_dirs: Optional[List[str]] = None) -> List[str]:
+    ssl_dirs: List[str] = []
+    for data_dir in _candidate_sage_data_dirs(extra_dirs):
+        if os.path.basename(os.path.normpath(data_dir)).lower() == "ssl":
+            ssl_dirs.append(data_dir)
+        else:
+            ssl_dirs.append(os.path.join(data_dir, "ssl"))
+    return _dedupe_paths(ssl_dirs)
+
+
+def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, str, str, str]:
+    """Validate and normalise a Sage wallet TLS cert/key pair.
+
+    Security posture: accept flexible data roots, but only the Sage-shaped
+    pair: an `ssl` directory containing `wallet.crt` and sibling `wallet.key`.
+    The API never reads or returns private key contents.
+    """
+    if not cert_path or not cert_path.strip():
+        return False, "Choose Sage's wallet.crt file.", "", ""
+
+    try:
+        cert_real = os.path.realpath(_normalise_path(cert_path))
+    except Exception:
+        return False, "Certificate path is invalid.", "", ""
+
+    if os.path.basename(cert_real).lower() != "wallet.crt":
+        return False, "Choose Sage's wallet.crt file, not another certificate.", cert_real, ""
+
+    cert_dir = os.path.dirname(cert_real)
+    if not key_path or not key_path.strip():
+        key_path = os.path.join(cert_dir, "wallet.key")
+    try:
+        key_real = os.path.realpath(_normalise_path(key_path))
+    except Exception:
+        return False, "Key path is invalid.", cert_real, ""
+
+    if os.path.basename(key_real).lower() != "wallet.key":
+        return False, "Sage's key file must be named wallet.key.", cert_real, key_real
+    if os.path.normcase(os.path.dirname(key_real)) != os.path.normcase(cert_dir):
+        return False, "wallet.crt and wallet.key must be in the same Sage ssl folder.", cert_real, key_real
+    if os.path.basename(os.path.dirname(cert_real)).lower() != "ssl":
+        return False, "wallet.crt and wallet.key must be inside Sage's ssl folder.", cert_real, key_real
+    if not os.path.isfile(cert_real):
+        return False, "Certificate file not found at the specified path.", cert_real, key_real
+    if not os.path.isfile(key_real):
+        return False, "Key file not found next to wallet.crt.", cert_real, key_real
+
+    return True, "", cert_real, key_real
+
+
+def detect_sage_cert_path(extra_data_dirs: Optional[List[str]] = None) -> Optional[str]:
+    """Auto-detect Sage TLS certificate location.
+
+    Searches known platform data directories plus SAGE_DATA_DIR /
+    SAGE_ALLOWED_CERT_ROOTS. Returns wallet.crt if its sibling wallet.key
+    is present.
+    """
+
+    for d in _candidate_sage_ssl_dirs(extra_data_dirs):
         cert = os.path.join(d, "wallet.crt")
         key = os.path.join(d, "wallet.key")
-        if os.path.isfile(cert) and os.path.isfile(key):
+        ok, _, cert_real, _ = validate_sage_cert_pair(cert, key)
+        if ok:
             print(f"[Sage] Auto-detected certs: {d}", flush=True)
-            return cert  # Key path inferred as sibling
+            return cert_real
 
     print("[Sage] Certificates not found in common paths", flush=True)
     return None
+
+
+def _detect_sage_cert_path() -> Optional[str]:
+    """Backward-compatible private wrapper for older imports/tests."""
+    return detect_sage_cert_path()
 
 
 def _launch_sage_exe(exe_path: str) -> bool:
@@ -2434,4 +2581,3 @@ def _resolve_cat_name(raw_name: str, asset_id: str, wallet_id: int,
 
     # The wallet name looks reasonable — use it
     return clean
-

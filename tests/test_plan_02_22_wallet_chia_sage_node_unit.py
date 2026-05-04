@@ -10,9 +10,12 @@ No network I/O or wallet RPC calls are made.
 """
 
 import math
+import os
+import tempfile
 import time
 import unittest
 from decimal import Decimal
+from unittest.mock import patch
 
 try:
     import wallet_chia as _wc
@@ -31,7 +34,11 @@ except ModuleNotFoundError as exc:
     _SKIP_WC = str(exc)
 
 try:
-    from sage_node import _parse_sage_version, compare_sage_versions
+    from sage_node import (
+        _detect_sage_cert_path,
+        _parse_sage_version,
+        compare_sage_versions,
+    )
     _SKIP_SN = None
 except ModuleNotFoundError as exc:
     _SKIP_SN = str(exc)
@@ -364,6 +371,55 @@ class TestCompareSageVersions(unittest.TestCase):
 
     def test_both_unparseable_returns_zero(self):
         self.assertEqual(compare_sage_versions("", ""), 0)
+
+
+# ---------------------------------------------------------------------------
+# sage_node — Sage certificate path discovery
+# ---------------------------------------------------------------------------
+
+@unittest.skipIf(_SKIP_SN is not None, f"sage_node unavailable: {_SKIP_SN}")
+class TestDetectSageCertPath(unittest.TestCase):
+    def _write_sage_cert_pair(self, data_dir):
+        ssl_dir = os.path.join(data_dir, "ssl")
+        os.makedirs(ssl_dir, exist_ok=True)
+        cert_path = os.path.join(ssl_dir, "wallet.crt")
+        key_path = os.path.join(ssl_dir, "wallet.key")
+        with open(cert_path, "w", encoding="utf-8") as f:
+            f.write("test certificate")
+        with open(key_path, "w", encoding="utf-8") as f:
+            f.write("test key")
+        return cert_path
+
+    def test_honors_sage_data_dir_env(self):
+        with tempfile.TemporaryDirectory() as appdata, \
+             tempfile.TemporaryDirectory() as localappdata, \
+             tempfile.TemporaryDirectory() as sage_data_dir:
+            cert_path = self._write_sage_cert_pair(sage_data_dir)
+            env = {
+                "APPDATA": appdata,
+                "LOCALAPPDATA": localappdata,
+                "SAGE_DATA_DIR": sage_data_dir,
+                "SAGE_HOME": "",
+                "SAGE_ALLOWED_CERT_ROOTS": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                self.assertEqual(_detect_sage_cert_path(), cert_path)
+
+    def test_searches_localappdata_default_sage_dir(self):
+        with tempfile.TemporaryDirectory() as appdata, \
+             tempfile.TemporaryDirectory() as localappdata:
+            sage_data_dir = os.path.join(localappdata, "com.rigidnetwork.sage")
+            cert_path = self._write_sage_cert_pair(sage_data_dir)
+            env = {
+                "APPDATA": appdata,
+                "LOCALAPPDATA": localappdata,
+                "SAGE_DATA_DIR": "",
+                "SAGE_HOME": "",
+                "SAGE_ALLOWED_CERT_ROOTS": "",
+            }
+            with patch("platform.system", return_value="Windows"), \
+                 patch.dict(os.environ, env, clear=False):
+                self.assertEqual(_detect_sage_cert_path(), cert_path)
 
 
 # ---------------------------------------------------------------------------

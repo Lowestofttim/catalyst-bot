@@ -8159,11 +8159,12 @@
                     <div style="color: var(--warning-300); font-weight: 600; margin-bottom: 8px;">Certificate Setup Required</div>
                     <div style="color: var(--slate-400); font-size: 13px; line-height: 1.5; margin-bottom: 12px;">
                         Sage wallet needs TLS certificates for secure RPC communication.<br>
-                        They are typically located at:<br>
-                        <code style="color: var(--accent-cyan); font-size: 12px;">%APPDATA%\com.rigidnetwork.sage\ssl\wallet.crt</code>
+                        Auto-Detect checks the usual Sage data folders. If Sage uses a custom or portable data path, paste the full path to:<br>
+                        <code style="color: var(--accent-cyan); font-size: 12px;">...\com.rigidnetwork.sage\ssl\wallet.crt</code><br>
+                        <span style="font-size: 12px;">For safety, CATalyst only accepts Sage's <code>wallet.crt</code> when the matching <code>wallet.key</code> is in the same <code>ssl</code> folder.</span>
                     </div>
                     <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                        <input type="text" id="startupCertPath" placeholder="Enter path to wallet.crt (or click Auto-Detect)"
+                        <input type="text" id="startupCertPath" placeholder="Full path to Sage ssl\wallet.crt, or click Auto-Detect"
                                style="flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: var(--slate-200); font-size: 13px; font-family: monospace;">
                     </div>
                     <div style="display: flex; gap: 8px;">
@@ -34115,7 +34116,7 @@ async function startupCertAutoDetect() {
 
         if (result.success) {
             statusEl.style.color = 'var(--status-success)';
-            statusEl.textContent = 'Found! ' + (result.cert_path || 'Certificates configured.');
+            statusEl.textContent = 'Found Sage certificates: ' + (result.cert_path || 'configured.');
             document.getElementById('startupCertPath').value = result.cert_path || '';
             // Auto-continue after short delay
             setTimeout(() => {
@@ -34141,7 +34142,7 @@ async function startupCertSubmit() {
 
     if (!certPath) {
         statusEl.style.color = 'var(--sell-color)';
-        statusEl.textContent = 'Please enter a path or use Auto-Detect.';
+        statusEl.textContent = 'Paste the full path to Sage ssl\\wallet.crt, or use Auto-Detect.';
         return;
     }
 
@@ -34159,7 +34160,7 @@ async function startupCertSubmit() {
 
         if (result.success) {
             statusEl.style.color = 'var(--status-success)';
-            statusEl.textContent = 'Certificates saved! Continuing...';
+            statusEl.textContent = 'Certificates saved: ' + (result.cert_path || 'continuing...');
             setTimeout(() => {
                 document.getElementById('startupCertSection').style.display = 'none';
                 document.getElementById('startupProgressTrack').style.display = 'block';

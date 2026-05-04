@@ -34,7 +34,12 @@ from tx_fees import get_effective_transaction_fee_mojos
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-load_dotenv()
+try:
+    from user_paths import env_file as _env_file, data_dir as _data_dir
+    load_dotenv(_env_file(), override=False)
+except Exception:
+    _data_dir = None
+    load_dotenv()
 
 
 def _console(msg: str) -> None:
@@ -69,6 +74,7 @@ def _generate_self_signed_cert(cert_path, key_path):
         import datetime
 
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        now = datetime.datetime.now(datetime.timezone.utc)
         subject = issuer = x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, "sage-bot-client"),
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, "CATalyst Bot"),
@@ -79,8 +85,8 @@ def _generate_self_signed_cert(cert_path, key_path):
             .issuer_name(issuer)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.utcnow())
-            .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=3650))
+            .not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=3650))
             .sign(key, hashes.SHA256())
         )
 
@@ -111,21 +117,33 @@ def _generate_self_signed_cert(cert_path, key_path):
         return False
 
 
-if not CERT_PATH or not KEY_PATH:
-    # Auto-generate a client cert in the bot's directory
-    _bot_dir = os.path.dirname(os.path.abspath(__file__))
-    _auto_cert = os.path.join(_bot_dir, "sage_client_ssl", "client.crt")
-    _auto_key = os.path.join(_bot_dir, "sage_client_ssl", "client.key")
+def _auto_client_cert_paths() -> Tuple[str, str]:
+    try:
+        _cert_base = _data_dir() if _data_dir else os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        _cert_base = os.path.dirname(os.path.abspath(__file__))
+    return (
+        os.path.join(_cert_base, "sage_client_ssl", "client.crt"),
+        os.path.join(_cert_base, "sage_client_ssl", "client.key"),
+    )
+
+
+def _resolve_client_cert_paths(cert_path: str, key_path: str) -> Tuple[str, str]:
+    if cert_path and key_path:
+        return cert_path, key_path
+
+    # Auto-generate a client cert in the user data directory so packaged
+    # installs under Program Files never need to write beside the executable.
+    _auto_cert, _auto_key = _auto_client_cert_paths()
 
     if os.path.exists(_auto_cert) and os.path.exists(_auto_key):
-        # Already generated previously
-        CERT_PATH = _auto_cert
-        KEY_PATH = _auto_key
-    else:
-        # Generate fresh self-signed cert
-        if _generate_self_signed_cert(_auto_cert, _auto_key):
-            CERT_PATH = _auto_cert
-            KEY_PATH = _auto_key
+        return _auto_cert, _auto_key
+    if _generate_self_signed_cert(_auto_cert, _auto_key):
+        return _auto_cert, _auto_key
+    return cert_path, key_path
+
+
+CERT_PATH, KEY_PATH = _resolve_client_cert_paths(CERT_PATH, KEY_PATH)
 
 # Sage doesn't use wallet IDs — but we keep the constant for API compatibility.
 # Other modules import WALLET_ID_XCH for offer_dict keys.
@@ -163,27 +181,26 @@ import ssl
 import http.client
 import json as _json
 
-# Parse host/port once at module level
-_url_body = WALLET_URL.replace("https://", "").replace("http://", "")
-if ":" in _url_body:
-    _SAGE_HOST, _port_str = _url_body.split(":", 1)
-    _SAGE_PORT = int(_port_str)
-else:
-    _SAGE_HOST = _url_body
-    _SAGE_PORT = 9257
+def _parse_sage_rpc_url(url: str) -> Tuple[str, int]:
+    _url_body = (url or "https://127.0.0.1:9257").replace("https://", "").replace("http://", "").rstrip("/")
+    if ":" in _url_body:
+        host, _port_str = _url_body.split(":", 1)
+        port = int(_port_str)
+    else:
+        host = _url_body
+        port = 9257
 
-# IPv4/IPv6 dual-stack gotcha on Windows: Sage binds to 127.0.0.1 only,
-# but Python's getaddrinfo("localhost", ...) on modern Windows returns
-# the IPv6 [::1] address FIRST. http.client.HTTPSConnection will then
-# try [::1]:9257, hang in SYN_SENT until its timeout, and only then fall
-# back to IPv4. That turns every RPC call into a multi-second stall.
-#
-# Normalising any hostname alias that means "this machine" down to the
-# literal IPv4 loopback bypasses getaddrinfo entirely and gives us the
-# fast path Sage expects. Users who deliberately run Sage on an IPv6
-# address or a real hostname keep whatever they configured.
-if _SAGE_HOST.lower() in ("localhost", "localhost.localdomain"):
-    _SAGE_HOST = "127.0.0.1"
+    # IPv4/IPv6 dual-stack gotcha on Windows: Sage binds to 127.0.0.1 only,
+    # but Python's getaddrinfo("localhost", ...) on modern Windows returns
+    # the IPv6 [::1] address FIRST. Normalising local aliases avoids stalls.
+    if host.lower() in ("localhost", "localhost.localdomain"):
+        host = "127.0.0.1"
+    return host, port
+
+
+# Parse host/port once at module level; reload_connection_settings refreshes it
+# if the setup flow writes a new SAGE_RPC_URL or cert path.
+_SAGE_HOST, _SAGE_PORT = _parse_sage_rpc_url(WALLET_URL)
 
 
 class SageMempoolConflict(Exception):
@@ -338,6 +355,26 @@ def ensure_initialized(force_retry: bool = False) -> bool:
 # Thread-local connection cache — reuses TLS connections within a thread.
 # Eliminates ~100-200ms TLS handshake overhead per RPC call.
 _conn_local = _thr.local()
+
+
+def reload_connection_settings() -> None:
+    """Reload Sage RPC/cert paths after the GUI writes first-run settings."""
+    global WALLET_URL, CERT_PATH, KEY_PATH, _SAGE_HOST, _SAGE_PORT
+    global _init_ok, _init_last_attempt
+
+    try:
+        load_dotenv(_env_file(), override=False)
+    except Exception:
+        load_dotenv(override=True)
+
+    WALLET_URL = os.getenv("SAGE_RPC_URL", "https://127.0.0.1:9257").rstrip("/")
+    cert_path = os.getenv("SAGE_CERT_PATH", "")
+    key_path = os.getenv("SAGE_KEY_PATH", "")
+    CERT_PATH, KEY_PATH = _resolve_client_cert_paths(cert_path, key_path)
+    _SAGE_HOST, _SAGE_PORT = _parse_sage_rpc_url(WALLET_URL)
+    _conn_local.conn = None
+    _init_ok = False
+    _init_last_attempt = 0.0
 
 
 def _get_sage_connection(timeout: int = 10):

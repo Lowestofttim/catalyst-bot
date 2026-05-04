@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +13,80 @@ except ModuleNotFoundError as exc:
 
 @unittest.skipIf(wallet_sage is None, f"wallet_sage import unavailable: {_IMPORT_ERROR}")
 class TestWalletSageStartupReadiness(unittest.TestCase):
+    def test_reload_connection_settings_picks_up_sage_cert_env(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cert_path = os.path.join(temp_dir, "wallet.crt")
+            key_path = os.path.join(temp_dir, "wallet.key")
+            with open(cert_path, "w", encoding="utf-8") as f:
+                f.write("test certificate")
+            with open(key_path, "w", encoding="utf-8") as f:
+                f.write("test key")
+            env_path = os.path.join(temp_dir, ".env")
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write("SAGE_RPC_URL=https://127.0.0.1:9257\n")
+                f.write(f"SAGE_CERT_PATH={cert_path}\n")
+                f.write(f"SAGE_KEY_PATH={key_path}\n")
+
+            old_cert = wallet_sage.CERT_PATH
+            old_key = wallet_sage.KEY_PATH
+            old_url = wallet_sage.WALLET_URL
+            old_host = wallet_sage._SAGE_HOST
+            old_port = wallet_sage._SAGE_PORT
+            try:
+                with patch.object(wallet_sage, "_env_file", return_value=env_path), \
+                     patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("SAGE_RPC_URL", None)
+                    os.environ.pop("SAGE_CERT_PATH", None)
+                    os.environ.pop("SAGE_KEY_PATH", None)
+                    wallet_sage.reload_connection_settings()
+                    self.assertEqual(wallet_sage.CERT_PATH, cert_path)
+                    self.assertEqual(wallet_sage.KEY_PATH, key_path)
+                    self.assertEqual(wallet_sage._SAGE_HOST, "127.0.0.1")
+                    self.assertEqual(wallet_sage._SAGE_PORT, 9257)
+            finally:
+                wallet_sage.CERT_PATH = old_cert
+                wallet_sage.KEY_PATH = old_key
+                wallet_sage.WALLET_URL = old_url
+                wallet_sage._SAGE_HOST = old_host
+                wallet_sage._SAGE_PORT = old_port
+                wallet_sage._conn_local.conn = None
+
+    def test_reload_connection_settings_preserves_process_env_over_env_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_cert = os.path.join(temp_dir, "file.crt")
+            file_key = os.path.join(temp_dir, "file.key")
+            env_cert = os.path.join(temp_dir, "env.crt")
+            env_key = os.path.join(temp_dir, "env.key")
+            env_path = os.path.join(temp_dir, ".env")
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write("SAGE_RPC_URL=https://127.0.0.1:9999\n")
+                f.write(f"SAGE_CERT_PATH={file_cert}\n")
+                f.write(f"SAGE_KEY_PATH={file_key}\n")
+
+            old_cert = wallet_sage.CERT_PATH
+            old_key = wallet_sage.KEY_PATH
+            old_url = wallet_sage.WALLET_URL
+            old_host = wallet_sage._SAGE_HOST
+            old_port = wallet_sage._SAGE_PORT
+            try:
+                with patch.object(wallet_sage, "_env_file", return_value=env_path), \
+                     patch.dict(os.environ, {
+                         "SAGE_RPC_URL": "https://127.0.0.1:9257",
+                         "SAGE_CERT_PATH": env_cert,
+                         "SAGE_KEY_PATH": env_key,
+                     }, clear=False):
+                    wallet_sage.reload_connection_settings()
+                    self.assertEqual(wallet_sage.WALLET_URL, "https://127.0.0.1:9257")
+                    self.assertEqual(wallet_sage.CERT_PATH, env_cert)
+                    self.assertEqual(wallet_sage.KEY_PATH, env_key)
+            finally:
+                wallet_sage.CERT_PATH = old_cert
+                wallet_sage.KEY_PATH = old_key
+                wallet_sage.WALLET_URL = old_url
+                wallet_sage._SAGE_HOST = old_host
+                wallet_sage._SAGE_PORT = old_port
+                wallet_sage._conn_local.conn = None
+
     def test_get_chia_health_reports_syncing_when_wallet_not_synced(self):
         # Mock get_peer_connections to avoid real network calls that may fail
         # when the Sage wallet is under load from earlier tests in the suite.

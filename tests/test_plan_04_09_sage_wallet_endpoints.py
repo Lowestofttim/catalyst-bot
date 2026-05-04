@@ -11,6 +11,7 @@ Tests /api/wallet/sage-running, /api/wallet/begin-startup (POST),
 
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -223,6 +224,99 @@ class TestSageStartWithFingerprint(_FlaskBase):
             self._post("/api/sage/start-with-fingerprint",
                        {"fingerprint": "12345678"})
         mock_trigger.assert_called_once_with("12345678")
+
+
+# ---------------------------------------------------------------------------
+# 5b. POST /api/sage/setup-certs
+# ---------------------------------------------------------------------------
+
+@unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
+class TestSageSetupCerts(_FlaskBase):
+
+    def _write_sage_cert_pair(self, data_dir):
+        ssl_dir = os.path.join(data_dir, "ssl")
+        os.makedirs(ssl_dir, exist_ok=True)
+        cert_path = os.path.join(ssl_dir, "wallet.crt")
+        key_path = os.path.join(ssl_dir, "wallet.key")
+        with open(cert_path, "w", encoding="utf-8") as f:
+            f.write("test certificate")
+        with open(key_path, "w", encoding="utf-8") as f:
+            f.write("test key")
+        return cert_path, key_path
+
+    def test_auto_detect_finds_localappdata_sage_cert_pair(self):
+        with tempfile.TemporaryDirectory() as appdata, \
+             tempfile.TemporaryDirectory() as localappdata:
+            sage_data_dir = os.path.join(localappdata, "com.rigidnetwork.sage")
+            cert_path, _ = self._write_sage_cert_pair(sage_data_dir)
+            env = {
+                "APPDATA": appdata,
+                "LOCALAPPDATA": localappdata,
+                "SAGE_CERT_PATH": "",
+                "SAGE_KEY_PATH": "",
+                "SAGE_DATA_DIR": "",
+                "SAGE_HOME": "",
+                "SAGE_ALLOWED_CERT_ROOTS": "",
+            }
+            with patch("platform.system", return_value="Windows"), \
+                 patch.dict(os.environ, env, clear=False):
+                resp = self._post("/api/sage/setup-certs", {})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200, body)
+        self.assertTrue(body.get("success"))
+        self.assertIn("saved", body.get("message", "").lower())
+        self.assertIn(os.path.normpath(cert_path), body.get("cert_path", ""))
+
+    def test_manual_custom_sage_data_dir_cert_pair_is_accepted(self):
+        with tempfile.TemporaryDirectory() as appdata, \
+             tempfile.TemporaryDirectory() as custom_root:
+            cert_path, _ = self._write_sage_cert_pair(
+                os.path.join(custom_root, "PortableSage")
+            )
+            env = {
+                "APPDATA": appdata,
+                "LOCALAPPDATA": os.path.join(appdata, "Local"),
+                "SAGE_CERT_PATH": "",
+                "SAGE_KEY_PATH": "",
+                "SAGE_DATA_DIR": "",
+                "SAGE_HOME": "",
+                "SAGE_ALLOWED_CERT_ROOTS": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                resp = self._post("/api/sage/setup-certs", {"cert_path": cert_path})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200, body)
+        self.assertTrue(body.get("success"))
+
+    def test_manual_cert_rejects_non_wallet_cert_name(self):
+        with tempfile.TemporaryDirectory() as appdata, \
+             tempfile.TemporaryDirectory() as custom_root:
+            cert_path = os.path.join(custom_root, "ssl", "client.crt")
+            key_path = os.path.join(custom_root, "ssl", "client.key")
+            os.makedirs(os.path.dirname(cert_path), exist_ok=True)
+            with open(cert_path, "w", encoding="utf-8") as f:
+                f.write("test certificate")
+            with open(key_path, "w", encoding="utf-8") as f:
+                f.write("test key")
+            env = {
+                "APPDATA": appdata,
+                "LOCALAPPDATA": os.path.join(appdata, "Local"),
+                "SAGE_CERT_PATH": "",
+                "SAGE_KEY_PATH": "",
+                "SAGE_HOME": "",
+                "SAGE_ALLOWED_CERT_ROOTS": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                resp = self._post(
+                    "/api/sage/setup-certs",
+                    {"cert_path": cert_path, "key_path": key_path},
+                )
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 400, body)
+        self.assertIn("wallet.crt", body.get("error", ""))
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,6 @@ fingerprint), cert-path auto-detection, and full-node RPC status.
 from __future__ import annotations
 
 import os
-import sys
 
 from flask import Blueprint, jsonify, request
 
@@ -216,86 +215,44 @@ def api_sage_setup_certs():
     """Auto-detect or set Sage certificate paths.
 
     POST with {"cert_path": "...", "key_path": "..."} to set manually,
-    or POST with {} to auto-detect from common Sage install locations.
+    {"data_dir": "..."} to search a custom Sage data root, or {} to
+    auto-detect from common Sage locations.
     """
     try:
-        import chia_node
+        import sage_node
         data = request.get_json()
         if not isinstance(data, dict):
             return jsonify({"success": False, "error": "Invalid request body"}), 400
 
         cert_path = data.get("cert_path", "").strip()
         key_path = data.get("key_path", "").strip()
+        data_dir = data.get("data_dir", "").strip()
+        extra_dirs = [data_dir] if data_dir else None
 
         if not cert_path:
-            detected = chia_node._detect_sage_cert_path()
+            detected = sage_node.detect_sage_cert_path(extra_dirs)
             if detected:
                 cert_path = detected
-                key_path = detected.replace("wallet.crt", "wallet.key")
+                key_path = os.path.join(os.path.dirname(detected), "wallet.key")
             else:
                 return jsonify({
                     "success": False,
                     "error": "Could not auto-detect Sage certificates. "
-                             "Please provide the path manually.",
+                             "Paste the full path to Sage's ssl\\wallet.crt, "
+                             "or set SAGE_DATA_DIR to the Sage data folder.",
                 }), 404
 
-        # Safety: only accept paths inside a known Sage data directory.
-        # This prevents a local attacker (or compromised .env) from pointing
-        # the bot at an arbitrary TLS cert elsewhere on the filesystem.
-        def _is_inside_allowed_sage_dir(path: str) -> bool:
-            try:
-                real = os.path.realpath(path)
-            except Exception:
-                return False
-            allowed_roots = []
-            if sys.platform == "win32":
-                appdata = os.environ.get("APPDATA")
-                if appdata:
-                    allowed_roots.append(os.path.realpath(
-                        os.path.join(appdata, "com.rigidnetwork.sage")
-                    ))
-            elif sys.platform == "darwin":
-                allowed_roots.append(os.path.realpath(
-                    os.path.expanduser("~/Library/Application Support/com.rigidnetwork.sage")
-                ))
-            else:
-                allowed_roots.append(os.path.realpath(
-                    os.path.expanduser("~/.local/share/com.rigidnetwork.sage")
-                ))
-            # Also allow paths inside the bot's own directory (for bundled certs)
-            allowed_roots.append(os.path.realpath(os.path.dirname(os.path.abspath(api_server.__file__))))
-            for root in allowed_roots:
-                if real == root or real.startswith(root + os.sep):
-                    return True
-            return False
-
-        if not _is_inside_allowed_sage_dir(cert_path):
+        ok, reason, cert_path, key_path = sage_node.validate_sage_cert_pair(cert_path, key_path)
+        if not ok:
             log_event("warning", "sage_cert_path_rejected",
-                      f"Rejected cert_path outside allowed Sage data dir: {cert_path}")
-            return jsonify({
-                "success": False,
-                "error": "Cert path must be inside the Sage wallet data directory. "
-                         "Leave the field blank to auto-detect.",
-            }), 400
+                      f"Rejected Sage certificate selection: {reason}")
+            return jsonify({"success": False, "error": reason}), 400
 
-        if not os.path.isfile(cert_path):
-            log_event("warning", "sage_cert_missing", f"Cert not found: {cert_path}")
-            return jsonify({"success": False, "error": "Certificate file not found at the specified path"}), 400
-        if not key_path:
-            key_path = cert_path.replace(".crt", ".key")
-        if not _is_inside_allowed_sage_dir(key_path):
-            log_event("warning", "sage_key_path_rejected",
-                      f"Rejected key_path outside allowed Sage data dir: {key_path}")
-            return jsonify({
-                "success": False,
-                "error": "Key path must be inside the Sage wallet data directory.",
-            }), 400
-        if not os.path.isfile(key_path):
-            log_event("warning", "sage_key_missing", f"Key not found: {key_path}")
-            return jsonify({"success": False, "error": "Key file not found at the expected path"}), 400
+        sage_data_dir = os.path.dirname(os.path.dirname(cert_path))
 
         os.environ["SAGE_CERT_PATH"] = cert_path
         os.environ["SAGE_KEY_PATH"] = key_path
+        os.environ["SAGE_DATA_DIR"] = sage_data_dir
         try:
             try:
                 from user_paths import env_file as _env_file
@@ -306,7 +263,11 @@ def api_sage_setup_certs():
             if os.path.isfile(env_path):
                 with open(env_path, "r", encoding="utf-8") as f:
                     lines = f.readlines()
-            for key, val in [("SAGE_CERT_PATH", cert_path), ("SAGE_KEY_PATH", key_path)]:
+            for key, val in [
+                ("SAGE_CERT_PATH", cert_path),
+                ("SAGE_KEY_PATH", key_path),
+                ("SAGE_DATA_DIR", sage_data_dir),
+            ]:
                 found = False
                 for i, line in enumerate(lines):
                     if line.strip().startswith(f"{key}="):
@@ -320,9 +281,22 @@ def api_sage_setup_certs():
         except Exception as env_err:
             print(f"[Sage] Warning: could not update .env: {env_err}")
 
+        try:
+            cfg.reload()
+        except Exception:
+            pass
+        try:
+            import wallet_sage
+            wallet_sage.reload_connection_settings()
+        except Exception as reload_err:
+            print(f"[Sage] Warning: could not refresh wallet_sage config: {reload_err}")
+
         return jsonify({
             "success": True,
             "message": "Certificate paths saved to .env",
+            "cert_path": cert_path,
+            "key_path": key_path,
+            "data_dir": sage_data_dir,
         })
     except Exception as e:
         return api_server._api_error(e, request.path)

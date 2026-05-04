@@ -207,9 +207,14 @@ Then open `http://127.0.0.1:5000/` in a browser on that same machine.
 CATalyst creates a per-user `.env` automatically in the app data directory.
 Normal users should not need to copy or edit `.env` by hand.
 
-Startup checks Sage, waits for RPC if needed, and asks you to choose a wallet
-fingerprint in the GUI. CAT selection and Smart Settings then save the trading
-configuration as you set up the app.
+Startup checks Sage, waits for RPC if needed, locates Sage's local TLS
+certificates, and asks you to choose a wallet fingerprint in the GUI. CAT
+selection and Smart Settings then save the trading configuration as you set up
+the app.
+
+If Sage is running but CATalyst asks for certificates, click **Auto-Detect**.
+For custom or portable Sage installs, paste the full path to Sage's
+`ssl\wallet.crt`; the matching `wallet.key` must sit in the same `ssl` folder.
 
 ### Changing the Browser Port
 
@@ -239,8 +244,9 @@ access warning, check that:
 - You are using `http://127.0.0.1:5000/`, not another PC's IP address, a
   browser-preview URL, or a forwarded port.
 - Sage wallet RPC is enabled locally in Sage Settings -> Advanced.
-- If Sage certificate auto-detection fails, use the in-app setup prompt or edit
-  the local `.env` as a fallback.
+- If Sage certificate auto-detection fails, paste Sage's `ssl\wallet.crt` in
+  the in-app setup prompt. For portable installs, set `SAGE_DATA_DIR` in the
+  local `.env` to the Sage data folder that contains `ssl`.
 
 Direct API clients also need CATalyst's per-run local write token. The web page
 handles this automatically; custom scripts must supply the token themselves.
@@ -274,6 +280,7 @@ GUI. Most operators never need to edit it directly:
 |---------|--------------|
 | `SAGE_RPC_URL` | Sage wallet RPC endpoint. Default: `https://127.0.0.1:9257`. |
 | `SAGE_CERT_PATH` / `SAGE_KEY_PATH` | Optional fallback paths if Sage certificate auto-detection fails. |
+| `SAGE_DATA_DIR` | Optional custom Sage data folder for portable/non-standard installs. |
 | `CAT_ASSET_ID` | The CAT to trade. Written when you pick a token in the GUI. |
 
 Every other trading parameter, including spread, offer count, tier sizes,

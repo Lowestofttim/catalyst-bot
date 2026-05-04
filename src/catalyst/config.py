@@ -207,12 +207,10 @@ class Config:
         self.SAGE_CERT_PATH = _str("SAGE_CERT_PATH")
         self.SAGE_KEY_PATH = _str("SAGE_KEY_PATH")
         self.SAGE_EXE_PATH = _str("SAGE_EXE_PATH")           # Auto-detected if empty
+        self.SAGE_DATA_DIR = _str("SAGE_DATA_DIR")           # Optional custom Sage data root
         # SAGE_FINGERPRINT is read directly via os.getenv() in sage_node.py
         # (line 416). Kept in cfg for to_dict() exclusion list completeness.
         self.SAGE_FINGERPRINT = _str("SAGE_FINGERPRINT")      # Auto-login fingerprint
-        # SAGE_DATA_DIR removed 2026-04-17 (F77) — auto-detected at runtime;
-        # the env var was never read. Retained in to_dict() exclusion set
-        # as a defensive no-op against stale .env files.
         self.SAGE_SET_CHANGE_ADDRESS = _bool("SAGE_SET_CHANGE_ADDRESS", False)
 
         # ----- Wallet Address (for Spacescan self-spend detection) -----
@@ -1319,4 +1317,3 @@ def has_per_side_tier_sizes() -> bool:
         if Decimal(str(getattr(cfg, f"SELL_{t.upper()}_SIZE_XCH", 0) or 0)) > 0:
             return True
     return False
-
