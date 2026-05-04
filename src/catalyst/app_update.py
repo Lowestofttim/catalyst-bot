@@ -19,7 +19,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -115,7 +115,44 @@ def is_allowed_manifest_url(raw_url: str) -> bool:
     )
 
 
-def _signature_url_for_manifest(manifest_url: str) -> str:
+def _replace_channel_asset_filename(
+    raw_url: str,
+    *,
+    current_filename: str,
+    target_filename: str,
+) -> str:
+    try:
+        parsed = urlparse(str(raw_url or "").strip())
+    except Exception:
+        return ""
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+        return ""
+    parts = [unquote(p) for p in (parsed.path or "").split("/") if p]
+    if len(parts) != 6:
+        return ""
+    if not (
+        parts[0].lower() == OWNER.lower()
+        and parts[1] == RELEASE_CHANNEL_REPO
+        and parts[2] == "releases"
+        and parts[3] == "download"
+        and parts[5] == current_filename
+    ):
+        return ""
+    path = "/" + "/".join(parts[:5] + [target_filename])
+    return urlunparse(("https", "github.com", path, "", "", ""))
+
+
+def _signature_url_for_manifest(manifest_url: str, manifest_response: Any = None) -> str:
+    if manifest_response is not None:
+        candidates = [manifest_response, *reversed(getattr(manifest_response, "history", []) or [])]
+        for response in candidates:
+            resolved = _replace_channel_asset_filename(
+                getattr(response, "url", ""),
+                current_filename="latest.json",
+                target_filename="latest.json.sig",
+            )
+            if resolved:
+                return resolved
     return f"{str(manifest_url or OFFICIAL_MANIFEST_URL).strip()}.sig"
 
 
@@ -296,7 +333,7 @@ def fetch_signed_manifest(
     manifest = manifest_response.json()
 
     signature_response = requests.get(
-        _signature_url_for_manifest(url),
+        _signature_url_for_manifest(url, manifest_response),
         headers={
             "Accept": "text/plain",
             "User-Agent": "CATalyst-Updater",

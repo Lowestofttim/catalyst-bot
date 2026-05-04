@@ -85,6 +85,53 @@ class TestAppUpdateSecurity(unittest.TestCase):
         self.assertEqual(info["installer_name"], "Catalyst-Setup-v1.2.6.exe")
         self.assertEqual(info["_assets"]["installer"]["sha256"], "a" * 64)
 
+    def test_fetch_signed_manifest_uses_resolved_release_for_signature(self):
+        from app_update import OFFICIAL_MANIFEST_URL, fetch_signed_manifest
+
+        class FakeResponse:
+            def __init__(self, *, url, payload=None, text="", history=None):
+                self.url = url
+                self._payload = payload
+                self.text = text
+                self.history = history or []
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self._payload
+
+        private, public_b64 = self._keypair()
+        manifest = self._manifest(version="1.2.6")
+        signature = self._signature(private, manifest)
+        resolved_manifest_url = (
+            "https://github.com/Lowestofttim/catalyst-releases/releases/download/"
+            "v1.2.6/latest.json"
+        )
+        expected_sig_url = (
+            "https://github.com/Lowestofttim/catalyst-releases/releases/download/"
+            "v1.2.6/latest.json.sig"
+        )
+        calls = []
+
+        def fake_get(url, **_kwargs):
+            calls.append(url)
+            if url == OFFICIAL_MANIFEST_URL:
+                return FakeResponse(
+                    url="https://release-assets.githubusercontent.com/signed-download",
+                    payload=manifest,
+                    history=[FakeResponse(url=resolved_manifest_url)],
+                )
+            if url == expected_sig_url:
+                return FakeResponse(url=url, text=signature)
+            raise AssertionError(f"unexpected URL: {url}")
+
+        with patch("requests.get", side_effect=fake_get):
+            verified = fetch_signed_manifest(OFFICIAL_MANIFEST_URL, public_key_b64=public_b64)
+
+        self.assertEqual(verified["version"], "1.2.6")
+        self.assertEqual(calls, [OFFICIAL_MANIFEST_URL, expected_sig_url])
+
     def test_signed_manifest_rejects_tampering(self):
         from app_update import verify_signed_manifest
 
