@@ -9580,7 +9580,7 @@ class BotLoop:
             elif self.coin_manager.needs_topup(active_buy_count, active_sell_count):
                 log_event("info", "topup_trigger_recovery",
                           "Tier coin shortage during recovery — running topup to "
-                          "break coin-exhaustion deadlock (outer/extreme empty)")
+                          "restore genuinely low spare pools")
                 self.coin_manager.start_topup(active_buy_count, active_sell_count)
             else:
                 log_event("debug", "coin_ops_skip_recovery",

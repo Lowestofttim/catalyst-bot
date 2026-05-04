@@ -139,6 +139,16 @@ class WalletSageCancelBatchTests(unittest.TestCase):
         self.assertEqual(cancel.call_args_list[0].kwargs["fee_mojos"], 100)
         self.assertEqual(cancel.call_args_list[1].kwargs["fee_mojos"], 0)
 
+    def test_cancel_offer_treats_mempool_conflict_as_pending_cancel(self):
+        with patch.object(wallet_sage, "_require_signing_capability", return_value=True), \
+             patch.object(wallet_sage, "_sage_post",
+                          side_effect=wallet_sage.SageMempoolConflict("MEMPOOL_CONFLICT")), \
+             patch("builtins.print"):
+            result = wallet_sage.cancel_offer("0xabc123", secure=False)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["method"], "mempool_conflict_inflight")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -227,6 +227,15 @@ class SageAlreadyIncluding(Exception):
     pass
 
 
+def _sage_tx_error_level(kind: str, endpoint: str) -> str:
+    """Classify Sage transaction errors for operator-facing logs."""
+    kind_norm = str(kind or "").upper()
+    endpoint_norm = str(endpoint or "").lower()
+    if kind_norm in {"MEMPOOL_CONFLICT", "ALREADY_INCLUDING"} and "cancel" in endpoint_norm:
+        return "info"
+    return "warning"
+
+
 # ---- Sage RPC result validation ----
 
 def _rpc_succeeded(result) -> bool:
@@ -442,9 +451,19 @@ def _sage_post(path: str, payload: dict, timeout: int = 10):
             # Capture which thread raised this so we can correlate with
             # boost_step/cancel/create activity in the same window.
             import threading as _t
-            _le("warning", f"sage_{kind.lower()}",
-                f"⚠️ Sage {kind} on {path}: {snippet[:200]}",
+            level = _sage_tx_error_level(kind, path)
+            expected_cancel_settlement = level == "info"
+            if expected_cancel_settlement:
+                message = (
+                    f"Sage {kind} on {path}: cancel appears in flight; "
+                    "the bot will verify before marking it cancelled"
+                )
+            else:
+                message = f"⚠️ Sage {kind} on {path}: {snippet[:200]}"
+            _le(level, f"sage_{kind.lower()}",
+                message,
                 data={"endpoint": path, "kind": kind, "snippet": snippet[:500],
+                      "expected_cancel_settlement": expected_cancel_settlement,
                       "thread": _t.current_thread().name})
         except Exception:
             pass
@@ -526,7 +545,12 @@ def rpc(endpoint: str, payload: dict, timeout: int = 10):
         return result
     except SageMempoolConflict as e:
         elapsed = time.time() - start
-        print(f"⚠️  [Sage] MEMPOOL_CONFLICT on {endpoint} (after {elapsed:.2f}s): {e}")
+        _conflict_level = _sage_tx_error_level("MEMPOOL_CONFLICT", endpoint)
+        if _conflict_level == "info":
+            print(f"   [Sage] cancel already in flight on {endpoint} "
+                  f"(after {elapsed:.2f}s); will verify")
+        else:
+            print(f"⚠️  [Sage] MEMPOOL_CONFLICT on {endpoint} (after {elapsed:.2f}s): {e}")
         # Structured event so we can query/display these in the GUI and
         # diagnose root cause. Includes payload key summary so we know
         # which coin/offer triggered it (without dumping full payloads).
@@ -536,10 +560,21 @@ def rpc(endpoint: str, payload: dict, timeout: int = 10):
                 k: (str(v)[:80] if not isinstance(v, (int, float, bool)) else v)
                 for k, v in (payload or {}).items() if k != "puzzle_reveal"
             }
-            _le("warning", "sage_mempool_conflict",
-                f"⚠️ Sage MEMPOOL_CONFLICT on {endpoint} after {elapsed:.2f}s: {str(e)[:200]}",
+            if _conflict_level == "info":
+                message = (
+                    f"Sage MEMPOOL_CONFLICT on {endpoint} after {elapsed:.2f}s: "
+                    "cancel appears in flight; bot will verify"
+                )
+            else:
+                message = (
+                    f"⚠️ Sage MEMPOOL_CONFLICT on {endpoint} after {elapsed:.2f}s: "
+                    f"{str(e)[:200]}"
+                )
+            _le(_conflict_level, "sage_mempool_conflict",
+                message,
                 data={"endpoint": endpoint, "elapsed_secs": round(elapsed, 2),
                       "error_message": str(e)[:500],
+                      "expected_cancel_settlement": _conflict_level == "info",
                       "payload_summary": _payload_summary})
         except Exception:
             pass  # additive — never block on logging failure
@@ -2618,6 +2653,16 @@ def cancel_offer(trade_id: str, secure: bool = True, timeout: int = 60,
                 result["success"] = True
 
         return result
+
+    except SageAlreadyIncluding as e:
+        print(f"   [Sage] cancel_offer {trade_id[:16]}... already in mempool")
+        return {"success": True, "method": "already_in_mempool",
+                "note": f"Sage cancel already in mempool: {str(e)[:160]}"}
+
+    except SageMempoolConflict as e:
+        print(f"   [Sage] cancel_offer {trade_id[:16]}... cancel conflict in flight")
+        return {"success": True, "method": "mempool_conflict_inflight",
+                "note": f"Sage cancel conflict appears in-flight: {str(e)[:160]}"}
 
     except ConnectionError as e:
         err_str = str(e)

@@ -75,6 +75,21 @@ class TestRpcSucceeded(unittest.TestCase):
         self.assertFalse(_rpc_succeeded({"success": True, "error": "oops"}))
 
 
+@unittest.skipIf(_SKIP is not None, _SKIP_MSG)
+class TestSageMempoolConflictClassification(unittest.TestCase):
+    def test_cancel_conflict_is_expected_settlement_noise(self):
+        self.assertEqual(
+            _ws._sage_tx_error_level("MEMPOOL_CONFLICT", "cancel_offer"),
+            "info",
+        )
+
+    def test_create_conflict_remains_warning(self):
+        self.assertEqual(
+            _ws._sage_tx_error_level("MEMPOOL_CONFLICT", "make_offer"),
+            "warning",
+        )
+
+
 # ---------------------------------------------------------------------------
 # _is_cat_wallet
 # ---------------------------------------------------------------------------

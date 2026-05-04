@@ -5623,7 +5623,11 @@ class CoinManager:
                         topup_offer_deficits.get("xch", {}).get(tier_name, 0) or 0
                     )
                     xch_needs_spares = xch_spare_target > 0 and xch_have < xch_topup_threshold
-                    if (xch_offer_deficit > 0 or xch_needs_spares) and cfg.ENABLE_BUY:
+                    target_full = max(0, xch_spare_target, xch_offer_deficit)
+                    xch_needs_offer_rebuild = (
+                        xch_offer_deficit > 0 and xch_have < target_full
+                    )
+                    if (xch_needs_offer_rebuild or xch_needs_spares) and cfg.ENABLE_BUY:
                         any_tier_needed = True
                         xch_tier_size = int(xch_tier_mojos.get(tier_name, 0) or 0)
                         if xch_tier_size <= 0:
@@ -5632,15 +5636,23 @@ class CoinManager:
                                 * self._get_coin_prep_headroom_multiplier()
                                 * xch_scale
                             )
-                        target_full = max(0, xch_spare_target, xch_offer_deficit)
                         # Buffer: 25% of spare allocation, min 1, max 2.
                         # Scales with tier depth rather than being flat +2 for all
                         # tiers (flat +2 over-splits small-spare tiers like outer/extreme).
                         _buf_base = max(1, xch_spare_target, xch_offer_deficit)
                         _buf = max(1, min(2, int(_buf_base * 0.25)))
                         deficit = max(0, target_full - xch_have) + _buf
+                        if xch_needs_offer_rebuild:
+                            topup_reason = (
+                                f"missing buy offers: {xch_have}/{target_full} rebuild target "
+                                f"({xch_offer_deficit} missing, threshold {xch_topup_threshold})"
+                            )
+                        else:
+                            topup_reason = (
+                                f"spare buffer low: {xch_have}/{xch_topup_threshold} threshold"
+                            )
                         log_event("info", f"topup_xch_{tier_name}",
-                                  f"XCH {tier_name} tier low: {xch_have}/{xch_topup_threshold} threshold "
+                                  f"XCH {tier_name} {topup_reason} "
                                   f"(target {target_full}) — "
                                   f"need {deficit} at {_format_amount_xch(xch_tier_size)} each")
                         result = self._smart_topup_wallet(
@@ -5689,17 +5701,29 @@ class CoinManager:
                         topup_offer_deficits.get("cat", {}).get(tier_name, 0) or 0
                     )
                     cat_needs_spares = cat_spare_target > 0 and cat_have < cat_topup_threshold
-                    if (cat_offer_deficit > 0 or cat_needs_spares) and cfg.ENABLE_SELL:
+                    target_full = max(0, cat_spare_target, cat_offer_deficit)
+                    cat_needs_offer_rebuild = (
+                        cat_offer_deficit > 0 and cat_have < target_full
+                    )
+                    if (cat_needs_offer_rebuild or cat_needs_spares) and cfg.ENABLE_SELL:
                         any_tier_needed = True
                         cat_tier_mojos_val = self._get_tier_sizes_mojos(is_cat=True).get(tier_name, 0)
                         if cat_tier_mojos_val > 0:
-                            target_full = max(0, cat_spare_target, cat_offer_deficit)
                             _buf_base = max(1, cat_spare_target, cat_offer_deficit)
                             _buf = max(1, min(2, int(_buf_base * 0.25)))
                             deficit = max(0, target_full - cat_have) + _buf
                             cat_size_display = _format_amount_cat(cat_tier_mojos_val, cfg.CAT_DECIMALS)
+                            if cat_needs_offer_rebuild:
+                                topup_reason = (
+                                    f"missing sell offers: {cat_have}/{target_full} rebuild target "
+                                    f"({cat_offer_deficit} missing, threshold {cat_topup_threshold})"
+                                )
+                            else:
+                                topup_reason = (
+                                    f"spare buffer low: {cat_have}/{cat_topup_threshold} threshold"
+                                )
                             log_event("info", f"topup_cat_{tier_name}",
-                                      f"CAT {tier_name} tier low: {cat_have}/{cat_topup_threshold} threshold "
+                                      f"CAT {tier_name} {topup_reason} "
                                       f"(target {target_full}) — "
                                       f"need {deficit} at {cat_size_display} each")
                             result = self._smart_topup_wallet(
