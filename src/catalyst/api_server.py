@@ -355,8 +355,14 @@ _LIVE_REQUOTE_ONLY_KEYS = {
 def get_app_version() -> str:
     """Return the packaged app version from _version.py (single source of truth)."""
     try:
-        from _version import __version__
-        return __version__
+        from _version import get_version
+        return get_version()
+    except ImportError:
+        try:
+            from _version import __version__
+            return __version__
+        except Exception:
+            return "unknown"
     except Exception:
         return "unknown"
 

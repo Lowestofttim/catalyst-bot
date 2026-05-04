@@ -105,7 +105,12 @@ def _bundle_path(relative: str) -> str:
 # ---------------------------------------------------------------------------
 # Version & constants
 # ---------------------------------------------------------------------------
-from _version import __version__ as APP_VERSION
+try:
+    from _version import get_version as _get_app_version
+except ImportError:
+    from _version import __version__ as APP_VERSION
+else:
+    APP_VERSION = _get_app_version()
 
 APP_NAME = "CATalyst"
 FLASK_HOST = "127.0.0.1"
