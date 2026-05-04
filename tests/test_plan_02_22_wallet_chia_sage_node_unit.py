@@ -422,6 +422,56 @@ class TestDetectSageCertPath(unittest.TestCase):
                 self.assertEqual(_detect_sage_cert_path(), cert_path)
 
 
+@unittest.skipIf(_SKIP_SN is not None, f"sage_node unavailable: {_SKIP_SN}")
+class TestSageRpcStartupProbes(unittest.TestCase):
+    def _write_sage_cert_pair(self, data_dir):
+        ssl_dir = os.path.join(data_dir, "ssl")
+        os.makedirs(ssl_dir, exist_ok=True)
+        cert_path = os.path.join(ssl_dir, "wallet.crt")
+        key_path = os.path.join(ssl_dir, "wallet.key")
+        with open(cert_path, "w", encoding="utf-8") as f:
+            f.write("test certificate")
+        with open(key_path, "w", encoding="utf-8") as f:
+            f.write("test key")
+        return cert_path
+
+    def test_running_probe_treats_listening_rpc_port_as_running(self):
+        import api_server
+        import sage_node
+
+        client = api_server.app.test_client()
+        token = getattr(api_server, "_LOCAL_API_TOKEN", "")
+
+        with patch.object(sage_node, "_is_sage_rpc_available", return_value=False), \
+             patch.object(sage_node, "_is_sage_rpc_port_listening", return_value=True, create=True):
+            resp = client.get(
+                "/api/wallet/sage-running",
+                headers={"X-Bot-Local-Token": token},
+                environ_base={"REMOTE_ADDR": "127.0.0.1"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json().get("running"))
+
+    def test_cert_env_reload_helper_refreshes_wallet_sage(self):
+        import sage_node
+
+        with tempfile.TemporaryDirectory() as sage_data_dir:
+            cert_path = self._write_sage_cert_pair(sage_data_dir)
+            key_path = os.path.join(os.path.dirname(cert_path), "wallet.key")
+            helper = getattr(sage_node, "_set_sage_cert_env_and_reload", None)
+            self.assertIsNotNone(helper, "startup must reload wallet_sage after auto-detecting certs")
+
+            with patch.dict(os.environ, {}, clear=False), \
+                 patch("wallet_sage.reload_connection_settings") as reload_settings:
+                helper(cert_path, key_path)
+
+                self.assertEqual(os.environ.get("SAGE_CERT_PATH"), os.path.realpath(cert_path))
+                self.assertEqual(os.environ.get("SAGE_KEY_PATH"), os.path.realpath(key_path))
+                self.assertEqual(os.environ.get("SAGE_DATA_DIR"), os.path.dirname(os.path.dirname(os.path.realpath(cert_path))))
+                reload_settings.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # chia_node — re-export spot-check
 # ---------------------------------------------------------------------------

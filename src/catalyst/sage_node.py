@@ -501,6 +501,10 @@ def start_preload():
                     sage_running = True
                     print("[Sage] RPC is responding", flush=True)
                     break
+                if _is_sage_rpc_port_listening():
+                    sage_running = True
+                    print("[Sage] RPC port is listening - checking certificates", flush=True)
+                    break
                 if attempt == 0:
                     print("[Sage] Checking if Sage is running...", flush=True)
                 time.sleep(3)
@@ -524,6 +528,14 @@ def start_preload():
                         log_event("success", "sage_startup",
                                   "Sage RPC became available — resuming startup")
                         print("[Sage] RPC enabled — resuming", flush=True)
+                        break
+                    if _is_sage_rpc_port_listening():
+                        sage_running = True
+                        with _phase_lock:
+                            _sage_startup_phase = "connecting"
+                        log_event("info", "sage_startup",
+                                  "Sage RPC port became available - checking certificate access")
+                        print("[Sage] RPC port enabled - checking certificates", flush=True)
                         break
                     time.sleep(5)
                 if not sage_running or not _preload_running:
@@ -572,6 +584,13 @@ def start_preload():
                                 log_event("success", "sage_startup",
                                           "Sage launched and RPC available")
                                 break
+                            if _is_sage_rpc_port_listening():
+                                sage_running = True
+                                print("[Sage] RPC port came online after launch - checking certificates",
+                                      flush=True)
+                                log_event("info", "sage_startup",
+                                          "Sage RPC port is listening - checking certificate access")
+                                break
                             if attempt >= _RPC_GRACE_ATTEMPTS and _is_sage_process_running():
                                 # Sage is open but RPC never came up — likely disabled
                                 with _phase_lock:
@@ -589,6 +608,14 @@ def start_preload():
                                         log_event("success", "sage_startup",
                                                   "Sage RPC became available — resuming")
                                         print("[Sage] RPC enabled — resuming", flush=True)
+                                        break
+                                    if _is_sage_rpc_port_listening():
+                                        sage_running = True
+                                        with _phase_lock:
+                                            _sage_startup_phase = "connecting"
+                                        log_event("info", "sage_startup",
+                                                  "Sage RPC port became available - checking certificate access")
+                                        print("[Sage] RPC port enabled - checking certificates", flush=True)
                                         break
                                     time.sleep(5)
                                 break  # exit the 36-attempt loop either way
@@ -616,6 +643,12 @@ def start_preload():
                                       "Sage detected — RPC is now available")
                             print("[Sage] RPC detected!", flush=True)
                             break
+                        if _is_sage_rpc_port_listening():
+                            sage_running = True
+                            log_event("info", "sage_startup",
+                                      "Sage detected - RPC port is listening, checking certificates")
+                            print("[Sage] RPC port detected!", flush=True)
+                            break
                         time.sleep(5)
 
             if not sage_running or not _preload_running:
@@ -631,8 +664,8 @@ def start_preload():
                 ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
                 if ok:
                     cert_path = cert_real
-                    os.environ["SAGE_CERT_PATH"] = cert_real
-                    os.environ["SAGE_KEY_PATH"] = key_real
+                    key_path = key_real
+                    _set_sage_cert_env_and_reload(cert_real, key_real)
                 else:
                     log_event("warning", "sage_startup",
                               f"Configured Sage certificates are not usable: {reason}")
@@ -642,8 +675,7 @@ def start_preload():
                 if detected:
                     cert_path = detected
                     key_path = os.path.join(os.path.dirname(detected), "wallet.key")
-                    os.environ["SAGE_CERT_PATH"] = detected
-                    os.environ["SAGE_KEY_PATH"] = key_path
+                    _set_sage_cert_env_and_reload(detected, key_path)
                     # Auto-detected — note for user but don't need to ask
                     log_event("info", "sage_startup",
                               f"Auto-detected cert: {cert_path}")
@@ -667,8 +699,7 @@ def start_preload():
                     key_path = os.getenv("SAGE_KEY_PATH", "").strip()
                     ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
                     if ok:
-                        os.environ["SAGE_CERT_PATH"] = cert_real
-                        os.environ["SAGE_KEY_PATH"] = key_real
+                        _set_sage_cert_env_and_reload(cert_real, key_real)
                         log_event("success", "sage_startup",
                                   f"Certificate configured: {cert_real}")
                         break
@@ -676,6 +707,30 @@ def start_preload():
                         log_event("warning", "sage_startup",
                                   f"Waiting for usable Sage certificate: {reason}")
                     time.sleep(5)
+
+            if not _is_sage_rpc_available():
+                with _phase_lock:
+                    _sage_startup_phase = "waiting_certs"
+                log_event("warning", "sage_startup",
+                          "Sage RPC port is listening but CATalyst could not authenticate - "
+                          "checking Sage certificate paths")
+                print("[Sage] RPC port is listening but authenticated RPC failed - checking certs",
+                      flush=True)
+                while _preload_running:
+                    detected = detect_sage_cert_path()
+                    if detected:
+                        key_path = os.path.join(os.path.dirname(detected), "wallet.key")
+                        _set_sage_cert_env_and_reload(detected, key_path)
+                    if _is_sage_rpc_available():
+                        with _phase_lock:
+                            _sage_startup_phase = "connecting"
+                        log_event("success", "sage_startup",
+                                  "Sage RPC authenticated after refreshing certificate paths")
+                        print("[Sage] Authenticated RPC available after cert refresh", flush=True)
+                        break
+                    time.sleep(5)
+                if not _preload_running:
+                    return
 
             version_gate = get_sage_version_requirement()
             if not version_gate.get("supported"):
@@ -1298,6 +1353,26 @@ def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, s
     return True, "", cert_real, key_real
 
 
+def _set_sage_cert_env_and_reload(cert_path: str, key_path: str) -> bool:
+    """Apply Sage cert paths to this process and refresh the wallet RPC client."""
+    ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
+    if not ok:
+        log_event("warning", "sage_cert_path_rejected",
+                  f"Rejected Sage certificate selection: {reason}")
+        return False
+
+    os.environ["SAGE_CERT_PATH"] = cert_real
+    os.environ["SAGE_KEY_PATH"] = key_real
+    os.environ["SAGE_DATA_DIR"] = os.path.dirname(os.path.dirname(cert_real))
+
+    try:
+        import wallet_sage
+        wallet_sage.reload_connection_settings()
+    except Exception as reload_err:
+        print(f"[Sage] Warning: could not refresh wallet_sage config: {reload_err}")
+    return True
+
+
 def detect_sage_cert_path(extra_data_dirs: Optional[List[str]] = None) -> Optional[str]:
     """Auto-detect Sage TLS certificate location.
 
@@ -1438,6 +1513,20 @@ def _is_sage_rpc_available() -> bool:
         if isinstance(result, dict) and "error" in result:
             return False  # Error response
         return True
+    except Exception:
+        return False
+
+
+def _is_sage_rpc_port_listening() -> bool:
+    """Return True when Sage's RPC TCP port accepts connections.
+
+    This is intentionally weaker than `_is_sage_rpc_available()`: it tells the
+    startup wizard that the RPC server is on, even if the authenticated TLS call
+    still fails because cert paths have not been applied yet.
+    """
+    try:
+        from wallet_sage import _sage_rpc_port_reachable
+        return bool(_sage_rpc_port_reachable())
     except Exception:
         return False
 

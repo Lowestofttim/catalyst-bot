@@ -266,7 +266,8 @@ class TestStartupPhase3SageConnection(_TempDB):
 
     def test_sage_running_returns_false_when_unreachable(self):
         """GET /api/wallet/sage-running returns running=False when port closed."""
-        with patch("sage_node._is_sage_rpc_available", return_value=False):
+        with patch("sage_node._is_sage_rpc_available", return_value=False), \
+             patch("sage_node._is_sage_rpc_port_listening", return_value=False):
             resp = self.client.get("/api/wallet/sage-running", environ_base=_LOOPBACK)
         self.assertFalse(resp.get_json().get("running"))
 

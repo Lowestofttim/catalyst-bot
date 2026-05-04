@@ -113,8 +113,13 @@ def api_wallet_sage_running():
     """
     try:
         import sage_node
-        running = sage_node._is_sage_rpc_available()
-        return jsonify({"running": running})
+        authenticated = sage_node._is_sage_rpc_available()
+        port_listening = authenticated or sage_node._is_sage_rpc_port_listening()
+        return jsonify({
+            "running": bool(port_listening),
+            "rpc_authenticated": bool(authenticated),
+            "rpc_port_listening": bool(port_listening),
+        })
     except Exception as e:
         return api_server._api_error(e, request.path)
 

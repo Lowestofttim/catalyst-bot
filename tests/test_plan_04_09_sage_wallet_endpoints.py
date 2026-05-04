@@ -56,13 +56,15 @@ class _FlaskBase(unittest.TestCase):
 class TestWalletSageRunning(_FlaskBase):
 
     def test_returns_200(self):
-        with patch("sage_node._is_sage_rpc_available", return_value=False):
+        with patch("sage_node._is_sage_rpc_available", return_value=False), \
+             patch("sage_node._is_sage_rpc_port_listening", return_value=False):
             resp = self.client.get("/api/wallet/sage-running",
                                    environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_running_key(self):
-        with patch("sage_node._is_sage_rpc_available", return_value=False):
+        with patch("sage_node._is_sage_rpc_available", return_value=False), \
+             patch("sage_node._is_sage_rpc_port_listening", return_value=False):
             resp = self.client.get("/api/wallet/sage-running",
                                    environ_base=self._LOOPBACK)
         self.assertIn("running", resp.get_json())
@@ -74,7 +76,8 @@ class TestWalletSageRunning(_FlaskBase):
         self.assertTrue(resp.get_json()["running"])
 
     def test_running_false_when_unavailable(self):
-        with patch("sage_node._is_sage_rpc_available", return_value=False):
+        with patch("sage_node._is_sage_rpc_available", return_value=False), \
+             patch("sage_node._is_sage_rpc_port_listening", return_value=False):
             resp = self.client.get("/api/wallet/sage-running",
                                    environ_base=self._LOOPBACK)
         self.assertFalse(resp.get_json()["running"])
