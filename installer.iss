@@ -59,6 +59,11 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Require Windows 10 or later (WebView2 needs it)
 MinVersion=10.0.17763
 
+; Let silent upgrades replace the running app cleanly. CATalyst launches the
+; installer only after the user confirms the update and the bot is stopped.
+CloseApplications=yes
+RestartApplications=no
+
 ; Show license during install (optional — create LICENSE.txt first)
 ; LicenseFile=LICENSE.txt
 
@@ -102,6 +107,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 ; Offer to launch the app after install finishes.
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Silent in-app upgrades pass /CATALYST_RELAUNCH=1 so the updated app reopens.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent; Check: ShouldAutoRelaunch
 
 [UninstallDelete]
 ; The uninstaller removes the install dir, but per-user data in
@@ -111,6 +118,11 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: no
 ; %APPDATA%\Catalyst\ manually.
 
 [Code]
+function ShouldAutoRelaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:CATALYST_RELAUNCH|0}') = '1';
+end;
+
 // Friendly message on the install-complete page reminding users
 // where their config and database live.
 procedure CurStepChanged(CurStep: TSetupStep);

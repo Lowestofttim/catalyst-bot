@@ -1587,37 +1587,9 @@ def api_crash_log():
 # Version check against GitHub releases
 # ---------------------------------------------------------------------------
 #
-# The release API URL is configurable via the RELEASES_API_URL env var so
-# it can be changed without a redeploy, or disabled entirely (empty string).
-# It must return a GitHub-style JSON object with "tag_name" and "html_url".
-# We cache the result for 6 hours to avoid hammering GitHub's unauthenticated
-# rate limit (60 req/hr per IP).
-
-_UPDATE_CHECK_CACHE: dict = {"at": 0.0, "data": None}
-_UPDATE_CHECK_TTL = 6 * 3600  # 6 hours
-
-
-def _parse_semver(tag: str):
-    """Parse 'v1.2.3' / '1.2.3' into a (major, minor, patch) int tuple.
-
-    Returns None if the tag doesn't look like a semver. Extra pre-release /
-    build metadata after the patch number is ignored for comparison purposes.
-    """
-    if not tag:
-        return None
-    s = str(tag).strip().lstrip("vV")
-    head = s.split("-", 1)[0].split("+", 1)[0]
-    parts = head.split(".")
-    if len(parts) < 1:
-        return None
-    try:
-        nums = [int(p) for p in parts[:3]]
-    except ValueError:
-        return None
-    while len(nums) < 3:
-        nums.append(0)
-    return tuple(nums[:3])
-
+# The updater pins the release source to the official CATalyst GitHub release
+# API. RELEASES_API_URL is still read for backward compatibility, but
+# app_update rejects any value outside that exact repository path.
 
 @app.route("/api/check-update", methods=["GET"])
 def api_check_update():
@@ -1641,65 +1613,77 @@ def api_check_update():
     if not _is_loopback_addr(request.remote_addr):
         return jsonify({"success": False, "error": "loopback_only"}), 403
 
-    current = get_app_version()
-    # Read the releases URL from the environment. It's loaded from .env
-    # via load_dotenv() in config.py, so any change + save is picked up
-    # on the next process start. Leaving this unset disables the check.
-    releases_url = str(os.environ.get("RELEASES_API_URL", "") or "").strip()
-
-    if not releases_url:
-        # Update checking is disabled entirely.
-        return jsonify({
-            "success": True,
-            "enabled": False,
-            "current": current,
-            "latest": None,
-            "update_available": False,
-            "url": None,
-            "checked_at": time.time(),
-        })
-
-    now = time.time()
-    cached = _UPDATE_CHECK_CACHE.get("data")
-    cached_at = float(_UPDATE_CHECK_CACHE.get("at") or 0)
-    if cached and (now - cached_at) < _UPDATE_CHECK_TTL:
-        return jsonify(cached)
-
-    latest_tag = None
-    release_url = None
     try:
-        import requests as _req
-        r = _req.get(
-            releases_url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": f"CATalyst/{current}",
-            },
-            timeout=6,
+        import app_update
+        result = app_update.public_update_info(
+            app_update.get_update_info(
+                get_app_version(),
+                str(os.environ.get("RELEASES_API_URL", "") or ""),
+            )
         )
-        if r.status_code == 200:
-            j = r.json()
-            latest_tag = str(j.get("tag_name") or "").strip() or None
-            release_url = str(j.get("html_url") or "").strip() or None
     except Exception as e:
         log_event("info", "update_check_failed", f"{e}")
-
-    cur_sv = _parse_semver(current)
-    lat_sv = _parse_semver(latest_tag) if latest_tag else None
-    update_available = bool(cur_sv and lat_sv and lat_sv > cur_sv)
-
-    result = {
-        "success": True,
-        "enabled": True,
-        "current": current,
-        "latest": latest_tag,
-        "update_available": update_available,
-        "url": release_url,
-        "checked_at": now,
-    }
-    _UPDATE_CHECK_CACHE["at"] = now
-    _UPDATE_CHECK_CACHE["data"] = result
+        result = {
+            "success": True,
+            "enabled": False,
+            "current": get_app_version(),
+            "latest": None,
+            "update_available": False,
+            "installer_ready": False,
+            "url": None,
+            "release_notes": "",
+            "error": "Update check failed",
+            "checked_at": time.time(),
+        }
     return jsonify(result)
+
+
+@app.route("/api/update/status", methods=["GET"])
+def api_update_status():
+    """Return current secure updater progress."""
+    if not _is_loopback_addr(request.remote_addr):
+        return jsonify({"success": False, "error": "loopback_only"}), 403
+    try:
+        import app_update
+        status = app_update.get_update_status()
+        status["success"] = True
+        return jsonify(status)
+    except Exception as e:
+        return _api_error(e, request.path)
+
+
+@app.route("/api/update/install", methods=["POST"])
+def api_update_install():
+    """Start verified Windows installer download and launch.
+
+    Requires the write token via before_request and refuses while the bot is
+    running so a self-update cannot interrupt active market making.
+    """
+    if not _is_loopback_addr(request.remote_addr):
+        return jsonify({"success": False, "error": "loopback_only"}), 403
+
+    try:
+        if bot and bot.is_running():
+            return jsonify({
+                "success": False,
+                "error": "Stop the bot before upgrading CATalyst.",
+            }), 409
+    except Exception:
+        return jsonify({
+            "success": False,
+            "error": "Could not confirm the bot is stopped.",
+        }), 409
+
+    try:
+        import app_update
+        result = app_update.start_update_install(
+            get_app_version(),
+            str(os.environ.get("RELEASES_API_URL", "") or ""),
+        )
+        status_code = 200 if result.get("success") else 400
+        return jsonify(result), status_code
+    except Exception as e:
+        return _api_error(e, request.path)
 
 
 # ---------------------------------------------------------------------------

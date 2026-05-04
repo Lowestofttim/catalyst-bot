@@ -116,6 +116,10 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           # Rename output to match release naming
           Move-Item "Output\Catalyst-Setup-$version.exe" "Catalyst-Setup-$($env:RELEASE_REF).exe"
+          # Publish a checksum sidecar for the in-app secure updater.
+          $installer = "Catalyst-Setup-$($env:RELEASE_REF).exe"
+          $digest = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          "$digest  $installer" | Set-Content "${installer}.sha256" -NoNewline
         shell: pwsh
 
       - name: Package (macOS)
@@ -165,6 +169,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: softprops/action-gh-release@v3
         with:
-          files: Catalyst-Setup-${{ github.ref_name }}.exe
+          files: |
+            Catalyst-Setup-${{ github.ref_name }}.exe
+            Catalyst-Setup-${{ github.ref_name }}.exe.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -743,6 +743,32 @@ class AppBridge:
         return _unwrap_flask_response(resp)
 
     @_safe
+    def check_update(self):
+        """Check for a newer CATalyst release. Maps to GET /api/check-update."""
+        import api_server
+        with api_server.app.test_request_context('/api/check-update'):
+            resp = api_server.api_check_update()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def get_update_status(self):
+        """Get secure updater progress. Maps to GET /api/update/status."""
+        import api_server
+        with api_server.app.test_request_context('/api/update/status'):
+            resp = api_server.api_update_status()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def start_update_install(self, _body=None):
+        """Start secure updater. Maps to POST /api/update/install."""
+        import api_server
+        with api_server.app.test_request_context('/api/update/install', method='POST',
+                                                  content_type='application/json',
+                                                  data='{}'):
+            resp = api_server.api_update_install()
+        return _unwrap_flask_response(resp)
+
+    @_safe
     def run_doctor(self, params=None):
         """Run preflight checks. Maps to GET /api/doctor."""
         import api_server
@@ -1043,9 +1069,10 @@ class AppBridge:
     @_safe
     def get_app_info(self):
         """Return app metadata for the titlebar / about dialog."""
+        import api_server
         return {
             "name": "CATalyst",
-            "version": "4.0.0",
+            "version": api_server.get_app_version(),
             "mode": "desktop",
             "platform": __import__("sys").platform,
         }

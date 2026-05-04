@@ -11896,6 +11896,62 @@
     </div>
 
     <!-- ============================================= -->
+    <!-- APP UPDATE MODAL                             -->
+    <!-- ============================================= -->
+    <div class="modal" id="appUpdateModal" style="z-index: 10004;">
+        <div class="modal-content v4-modal-shell v4-modal-shell--success v4-modal-shell--lg" style="position: relative;">
+            <div class="v4-modal-inner">
+                <button class="v4-modal-close" onclick="closeAppUpdateModal()" aria-label="Close update">&times;</button>
+                <div class="v4-modal-hero" style="margin-bottom: 18px;">
+                    <div class="v4-modal-icon">UP</div>
+                    <div>
+                        <div class="v4-modal-kicker">Update Available</div>
+                        <h2 class="v4-modal-title">Upgrade CATalyst?</h2>
+                        <p class="v4-modal-copy">CATalyst found a newer official GitHub release. Automatic upgrade downloads the Windows installer, verifies its SHA-256 checksum, launches the installer, closes this app, and lets the installer reopen the updated app.</p>
+                    </div>
+                </div>
+
+                <div class="about-modal-grid">
+                    <div class="v4-modal-panel">
+                        <div class="v4-modal-panel-title">Current Version</div>
+                        <div class="v4-modal-panel-copy" id="appUpdateCurrentVersion">Checking...</div>
+                    </div>
+                    <div class="v4-modal-panel v4-modal-panel--success">
+                        <div class="v4-modal-panel-title">New Version</div>
+                        <div class="v4-modal-panel-copy" id="appUpdateLatestVersion">Checking...</div>
+                    </div>
+                    <div class="v4-modal-panel">
+                        <div class="v4-modal-panel-title">Published</div>
+                        <div class="v4-modal-panel-copy" id="appUpdatePublished">Checking...</div>
+                    </div>
+                    <div class="v4-modal-panel">
+                        <div class="v4-modal-panel-title">Verified Installer</div>
+                        <div class="v4-modal-panel-copy" id="appUpdateInstaller">Checking...</div>
+                    </div>
+                </div>
+
+                <div class="v4-modal-panel v4-modal-panel--info" style="margin-top: 14px;">
+                    <div class="v4-modal-panel-title">Security Check</div>
+                    <div class="v4-modal-panel-copy" id="appUpdateSecurity"></div>
+                </div>
+
+                <div class="v4-modal-panel" style="margin-top: 14px;">
+                    <div class="v4-modal-panel-title">What's Changed</div>
+                    <pre id="appUpdateNotes" style="white-space: pre-wrap; margin: 0; color: var(--text-secondary); font-family: var(--font-sans); font-size: 0.84rem; line-height: 1.55; max-height: 180px; overflow: auto;"></pre>
+                </div>
+
+                <div id="appUpdateStatus" style="display: none; margin-top: 14px; padding: 10px 12px; border: 1px solid rgba(59,130,246,0.35); border-radius: 8px; background: rgba(59,130,246,0.08); font-size: 0.85rem; line-height: 1.45;"></div>
+
+                <div class="v4-modal-actions v4-modal-actions--center" style="margin-top: 18px;">
+                    <button class="btn btn-config btn-secondary" onclick="closeAppUpdateModal()" style="flex: 1; max-width: 160px;">Later</button>
+                    <button class="btn btn-config btn-secondary" onclick="openUpdateReleasePage()" style="flex: 1; max-width: 180px;">View Release</button>
+                    <button class="btn" id="appUpdateUpgradeBtn" onclick="startAppUpgrade()" style="flex: 1; max-width: 180px; background: var(--status-success); color: white; border: none; cursor: pointer; padding: 10px 20px; border-radius: 8px; font-weight: bold;">Upgrade</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================= -->
     <!-- HELP MODAL                                    -->
     <!-- ============================================= -->
     <div class="modal" id="helpModal" style="z-index: 10003;">
@@ -14539,6 +14595,9 @@
 
             // --- Health & Doctor ---
             if (m === 'GET'  && clean === 'health')             return 'get_health';
+            if (m === 'GET'  && clean === 'check-update')       return 'check_update';
+            if (m === 'GET'  && clean === 'update/status')      return 'get_update_status';
+            if (m === 'POST' && clean === 'update/install')     return 'start_update_install';
             if (m === 'GET'  && clean.startsWith('doctor'))     return 'run_doctor';
             if (m === 'GET'  && clean === 'reservations')       return 'get_reservations';
             if (m === 'GET'  && clean === 'diagnostics/runtime') return 'get_runtime_diagnostics';
@@ -22834,23 +22893,35 @@
         // Silently no-ops if disabled. Server caches for 6 hours.
         // ================================================
         let _latestReleaseUrl = null;
+        let _latestUpdateInfo = null;
+        let _updateInstallPollTimer = null;
+        let _updateShutdownStarted = false;
+
+        function formatUpdateSize(bytes) {
+            const n = Number(bytes || 0);
+            if (!Number.isFinite(n) || n <= 0) return 'unknown size';
+            if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+            if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+            return n + ' bytes';
+        }
 
         async function checkForUpdates() {
             try {
                 const resp = await apiFetch(`${API_URL}/check-update`);
                 const data = await resp.json();
                 if (!data || !data.success || !data.enabled) return;
+                _latestUpdateInfo = data;
                 const badge = document.getElementById('v4UpdateBadge');
                 const about = document.getElementById('aboutAppVersion');
                 if (data.update_available && data.latest) {
                     _latestReleaseUrl = data.url || null;
                     if (badge) {
                         badge.style.display = 'inline-block';
-                        badge.textContent = '⬆ v' + data.latest + ' available';
+                        badge.textContent = 'Update v' + data.latest;
                     }
                     if (about && data.current) {
                         about.textContent = 'CATalyst v' + data.current
-                            + ' — new version ' + data.latest + ' available';
+                            + ' - new version ' + data.latest + ' available';
                     }
                 } else if (badge) {
                     badge.style.display = 'none';
@@ -22861,7 +22932,15 @@
         }
 
         function openUpdateRelease() {
-            const url = _latestReleaseUrl;
+            if (_latestUpdateInfo && _latestUpdateInfo.update_available) {
+                openAppUpdateModal();
+                return;
+            }
+            openUpdateReleasePage();
+        }
+
+        function openUpdateReleasePage() {
+            const url = _latestReleaseUrl || (_latestUpdateInfo && _latestUpdateInfo.url);
             if (!url) {
                 if (typeof showToast === 'function') showToast('No release URL available', 'warning');
                 return;
@@ -22874,6 +22953,168 @@
             }).catch(() => {
                 if (typeof showToast === 'function') showToast('Could not open release page', 'error');
             });
+        }
+
+        function setAppUpdateStatus(message, kind) {
+            const el = document.getElementById('appUpdateStatus');
+            if (!el) return;
+            el.textContent = message || '';
+            el.style.display = message ? 'block' : 'none';
+            el.style.borderColor = kind === 'error'
+                ? 'rgba(239,68,68,0.45)'
+                : kind === 'success'
+                    ? 'rgba(16,185,129,0.40)'
+                    : 'rgba(59,130,246,0.35)';
+            el.style.color = kind === 'error'
+                ? 'var(--danger-300)'
+                : kind === 'success'
+                    ? 'var(--success-300)'
+                    : 'var(--info-200)';
+        }
+
+        function openAppUpdateModal() {
+            const info = _latestUpdateInfo || {};
+            const modal = document.getElementById('appUpdateModal');
+            if (!modal) return;
+
+            const current = document.getElementById('appUpdateCurrentVersion');
+            const latest = document.getElementById('appUpdateLatestVersion');
+            const published = document.getElementById('appUpdatePublished');
+            const installer = document.getElementById('appUpdateInstaller');
+            const security = document.getElementById('appUpdateSecurity');
+            const notes = document.getElementById('appUpdateNotes');
+            const upgradeBtn = document.getElementById('appUpdateUpgradeBtn');
+
+            if (current) current.textContent = info.current ? 'v' + info.current : 'unknown';
+            if (latest) latest.textContent = info.latest ? 'v' + info.latest : 'unknown';
+            if (published) published.textContent = info.published_at || 'unknown';
+            if (installer) {
+                installer.textContent = info.installer_ready
+                    ? `${info.installer_name || 'Windows installer'} (${formatUpdateSize(info.installer_size)})`
+                    : 'Verified installer checksum is not published yet';
+            }
+            if (security) security.textContent = info.security || '';
+            if (notes) notes.textContent = info.release_notes || 'No release notes were published for this release.';
+
+            const running = !!(bot_state && bot_state.running);
+            if (upgradeBtn) {
+                upgradeBtn.disabled = running || !info.installer_ready;
+                upgradeBtn.textContent = running
+                    ? 'Stop Bot First'
+                    : info.installer_ready
+                        ? 'Upgrade'
+                        : 'Open Release Page';
+            }
+            if (running) {
+                setAppUpdateStatus('Stop the bot before upgrading. CATalyst will not interrupt active market making.', 'error');
+            } else if (!info.installer_ready) {
+                setAppUpdateStatus('This release can be viewed manually, but automatic upgrade is blocked until the checksum sidecar is present.', 'error');
+            } else {
+                setAppUpdateStatus('Ready. The installer will be downloaded from the official GitHub release and verified before it runs.', 'info');
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeAppUpdateModal() {
+            const modal = document.getElementById('appUpdateModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function stopAppUpdatePoll() {
+            if (_updateInstallPollTimer) {
+                clearInterval(_updateInstallPollTimer);
+                _updateInstallPollTimer = null;
+            }
+        }
+
+        async function pollAppUpdateStatusOnce() {
+            try {
+                const resp = await apiFetch('/api/update/status');
+                const status = await resp.json();
+                if (!status || !status.success) return;
+                const pct = Number(status.percent || 0);
+                const phase = String(status.phase || '');
+                const msg = status.error
+                    ? status.error
+                    : `${status.message || 'Updating...'}${pct ? ' (' + pct + '%)' : ''}`;
+                setAppUpdateStatus(msg, phase === 'error' ? 'error' : phase === 'launched' ? 'success' : 'info');
+
+                if (phase === 'error') {
+                    stopAppUpdatePoll();
+                    const btn = document.getElementById('appUpdateUpgradeBtn');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Retry Upgrade';
+                    }
+                } else if (phase === 'launched') {
+                    stopAppUpdatePoll();
+                    await shutdownForVerifiedUpdate();
+                }
+            } catch (_) {
+                // Keep polling; transient bridge/server failures can happen while closing.
+            }
+        }
+
+        async function shutdownForVerifiedUpdate() {
+            if (_updateShutdownStarted) return;
+            _updateShutdownStarted = true;
+            setAppUpdateStatus('Verified installer launched. Closing CATalyst so installation can finish...', 'success');
+            try {
+                await apiFetch(`${API_URL}/shutdown`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cancel_offers: false }),
+                });
+            } catch (_) {
+                // The server may go away immediately after accepting shutdown.
+            }
+            try {
+                if (typeof closeDesktopWindowAfterShutdown === 'function') {
+                    await closeDesktopWindowAfterShutdown({ backendStopped: false, extraWaitMs: 1200 });
+                }
+            } catch (_) {}
+        }
+
+        async function startAppUpgrade() {
+            const info = _latestUpdateInfo || {};
+            if (!info.installer_ready) {
+                openUpdateReleasePage();
+                return;
+            }
+            if (bot_state && bot_state.running) {
+                setAppUpdateStatus('Stop the bot before upgrading. Existing offers can stay live, but the app must not be actively managing them.', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('appUpdateUpgradeBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Preparing...';
+            }
+            _updateShutdownStarted = false;
+            setAppUpdateStatus('Starting secure update...', 'info');
+            try {
+                const resp = await apiFetch('/api/update/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+                const data = await resp.json();
+                if (!data || !data.success) {
+                    throw new Error((data && data.error) || 'Could not start update');
+                }
+                if (btn) btn.textContent = 'Updating...';
+                stopAppUpdatePoll();
+                _updateInstallPollTimer = setInterval(pollAppUpdateStatusOnce, 1000);
+                await pollAppUpdateStatusOnce();
+            } catch (error) {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Retry Upgrade';
+                }
+                setAppUpdateStatus(error.message || 'Could not start update', 'error');
+            }
         }
 
         function openAboutModal() {
@@ -22980,6 +23221,10 @@
             if (e.target === this) closeHelpModal();
         });
 
+        document.getElementById('appUpdateModal').addEventListener('click', function(e) {
+            if (e.target === this) closeAppUpdateModal();
+        });
+
         // ── Generalised modal accessibility ─────────────────────────────
         // One handler for ALL modals: Esc to close, backdrop click to close,
         // role="dialog"/aria-modal set automatically when any modal is open,
@@ -23010,6 +23255,7 @@
             // fall through to a plain classList.remove('active').
             const MODAL_CLOSER_NAMES = {
                 aboutModal: 'closeAboutModal',
+                appUpdateModal: 'closeAppUpdateModal',
                 helpModal: 'closeHelpModal',
                 shutdownModal: 'closeShutdownModal',
                 walletPickerModal: 'closeWalletPickerModal',

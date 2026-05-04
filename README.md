@@ -87,7 +87,9 @@ and market shocks.
   budget drift; repairs them without restarts.
 - **Data management.** Separate resets for P&L history, offer history, or full
   state, directly from the GUI.
-- **Update checker.** Polls GitHub for new releases.
+- **Secure updater.** Polls the official GitHub release, shows release notes,
+  and on Windows can upgrade from the app after verifying the installer
+  SHA-256 sidecar.
 
 ---
 
@@ -383,8 +385,10 @@ python build.py --no-clean   # skip cleaning for faster iteration
 
 The local build output stays on the machine that ran `python build.py`. To share
 builds with users, publish a GitHub Release or push a `v*` tag. The release
-workflow builds Windows, macOS, and Linux packages, plus a Windows installer, and
-uploads them to a new GitHub Release.
+workflow builds Windows, macOS, and Linux packages, plus a Windows installer and
+`.sha256` checksum sidecar, then uploads them to a new GitHub Release. The
+in-app updater will only auto-run the official Windows installer when that
+checksum sidecar is present and matches.
 
 ---
 
