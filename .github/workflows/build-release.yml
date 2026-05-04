@@ -106,9 +106,16 @@ jobs:
         if: matrix.os == 'windows-latest'
         env:
           RELEASE_REF: ${{ github.ref_name }}
+          CATALYST_UPDATE_SIGNING_KEY_B64: ${{ secrets.CATALYST_UPDATE_SIGNING_KEY_B64 }}
+          CATALYST_RELEASE_CHANNEL_REPO: ${{ vars.CATALYST_RELEASE_CHANNEL_REPO || 'Lowestofttim/catalyst-releases' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Install Inno Setup
           choco install innosetup --yes --no-progress
+          # Generate release notes for the in-app updater manifest.
+          gh api "repos/$($env:GITHUB_REPOSITORY)/releases/generate-notes" `
+            -f tag_name="$($env:RELEASE_REF)" `
+            --jq ".body" | Set-Content release_notes.md
           # Update version in installer script to match tag
           $version = $env:RELEASE_REF.TrimStart("v")
           (Get-Content installer.iss) -replace 'MyAppVersion     ".*"', "MyAppVersion     `"$version`"" | Set-Content installer.iss
@@ -116,10 +123,26 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           # Rename output to match release naming
           Move-Item "Output\Catalyst-Setup-$version.exe" "Catalyst-Setup-$($env:RELEASE_REF).exe"
-          # Publish a checksum sidecar for the in-app secure updater.
+          # Publish a checksum sidecar for manual verification and manifest signing.
           $installer = "Catalyst-Setup-$($env:RELEASE_REF).exe"
           $digest = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
           "$digest  $installer" | Set-Content "${installer}.sha256" -NoNewline
+          # Sign a public update manifest. The private key is only read from
+          # the Actions secret; CATalyst ships the matching public key.
+          if (-not $env:CATALYST_UPDATE_SIGNING_KEY_B64) {
+            throw "CATALYST_UPDATE_SIGNING_KEY_B64 secret is required for signed updates"
+          }
+          python scripts/sign_update_manifest.py `
+            --version "$($env:RELEASE_REF)" `
+            --installer "$installer" `
+            --sha256-file "${installer}.sha256" `
+            --download-base-url "https://github.com/$($env:CATALYST_RELEASE_CHANNEL_REPO)/releases/download/$($env:RELEASE_REF)" `
+            --release-url "https://github.com/$($env:CATALYST_RELEASE_CHANNEL_REPO)/releases/tag/$($env:RELEASE_REF)" `
+            --release-notes-file release_notes.md `
+            --out-manifest latest.json `
+            --out-signature latest.json.sig
+          Copy-Item latest.json "update-manifest-$($env:RELEASE_REF).json"
+          Copy-Item latest.json.sig "update-manifest-$($env:RELEASE_REF).json.sig"
         shell: pwsh
 
       - name: Package (macOS)
@@ -172,5 +195,40 @@ jobs:
           files: |
             Catalyst-Setup-${{ github.ref_name }}.exe
             Catalyst-Setup-${{ github.ref_name }}.exe.sha256
+            latest.json
+            latest.json.sig
+            update-manifest-${{ github.ref_name }}.json
+            update-manifest-${{ github.ref_name }}.json.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish public update channel
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.CATALYST_RELEASE_CHANNEL_TOKEN }}
+          RELEASE_REF: ${{ github.ref_name }}
+          CATALYST_RELEASE_CHANNEL_REPO: ${{ vars.CATALYST_RELEASE_CHANNEL_REPO || 'Lowestofttim/catalyst-releases' }}
+        run: |
+          if (-not $env:GH_TOKEN) {
+            Write-Warning "CATALYST_RELEASE_CHANNEL_TOKEN is not configured; skipping public update channel publish."
+            exit 0
+          }
+          $assets = @(
+            "Catalyst-Setup-$($env:RELEASE_REF).exe",
+            "Catalyst-Setup-$($env:RELEASE_REF).exe.sha256",
+            "latest.json",
+            "latest.json.sig",
+            "update-manifest-$($env:RELEASE_REF).json",
+            "update-manifest-$($env:RELEASE_REF).json.sig"
+          )
+          gh release view "$($env:RELEASE_REF)" --repo "$($env:CATALYST_RELEASE_CHANNEL_REPO)" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$($env:RELEASE_REF)" @assets --repo "$($env:CATALYST_RELEASE_CHANNEL_REPO)" --clobber
+          } else {
+            gh release create "$($env:RELEASE_REF)" @assets `
+              --repo "$($env:CATALYST_RELEASE_CHANNEL_REPO)" `
+              --title "CATalyst $($env:RELEASE_REF)" `
+              --notes-file release_notes.md `
+              --latest
+          }

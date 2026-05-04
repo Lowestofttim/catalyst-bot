@@ -1,77 +1,125 @@
+import base64
 import hashlib
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestAppUpdateSecurity(unittest.TestCase):
-    def _asset(self, name, url=None, size=123):
+    def _keypair(self):
+        private = Ed25519PrivateKey.generate()
+        public_b64 = base64.b64encode(
+            private.public_key().public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            )
+        ).decode("ascii")
+        return private, public_b64
+
+    def _manifest(self, *, version="1.2.6", expires_delta_days=14, installer_url=None):
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_delta_days)
+        installer_name = f"Catalyst-Setup-v{version}.exe"
         return {
-            "name": name,
-            "browser_download_url": url or (
-                "https://github.com/Lowestofttim/catalyst-bot/releases/download/"
-                f"v1.2.6/{name}"
-            ),
-            "size": size,
-            "state": "uploaded",
+            "schema": 1,
+            "app": "CATalyst",
+            "channel": "stable",
+            "version": version,
+            "tag": f"v{version}",
+            "published_at": "2026-05-04T10:00:00Z",
+            "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "release_url": f"https://github.com/Lowestofttim/catalyst-releases/releases/tag/v{version}",
+            "release_notes": "Signed manifest update.",
+            "platforms": {
+                "windows-x64": {
+                    "installer": {
+                        "name": installer_name,
+                        "url": installer_url or (
+                            "https://github.com/Lowestofttim/catalyst-releases/releases/download/"
+                            f"v{version}/{installer_name}"
+                        ),
+                        "size": 456,
+                        "sha256": "a" * 64,
+                    }
+                }
+            },
         }
 
-    def test_official_releases_api_url_is_allowed(self):
-        from app_update import OFFICIAL_RELEASES_API_URL, is_allowed_releases_api_url
+    def _signature(self, private, manifest):
+        from app_update import canonical_manifest_bytes
 
-        self.assertTrue(is_allowed_releases_api_url(OFFICIAL_RELEASES_API_URL))
-        self.assertFalse(is_allowed_releases_api_url("https://example.invalid/releases/latest"))
+        return base64.b64encode(private.sign(canonical_manifest_bytes(manifest))).decode("ascii")
+
+    def test_official_manifest_url_is_allowed(self):
+        from app_update import OFFICIAL_MANIFEST_URL, is_allowed_manifest_url
+
+        self.assertTrue(is_allowed_manifest_url(OFFICIAL_MANIFEST_URL))
+        self.assertFalse(is_allowed_manifest_url("https://example.invalid/latest.json"))
         self.assertFalse(
-            is_allowed_releases_api_url(
-                "https://api.github.com/repos/SomeoneElse/catalyst-bot/releases/latest"
+            is_allowed_manifest_url(
+                "https://api.github.com/repos/Lowestofttim/catalyst-bot/releases/latest"
             )
         )
 
-    def test_selects_exact_windows_installer_and_sha256_sidecar(self):
-        from app_update import select_windows_update_assets
+    def test_signed_manifest_builds_verified_update_info(self):
+        from app_update import build_update_info_from_manifest, verify_signed_manifest
 
-        release = {
-            "tag_name": "v1.2.6",
-            "assets": [
-                self._asset("Catalyst-windows-v1.2.6.zip"),
-                self._asset("Catalyst-Setup-v1.2.6.exe"),
-                self._asset("Catalyst-Setup-v1.2.6.exe.sha256"),
-            ],
-        }
+        private, public_b64 = self._keypair()
+        manifest = self._manifest(version="1.2.6")
+        signature = self._signature(private, manifest)
 
-        selected = select_windows_update_assets(release)
+        verified = verify_signed_manifest(manifest, signature, public_b64=public_b64)
+        info = build_update_info_from_manifest("1.2.5", verified)
 
-        self.assertEqual(selected["installer"]["name"], "Catalyst-Setup-v1.2.6.exe")
-        self.assertEqual(selected["checksum"]["name"], "Catalyst-Setup-v1.2.6.exe.sha256")
+        self.assertTrue(info["success"])
+        self.assertTrue(info["manifest_verified"])
+        self.assertTrue(info["update_available"])
+        self.assertTrue(info["installer_ready"])
+        self.assertEqual(info["latest"], "1.2.6")
+        self.assertEqual(info["installer_name"], "Catalyst-Setup-v1.2.6.exe")
+        self.assertEqual(info["_assets"]["installer"]["sha256"], "a" * 64)
 
-    def test_rejects_installer_without_checksum_sidecar(self):
-        from app_update import select_windows_update_assets
+    def test_signed_manifest_rejects_tampering(self):
+        from app_update import verify_signed_manifest
 
-        release = {
-            "tag_name": "v1.2.6",
-            "assets": [self._asset("Catalyst-Setup-v1.2.6.exe")],
-        }
+        private, public_b64 = self._keypair()
+        manifest = self._manifest(version="1.2.6")
+        signature = self._signature(private, manifest)
+        manifest["version"] = "1.2.7"
 
-        self.assertIsNone(select_windows_update_assets(release))
+        with self.assertRaises(ValueError):
+            verify_signed_manifest(manifest, signature, public_b64=public_b64)
 
-    def test_rejects_download_url_outside_official_release_path(self):
-        from app_update import select_windows_update_assets
+    def test_signed_manifest_rejects_expired_metadata(self):
+        from app_update import verify_signed_manifest
 
-        release = {
-            "tag_name": "v1.2.6",
-            "assets": [
-                self._asset(
-                    "Catalyst-Setup-v1.2.6.exe",
-                    url="https://example.invalid/Catalyst-Setup-v1.2.6.exe",
-                ),
-                self._asset("Catalyst-Setup-v1.2.6.exe.sha256"),
-            ],
-        }
+        private, public_b64 = self._keypair()
+        manifest = self._manifest(version="1.2.6", expires_delta_days=-1)
+        signature = self._signature(private, manifest)
 
-        self.assertIsNone(select_windows_update_assets(release))
+        with self.assertRaises(ValueError):
+            verify_signed_manifest(manifest, signature, public_b64=public_b64)
+
+    def test_manifest_rejects_download_url_outside_release_channel(self):
+        from app_update import build_update_info_from_manifest, verify_signed_manifest
+
+        private, public_b64 = self._keypair()
+        manifest = self._manifest(
+            version="1.2.6",
+            installer_url="https://example.invalid/Catalyst-Setup-v1.2.6.exe",
+        )
+        signature = self._signature(private, manifest)
+
+        verified = verify_signed_manifest(manifest, signature, public_b64=public_b64)
+        info = build_update_info_from_manifest("1.2.5", verified)
+
+        self.assertFalse(info["installer_ready"])
 
     def test_parse_checksum_accepts_matching_filename_only(self):
         from app_update import parse_sha256_checksum_text
@@ -137,39 +185,38 @@ class TestAppUpdateApi(unittest.TestCase):
         self.assertIn("Stop the bot", body["error"])
 
     def test_check_update_includes_release_notes_and_installer_readiness(self):
-        release = {
-            "tag_name": "v1.2.6",
-            "html_url": "https://github.com/Lowestofttim/catalyst-bot/releases/tag/v1.2.6",
-            "body": "Fixed Sage startup.\nAdded secure updater.",
-            "assets": [
-                {
-                    "name": "Catalyst-Setup-v1.2.6.exe",
-                    "browser_download_url": (
-                        "https://github.com/Lowestofttim/catalyst-bot/releases/download/"
-                        "v1.2.6/Catalyst-Setup-v1.2.6.exe"
-                    ),
-                    "size": 456,
-                    "state": "uploaded",
-                },
-                {
-                    "name": "Catalyst-Setup-v1.2.6.exe.sha256",
-                    "browser_download_url": (
-                        "https://github.com/Lowestofttim/catalyst-bot/releases/download/"
-                        "v1.2.6/Catalyst-Setup-v1.2.6.exe.sha256"
-                    ),
-                    "size": 96,
-                    "state": "uploaded",
-                },
-            ],
-        }
-
         with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
-                patch("app_update.fetch_latest_release", return_value=release):
+                patch("app_update.fetch_signed_manifest") as fetch_manifest:
+            fetch_manifest.return_value = {
+                "schema": 1,
+                "app": "CATalyst",
+                "channel": "stable",
+                "version": "1.2.6",
+                "tag": "v1.2.6",
+                "published_at": "2026-05-04T10:00:00Z",
+                "expires_at": "2026-06-01T00:00:00Z",
+                "release_url": "https://github.com/Lowestofttim/catalyst-releases/releases/tag/v1.2.6",
+                "release_notes": "Fixed Sage startup.\nAdded secure updater.",
+                "platforms": {
+                    "windows-x64": {
+                        "installer": {
+                            "name": "Catalyst-Setup-v1.2.6.exe",
+                            "url": (
+                                "https://github.com/Lowestofttim/catalyst-releases/releases/download/"
+                                "v1.2.6/Catalyst-Setup-v1.2.6.exe"
+                            ),
+                            "size": 456,
+                            "sha256": "a" * 64,
+                        }
+                    }
+                },
+            }
             resp = self.client.get("/api/check-update", environ_base=self.loopback)
 
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
         self.assertTrue(body["success"])
+        self.assertTrue(body["manifest_verified"])
         self.assertTrue(body["update_available"])
         self.assertTrue(body["installer_ready"])
         self.assertEqual(body["latest"], "1.2.6")
@@ -185,14 +232,17 @@ class TestAppUpdateFrontendAndReleaseWorkflow(unittest.TestCase):
         self.assertIn("/api/update/install", html)
         self.assertIn("/api/update/status", html)
 
-    def test_release_workflow_uploads_installer_checksum_sidecar(self):
+    def test_release_workflow_publishes_signed_manifest_channel(self):
         workflow = (ROOT / ".github" / "workflows" / "build-release.yml").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("Get-FileHash", workflow)
+        self.assertIn("scripts/sign_update_manifest.py", workflow)
+        self.assertIn("latest.json", workflow)
+        self.assertIn("latest.json.sig", workflow)
+        self.assertIn("CATALYST_UPDATE_SIGNING_KEY_B64", workflow)
+        self.assertIn("CATALYST_RELEASE_CHANNEL_TOKEN", workflow)
         self.assertIn("Catalyst-Setup-${{ github.ref_name }}.exe.sha256", workflow)
-        self.assertIn("Catalyst-Setup-${{ github.ref_name }}.exe", workflow)
 
 
 if __name__ == "__main__":

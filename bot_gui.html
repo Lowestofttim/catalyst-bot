@@ -11907,7 +11907,7 @@
                     <div>
                         <div class="v4-modal-kicker">Update Available</div>
                         <h2 class="v4-modal-title">Upgrade CATalyst?</h2>
-                        <p class="v4-modal-copy">CATalyst found a newer official GitHub release. Automatic upgrade downloads the Windows installer, verifies its SHA-256 checksum, launches the installer, closes this app, and lets the installer reopen the updated app.</p>
+                        <p class="v4-modal-copy">CATalyst found a newer signed release manifest. Automatic upgrade downloads the Windows installer, verifies its SHA-256 digest, launches the installer, closes this app, and lets the installer reopen the updated app.</p>
                     </div>
                 </div>
 
@@ -22889,7 +22889,7 @@
 
         // ================================================
         // UPDATE CHECK — compares APP_VERSION against the latest GitHub
-        // release tag when RELEASES_API_URL is configured in .env.
+        // release tag when UPDATE_MANIFEST_URL is configured in .env.
         // Silently no-ops if disabled. Server caches for 6 hours.
         // ================================================
         let _latestReleaseUrl = null;
@@ -22991,7 +22991,7 @@
             if (installer) {
                 installer.textContent = info.installer_ready
                     ? `${info.installer_name || 'Windows installer'} (${formatUpdateSize(info.installer_size)})`
-                    : 'Verified installer checksum is not published yet';
+                    : 'Signed manifest does not publish a verified Windows installer yet';
             }
             if (security) security.textContent = info.security || '';
             if (notes) notes.textContent = info.release_notes || 'No release notes were published for this release.';
@@ -23008,9 +23008,9 @@
             if (running) {
                 setAppUpdateStatus('Stop the bot before upgrading. CATalyst will not interrupt active market making.', 'error');
             } else if (!info.installer_ready) {
-                setAppUpdateStatus('This release can be viewed manually, but automatic upgrade is blocked until the checksum sidecar is present.', 'error');
+                setAppUpdateStatus('This release can be viewed manually, but automatic upgrade is blocked until the signed manifest publishes a verified Windows installer.', 'error');
             } else {
-                setAppUpdateStatus('Ready. The installer will be downloaded from the official GitHub release and verified before it runs.', 'info');
+                setAppUpdateStatus('Ready. The installer will be downloaded from the public release channel and verified against the signed manifest before it runs.', 'info');
             }
 
             modal.classList.add('active');
@@ -27200,7 +27200,7 @@
                             <div style="color:var(--text-secondary);">Last poll</div><div>${escapeHtml(fmtAge(gh.last_call_ago_secs))}</div>
                           </div>
                           ${fmtEndpointFooter('Calls by endpoint', gh.by_endpoint)}
-                        ` : '<div style="color:var(--text-tertiary);">No GitHub release-info polls yet this session. Used by Sage update check + Splash binary download (cached 6h+).</div>'}
+                        ` : '<div style="color:var(--text-tertiary);">No release manifest polls yet this session. Used by the CATalyst update check + Splash binary download (cached 6h+).</div>'}
                     </div>
                 `;
 
@@ -34065,7 +34065,7 @@ async function startupCheckGitHubRelease(installedVersion, minimumVersion = MIN_
         }
     } catch (err) {
         // GitHub unreachable or timeout — no problem, just skip the check
-        debugLog('[STARTUP] GitHub release check failed (offline?): ' + (err.message || err));
+        debugLog('[STARTUP] Update manifest check failed (offline?): ' + (err.message || err));
     }
 }
 

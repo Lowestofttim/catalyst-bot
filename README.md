@@ -87,9 +87,9 @@ and market shocks.
   budget drift; repairs them without restarts.
 - **Data management.** Separate resets for P&L history, offer history, or full
   state, directly from the GUI.
-- **Secure updater.** Polls the official GitHub release, shows release notes,
-  and on Windows can upgrade from the app after verifying the installer
-  SHA-256 sidecar.
+- **Secure updater.** Polls the official signed public manifest, shows release
+  notes, and on Windows can upgrade from the app after verifying the installer
+  SHA-256 digest in that manifest.
 
 ---
 
@@ -385,10 +385,18 @@ python build.py --no-clean   # skip cleaning for faster iteration
 
 The local build output stays on the machine that ran `python build.py`. To share
 builds with users, publish a GitHub Release or push a `v*` tag. The release
-workflow builds Windows, macOS, and Linux packages, plus a Windows installer and
-`.sha256` checksum sidecar, then uploads them to a new GitHub Release. The
-in-app updater will only auto-run the official Windows installer when that
-checksum sidecar is present and matches.
+workflow builds Windows, macOS, and Linux packages, plus a Windows installer,
+`.sha256` checksum sidecar, and signed update manifests.
+
+The in-app updater does not need the source repo to be public. It reads only the
+public release-channel manifest at
+`https://github.com/Lowestofttim/catalyst-releases/releases/latest/download/latest.json`
+and verifies `latest.json.sig` with the Ed25519 public key pinned in the app.
+The matching private key must be stored only in the private repo secret
+`CATALYST_UPDATE_SIGNING_KEY_B64`. To publish the public release-channel repo
+automatically, set `CATALYST_RELEASE_CHANNEL_REPO` to `Lowestofttim/catalyst-releases`
+and add a least-privilege `CATALYST_RELEASE_CHANNEL_TOKEN` secret that can write
+releases to that public repo.
 
 ---
 
