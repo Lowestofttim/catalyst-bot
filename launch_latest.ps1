@@ -132,4 +132,5 @@ if (-not (Test-Path $app)) {
 }
 
 Write-LaunchLog "Launching Catalyst from $app"
-Start-Process -FilePath $pythonw -ArgumentList @($app) -WorkingDirectory $repo -WindowStyle Hidden
+$scriptArg = '"{0}"' -f $app
+Start-Process -FilePath $pythonw -ArgumentList @($scriptArg) -WorkingDirectory $repo -WindowStyle Hidden
