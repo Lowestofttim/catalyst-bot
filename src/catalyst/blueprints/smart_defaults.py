@@ -59,6 +59,148 @@ def _nonnegative_int_or_none(value):
     return parsed if parsed >= 0 else None
 
 
+def _smart_float(value, default: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    try:
+        import math
+        if not math.isfinite(parsed):
+            return default
+    except Exception:
+        pass
+    return parsed
+
+
+def _prep_count_from_budget(pool_target_xch: float, coin_size_xch: float, cap: int, minimum: int) -> int:
+    """Return a prep count that fits the budget without forcing big-wallet floors."""
+    pool_target_xch = max(0.0, _smart_float(pool_target_xch))
+    coin_size_xch = max(0.0001, _smart_float(coin_size_xch, 0.0001))
+    cap = max(0, int(cap or 0))
+    minimum = max(0, int(minimum or 0))
+    if pool_target_xch <= 0 or cap <= 0:
+        return 0
+    supported = int(pool_target_xch / coin_size_xch)
+    if supported <= 0:
+        return 0
+    count = min(cap, supported)
+    return count if count < minimum else max(minimum, count)
+
+
+def _smart_fee_prep_count(avail_xch: float, fee_coin_size_xch: float, fee_pct: float = 0.03) -> int:
+    """Scale fee prep coins down for small wallets.
+
+    The old hard 50-coin cap was fine for large wallets but noisy on a
+    single-digit XCH test wallet. This keeps the same large-wallet behavior
+    while avoiding dozens of tiny fee coins when capital is intentionally low.
+    """
+    avail_xch = max(0.0, _smart_float(avail_xch))
+    if avail_xch <= 0:
+        return 0
+    if avail_xch < 3:
+        cap, minimum = 10, 2
+    elif avail_xch < 10:
+        cap, minimum = 20, 2
+    elif avail_xch < 25:
+        cap, minimum = 30, 5
+    else:
+        cap, minimum = 50, 5
+    return _prep_count_from_budget(avail_xch * max(0.0, _smart_float(fee_pct)), fee_coin_size_xch, cap, minimum)
+
+
+def _smart_sniper_pool_pct(avail_xch: float, fills_per_day: float) -> float:
+    fills_per_day = _smart_float(fills_per_day)
+    if fills_per_day > 10:
+        base = 0.07
+    elif fills_per_day > 3:
+        base = 0.06
+    else:
+        base = 0.04
+
+    avail_xch = max(0.0, _smart_float(avail_xch))
+    if avail_xch < 3:
+        return min(base, 0.02)
+    if avail_xch < 10:
+        return min(base, 0.03)
+    if avail_xch < 25:
+        return min(base, 0.04)
+    return base
+
+
+def _smart_sniper_prep_plan(avail_xch: float, fills_per_day: float, sniper_size_xch: float = 0.01) -> dict:
+    """Return wallet-scaled sniper pool sizing."""
+    avail_xch = max(0.0, _smart_float(avail_xch))
+    sniper_size_xch = max(0.0001, _smart_float(sniper_size_xch, 0.01))
+    pct = _smart_sniper_pool_pct(avail_xch, fills_per_day)
+    target_xch = avail_xch * pct
+
+    fills_per_day = _smart_float(fills_per_day)
+    if fills_per_day > 10:
+        activity_cap = 30
+    elif fills_per_day > 3:
+        activity_cap = 25
+    else:
+        activity_cap = 20
+
+    if avail_xch < 3:
+        cap, minimum = min(activity_cap, 6), 2
+    elif avail_xch < 10:
+        cap, minimum = min(activity_cap, 12), 2
+    elif avail_xch < 25:
+        cap, minimum = min(activity_cap, 18), 5
+    else:
+        cap, minimum = activity_cap, 5
+
+    count = _prep_count_from_budget(target_xch, sniper_size_xch, cap, minimum)
+    return {
+        "pct": pct,
+        "target_xch": target_xch,
+        "count": count,
+        "pool_xch": round(sniper_size_xch * count, 4),
+    }
+
+
+def _smart_position_floor(xch_total: float, trade_size_xch: float) -> float:
+    """Small-wallet-aware minimum for MAX_POSITION_XCH."""
+    trade_size_xch = max(0.0, _smart_float(trade_size_xch))
+    if trade_size_xch > 0:
+        return round(trade_size_xch * 5, 1)
+
+    xch_total = max(0.0, _smart_float(xch_total))
+    if xch_total <= 0:
+        return 5.0
+    return round(max(0.1, min(5.0, xch_total * 0.10)), 1)
+
+
+def _smart_initial_max_position(
+    xch_total: float,
+    trade_size_xch: float,
+    risk_level: str,
+    position_mult: float = 1.0,
+) -> float:
+    """Derive MAX_POSITION_XCH before the final ladder-consistency clamp."""
+    xch_total = max(0.0, _smart_float(xch_total))
+    if xch_total <= 0:
+        return 5.0
+
+    risk = str(risk_level or "moderate").lower().strip()
+    if risk == "healthy":
+        max_position = round(xch_total * 0.40, 1)
+    elif risk == "moderate":
+        max_position = round(xch_total * 0.30, 1)
+    elif risk == "thin":
+        max_position = round(xch_total * 0.20, 1)
+    else:
+        max_position = round(xch_total * 0.15, 1)
+
+    floor = _smart_position_floor(xch_total, trade_size_xch)
+    max_position = max(max_position, floor)
+    if _smart_float(position_mult, 1.0) != 1.0:
+        max_position = max(floor, round(max_position * _smart_float(position_mult, 1.0), 1))
+    return max_position
+
+
 def _smart_trade_vwap(trades: dict) -> float:
     trade_list = (trades.get("trades") or []) if isinstance(trades, dict) else []
     sum_pv = sum(
@@ -1029,6 +1171,13 @@ def _calculate_smart_defaults(
         _min_pos = round(trade_size * 5, 1) if trade_size > 0 else 5.0
         max_position = max(_min_pos, round(max_position * _rp["position_mult"], 1))
 
+    max_position = _smart_initial_max_position(
+        xch_spendable if has_wallet else 0,
+        trade_size,
+        risk_level,
+        _rp["position_mult"],
+    )
+
     # ═══ V2: SKEW INTENSITY (from price trend) ═══
     price_trend = trades.get("price_trend_pct", 0) if trades else 0
     if abs(price_trend) > 10:
@@ -1409,9 +1558,10 @@ def _calculate_smart_defaults(
         )
 
     _fee_pool_target  = _avail_xch * _FEE_PCT
-    _fee_prep_count   = max(5, min(50, int(_fee_pool_target / max(0.0001, _fee_coin_size))))
+    _fee_prep_count   = _smart_fee_prep_count(_avail_xch, _fee_coin_size, _FEE_PCT)
     _fee_pool_xch     = _fee_coin_size * _fee_prep_count
 
+    _SNIPER_PCT = _smart_sniper_pool_pct(_avail_xch, fills_per_day)
     _sniper_pool_raw   = _avail_xch * _SNIPER_PCT
     # Sniper offers are expendable probes — keep them at Dexie's minimum
     # displayable size (0.01 XCH) so they show up on the book without wasting
@@ -1420,15 +1570,9 @@ def _calculate_smart_defaults(
     # Prep count: more fills = faster sniper coin burn = need more ready.
     # Cap scales with the sniper pool so we never prep more than the pool
     # can fund at the fixed minimum size.
-    if fills_per_day > 10:
-        _sniper_max_prep = 30
-    elif fills_per_day > 3:
-        _sniper_max_prep = 25
-    else:
-        _sniper_max_prep = 20
-    _pool_max_prep = int(_sniper_pool_raw / max(0.0001, _smart_sniper_size))
-    _smart_sniper_prep = max(5, min(_sniper_max_prep, _pool_max_prep))
-    _sniper_pool_xch   = round(_smart_sniper_size * _smart_sniper_prep, 4)
+    _sniper_plan = _smart_sniper_prep_plan(_avail_xch, fills_per_day, _smart_sniper_size)
+    _smart_sniper_prep = int(_sniper_plan.get("count") or 0)
+    _sniper_pool_xch   = float(_sniper_plan.get("pool_xch") or 0.0)
 
     # ── Bottleneck-driven capital allocation ─────────────────────────────────
     # The bot is symmetric: every buy needs XCH, every sell needs CAT.

@@ -10296,8 +10296,8 @@
                     </div>
 
                     <!-- ══ SECTION: Reserves ══ -->
-                    <div class="v4-settings-section v4-settings-green">
-                        <div class="v4-settings-section-title" style="color: var(--status-success);">Reserves <span class="cc-help">?<span class="cc-tooltip">Percentage of your balance to hold back from trading. Reserved funds won't be used for offers — acts as a safety buffer.</span></span></div>
+                    <div class="v4-settings-section v4-settings-green" id="settings-section-reserves">
+                        <div class="v4-settings-section-title" style="color: var(--status-success);">Reserves <span class="cc-help">?<span class="cc-tooltip">Preset buttons choose a percentage of your balance, but the saved reserve is an absolute XCH/CAT amount. Reserved funds won't be used for offers.</span></span></div>
 
                         <!-- XCH Reserve -->
                         <div class="form-group">
@@ -15756,6 +15756,11 @@
             }
         }
 
+        function readDashboardReserve(value) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+
         function makeAdvisorActionId(actionType, actionValue, fallbackIndex) {
             const token = String(actionValue || fallbackIndex || 'next')
                 .replace(/[^a-zA-Z0-9_-]+/g, '_')
@@ -15932,8 +15937,8 @@
             const catFree = parseInt(coins.cat_free ?? 0, 10) || 0;
             const xchLocked = parseInt(coins.xch_locked ?? 0, 10) || 0;
             const catLocked = parseInt(coins.cat_locked ?? 0, 10) || 0;
-            const xchReservePct = parseFloat(safety.xch_reserve) || 25;
-            const catReservePct = parseFloat(safety.cat_reserve) || 25;
+            const xchReservePct = readDashboardReserve(safety.xch_reserve);
+            const catReservePct = readDashboardReserve(safety.cat_reserve);
             const xchSpendable = parseFloat(walletData.xch_spendable) || 0;
             const catSpendable = parseFloat(walletData.cat_spendable) || 0;
             const xchTotal = parseFloat(walletData.xch_total) || 0;
@@ -16644,8 +16649,8 @@
                         if (settingsTab) settingsTab.click();
                     }
                     setTimeout(() => {
-                        const safetyEl = document.getElementById('settings-section-safety');
-                        if (safetyEl) safetyEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        const reserveEl = document.getElementById('settings-section-reserves');
+                        if (reserveEl) reserveEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }, 300);
                     return;
                 case 'openSettings': {

@@ -305,6 +305,51 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
         ):
             self.assertIn(field_id, watched)
 
+    def test_frontend_reserve_advisor_preserves_zero_reserve(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("function readDashboardReserve", html)
+        self.assertIn("readDashboardReserve(safety.xch_reserve)", html)
+        self.assertIn("readDashboardReserve(safety.cat_reserve)", html)
+        self.assertNotIn("parseFloat(safety.xch_reserve) || 25", html)
+        self.assertNotIn("parseFloat(safety.cat_reserve) || 25", html)
+
+    def test_frontend_reserve_action_scrolls_to_reserve_section(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="settings-section-reserves"', html)
+        self.assertIn("getElementById('settings-section-reserves')", html)
+
+
+class TestSmartDefaultsSmallWalletSizing(unittest.TestCase):
+
+    def test_small_wallet_position_limit_has_no_five_xch_floor(self):
+        from blueprints.smart_defaults import _smart_initial_max_position
+
+        self.assertEqual(_smart_initial_max_position(5, 0, "healthy"), 2.0)
+        self.assertEqual(_smart_initial_max_position(5, 0, "moderate"), 1.5)
+        self.assertLess(_smart_initial_max_position(5, 0, "healthy"), 5.0)
+
+    def test_large_wallet_position_limit_keeps_existing_shape(self):
+        from blueprints.smart_defaults import _smart_initial_max_position
+
+        self.assertEqual(_smart_initial_max_position(100, 0, "healthy"), 40.0)
+        self.assertEqual(_smart_initial_max_position(100, 0, "thin"), 20.0)
+
+    def test_small_wallet_prep_counts_are_scaled_down(self):
+        from blueprints.smart_defaults import (
+            _smart_fee_prep_count,
+            _smart_sniper_prep_plan,
+        )
+
+        self.assertLessEqual(_smart_fee_prep_count(5, 0.001), 20)
+
+        sniper = _smart_sniper_prep_plan(5, fills_per_day=12, sniper_size_xch=0.01)
+        self.assertLessEqual(sniper["count"], 12)
+        self.assertLessEqual(sniper["pool_xch"], 0.12)
+
 
 if __name__ == "__main__":
     unittest.main()
