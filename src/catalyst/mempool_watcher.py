@@ -166,15 +166,27 @@ def infer_pending_pool_move(
     direction = "up" if delta_xch > 0 else "down"
     confidence = "xch_reserve_only"
     magnitude_source = "xch_reserve_pct"
+    token_projection_rejected = False
     try:
+        xch_signed_pct = (Decimal(delta_xch) / Decimal(old_xch)) * Decimal("100")
+        signed_pct = xch_signed_pct
         if old_tok and new_tok and old_tok > 0 and new_tok > 0:
             old_price = Decimal(old_xch) / Decimal(old_tok)
             new_price = Decimal(new_xch) / Decimal(new_tok)
-            signed_pct = ((new_price - old_price) / old_price) * Decimal("100")
-            confidence = "xch_and_token_reserves"
-            magnitude_source = "projected_price_pct"
-        else:
-            signed_pct = (Decimal(delta_xch) / Decimal(old_xch)) * Decimal("100")
+            projected_signed_pct = ((new_price - old_price) / old_price) * Decimal("100")
+            projected_mag = abs(projected_signed_pct)
+            xch_mag = abs(xch_signed_pct)
+            plausible_ceiling = max(Decimal("0.5"), xch_mag * Decimal("6"))
+            same_direction = (
+                (projected_signed_pct > 0 and xch_signed_pct > 0)
+                or (projected_signed_pct < 0 and xch_signed_pct < 0)
+            )
+            if same_direction and projected_mag <= plausible_ceiling:
+                signed_pct = projected_signed_pct
+                confidence = "xch_and_token_reserves"
+                magnitude_source = "projected_price_pct"
+            else:
+                token_projection_rejected = True
         magnitude_pct = abs(signed_pct)
     except Exception:
         return None
@@ -195,6 +207,8 @@ def infer_pending_pool_move(
     if new_tok is not None:
         result["new_tok_reserve"] = new_tok
         result["delta_tok"] = new_tok - old_tok
+    if token_projection_rejected:
+        result["token_projection_rejected"] = True
     return result
 
 
@@ -788,4 +802,3 @@ def stop_watcher() -> None:
     with _watcher_lock:
         if _watcher_instance:
             _watcher_instance.stop()
-

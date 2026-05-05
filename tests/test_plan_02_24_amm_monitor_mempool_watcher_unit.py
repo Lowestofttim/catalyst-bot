@@ -187,6 +187,40 @@ class TestInferPendingPoolMove(unittest.TestCase):
         self.assertLess(move["magnitude_pct"], 10.0)
         self.assertEqual(move["confidence"], "xch_and_token_reserves")
 
+    def test_implausible_token_child_falls_back_to_xch_reserve_pct(self):
+        xch_ph = "aa" * 32
+        tok_ph = "bb" * 32
+        old_xch = 118_550_038_911_177
+        new_xch = 118_555_410_800_804
+        old_tok = 1_013_800_712
+        item = {
+            "removals": [
+                self._coin(xch_ph, old_xch),
+                self._coin(tok_ph, old_tok),
+                self._coin("cc" * 32, 1),
+            ],
+            "additions": [
+                self._coin(xch_ph, new_xch),
+                # A non-reserve child under the same puzzle hash can look
+                # like the token reserve if we trust amount-change matching
+                # alone. The XCH reserve delta is the reliable lower bound.
+                self._coin(tok_ph, 52_900),
+                self._coin("cc" * 32, 1),
+            ],
+        }
+
+        move = _mempool_watcher.infer_pending_pool_move(
+            item,
+            current_xch_reserve=old_xch,
+            current_tok_reserve=old_tok,
+        )
+
+        self.assertIsNotNone(move)
+        self.assertEqual(move["direction"], "up")
+        self.assertEqual(move["confidence"], "xch_reserve_only")
+        self.assertEqual(move["magnitude_source"], "xch_reserve_pct")
+        self.assertLess(move["magnitude_pct"], 0.01)
+
     def test_returns_none_when_current_xch_reserve_coin_is_not_spent(self):
         item = {
             "removals": [self._coin("aa" * 32, 999)],
