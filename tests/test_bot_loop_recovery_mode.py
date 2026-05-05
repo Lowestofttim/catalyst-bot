@@ -2,6 +2,7 @@ import sys
 import types
 import unittest
 from decimal import Decimal
+from unittest.mock import patch
 
 
 class _FakeCfg:
@@ -506,6 +507,33 @@ class RecoveryModeTests(unittest.TestCase):
         self.assertFalse(loop._recovery_state["active"])
         self.assertEqual(loop._recovery_state["sell_deficit"], 0)
         self.assertFalse(any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged))
+
+    def test_bot_health_anomaly_log_is_deduped_until_signature_changes(self):
+        loop = bot_loop.BotLoop()
+        check = types.SimpleNamespace(
+            name="funds_advisory",
+            anomaly_count=1,
+            message="CAT extreme topup pool underfunded",
+        )
+        health = types.SimpleNamespace(checks=[check], anomaly_check_names=["funds_advisory"])
+
+        with patch.object(bot_loop.time, "time", side_effect=[1000, 1200, 4700]):
+            self.assertTrue(loop._should_log_bot_health_anomalies(health))
+            self.assertFalse(loop._should_log_bot_health_anomalies(health))
+            self.assertTrue(loop._should_log_bot_health_anomalies(health))
+
+        changed = types.SimpleNamespace(
+            checks=[
+                types.SimpleNamespace(
+                    name="funds_advisory",
+                    anomaly_count=1,
+                    message="XCH operating floor underfunded",
+                )
+            ],
+            anomaly_check_names=["funds_advisory"],
+        )
+        with patch.object(bot_loop.time, "time", return_value=1300):
+            self.assertTrue(loop._should_log_bot_health_anomalies(changed))
 
 
 if __name__ == "__main__":

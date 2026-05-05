@@ -682,6 +682,11 @@ class BotLoop:
         self._recovery_exit_healthy_cycles: int = 2
         self._recovery_min_side_deficit: int = 2
         self._recovery_min_total_deficit: int = 2
+        self._last_bot_health_anomaly_log: Dict[str, object] = {
+            "signature": "",
+            "at": 0.0,
+        }
+        self._bot_health_anomaly_log_cooldown: float = 3600.0
         self._last_create_disabled_log: Dict[str, Dict] = {
             "buy": {"at": 0.0, "signature": ""},
             "sell": {"at": 0.0, "signature": ""},
@@ -870,6 +875,46 @@ class BotLoop:
 
     def _mark_recovery_create_stall(self):
         self._recovery_state["cycle_create_stalled"] = True
+
+    def _bot_health_anomaly_signature(self, health) -> str:
+        parts = []
+        for check in getattr(health, "checks", []) or []:
+            try:
+                count = int(getattr(check, "anomaly_count", 0) or 0)
+            except Exception:
+                count = 0
+            if count <= 0:
+                continue
+            name = str(getattr(check, "name", "") or "?")
+            message = str(getattr(check, "message", "") or "")
+            parts.append(f"{name}:{count}:{message}")
+        if parts:
+            return "|".join(sorted(parts))
+        names = [str(name) for name in getattr(health, "anomaly_check_names", []) or []]
+        return "|".join(sorted(names))
+
+    def _should_log_bot_health_anomalies(self, health) -> bool:
+        signature = self._bot_health_anomaly_signature(health)
+        if not signature:
+            return False
+        now = time.time()
+        try:
+            cooldown = float(
+                getattr(cfg, "BOT_HEALTH_ANOMALY_LOG_COOLDOWN_SECS", 0) or
+                self._bot_health_anomaly_log_cooldown
+            )
+        except Exception:
+            cooldown = self._bot_health_anomaly_log_cooldown
+        last = self._last_bot_health_anomaly_log
+        last_signature = str(last.get("signature", "") or "")
+        try:
+            last_at = float(last.get("at", 0.0) or 0.0)
+        except Exception:
+            last_at = 0.0
+        if signature == last_signature and cooldown > 0 and (now - last_at) < cooldown:
+            return False
+        self._last_bot_health_anomaly_log = {"signature": signature, "at": now}
+        return True
 
     def _get_expected_offer_targets(self, mid_price: Decimal) -> Dict[str, int]:
         """Return the intended live-book targets for the current market state."""
@@ -9992,12 +10037,13 @@ class BotLoop:
                           f"in {_names_txt} ({health.summary})",
                           data={"repaired_checks": _repaired_names})
             elif health.anomalies:
-                _anom_names = health.anomaly_check_names
-                _anom_txt = ", ".join(_anom_names) if _anom_names else "?"
-                log_event("info", "bot_health_anomalies",
-                          f"bot_health found {health.anomalies} anomalies "
-                          f"in {_anom_txt} ({health.summary})",
-                          data={"anomaly_checks": _anom_names})
+                if self._should_log_bot_health_anomalies(health):
+                    _anom_names = health.anomaly_check_names
+                    _anom_txt = ", ".join(_anom_names) if _anom_names else "?"
+                    log_event("info", "bot_health_anomalies",
+                              f"bot_health found {health.anomalies} anomalies "
+                              f"in {_anom_txt} ({health.summary})",
+                              data={"anomaly_checks": _anom_names})
         except Exception as _hc_err:
             log_event("warning", "bot_health_check_failed",
                       f"Runtime health check failed: {_hc_err}")
