@@ -42,11 +42,25 @@ DEFAULT_CATEGORIES = {
         "enabled": True,
         "title_prefix": "",
         "cooldown_secs": 30,      # Don't spam error notifications
+        "dedupe_secs": 300,
+    },
+    "warning": {
+        "enabled": True,
+        "title_prefix": "",
+        "cooldown_secs": 300,
+        "dedupe_secs": 1800,
+    },
+    "critical": {
+        "enabled": True,
+        "title_prefix": "",
+        "cooldown_secs": 300,
+        "dedupe_secs": 1800,
     },
     "circuit_breaker": {
         "enabled": True,
         "title_prefix": "",
         "cooldown_secs": 60,
+        "dedupe_secs": 600,
     },
     "sniper": {
         "enabled": True,
@@ -67,6 +81,7 @@ DEFAULT_CATEGORIES = {
         "enabled": True,
         "title_prefix": "",
         "cooldown_secs": 10,
+        "dedupe_secs": 60,
     },
 }
 
@@ -106,6 +121,7 @@ class NotificationManager:
 
         # Rate limiting: last notification time per category
         self._last_sent = {}
+        self._last_signature_sent = {}
         self._lock = threading.Lock()
 
     def notify(self, title: str, message: str, category: str = "info",
@@ -130,18 +146,24 @@ class NotificationManager:
             return False
 
         # Rate limiting — check cooldown
+        # Build title with optional prefix
+        prefix = cat_settings.get("title_prefix", "")
+        full_title = f"{prefix}{title}" if prefix else title
+
         cooldown = cat_settings.get("cooldown_secs", 10)
+        dedupe_secs = cat_settings.get("dedupe_secs", 0)
+        signature = (category, str(full_title or ""), str(message or ""))
         now = time.time()
 
         with self._lock:
             last = self._last_sent.get(category, 0)
             if now - last < cooldown:
                 return False  # Too soon, skip
+            last_sig = self._last_signature_sent.get(signature, 0)
+            if dedupe_secs and now - last_sig < dedupe_secs:
+                return False
             self._last_sent[category] = now
-
-        # Build title with optional prefix
-        prefix = cat_settings.get("title_prefix", "")
-        full_title = f"{prefix}{title}" if prefix else title
+            self._last_signature_sent[signature] = now
 
         # Send notification in a background thread (plyer can block briefly)
         thread = threading.Thread(
@@ -185,4 +207,3 @@ class NotificationManager:
         if max_len <= 1:
             return text[:max_len]
         return text[:max_len - 1] + "…"
-

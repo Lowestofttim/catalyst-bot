@@ -42,6 +42,8 @@ _FAKE_CFG = SimpleNamespace(
     REQUOTE_DRIFT_EMERGENCY=Decimal("0.05"),
     CAT_ASSET_ID="0xdeadbeef",
     WALLET_ID_XCH=1,
+    MAX_POSITION_XCH=Decimal("2.9"),
+    DEFAULT_TRADE_XCH=Decimal("0.03"),
     OFFER_REFRESH_BEFORE=1800,
     LADDER_CREATE_PARALLELISM=5,
     get_requote_fraction=lambda: Decimal("0.01"),
@@ -254,6 +256,40 @@ class TestSlotSuspension(_OM):
             self._manager.unsuspend_slots_if_coins_available("sell")
 
         self.assertTrue(self._manager.is_slot_suspended("sell", 0))
+
+
+class TestPositionHardGuard(_OM):
+    def test_blocked_side_records_pause_and_logs_warning(self):
+        class Risk:
+            _net_position_cat = Decimal("-18988")
+
+            def get_tier_size(self, tier, side="sell"):
+                del tier, side
+                return Decimal("0.03")
+
+        with patch.object(_om_mod, "get_open_offers", return_value=[]):
+            result = self._manager.check_position_guard(
+                side="sell",
+                mid_price=Decimal("0.00012"),
+                num=45,
+                slot_start=0,
+                total_slots=45,
+                slot_sequence=None,
+                risk_manager=Risk(),
+                default_size=Decimal("0.03"),
+                cat_asset_id="0xdeadbeef",
+                log_block=True,
+                record_pause=True,
+            )
+
+        self.assertTrue(result["blocked"])
+        pause = self._manager.get_position_guard_pause("sell")
+        self.assertEqual(pause["side"], "sell")
+        self.assertEqual(pause["opposite_side"], "buy")
+        self.assertTrue(any(
+            call.args[0] == "warning" and call.args[1] == "position_hard_guard_blocked"
+            for call in self.log_event.call_args_list
+        ))
 
     def test_unsuspend_clears_slot_when_required_tier_coin_is_available(self):
         for _ in range(self._manager._slot_suspend_threshold):

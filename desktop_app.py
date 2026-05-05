@@ -113,6 +113,7 @@ else:
     APP_VERSION = _get_app_version()
 
 APP_NAME = "CATalyst"
+WINDOWS_APP_USER_MODEL_ID = APP_NAME
 FLASK_HOST = "127.0.0.1"
 try:
     FLASK_PORT = int(os.environ.get("CATALYST_FLASK_PORT", "5000"))
@@ -293,7 +294,7 @@ def _set_windows_app_user_model_id() -> None:
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "com.monkeyzoo.catalyst"
+            WINDOWS_APP_USER_MODEL_ID
         )
     except Exception:
         pass
@@ -1266,8 +1267,8 @@ def main(argv=None):
         return _run_coin_prep_worker_mode(worker_args)
 
     # Set Windows AUMID as early as possible — must happen before any window
-    # creation so that the taskbar groups all CATalyst windows together under
-    # "com.monkeyzoo.catalyst" regardless of how the process was launched.
+    # creation so that the taskbar and notifications use the user-facing
+    # CATalyst identity regardless of how the process was launched.
     _set_windows_app_user_model_id()
 
     parser = argparse.ArgumentParser(description=f"{APP_NAME} v{APP_VERSION}")

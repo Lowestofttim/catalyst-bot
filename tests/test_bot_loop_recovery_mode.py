@@ -91,6 +91,7 @@ class _DummyOfferManager:
         self._recently_created = {}
         self._pending_cancel_retries = {}
         self._bot_cancelled_ids = set()
+        self._position_guard_pause = {}
 
     def get_recently_created_count(self, side):
         del side
@@ -138,6 +139,11 @@ class _DummyOfferManager:
 
     def unsuspend_slots_if_coins_available(self, side):
         del side
+
+    def get_position_guard_pause(self, side=None):
+        if side is None:
+            return dict(self._position_guard_pause)
+        return dict(self._position_guard_pause.get(side) or {})
 
 
 class _DummyFillTracker:
@@ -480,6 +486,26 @@ class RecoveryModeTests(unittest.TestCase):
             loop._force_requote["buy"],
             "recovery should refill holes now while preserving a forced requote for later realignment",
         )
+
+    def test_position_guard_pause_reduces_target_instead_of_entering_recovery(self):
+        loop = bot_loop.BotLoop()
+        loop._running = True
+        loop.offer_manager._position_guard_pause = {
+            "sell": {
+                "side": "sell",
+                "opposite_side": "buy",
+                "current_position_xch": "2.22",
+                "projected_position_xch": "3.82",
+                "hard_limit_xch": "3.19",
+            }
+        }
+
+        for _ in range(loop._recovery_under_target_cycles + 1):
+            loop._evaluate_recovery_mode(Decimal("1.0"), 40, 0)
+
+        self.assertFalse(loop._recovery_state["active"])
+        self.assertEqual(loop._recovery_state["sell_deficit"], 0)
+        self.assertFalse(any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged))
 
 
 if __name__ == "__main__":

@@ -920,6 +920,39 @@ class BotLoop:
             return None
         return sum(max(0, int(spares.get(tier, 0) or 0)) for tier in tier_names)
 
+    def _position_guard_pauses(self) -> Dict[str, Dict]:
+        getter = getattr(self.offer_manager, "get_position_guard_pause", None)
+        if not callable(getter):
+            return {}
+        try:
+            pauses = getter() or {}
+        except Exception:
+            return {}
+        return {
+            str(side).lower(): dict(info or {})
+            for side, info in pauses.items()
+            if str(side).lower() in {"buy", "sell"} and info
+        }
+
+    def _emit_position_guard_pause_alert(self, side: str, pause: Dict) -> None:
+        side_norm = str(side or "").lower()
+        if side_norm not in {"buy", "sell"}:
+            return
+        opposite = str((pause or {}).get("opposite_side") or ("sell" if side_norm == "buy" else "buy"))
+        current = str((pause or {}).get("current_position_xch") or "?")
+        limit = str((pause or {}).get("hard_limit_xch") or "?")
+        self._emit_alert(
+            f"{side_norm}_position_paused",
+            "info",
+            f"{side_norm.capitalize()}s paused by position limit",
+            f"{side_norm.capitalize()} offers are paused because adding more would "
+            f"push position risk above the {limit} XCH hard limit. "
+            f"{opposite.capitalize()} offers remain live to rebalance the wallet "
+            f"(current exposure about {current} XCH).",
+            action="view_position",
+            action_label="View Position",
+        )
+
     def _offer_rebuild_deficits(
         self,
         active_buy_count: int,
@@ -1153,6 +1186,11 @@ class BotLoop:
                 spare_count=spare_count,
                 backoff_remaining=backoff_remaining,
             )
+
+        for side, pause in self._position_guard_pauses().items():
+            live_count = max(0, int(current.get(side, 0) or 0))
+            if int(targets.get(side, 0) or 0) > live_count:
+                targets[side] = live_count
 
         self._last_adaptive_offer_targets = dict(targets)
         return targets
@@ -9064,6 +9102,12 @@ class BotLoop:
             current_buy_count=current_buy_count,
             current_sell_count=current_sell_count,
         )
+        position_pauses = self._position_guard_pauses()
+        for _side, _pause in position_pauses.items():
+            self._emit_position_guard_pause_alert(_side, _pause)
+        for _side in ("buy", "sell"):
+            if _side not in position_pauses:
+                self._clear_alert(f"{_side}_position_paused")
         buy_target = int(adaptive_targets.get("buy", 0) or 0)
         sell_target = int(adaptive_targets.get("sell", 0) or 0)
         _buy_under = bool(cfg.ENABLE_BUY and not skip_buy and effective_buy_count < buy_target)
@@ -9490,7 +9534,18 @@ class BotLoop:
 
         # Coin snapshot after creating offers (coins now locked into offers)
         if work_items and not created_any:
-            self._mark_recovery_create_stall()
+            attempted_sides = {side for side, _needed, _spread in work_items}
+            paused_sides = set(self._position_guard_pauses().keys())
+            if attempted_sides and attempted_sides.issubset(paused_sides):
+                log_event(
+                    "info",
+                    "position_guard_create_paused",
+                    "Offer creation paused by position guard; correcting-side "
+                    "offers remain live to rebalance before rebuilding this side",
+                    data={"sides": sorted(attempted_sides)},
+                )
+            else:
+                self._mark_recovery_create_stall()
 
         if created_any:
             self.coin_manager.snapshot_coins("offer_created")

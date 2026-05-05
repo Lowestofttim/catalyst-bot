@@ -274,7 +274,7 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
         mgr = self._make_nm()
         cats = mgr.get_categories()
         for key in ("fill", "error", "circuit_breaker", "sniper", "coin_prep",
-                    "price_alert", "info"):
+                    "price_alert", "info", "warning", "critical"):
             self.assertIn(key, cats)
 
     def test_get_categories_returns_copy(self):
@@ -289,6 +289,15 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
         mgr.notify("T", "M", category="fill")
         result = mgr.notify("T", "M", category="error")
         self.assertTrue(result)
+
+    def test_duplicate_warning_notification_is_suppressed_after_cooldown(self):
+        mgr = self._make_nm()
+        mgr._categories["warning"]["cooldown_secs"] = 0
+        mgr._categories["warning"]["dedupe_secs"] = 3600
+
+        self.assertTrue(mgr.notify("Bot Health Warning", "same message", category="warning"))
+        self.assertFalse(mgr.notify("Bot Health Warning", "same message", category="warning"))
+        self.assertTrue(mgr.notify("Bot Health Warning", "different message", category="warning"))
 
     def test_send_truncates_windows_balloon_text_limits(self):
         with patch.object(_nm, "PLYER_AVAILABLE", True):

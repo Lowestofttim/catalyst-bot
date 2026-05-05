@@ -186,6 +186,8 @@ class OfferManager:
         # visible without drowning other signals.
         self._position_guard_logged_at: Dict[str, float] = {}
         self._position_guard_log_cooldown: float = 60.0  # seconds
+        self._position_guard_paused: Dict[str, Dict[str, Any]] = {}
+        self._position_guard_pause_secs: float = self._position_guard_log_cooldown
 
         # ----- Wallet sync fail-closed cache -----
         # When Sage get_offers times out, we must not treat that as an empty
@@ -223,6 +225,177 @@ class OfferManager:
         excluded until the cycle boundary.
         """
         self._cycle_used_coin_ids.clear()
+
+    def get_position_guard_pause(self, side: Optional[str] = None) -> Dict[str, Any]:
+        """Return current position-guard pauses, pruning expired entries."""
+        now = time.time()
+        expired = []
+        for key, item in list(self._position_guard_paused.items()):
+            try:
+                expires_at = float((item or {}).get("expires_at", 0.0) or 0.0)
+            except Exception:
+                expires_at = 0.0
+            if expires_at and expires_at <= now:
+                expired.append(key)
+        for key in expired:
+            self._position_guard_paused.pop(key, None)
+
+        if side is not None:
+            return dict(self._position_guard_paused.get(str(side).lower()) or {})
+        return {key: dict(val) for key, val in self._position_guard_paused.items()}
+
+    def check_position_guard(
+        self,
+        side: str,
+        mid_price: Decimal,
+        num: int,
+        slot_start: int,
+        total_slots: Optional[int],
+        slot_sequence: Optional[List[int]],
+        risk_manager,
+        default_size: Optional[Decimal],
+        cat_asset_id: Optional[str] = None,
+        log_block: bool = False,
+        record_pause: bool = False,
+    ) -> Dict[str, Any]:
+        """Check whether creating a ladder batch would worsen inventory risk.
+
+        Returns a structured result so callers can distinguish a deliberate
+        position pause from a wallet/create failure.
+        """
+        side = str(side or "").lower()
+        result: Dict[str, Any] = {
+            "blocked": False,
+            "side": side,
+        }
+        if risk_manager is None:
+            return result
+
+        try:
+            max_pos_xch = Decimal(str(getattr(cfg, "MAX_POSITION_XCH", "5") or "5"))
+            if max_pos_xch <= 0:
+                if record_pause:
+                    self._position_guard_paused.pop(side, None)
+                return result
+            hard_pos_xch = max_pos_xch * Decimal("1.1")
+            net_pos_cat = Decimal(str(risk_manager._net_position_cat))
+            net_pos_xch = abs(net_pos_cat) * mid_price if mid_price > 0 else Decimal("0")
+            total_slots = total_slots if total_slots is not None else num
+            projected_increase_xch = self._estimate_ladder_worst_case_xch(
+                side=side,
+                num=num,
+                slot_start=slot_start,
+                total_slots=total_slots,
+                slot_sequence=slot_sequence,
+                risk_manager=risk_manager,
+                default_size=default_size,
+            )
+
+            # Legacy/self-heal path: if the configured max position is lower
+            # than a fresh designed ladder while position is effectively flat,
+            # raise the session hard limit so an old config does not brick the
+            # bot. Smart Settings persists a consistent value for new configs.
+            if (
+                projected_increase_xch > hard_pos_xch
+                and net_pos_xch < max_pos_xch * Decimal("0.05")
+            ):
+                healed = projected_increase_xch * Decimal("1.05")
+                if healed > hard_pos_xch:
+                    if not getattr(self, "_max_pos_warned", False):
+                        log_event(
+                            "warning",
+                            "max_position_auto_raised",
+                            f"MAX_POSITION_XCH={max_pos_xch} XCH is inconsistent "
+                            f"with the configured ladder "
+                            f"(side={side}, num={num}, designed worst-case "
+                            f"{projected_increase_xch:.4f} XCH > hard limit "
+                            f"{hard_pos_xch:.4f} XCH). Session hard limit "
+                            f"auto-raised to {healed:.4f} XCH so the bot "
+                            f"can operate. Re-run Smart Settings to persist "
+                            f"a consistent MAX_POSITION_XCH."
+                        )
+                        self._max_pos_warned = True
+                    hard_pos_xch = healed
+
+            same_side_open_xch = Decimal("0")
+            try:
+                existing = get_open_offers(side=side, cat_asset_id=cat_asset_id or cfg.CAT_ASSET_ID)
+                for offer in existing or []:
+                    size_raw = offer.get("size_xch") or offer.get("size_xch_mojos")
+                    if size_raw is None:
+                        continue
+                    try:
+                        if isinstance(size_raw, int) and size_raw > 1_000_000_000:
+                            same_side_open_xch += Decimal(size_raw) / Decimal("1000000000000")
+                        else:
+                            same_side_open_xch += Decimal(str(size_raw))
+                    except Exception:
+                        continue
+            except Exception:
+                same_side_open_xch = Decimal("0")
+
+            net_new_exposure_xch = projected_increase_xch - same_side_open_xch
+            if net_new_exposure_xch < 0:
+                net_new_exposure_xch = Decimal("0")
+
+            add_long_dir = (
+                (side == "buy" and net_pos_cat >= 0)
+                or (side == "sell" and net_pos_cat <= 0)
+            )
+            projected_position_xch = net_pos_xch + net_new_exposure_xch
+            blocked = bool(add_long_dir and projected_position_xch > hard_pos_xch)
+            if not blocked:
+                if record_pause:
+                    self._position_guard_paused.pop(side, None)
+                return result
+
+            opposite_side = "buy" if side == "sell" else "sell"
+            result.update({
+                "blocked": True,
+                "side": side,
+                "opposite_side": opposite_side,
+                "num": int(num),
+                "default_size_xch": str(default_size or Decimal("0")),
+                "net_position_cat": str(net_pos_cat),
+                "current_position_xch": str(net_pos_xch),
+                "full_ladder_value_xch": str(projected_increase_xch),
+                "same_side_open_xch": str(same_side_open_xch),
+                "net_new_exposure_xch": str(net_new_exposure_xch),
+                "projected_position_xch": str(projected_position_xch),
+                "hard_limit_xch": str(hard_pos_xch),
+                "max_position_xch": str(max_pos_xch),
+                "expires_at": time.time() + self._position_guard_pause_secs,
+            })
+            if record_pause:
+                self._position_guard_paused[side] = dict(result)
+
+            if log_block:
+                now = time.time()
+                last = self._position_guard_logged_at.get(side, 0.0)
+                if (now - last) >= self._position_guard_log_cooldown:
+                    self._position_guard_logged_at[side] = now
+                    log_event(
+                        "warning",
+                        "position_hard_guard_blocked",
+                        f"Position guard paused {side} ladder: current position "
+                        f"{net_pos_xch:.4f} XCH (net {net_pos_cat:+.0f} CAT). "
+                        f"Creating this batch would add {net_new_exposure_xch:.4f} XCH "
+                        f"of same-side exposure and project {projected_position_xch:.4f} XCH "
+                        f"above the hard limit {hard_pos_xch:.4f} XCH "
+                        f"(110% of MAX_POSITION_XCH={max_pos_xch}). "
+                        f"{opposite_side.capitalize()} offers remain live to rebalance; "
+                        "wait for them to fill or adjust Max Position in Settings "
+                        "if you accept the risk.",
+                        data=result,
+                    )
+            return result
+        except Exception as exc:
+            log_event(
+                "debug",
+                "position_hard_guard_failed",
+                f"Position rebalance guard check failed (proceeding): {exc}",
+            )
+            return result
 
     # -------------------------------------------------------------------
     # Fix F: Slot suspension management
@@ -1534,6 +1707,22 @@ class OfferManager:
         # below AND the main offer-creation loop, so define it once here.
         default_size = trade_size_xch or cfg.DEFAULT_TRADE_XCH
 
+        guard = self.check_position_guard(
+            side=side,
+            mid_price=mid_price,
+            num=num,
+            slot_start=slot_start,
+            total_slots=total_slots if total_slots is not None else num,
+            slot_sequence=slot_sequence,
+            risk_manager=risk_manager,
+            default_size=default_size,
+            cat_asset_id=cat_asset_id,
+            log_block=True,
+            record_pause=True,
+        )
+        if guard.get("blocked"):
+            return []
+
         # F25 (2026-04-08): position rebalance hard guard.
         # Risk_manager already enforces MAX_POSITION_XCH as a soft limit
         # via spread skew. This is a HARD backstop: if creating these
@@ -1661,7 +1850,7 @@ class OfferManager:
                     if _should_log:
                         self._position_guard_logged_at[side] = _now
                         log_event(
-                            "error",
+                            "warning",
                             "position_hard_guard_blocked",
                             f"BLOCKED ladder creation: side={side}, num={num}, "
                             f"size={default_size}, current_position={net_pos_xch:.4f} XCH "
@@ -4100,4 +4289,3 @@ class OfferManager:
             )
 
         return open_buy, open_sell, closed
-
