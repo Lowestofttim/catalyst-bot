@@ -384,6 +384,10 @@ class BotLoop:
         # this session so we don't fire the orchestrator repeatedly for the
         # same persistent alert if it somehow reappears mid-flow.
         self._watchdog_auto_healed: set = set()
+        # After a persisted watchdog warning is visible, keep repeated
+        # passes out of the warning feed unless we reach auto-heal or a
+        # long reminder interval. The alert itself is still refreshed.
+        self._watchdog_repeat_warning_interval: int = 12
         self._last_tier_drift_topup_time: float = 0.0
         self._last_topup_source_wait_log: Dict[str, Dict] = {}
 
@@ -2814,11 +2818,20 @@ class BotLoop:
                           data=issue.details)
                 continue
 
-            sev = "error" if issue.severity == Severity.ERROR else "warning"
-            log_event(sev, f"watchdog_{issue.code}",
-                      f"{issue.message} — {issue.suggested_action} "
-                      f"(persisted for {new_streak} watchdog passes)",
-                      data=issue.details)
+            is_error = issue.severity == Severity.ERROR
+            sev = "error" if is_error else "warning"
+            if self._should_log_watchdog_operator_warning(
+                    is_error=is_error,
+                    streak=new_streak):
+                log_event(sev, f"watchdog_{issue.code}",
+                          f"{issue.message} — {issue.suggested_action} "
+                          f"(persisted for {new_streak} watchdog passes)",
+                          data=issue.details)
+            else:
+                log_event("debug", f"watchdog_{issue.code}_persistent",
+                          f"{issue.message} still present "
+                          f"(streak {new_streak}; operator alert already active)",
+                          data=issue.details)
 
             if issue.code in ACTIONABLE and has_event_bus:
                 det = issue.details or {}
@@ -2949,6 +2962,25 @@ class BotLoop:
                       f"Watchdog audit clean "
                       f"(cycle={self._loop_count}, "
                       f"buys={len(offers_buy)}, sells={len(offers_sell)})")
+
+    def _should_log_watchdog_operator_warning(
+        self,
+        *,
+        is_error: bool,
+        streak: int,
+    ) -> bool:
+        """Return true when a persisted watchdog issue should hit WARN/ERROR."""
+        if is_error:
+            return True
+        if streak == self._watchdog_persistence_threshold:
+            return True
+        if streak == self._watchdog_auto_heal_threshold:
+            return True
+        interval = max(1, int(self._watchdog_repeat_warning_interval or 1))
+        return (
+            streak > self._watchdog_auto_heal_threshold
+            and (streak - self._watchdog_auto_heal_threshold) % interval == 0
+        )
 
     def _tier_size_drift_waiting_sides(self, findings: list[dict]) -> set[str]:
         """Return drift sides that cannot be reshaped by a drip topup now."""

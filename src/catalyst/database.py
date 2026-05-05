@@ -3379,6 +3379,7 @@ def get_live_tier_group_counts() -> Dict[str, Dict[str, int]]:
         "enabled": True,
         "xch": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0, "reserve": 0, "dust": 0},
         "cat": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0, "reserve": 0, "dust": 0},
+        "meta": {"xch_order": "size_tier", "cat_order": "sell_position"},
     }
 
     rows = conn.execute(
@@ -3403,17 +3404,19 @@ def get_live_tier_group_counts() -> Dict[str, Dict[str, int]]:
         if assigned_tier in result[wallet_type]:
             result[wallet_type][assigned_tier] += int(row["cnt"] or 0)
 
-    # Flip XCH (buy side) tier counts from coin-SIZE back to POSITION order
-    # when BUY_LADDER_REVERSED is on. The DB stores coins by their size tier
-    # (inner = smallest coin), but the user thinks in position terms
-    # (inner = closest to mid = most likely to fill). Under reverse-buy,
-    # position inner uses extreme-sized coins, so we flip for the dashboard.
+    # Flip XCH (buy side) tier counts from coin-size labels back to position
+    # order when BUY_LADDER_REVERSED is on. The DB stores coins by their
+    # prepared size tier, but the user thinks in position terms (inner =
+    # closest to mid = most likely to fill). Under reverse-buy, position
+    # inner uses extreme-sized coins, so we flip for the dashboard and mark
+    # the order in metadata for the UI tooltip.
     try:
         from config import cfg as _cfg_tc
         if getattr(_cfg_tc, "BUY_LADDER_REVERSED", False):
             xch = result["xch"]
             xch["inner"], xch["extreme"] = xch["extreme"], xch["inner"]
             xch["mid"], xch["outer"] = xch["outer"], xch["mid"]
+            result["meta"]["xch_order"] = "buy_position"
     except Exception:
         pass  # config not available — show as-is
 
@@ -5086,4 +5089,3 @@ def clear_market_analysis_cache(asset_id: str,
         return cursor.rowcount
     except Exception:
         return 0
-

@@ -299,6 +299,41 @@ class ProbeAnchorTests(unittest.TestCase):
     def tearDown(self):
         self._cfg_patcher.stop()
 
+    def test_watchdog_warning_noise_is_suppressed_between_milestones(self):
+        loop = bot_loop.BotLoop()
+        loop._watchdog_persistence_threshold = 5
+        loop._watchdog_auto_heal_threshold = 10
+        loop._watchdog_repeat_warning_interval = 12
+
+        self.assertTrue(loop._should_log_watchdog_operator_warning(
+            is_error=False,
+            streak=5,
+        ))
+        self.assertFalse(loop._should_log_watchdog_operator_warning(
+            is_error=False,
+            streak=6,
+        ))
+        self.assertFalse(loop._should_log_watchdog_operator_warning(
+            is_error=False,
+            streak=9,
+        ))
+        self.assertTrue(loop._should_log_watchdog_operator_warning(
+            is_error=False,
+            streak=10,
+        ))
+        self.assertFalse(loop._should_log_watchdog_operator_warning(
+            is_error=False,
+            streak=11,
+        ))
+        self.assertTrue(loop._should_log_watchdog_operator_warning(
+            is_error=False,
+            streak=22,
+        ))
+        self.assertTrue(loop._should_log_watchdog_operator_warning(
+            is_error=True,
+            streak=6,
+        ))
+
     def test_probe_offer_state_marks_dexie_pending_as_taken(self):
         loop = bot_loop.BotLoop()
 

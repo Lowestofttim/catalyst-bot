@@ -24864,6 +24864,7 @@
             const enabled = !!tierData.enabled;
             const xch = tierData.xch || {};
             const cat = tierData.cat || {};
+            const meta = tierData.meta || {};
             const order = ['inner', 'mid', 'outer', 'extreme', 'sniper', 'fees', 'reserve', 'dust'];
             const rows = order.filter(name =>
                 Object.prototype.hasOwnProperty.call(xch, name) ||
@@ -24891,8 +24892,13 @@
             const catPoolNum = Number(catPoolAmt);
 
             let html = '';
+            const xchHeader = meta.xch_order === 'buy_position'
+                ? 'XCH (buy pos) <span class="cc-help">?<span class="cc-tooltip">'
+                    + 'XCH counts are shown in buy-position order. With reverse buys, Inner means the closest bid position, not the raw coin-size label stored in the database.'
+                    + '</span></span>'
+                : 'XCH';
             html += '<div style="opacity: 0.5;"></div>';
-            html += '<div style="opacity: 0.5; text-align: right; font-size: 0.85em;">XCH</div>';
+            html += '<div style="opacity: 0.5; text-align: right; font-size: 0.85em;">' + xchHeader + '</div>';
             html += '<div style="opacity: 0.5; text-align: right; font-size: 0.85em;">CAT</div>';
 
             if (!hasAnyPositiveCount) {
@@ -24908,11 +24914,10 @@
                 if (name === 'reserve') {
                     const labelHtml = '<div style="opacity: 0.88;">'
                         + 'Top-up pool <span class="cc-help">?<span class="cc-tooltip">'
-                        + 'Reserve coins the bot draws from when topping up tier spares. '
-                        + 'Numbers in brackets show the spendable amount in the pool — '
-                        + 'when these get small, the bot can no longer split fresh tier '
-                        + 'coins and trading will stall until you re-run Smart Settings '
-                        + 'or top up the wallet.'
+                        + 'Unallocated top-up fuel, separate from hard reserve. '
+                        + 'Numbers in brackets show the spendable amount still in the pool. '
+                        + 'A low amount is fine when tier spares are stocked; it only matters '
+                        + 'if spares run low and the bot has nothing left to split.'
                         + '</span></span>'
                         + '</div>';
                     const xchCount = xch[name] ?? 0;

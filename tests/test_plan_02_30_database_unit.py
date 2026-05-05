@@ -397,6 +397,26 @@ class TestGetCoinSummary(_TempDB):
         summary = _db.get_coin_summary()
         self.assertGreaterEqual(summary.get("xch_free_count", 0), 2)
 
+    def test_live_tier_counts_mark_reverse_buy_position_order(self):
+        _db.upsert_coin("0xaaa1", "xch", 100,
+                        designation="tier_spare", assigned_tier="extreme")
+        _db.upsert_coin("0xaaa2", "xch", 100,
+                        designation="tier_spare", assigned_tier="extreme")
+        _db.upsert_coin("0xaaa3", "xch", 200,
+                        designation="tier_spare", assigned_tier="inner")
+
+        from config import cfg
+        old = getattr(cfg, "BUY_LADDER_REVERSED", False)
+        try:
+            cfg.BUY_LADDER_REVERSED = True
+            counts = _db.get_live_tier_group_counts()
+        finally:
+            cfg.BUY_LADDER_REVERSED = old
+
+        self.assertEqual(counts["xch"]["inner"], 2)
+        self.assertEqual(counts["xch"]["extreme"], 1)
+        self.assertEqual(counts["meta"]["xch_order"], "buy_position")
+
 
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestLogEventAndGetRecentEvents(_TempDB):

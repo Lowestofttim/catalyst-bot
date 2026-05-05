@@ -103,3 +103,17 @@ def test_coin_topup_events_are_visible_in_system_logs():
     assert "evt.startsWith('topup_')" in filter_fn
     assert "evt.startsWith('drip_')" in filter_fn
     assert "evt.startsWith('tier_size_drift')" in filter_fn
+
+
+def test_tier_group_panel_explains_position_order_and_topup_pool():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+    tier_group_fn = _section(
+        html,
+        "function renderCoinTierGroups(tierData, poolAmounts) {",
+        "function getCommandCentreDashboardState()",
+    )
+
+    assert "XCH (buy pos)" in tier_group_fn
+    assert "buy-position order" in tier_group_fn
+    assert "Unallocated top-up fuel, separate from hard reserve" in tier_group_fn
+    assert "A low amount is fine when tier spares are stocked" in tier_group_fn
