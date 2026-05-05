@@ -178,7 +178,8 @@ def infer_pending_pool_move(
             xch_mag = abs(xch_signed_pct)
             plausible_ceiling = max(Decimal("0.5"), xch_mag * Decimal("6"))
             same_direction = (
-                (projected_signed_pct > 0 and xch_signed_pct > 0)
+                projected_signed_pct == 0
+                or (projected_signed_pct > 0 and xch_signed_pct > 0)
                 or (projected_signed_pct < 0 and xch_signed_pct < 0)
             )
             if same_direction and projected_mag <= plausible_ceiling:

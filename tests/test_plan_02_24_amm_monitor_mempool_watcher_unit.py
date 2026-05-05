@@ -221,6 +221,33 @@ class TestInferPendingPoolMove(unittest.TestCase):
         self.assertEqual(move["magnitude_source"], "xch_reserve_pct")
         self.assertLess(move["magnitude_pct"], 0.01)
 
+    def test_proportional_reserve_change_preserves_zero_price_projection(self):
+        xch_ph = "aa" * 32
+        tok_ph = "bb" * 32
+        item = {
+            "removals": [
+                self._coin(xch_ph, 1_000),
+                self._coin(tok_ph, 2_000),
+            ],
+            "additions": [
+                self._coin(xch_ph, 1_100),
+                self._coin(tok_ph, 2_200),
+            ],
+        }
+
+        move = _mempool_watcher.infer_pending_pool_move(
+            item,
+            current_xch_reserve=1_000,
+            current_tok_reserve=2_000,
+        )
+
+        self.assertIsNotNone(move)
+        self.assertEqual(move["confidence"], "xch_and_token_reserves")
+        self.assertEqual(move["magnitude_source"], "projected_price_pct")
+        self.assertEqual(move["magnitude_pct"], 0.0)
+        self.assertEqual(move["signed_pct"], 0.0)
+        self.assertNotIn("token_projection_rejected", move)
+
     def test_returns_none_when_current_xch_reserve_coin_is_not_spent(self):
         item = {
             "removals": [self._coin("aa" * 32, 999)],
