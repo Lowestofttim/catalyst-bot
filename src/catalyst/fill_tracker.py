@@ -119,9 +119,19 @@ class FillTracker:
         Returns dict with 'buy_fills' and 'sell_fills' lists.
         """
         result = {"buy_fills": [], "sell_fills": []}
+        details_cache = offer_details_cache or {}
+        newborn_missing = self._recently_created_missing_from_wallet(
+            current_buy_ids,
+            current_sell_ids,
+        )
 
         # First loop — just establish baseline
-        if not self._previous_ids["buy"] and not self._previous_ids["sell"]:
+        if (
+            not self._previous_ids["buy"]
+            and not self._previous_ids["sell"]
+            and not newborn_missing["buy"]
+            and not newborn_missing["sell"]
+        ):
             self._previous_ids["buy"] = current_buy_ids.copy()
             self._previous_ids["sell"] = current_sell_ids.copy()
             log_event("info", "fill_tracker_init",
@@ -152,7 +162,7 @@ class FillTracker:
                           f"Dropped {len(_restored)} pending verifications: "
                           f"offers reappeared in wallet (Sage RPC lag, not fills)")
         if self._pending_reverify:
-            retry_fills = self._retry_pending_reverify(offer_details_cache or {})
+            retry_fills = self._retry_pending_reverify(details_cache)
             if retry_fills.get("buy_fills"):
                 result["buy_fills"].extend(retry_fills["buy_fills"])
             if retry_fills.get("sell_fills"):
@@ -173,11 +183,21 @@ class FillTracker:
 
         # Process disappeared offers
         buy_fills = self._process_disappeared(
-            disappeared_buy, "buy", offer_details_cache or {}
+            disappeared_buy, "buy", details_cache
         )
         sell_fills = self._process_disappeared(
-            disappeared_sell, "sell", offer_details_cache or {}
+            disappeared_sell, "sell", details_cache
         )
+        newborn_buy_fills = self._process_disappeared(
+            newborn_missing["buy"], "buy", details_cache
+        )
+        newborn_sell_fills = self._process_disappeared(
+            newborn_missing["sell"], "sell", details_cache
+        )
+        if newborn_buy_fills:
+            buy_fills.extend(newborn_buy_fills)
+        if newborn_sell_fills:
+            sell_fills.extend(newborn_sell_fills)
 
         result["buy_fills"] = buy_fills
         result["sell_fills"] = sell_fills
@@ -200,6 +220,97 @@ class FillTracker:
         self._previous_ids["sell"] = current_sell_ids.copy()
 
         return result
+
+    def _recently_created_missing_from_wallet(
+        self,
+        current_buy_ids: Set[str],
+        current_sell_ids: Set[str],
+    ) -> Dict[str, Set[str]]:
+        """Find locally-created offers absent before wallet baselining saw them."""
+        empty = {"buy": set(), "sell": set()}
+        manager = self._offer_manager
+        if not manager:
+            return empty
+
+        if hasattr(manager, "get_wallet_sync_meta"):
+            try:
+                sync_meta = manager.get_wallet_sync_meta() or {}
+            except Exception:
+                sync_meta = {}
+            if sync_meta and not sync_meta.get("fresh", True):
+                return empty
+
+        recently_by_side = None
+        if hasattr(manager, "get_recently_created_ids_by_side"):
+            try:
+                recently_by_side = manager.get_recently_created_ids_by_side()
+            except Exception as e:
+                log_event("debug", "newborn_offer_scan_failed",
+                          f"Could not read recently-created offer ids: {e}")
+                recently_by_side = None
+
+        if recently_by_side is None:
+            try:
+                recently = getattr(manager, "_recently_created", {}) or {}
+                details = getattr(manager, "_offer_details_cache", {}) or {}
+                recently_by_side = {"buy": set(), "sell": set()}
+                for trade_id in recently:
+                    side = str((details.get(trade_id) or {}).get("side") or "")
+                    if side in recently_by_side:
+                        recently_by_side[side].add(trade_id)
+            except Exception:
+                return empty
+
+        known_wallet_or_baselined = (
+            set(current_buy_ids)
+            | set(current_sell_ids)
+            | self._previous_ids["buy"]
+            | self._previous_ids["sell"]
+        )
+        missing = {
+            "buy": {
+                str(tid) for tid in recently_by_side.get("buy", set()) or set()
+                if tid and str(tid) not in known_wallet_or_baselined
+            },
+            "sell": {
+                str(tid) for tid in recently_by_side.get("sell", set()) or set()
+                if tid and str(tid) not in known_wallet_or_baselined
+            },
+        }
+        total = len(missing["buy"]) + len(missing["sell"])
+        if total:
+            log_event("debug", "newborn_fill_candidates",
+                      f"Verifying {total} recently-created offer(s) absent "
+                      "from a fresh wallet snapshot before baseline visibility")
+        return missing
+
+    def _forget_recently_created(self, trade_id: str) -> None:
+        manager = self._offer_manager
+        if not manager or not trade_id:
+            return
+        if hasattr(manager, "forget_recently_created"):
+            try:
+                manager.forget_recently_created(trade_id)
+                return
+            except Exception:
+                pass
+        try:
+            recently = getattr(manager, "_recently_created", None)
+            if isinstance(recently, dict):
+                recently.pop(trade_id, None)
+        except Exception:
+            pass
+
+    def _record_verified_fill(
+        self,
+        trade_id: str,
+        side: str,
+        details_cache: Dict[str, Dict],
+    ) -> Optional[Dict]:
+        fill_detail = self._record_fill(trade_id, side, details_cache)
+        if fill_detail:
+            self._forget_recently_created(trade_id)
+        return fill_detail
 
     def _check_mass_disappearance(self, disappeared: int, previous: int) -> bool:
         """Mass disappearance guard — returns True if safe to process.
@@ -359,7 +470,7 @@ class FillTracker:
                     transition_offer(trade_id, "fill_verified")
                 except Exception:
                     pass
-                fill_detail = self._record_fill(trade_id, side, details_cache)
+                fill_detail = self._record_verified_fill(trade_id, side, details_cache)
                 if fill_detail:
                     key = "buy_fills" if side == "buy" else "sell_fills"
                     out[key].append(fill_detail)
@@ -401,7 +512,7 @@ class FillTracker:
                             transition_offer(trade_id, "fill_verified")
                         except Exception:
                             pass
-                        fill_detail = self._record_fill(trade_id, side, details_cache)
+                        fill_detail = self._record_verified_fill(trade_id, side, details_cache)
                         if fill_detail:
                             key = "buy_fills" if side == "buy" else "sell_fills"
                             out[key].append(fill_detail)
@@ -646,7 +757,7 @@ class FillTracker:
                               f"bot-cancelled but Dexie reports COMPLETED — "
                               f"recording fill before Spacescan.",
                               data={"trade_id": trade_id, "side": side})
-                fill_detail = self._record_fill(trade_id, side, details_cache)
+                fill_detail = self._record_verified_fill(trade_id, side, details_cache)
                 if fill_detail:
                     fills.append(fill_detail)
                 continue
@@ -746,7 +857,7 @@ class FillTracker:
                               f"bot-cancelled but Spacescan confirms a fill — "
                               f"recording fill and overriding local cancel state.",
                               data={"trade_id": trade_id, "side": side})
-                fill_detail = self._record_fill(trade_id, side, details_cache)
+                fill_detail = self._record_verified_fill(trade_id, side, details_cache)
                 if fill_detail:
                     fills.append(fill_detail)
             elif verification == "still_open":
@@ -875,6 +986,7 @@ class FillTracker:
             data.update(data_extra)
 
         log_event(severity, event_type, " ".join(parts), data=data)
+        self._forget_recently_created(trade_id)
 
     def _get_offer_context(self, trade_id: str, side: str,
                            details_cache: Dict[str, Dict]) -> Dict:
