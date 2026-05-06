@@ -410,10 +410,10 @@ class SplashNode:
         display_hook = None
         if getattr(cfg, "SPLASH_RECEIVE_ENABLED", False):
             bot_port = getattr(cfg, "PORT", 5000)
-            offer_hook = f"http://localhost:{bot_port}/api/splash/incoming"
+            offer_hook = f"http://127.0.0.1:{bot_port}/api/splash/incoming"
             # No token in URL — the splash/incoming endpoint is token-exempt
-            # (loopback-only). Keeping the token out of CLI args prevents it
-            # from leaking in process listings (Task Manager, /proc/cmdline).
+            # (loopback-only). Use IPv4 explicitly because Flask is bound to
+            # 127.0.0.1; on Windows, localhost may resolve to ::1 first.
             display_hook = offer_hook
             cmd.extend(["--offer-hook", offer_hook])
             log_event("info", "splash_node_webhook",
@@ -431,7 +431,7 @@ class SplashNode:
             display_hook
             if (
                 display_hook
-                and part.startswith("http://localhost:")
+                and part.startswith("http://127.0.0.1:")
                 and "/api/splash/incoming" in part
             )
             else part
@@ -509,7 +509,7 @@ class SplashNode:
                     # them as debug during the first 30 s after the process
                     # started, and only escalate to warning if they keep
                     # coming after Splash has had time to bootstrap.
-                    _since_start = time.time() - float(self._start_time or 0)
+                    _since_start = time.time() - float(self._last_start_time or 0)
                     _is_startup_burst = (
                         _since_start < 30
                         and "insufficientpeers" in lower.replace(" ", "")
@@ -660,4 +660,3 @@ class SplashNode:
     def get_recent_output(self, lines: int = 20) -> list:
         """Get recent output lines from Splash for debugging."""
         return self._last_output_lines[-lines:]
-
