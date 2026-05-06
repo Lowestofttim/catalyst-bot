@@ -162,11 +162,18 @@ class FillTracker:
                           f"Dropped {len(_restored)} pending verifications: "
                           f"offers reappeared in wallet (Sage RPC lag, not fills)")
         if self._pending_reverify:
+            retried_pending_ids = set(self._pending_reverify.keys())
             retry_fills = self._retry_pending_reverify(details_cache)
             if retry_fills.get("buy_fills"):
                 result["buy_fills"].extend(retry_fills["buy_fills"])
             if retry_fills.get("sell_fills"):
                 result["sell_fills"].extend(retry_fills["sell_fills"])
+            # newborn_missing was captured before the retry ran. Do not let
+            # the same trade_id flow through the newborn path again in this
+            # cycle, whether the retry recorded a fill, retired a non-fill, or
+            # left it parked for another attempt.
+            newborn_missing["buy"].difference_update(retried_pending_ids)
+            newborn_missing["sell"].difference_update(retried_pending_ids)
 
         # Calculate disappeared offers
         disappeared_buy = self._previous_ids["buy"] - current_buy_ids
@@ -181,13 +188,16 @@ class FillTracker:
                 # Guard triggered — don't update baseline, wait for next loop
                 return result
 
-        # Process disappeared offers
-        buy_fills = self._process_disappeared(
+        # Process disappeared offers. Start with any fills recovered by the
+        # pending-reverify retry path above so they are not overwritten.
+        buy_fills = list(result["buy_fills"])
+        sell_fills = list(result["sell_fills"])
+        buy_fills.extend(self._process_disappeared(
             disappeared_buy, "buy", details_cache
-        )
-        sell_fills = self._process_disappeared(
+        ))
+        sell_fills.extend(self._process_disappeared(
             disappeared_sell, "sell", details_cache
-        )
+        ))
         newborn_buy_fills = self._process_disappeared(
             newborn_missing["buy"], "buy", details_cache
         )
