@@ -1,4 +1,5 @@
 import os
+import time
 
 
 def test_splash_install_path_lives_under_user_data():
@@ -63,3 +64,71 @@ def test_splash_download_refuses_release_without_checksum(monkeypatch):
     assert result["success"] is False
     assert "sha256" in result["message"].lower()
     assert requested_urls == []
+
+
+def test_splash_node_offer_hook_uses_ipv4_loopback(monkeypatch):
+    import splash_node
+    from config import cfg
+
+    captured = {}
+
+    class FakeProcess:
+        pid = 12345
+        stdout = []
+
+        def poll(self):
+            return None
+
+    class FakeThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return False
+
+    def fake_popen(cmd, *args, **kwargs):
+        captured["cmd"] = cmd
+        return FakeProcess()
+
+    monkeypatch.setattr(cfg, "SPLASH_RECEIVE_ENABLED", True, raising=False)
+    monkeypatch.setattr(cfg, "PORT", 5000, raising=False)
+    monkeypatch.setattr(cfg, "SPLASH_SUBMIT_URL", "http://localhost:4000", raising=False)
+    monkeypatch.setattr(cfg, "SPLASH_P2P_PORT", 11511, raising=False)
+    monkeypatch.setattr(cfg, "SPLASH_METRICS_PORT", 4001, raising=False)
+    monkeypatch.setattr(splash_node.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(splash_node.threading, "Thread", FakeThread)
+
+    node = splash_node.SplashNode()
+    node._binary_path = "splash.exe"
+    node._kill_stale_process = lambda port: None
+
+    node._launch_process()
+
+    hook_index = captured["cmd"].index("--offer-hook") + 1
+    assert captured["cmd"][hook_index] == "http://127.0.0.1:5000/api/splash/incoming"
+    assert "http://localhost:5000/api/splash/incoming" not in captured["cmd"]
+
+
+def test_splash_output_reader_keeps_reading_lines(monkeypatch):
+    import splash_node
+
+    class FakeProcess:
+        stdout = iter([
+            "connected to peer one\n",
+            "connected to peer two\n",
+        ])
+
+    monkeypatch.setattr(splash_node, "log_event", lambda *args, **kwargs: None)
+    node = splash_node.SplashNode()
+    node._process = FakeProcess()
+    node._last_start_time = time.time()
+
+    node._read_output()
+
+    assert node.get_recent_output(10) == [
+        "connected to peer one",
+        "connected to peer two",
+    ]
