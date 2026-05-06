@@ -4056,6 +4056,31 @@ class OfferManager:
         for tid in to_remove:
             self._recently_created.pop(tid, None)
 
+    def forget_recently_created(self, trade_id: str):
+        """Drop a recently-created marker after the offer reaches a terminal state."""
+        if trade_id:
+            self._recently_created.pop(trade_id, None)
+
+    def get_recently_created_ids_by_side(self) -> Dict[str, set]:
+        """Return live recently-created IDs grouped by cached offer side."""
+        now = time.time()
+        grouped = {"buy": set(), "sell": set()}
+        expired_keys = []
+
+        for tid, info_time in self._recently_created.items():
+            if now - info_time > self._recently_created_ttl:
+                expired_keys.append(tid)
+                continue
+            detail = self._offer_details_cache.get(tid, {})
+            side = detail.get("side")
+            if side in grouped:
+                grouped[side].add(tid)
+
+        for key in expired_keys:
+            self._recently_created.pop(key, None)
+
+        return grouped
+
     def get_recently_created_count(self, side: str) -> int:
         """Count offers created recently that might not be visible in wallet yet.
 

@@ -10,11 +10,22 @@ class _FakeCfg:
 
 
 class _FakeOfferManager:
-    def __init__(self, cancelled):
+    def __init__(self, cancelled=(), recently_created=None):
         self.cancelled = set(cancelled)
+        self.recently_created = recently_created or {"buy": set(), "sell": set()}
+        self.forgot_recently_created = []
 
     def is_bot_cancelled(self, trade_id):
         return trade_id in self.cancelled
+
+    def get_recently_created_ids_by_side(self):
+        return {
+            side: set(ids)
+            for side, ids in self.recently_created.items()
+        }
+
+    def forget_recently_created(self, trade_id):
+        self.forgot_recently_created.append(trade_id)
 
 
 _MODS_TO_RESTORE = ("fill_tracker", "spacescan", "wallet_sage", "wallet",
@@ -310,6 +321,46 @@ class FillTrackerVerificationTests(unittest.TestCase):
                             for _, evt, _, _ in self.logged))
         self.assertTrue(any(level == "info" and evt == "fill_beat_cancel_dexie"
                             for level, evt, _, _ in self.logged))
+
+    def test_recently_created_offer_missing_from_wallet_snapshot_can_record_fill(self):
+        self.db_offer = {
+            "coin_id": "0xcoin123",
+            "dexie_id": "dexie-newborn-filled",
+        }
+        trade_id = "trade-newborn-filled"
+        older_trade_id = "trade-already-baselined"
+        self.fake_spacescan.verify_fill = lambda coin_id, our_address: None
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: {
+            "status": 4,
+            "trade_id": trade_id,
+            "involved_coins": ["0xcoin123"],
+        }
+        fill_detail = {"trade_id": trade_id, "side": "buy", "price": "0.1"}
+        manager = _FakeOfferManager(
+            recently_created={"buy": {trade_id}, "sell": set()}
+        )
+
+        tracker = self.fill_tracker.FillTracker(offer_manager=manager)
+        tracker._record_fill = lambda trade_id, side, details_cache: fill_detail
+        tracker._previous_ids["buy"] = {older_trade_id}
+        tracker._previous_ids["sell"] = set()
+
+        result = tracker.detect_fills(
+            {older_trade_id},
+            set(),
+            {
+                trade_id: {
+                    "price": "0.1",
+                    "size_xch": "1",
+                    "size_cat": "1000",
+                    "tier": "inner",
+                    "coin_id": "0xcoin123",
+                }
+            },
+        )
+
+        self.assertEqual(result["buy_fills"], [fill_detail])
+        self.assertIn(trade_id, manager.forgot_recently_created)
 
 
 if __name__ == "__main__":
