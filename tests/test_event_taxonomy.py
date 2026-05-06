@@ -15,6 +15,8 @@ class TestEventTaxonomy(unittest.TestCase):
         self.assertEqual(categorize_event("bot_starting"), EventCategory.LIFECYCLE)
         self.assertEqual(categorize_event("startup_sync_done"), EventCategory.LIFECYCLE)
         self.assertEqual(categorize_event("cycle_complete"), EventCategory.LIFECYCLE)
+        self.assertEqual(categorize_event("startup_spares_low"), EventCategory.LIFECYCLE)
+        self.assertEqual(categorize_event("startup_coins_unavailable"), EventCategory.LIFECYCLE)
 
     def test_offer_events(self):
         self.assertEqual(categorize_event("offer_created"), EventCategory.OFFER)

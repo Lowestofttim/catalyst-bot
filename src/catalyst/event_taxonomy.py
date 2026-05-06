@@ -55,6 +55,8 @@ _EVENT_CATEGORY_MAP = {
     "startup_offer_recovery": EventCategory.LIFECYCLE,
     "startup_offer_linking": EventCategory.LIFECYCLE,
     "startup_coins_critical": EventCategory.LIFECYCLE,
+    "startup_spares_low": EventCategory.LIFECYCLE,
+    "startup_coins_unavailable": EventCategory.LIFECYCLE,
     "startup_coin_recheck": EventCategory.LIFECYCLE,
     "startup_orphan_cleanup": EventCategory.LIFECYCLE,
     "startup_orphan_cleanup_failed": EventCategory.LIFECYCLE,

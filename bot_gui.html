@@ -26264,8 +26264,10 @@
                 return { icon: '🪙', msg: 'Coins ready', cls: 'la-success' };
             if (eventType === 'startup_coins_low')
                 return { icon: '⚠️', msg: 'Running low on coins', cls: 'la-warning' };
-            if (eventType === 'startup_coins_critical')
-                return { icon: '🚨', msg: 'Critically low coins — splitting needed', cls: 'la-error' };
+            if (eventType === 'startup_spares_low' || eventType === 'startup_coins_critical')
+                return { icon: '⚠️', msg: 'Spare coin buffers below target', cls: 'la-warning' };
+            if (eventType === 'startup_coins_unavailable')
+                return { icon: '🚨', msg: 'Coins unavailable — run coin prep', cls: 'la-error' };
 
             // --- Health ---
             if (eventType === 'wallet_unhealthy')

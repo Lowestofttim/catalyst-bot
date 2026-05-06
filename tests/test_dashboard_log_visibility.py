@@ -105,6 +105,25 @@ def test_coin_topup_events_are_visible_in_system_logs():
     assert "evt.startsWith('tier_size_drift')" in filter_fn
 
 
+def test_startup_spare_deficit_activity_is_amber_not_critical():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+    activity_translator = _section(html, "function laTranslate(", "function laHandleEvent(")
+
+    assert "eventType === 'startup_spares_low'" in activity_translator
+    spares_section = activity_translator.split(
+        "eventType === 'startup_spares_low'", 1
+    )[1].split("if (eventType === 'startup_coins_unavailable')", 1)[0]
+    assert "Spare coin buffers below target" in spares_section
+    assert "cls: 'la-warning'" in spares_section
+    assert "la-error" not in spares_section
+
+    unavailable_section = activity_translator.split(
+        "eventType === 'startup_coins_unavailable'", 1
+    )[1].split("// --- Health ---", 1)[0]
+    assert "Coins unavailable" in unavailable_section
+    assert "cls: 'la-error'" in unavailable_section
+
+
 def test_tier_group_panel_explains_position_order_and_topup_pool():
     html = GUI.read_text(encoding="utf-8", errors="replace")
     tier_group_fn = _section(

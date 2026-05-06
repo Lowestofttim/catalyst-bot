@@ -5659,10 +5659,14 @@ class BotLoop:
                         log_event("info", "startup_coins_critical_prep_pending",
                                   "Coin tiers below target — coin prep is "
                                   "in flight or queued, will replenish.")
+                    elif resumed_live_book:
+                        log_event("warning", "startup_spares_low",
+                                  "Spare coin buffers below target — active offers remain live; "
+                                  "topup and normal fills will replenish specific tiers over time.")
                     else:
-                        log_event("warning", "startup_coins_critical",
-                                  "COIN READINESS: CRITICAL — some tiers have zero coins! "
-                                  "Run coin prep before starting offers.")
+                        log_event("warning", "startup_coins_unavailable",
+                                  "Coin pools missing required tier coins — run coin prep "
+                                  "before starting offers.")
 
             # Per-tier spare summary — fires on EVERY start (cold or resume).
             # Shows exactly which tiers are below their spare_target so the user
