@@ -515,6 +515,40 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
         self.assertEqual(Decimal(health["metrics"]["buy_spread_bps"]), _fake_cfg.MAX_SPREAD_BPS)
         self.assertEqual(Decimal(health["metrics"]["sell_spread_bps"]), _fake_cfg.MAX_SPREAD_BPS)
 
+    def test_min_spread_clamp_is_quiet_when_base_equals_minimum(self):
+        cfg_patch = _FakeCfg()
+        cfg_patch.DYNAMIC_SPREAD_ENABLED = True
+        cfg_patch.BASE_SPREAD_BPS = Decimal("350")
+        cfg_patch.MIN_SPREAD_BPS = Decimal("350")
+        with patch.object(_rm_mod, "cfg", cfg_patch):
+            rm = _make_rm()
+            min_spread = cfg_patch.MIN_SPREAD_BPS / Decimal("10000")
+            rm.get_adjusted_spread = lambda side: (
+                min_spread if side == "buy" else Decimal("0.03654888908347046890499652273")
+            )
+
+            health = rm.get_market_health(loop_count=8)
+
+        condition_text = " ".join(c["text"] for c in health["conditions"])
+        self.assertEqual(health["status"], "green")
+        self.assertNotIn("minimum clamp", condition_text)
+
+    def test_min_spread_clamp_still_warns_when_base_can_tighten(self):
+        cfg_patch = _FakeCfg()
+        cfg_patch.DYNAMIC_SPREAD_ENABLED = True
+        cfg_patch.BASE_SPREAD_BPS = Decimal("700")
+        cfg_patch.MIN_SPREAD_BPS = Decimal("350")
+        with patch.object(_rm_mod, "cfg", cfg_patch):
+            rm = _make_rm()
+            min_spread = cfg_patch.MIN_SPREAD_BPS / Decimal("10000")
+            rm.get_adjusted_spread = lambda _side: min_spread
+
+            health = rm.get_market_health(loop_count=8)
+
+        condition_text = " ".join(c["text"] for c in health["conditions"])
+        self.assertEqual(health["status"], "amber")
+        self.assertIn("minimum clamp", condition_text)
+
 
 if __name__ == "__main__":
     unittest.main()
