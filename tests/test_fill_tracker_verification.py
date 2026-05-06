@@ -362,6 +362,41 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(result["buy_fills"], [fill_detail])
         self.assertIn(trade_id, manager.forgot_recently_created)
 
+    def test_retry_resolved_newborn_fill_is_not_processed_twice(self):
+        self.db_offer = {
+            "coin_id": "0xcoin123",
+            "dexie_id": "dexie-newborn-retry-filled",
+        }
+        trade_id = "trade-newborn-retry-filled"
+        older_trade_id = "trade-already-baselined"
+        self.fake_spacescan.verify_fill = lambda coin_id, our_address: True
+        fill_detail = {"trade_id": trade_id, "side": "buy", "price": "0.1"}
+        manager = _FakeOfferManager(
+            recently_created={"buy": {trade_id}, "sell": set()}
+        )
+        record_calls = []
+
+        def _record_once(trade_id_arg, side, details_cache):
+            record_calls.append((trade_id_arg, side))
+            return fill_detail
+
+        tracker = self.fill_tracker.FillTracker(offer_manager=manager)
+        tracker._record_fill = _record_once
+        tracker._previous_ids["buy"] = {older_trade_id}
+        tracker._previous_ids["sell"] = set()
+        tracker._pending_reverify[trade_id] = {
+            "side": "buy",
+            "attempts": 1,
+            "first_seen": 0,
+        }
+
+        result = tracker.detect_fills({older_trade_id}, set(), {})
+
+        self.assertEqual(result["buy_fills"], [fill_detail])
+        self.assertEqual(record_calls, [(trade_id, "buy")])
+        self.assertNotIn(trade_id, tracker._pending_reverify)
+        self.assertIn(trade_id, manager.forgot_recently_created)
+
 
 if __name__ == "__main__":
     unittest.main()
