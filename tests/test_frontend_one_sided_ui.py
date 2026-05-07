@@ -85,3 +85,20 @@ def test_data_reset_buttons_disable_while_bot_is_running():
     assert "updateDataResetButtonState(isRunning)" in html
     for button_id in ("btnResetPnl", "btnResetOfferHistory", "btnResetFull"):
         assert button_id in html
+
+
+def test_pnl_tab_defines_realized_unrealized_and_total_pnl_terms():
+    html = _html()
+
+    pnl_start = html.index('id="v4View-pnl"')
+    pnl_end = html.index('id="v4View-intel"', pnl_start)
+    pnl_html = html[pnl_start:pnl_end]
+
+    assert "Realized PnL" in pnl_html
+    assert "profit/loss from completed round trips" in pnl_html
+    assert "Unrealized PnL" in pnl_html
+    assert "profit/loss on inventory you still hold" in pnl_html
+    assert "Total PnL" in pnl_html
+    assert "Realized PnL + Unrealized PnL" in pnl_html
+    assert "XCH realized" in html
+    assert "XCH realised" not in html
