@@ -74,6 +74,36 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
         # Net = legacy buy +1000 + verified sell -2000 = -1000.
         self.assertEqual(position, Decimal("-1000"))
 
+    def test_stats_report_fee_adjusted_net_xch_flow(self):
+        asset_id = "asset-fee-flow"
+
+        database.record_fill(
+            trade_id="fee-buy",
+            side="buy",
+            price_xch=Decimal("0.001"),
+            size_xch=Decimal("0.100"),
+            size_cat=Decimal("100"),
+            cat_asset_id=asset_id,
+            tier="inner",
+            fee_mojos_xch=1_000_000_000,
+        )
+        database.record_fill(
+            trade_id="fee-sell",
+            side="sell",
+            price_xch=Decimal("0.0011"),
+            size_xch=Decimal("0.110"),
+            size_cat=Decimal("100"),
+            cat_asset_id=asset_id,
+            tier="inner",
+            fee_mojos_xch=1_000_000_000,
+        )
+
+        stats = database.get_stats(asset_id)
+
+        self.assertEqual(stats["net_xch_flow"], "0.010")
+        self.assertEqual(stats["fee_xch"], "0.002")
+        self.assertEqual(stats["net_xch_flow_after_fees"], "0.008")
+
     def test_fill_and_expiry_update_all_locked_coins_for_trade(self):
         conn = database.get_connection()
         asset_id = "asset-test"

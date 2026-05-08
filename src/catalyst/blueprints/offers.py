@@ -73,7 +73,15 @@ def _calculate_pnl_breakdown(
         or _decimal_or_none(stats.get("net_position"))
         or Decimal("0")
     )
-    net_xch_flow = _decimal_or_none(stats.get("net_xch_flow"))
+    if net_position == 0:
+        return realised, Decimal("0"), realised
+
+    fee_adjusted_flow = _decimal_or_none(stats.get("net_xch_flow_after_fees"))
+    net_xch_flow = (
+        fee_adjusted_flow
+        if fee_adjusted_flow is not None
+        else _decimal_or_none(stats.get("net_xch_flow"))
+    )
     if net_xch_flow is not None and mid_price > 0:
         total = net_xch_flow + (net_position * mid_price)
         unrealised = total - realised
@@ -1480,6 +1488,11 @@ def api_pnl():
             "sell_volume_cat_usd": _usd_string(stats.get("sell_volume_cat", "0"), cat_usd_price),
             "net_xch_flow": stats.get("net_xch_flow", "0"),
             "net_xch_flow_usd": _usd_string(stats.get("net_xch_flow", "0"), xch_usd_price),
+            "net_xch_flow_after_fees": stats.get(
+                "net_xch_flow_after_fees",
+                stats.get("net_xch_flow", "0"),
+            ),
+            "fee_xch": stats.get("fee_xch", "0"),
             "net_cat_flow": stats.get("net_cat_flow", "0"),
             "net_cat_flow_usd": _usd_string(stats.get("net_cat_flow", "0"), cat_usd_price),
             "avg_fill_size_xch": stats.get("avg_fill_size_xch", "0"),

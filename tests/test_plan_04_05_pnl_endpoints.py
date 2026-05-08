@@ -223,6 +223,30 @@ class TestPnlGet(_FlaskBase):
         self.assertEqual(body["total_pnl_xch"], "0.000")
         self.assertEqual(body["pnl_mid_price_xch"], "0.002")
 
+    def test_response_does_not_turn_round_trip_fees_into_unrealised_pnl(self):
+        bot = _make_bot()
+        bot._current_mid_price = Decimal("0.002")
+        bot.risk_manager.get_inventory_state.return_value = {
+            "net_position_cat": "0",
+            "circuit_breaker_active": False,
+        }
+        stats = {
+            **_fake_stats(),
+            "realised_pnl_xch": "0.008",
+            "net_xch_flow": "0.010",
+            "net_xch_flow_after_fees": "0.008",
+            "net_cat_flow": "0",
+        }
+
+        with patch.object(api_server, "bot", bot), \
+             patch("api_server.get_stats", return_value=stats):
+            resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
+
+        body = resp.get_json()
+        self.assertEqual(body["realised_pnl_xch"], "0.008")
+        self.assertEqual(body["unrealised_pnl_xch"], "0")
+        self.assertEqual(body["total_pnl_xch"], "0.008")
+
 
 # ---------------------------------------------------------------------------
 # 2. GET /api/pnl/reset-preview
