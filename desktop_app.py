@@ -1202,7 +1202,12 @@ def _wire_notifications(notifier):
             try:
                 if ev_type == "fill":
                     side = str(data.get("side", "?"))
-                    amount = data.get("amount", "?")
+                    amount = (
+                        data.get("amount")
+                        or data.get("size_xch")
+                        or data.get("size_cat")
+                        or "?"
+                    )
                     price = data.get("price", "?")
                     notifier.notify(
                         title="Offer Filled",
