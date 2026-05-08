@@ -57,6 +57,9 @@ def test_data_reset_success_refreshes_visible_stats():
     assert "await refreshAfterDataReset();" in html
     assert "fetchDashboard()" in html
     assert "fetchPnLData()" in html
+    assert "_v4LastPnlSignature = ''" in html
+    assert "v4RenderPnlChart()" in html
+    assert "v4RenderInventoryChart()" in html
     assert "updateDashboard()" not in html
 
 

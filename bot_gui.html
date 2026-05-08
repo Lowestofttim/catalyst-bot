@@ -30042,7 +30042,10 @@
             }
             try {
                 if (typeof _v4PnlHistory !== 'undefined') _v4PnlHistory.length = 0;
+                if (typeof _v4LastPnlSignature !== 'undefined') _v4LastPnlSignature = '';
                 if (typeof _v4InventoryHistory !== 'undefined') _v4InventoryHistory.length = 0;
+                if (typeof v4RenderPnlChart === 'function') v4RenderPnlChart();
+                if (typeof v4RenderInventoryChart === 'function') v4RenderInventoryChart();
             } catch (_) {}
             await Promise.allSettled(jobs);
         }
