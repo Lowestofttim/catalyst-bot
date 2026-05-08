@@ -30026,7 +30026,7 @@
             }
         }
 
-        async function refreshAfterDataReset() {
+        async function refreshAfterDataReset({ clearPnlCharts = true } = {}) {
             const jobs = [];
             if (typeof fetchStatus === 'function') {
                 jobs.push(Promise.resolve().then(() => fetchStatus()));
@@ -30040,13 +30040,15 @@
             if (typeof v4LoadPriceHistory === 'function') {
                 jobs.push(Promise.resolve().then(() => v4LoadPriceHistory(true)));
             }
-            try {
-                if (typeof _v4PnlHistory !== 'undefined') _v4PnlHistory.length = 0;
-                if (typeof _v4LastPnlSignature !== 'undefined') _v4LastPnlSignature = '';
-                if (typeof _v4InventoryHistory !== 'undefined') _v4InventoryHistory.length = 0;
-                if (typeof v4RenderPnlChart === 'function') v4RenderPnlChart();
-                if (typeof v4RenderInventoryChart === 'function') v4RenderInventoryChart();
-            } catch (_) {}
+            if (clearPnlCharts) {
+                try {
+                    if (typeof _v4PnlHistory !== 'undefined') _v4PnlHistory.length = 0;
+                    if (typeof _v4LastPnlSignature !== 'undefined') _v4LastPnlSignature = '';
+                    if (typeof _v4InventoryHistory !== 'undefined') _v4InventoryHistory.length = 0;
+                    if (typeof v4RenderPnlChart === 'function') v4RenderPnlChart();
+                    if (typeof v4RenderInventoryChart === 'function') v4RenderInventoryChart();
+                } catch (_) {}
+            }
             await Promise.allSettled(jobs);
         }
 
@@ -31741,7 +31743,7 @@
             return false;
         }
 
-        async function _runReset(endpoint, label, successMsgBuilder) {
+        async function _runReset(endpoint, label, successMsgBuilder, { clearPnlCharts = true } = {}) {
             try {
                 const resp = await apiFetch(`${API_URL}/${endpoint}`, {
                     method: 'POST',
@@ -31758,7 +31760,7 @@
                     ? successMsgBuilder(data)
                     : (data.message || `${label} complete.`);
                 showToast(succ, 'success', 5000);
-                await refreshAfterDataReset();
+                await refreshAfterDataReset({ clearPnlCharts });
             } catch (e) {
                 showToast(`${label} failed: ${e?.message || e}`, 'error', 5000);
             }
@@ -31795,7 +31797,8 @@
             });
             if (!confirmed) return;
             await _runReset('reset/offer-history', 'Clear offer history',
-                d => `Cleared ${d.deleted} offer rows.`);
+                d => `Cleared ${d.deleted} offer rows.`,
+                { clearPnlCharts: false });
         }
 
         async function handleFullReset() {

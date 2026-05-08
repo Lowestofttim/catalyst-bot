@@ -53,14 +53,23 @@ def test_update_badge_is_compact_sidebar_control():
 def test_data_reset_success_refreshes_visible_stats():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
-    assert "async function refreshAfterDataReset" in html
+    assert "async function refreshAfterDataReset({ clearPnlCharts = true } = {})" in html
     assert "await refreshAfterDataReset();" in html
+    assert "await refreshAfterDataReset({ clearPnlCharts });" in html
     assert "fetchDashboard()" in html
     assert "fetchPnLData()" in html
     assert "_v4LastPnlSignature = ''" in html
     assert "v4RenderPnlChart()" in html
     assert "v4RenderInventoryChart()" in html
     assert "updateDashboard()" not in html
+
+
+def test_offer_history_reset_preserves_pnl_chart_history():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert "async function _runReset(endpoint, label, successMsgBuilder, { clearPnlCharts = true } = {})" in html
+    assert "await _runReset('reset/offer-history', 'Clear offer history'," in html
+    assert "{ clearPnlCharts: false });" in html
 
 
 def test_desktop_bridge_covers_reset_routes_used_by_data_buttons():
