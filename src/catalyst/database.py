@@ -4318,7 +4318,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         stats[f"unmatched_{side}_fills"] = row["cnt"]
 
     # Volume traded (total XCH and CAT across all verified fills)
-    query_base = """SELECT side, size_xch, size_cat FROM fills
+    query_base = """SELECT side, size_xch, size_cat,
+                           COALESCE(fee_mojos_xch, 0) AS fee_mojos_xch
+                    FROM fills
                     WHERE COALESCE(verification_status, 'legacy') = 'verified'
                       AND (size_xch IS NOT NULL OR size_cat IS NOT NULL)"""
     params = []
@@ -4337,9 +4339,14 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     _buy_cat = Decimal("0")
     _sell_xch = Decimal("0")
     _sell_cat = Decimal("0")
+    _fee_mojos = 0
     for r in rows:
         _sx = Decimal(str(r["size_xch"] or 0))
         _sc = Decimal(str(r["size_cat"] or 0))
+        try:
+            _fee_mojos += int(r["fee_mojos_xch"] or 0)
+        except Exception:
+            pass
         if r["side"] == "buy":
             _buy_xch += _sx
             _buy_cat += _sc
@@ -4358,6 +4365,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     # This is GROSS (doesn't match round-trip PnL; it's the raw XCH delta
     # from all fills, positive = we took in more XCH than we paid out).
     stats["net_xch_flow"] = str(_sell_xch - _buy_xch)
+    _fee_xch = Decimal(_fee_mojos) / Decimal("1000000000000")
+    stats["fee_xch"] = str(_fee_xch)
+    stats["net_xch_flow_after_fees"] = str((_sell_xch - _buy_xch) - _fee_xch)
     # Net CAT inventory change — how the position shifted this window.
     # Positive = we net bought CAT (gained inventory), negative = net sold.
     stats["net_cat_flow"] = str(_buy_cat - _sell_cat)
