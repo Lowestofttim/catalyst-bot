@@ -73,8 +73,13 @@ def _calculate_pnl_breakdown(
         or _decimal_or_none(stats.get("net_position"))
         or Decimal("0")
     )
-    unrealised = net_position * mid_price if mid_price > 0 else Decimal("0")
-    total = realised + unrealised
+    net_xch_flow = _decimal_or_none(stats.get("net_xch_flow"))
+    if net_xch_flow is not None and mid_price > 0:
+        total = net_xch_flow + (net_position * mid_price)
+        unrealised = total - realised
+    else:
+        unrealised = Decimal("0")
+        total = realised
     return realised, unrealised, total
 
 
