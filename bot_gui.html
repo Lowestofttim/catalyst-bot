@@ -2628,6 +2628,56 @@
             background: rgba(245,158,11,0.14);
             color: var(--status-warning);
         }
+        .pnl-terms-panel {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: var(--space-3);
+            margin-bottom: var(--space-5);
+        }
+        .pnl-term {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: var(--space-4) var(--space-5);
+            text-align: center;
+            min-width: 0;
+            transition: border-color var(--transition-fast);
+        }
+        .pnl-term:hover {
+            border-color: var(--border-default);
+        }
+        .pnl-term-title {
+            margin-bottom: var(--space-1);
+            color: var(--text-secondary);
+            font-size: var(--text-xs);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .pnl-term-value {
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: var(--text-xl);
+            font-weight: 700;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+        .pnl-term-value.positive {
+            color: var(--status-warning);
+        }
+        .pnl-term-value.negative {
+            color: var(--info-300);
+        }
+        .pnl-term-value.neutral {
+            color: var(--text-secondary);
+        }
+        .pnl-term-copy {
+            color: var(--text-secondary);
+            font-size: var(--text-xs);
+            line-height: 1.45;
+            margin-top: 2px;
+        }
         .pnl-flow-diagnostics {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2641,6 +2691,9 @@
             }
             .pnl-flow-diagnostics {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .pnl-terms-panel {
+                grid-template-columns: 1fr;
             }
         }
         @media (max-width: 560px) {
@@ -9622,7 +9675,7 @@
                         <div class="v4-view-header-copy">
                             <div class="v4-view-kicker">Performance</div>
                             <h1 class="v4-view-title">PnL & Inventory</h1>
-                            <p class="v4-view-subtitle">Track verified fills, realised round-trip profit, and the inventory position the bot is carrying this session.</p>
+                            <p class="v4-view-subtitle">Track verified fills, realized round-trip profit, and the inventory position the bot is carrying this session.</p>
                             <div class="v4-tab-token-pill"><img class="cc-token-icon cc-token-icon-sm" src="" alt="" onerror="if(this.dataset.fallbackSrc&&this.src!==this.dataset.fallbackSrc){this.src=this.dataset.fallbackSrc;}else{this.style.display='none';}" style="display:none;"><span class="v4-tab-token-name"></span><span class="v4-tab-token-xch">&nbsp;/ XCH</span></div>
                         </div>
                     </div>
@@ -9639,19 +9692,37 @@
                         <div style="flex:1;">
                             <div style="font-weight: 700; color: var(--info-300); margin-bottom: 2px;" id="pnlModeBannerTitle">Single-sided mode</div>
                             <div id="pnlModeBannerText" style="color: var(--text-secondary);">
-                                In single-sided mode there are no round-trip pairs, so Realised PnL and Win Rate stay at zero. The most useful signal is in the volume and average-price cards below.
+                                In single-sided mode there are no round-trip pairs, so Realized PnL and Win Rate stay at zero. The most useful signal is in the volume and average-price cards below.
                             </div>
                             <div id="pnlAvgPriceDetail" style="margin-top: 8px; color: var(--text-primary); font-size: var(--text-sm);"></div>
                         </div>
                     </div>
                 </div>
 
+                <div class="pnl-terms-panel" aria-label="PnL summary">
+                    <div class="pnl-term">
+                        <div class="pnl-term-title">Realized PnL <span class="cc-help">?<span class="cc-tooltip">Shows profit/loss from completed round trips.</span></span></div>
+                        <div class="pnl-term-value neutral" id="pnlRealizedMetric">0.0000</div>
+                        <div class="pnl-term-copy" id="pnlRealizedMetricSub">Shows profit/loss from completed round trips.</div>
+                    </div>
+                    <div class="pnl-term">
+                        <div class="pnl-term-title">Unrealized PnL <span class="cc-help">?<span class="cc-tooltip">Shows profit/loss on inventory you still hold.</span></span></div>
+                        <div class="pnl-term-value neutral" id="pnlUnrealizedMetric">0.0000</div>
+                        <div class="pnl-term-copy" id="pnlUnrealizedMetricSub">Shows profit/loss on inventory you still hold.</div>
+                    </div>
+                    <div class="pnl-term">
+                        <div class="pnl-term-title">Total PnL <span class="cc-help">?<span class="cc-tooltip">Realized PnL + Unrealized PnL.</span></span></div>
+                        <div class="pnl-term-value neutral" id="pnlTotalMetric">0.0000</div>
+                        <div class="pnl-term-copy" id="pnlTotalMetricSub">Realized PnL + Unrealized PnL.</div>
+                    </div>
+                </div>
+
                 <!-- Time-Period Hero Cards -->
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); margin-bottom: var(--space-5);">
                     <div class="v4-hero-card mode-hide-on-buy-only mode-hide-on-sell-only" id="pnlRoundTripsCard">
-                        <div class="v4-hero-label">Session <span class="cc-help">?<span class="cc-tooltip">Realised XCH profit/loss from completed round-trip trades this session.</span></span></div>
+                        <div class="v4-hero-label">Realized PnL <span class="cc-help">?<span class="cc-tooltip">Profit/loss from completed round trips this session.</span></span></div>
                         <div class="v4-hero-value" id="pnlRealised" style="font-size: var(--text-xl);">0.000</div>
-                        <div class="v4-hero-sub" id="pnlRealisedSub" style="color: var(--status-success);">XCH realised</div>
+                        <div class="v4-hero-sub" id="pnlRealisedSub" style="color: var(--status-success);">XCH realized</div>
                     </div>
                     <div class="v4-hero-card mode-hide-on-buy-only mode-hide-on-sell-only" id="pnlAvgRoundTripCard">
                         <div class="v4-hero-label">Round Trips <span class="cc-help">?<span class="cc-tooltip">Completed buy-then-sell or sell-then-buy pairs. Win rate = % that were profitable.</span></span></div>
@@ -9660,7 +9731,7 @@
                         <div class="v4-hero-sub" id="pnlRoundTripTime" style="color: var(--text-tertiary); margin-top: 2px;">— avg time</div>
                     </div>
                     <div class="v4-hero-card">
-                        <div class="v4-hero-label">Total Fills <span class="cc-help">?<span class="cc-tooltip">Verified fills recorded for this session. If Sage cannot safely confirm a take yet, it appears as pending verification instead of being counted into realised PnL.</span></span></div>
+                        <div class="v4-hero-label">Total Fills <span class="cc-help">?<span class="cc-tooltip">Verified fills recorded for this session. If Sage cannot safely confirm a take yet, it appears as pending verification instead of being counted into realized PnL.</span></span></div>
                         <div class="v4-hero-value" id="pnlTotalFills">0</div>
                         <div class="v4-hero-sub" id="pnlFillRate">0.0/hr</div>
                         <div class="v4-hero-sub" id="pnlBuySellSplit" style="color: var(--text-tertiary); margin-top: 2px;">—B / —S</div>
@@ -9672,7 +9743,7 @@
                     <div style="display: flex; align-items: center; gap: var(--space-3);">
                         <span style="color: var(--status-warning); font-size: var(--text-lg);">⏳</span>
                         <div style="flex: 1;">
-                            <div style="font-size: var(--text-sm); font-weight: 600; color: var(--status-warning);">Open Legs — Waiting for Round-Trip Match <span class="cc-help">?<span class="cc-tooltip">These fills haven't been paired yet. Realised PnL only counts when a buy and sell fill match in size. Unmatched fills represent one-directional inventory change.</span></span></div>
+                            <div style="font-size: var(--text-sm); font-weight: 600; color: var(--status-warning);">Open Legs — Waiting for Round-Trip Match <span class="cc-help">?<span class="cc-tooltip">These fills haven't been paired yet. Realized PnL only counts when a buy and sell fill match in size. Unmatched fills represent one-directional inventory change.</span></span></div>
                             <div id="unmatchedFillsDetail" style="font-size: var(--text-xs); color: var(--text-secondary); margin-top: 2px;">—</div>
                         </div>
                     </div>
@@ -9710,7 +9781,7 @@
                         <div class="v4-hero-sub" id="pnlSellVolumeCat">0 CAT delivered</div>
                     </div>
                     <div class="v4-hero-card">
-                        <div class="v4-hero-label">Net Flow <span class="cc-help">?<span class="cc-tooltip">Raw XCH gain/loss: sold XCH minus bought XCH. Positive = wallet ended the session with more XCH than it started. Different from Realised PnL, which matches buys and sells into round trips.</span></span></div>
+                        <div class="v4-hero-label">Net Flow <span class="cc-help">?<span class="cc-tooltip">Raw XCH gain/loss: sold XCH minus bought XCH. Positive = wallet ended the session with more XCH than it started. Different from Realized PnL, which matches buys and sells into round trips.</span></span></div>
                         <div class="v4-hero-value" id="pnlNetXchFlow" style="font-size: var(--text-xl);">0.0000</div>
                         <div class="v4-hero-sub" id="pnlNetCatFlow">0 CAT net</div>
                     </div>
@@ -9742,7 +9813,7 @@
                 <!-- Cumulative PnL Chart Area -->
                 <div class="mode-hide-on-buy-only mode-hide-on-sell-only" id="pnlCumulativeChartPanel" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-5);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3);">
-                        <span style="font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.8px;">Cumulative PnL <span class="cc-help">?<span class="cc-tooltip">Running total of all realised PnL this session, shown as a bar chart. Updates after each round-trip match.</span></span></span>
+                        <span style="font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.8px;">Cumulative PnL <span class="cc-help">?<span class="cc-tooltip">Running total of all realized PnL this session, shown as a bar chart. Updates after each round-trip match.</span></span></span>
                         <span id="v4PnlChartStatus" style="font-size: var(--text-xs); color: var(--text-tertiary);">Collecting data...</span>
                     </div>
                     <div id="v4PnlChart" style="height: 140px; position: relative;">
@@ -24402,6 +24473,56 @@
             if (n === 0) return '0.0000';
             return (n >= 0 ? '+' : '') + formatXchAmount(val);
         }
+        function parseFiniteNumber(val, fallback = 0) {
+            const n = parseFloat(val);
+            return Number.isFinite(n) ? n : fallback;
+        }
+        function resolvePnlMidPrice(data = {}) {
+            const candidates = [
+                data.pnl_mid_price_xch,
+                data.mid_price,
+                data.current_mid_price,
+                (typeof bot_state !== 'undefined' && bot_state?.pricing?.mid) ? bot_state.pricing.mid : null,
+                (typeof bot_state !== 'undefined' && bot_state?.mid_price) ? bot_state.mid_price : null,
+            ];
+            for (const candidate of candidates) {
+                const mid = parseFiniteNumber(candidate, 0);
+                if (mid > 0) return mid;
+            }
+            return 0;
+        }
+        function derivePnlBreakdown(data = {}) {
+            const realized = parseFiniteNumber(
+                data.realised_pnl_xch ?? data.realized_pnl_xch,
+                0
+            );
+            const mid = resolvePnlMidPrice(data);
+            const netPositionCat = parseFiniteNumber(
+                data.net_position_cat ?? data.net_position ?? data.net_cat_flow,
+                0
+            );
+            let unrealized = parseFiniteNumber(
+                data.unrealised_pnl_xch ?? data.unrealized_pnl_xch,
+                Number.NaN
+            );
+            if (!Number.isFinite(unrealized)) {
+                unrealized = mid > 0 ? netPositionCat * mid : 0;
+            }
+            let total = parseFiniteNumber(data.total_pnl_xch, Number.NaN);
+            if (!Number.isFinite(total)) total = realized + unrealized;
+            return { realized, unrealized, total, mid };
+        }
+        function updatePnlMetricCard(valueId, subId, value, subText) {
+            const valueEl = document.getElementById(valueId);
+            if (valueEl) {
+                const display = formatPnlXch(value);
+                valueEl.textContent = display;
+                valueEl.className = 'pnl-term-value ' + (value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral');
+                v4FlashIfChanged(valueId, display);
+            }
+            const subEl = document.getElementById(subId);
+            if (subEl && subText) subEl.textContent = subText;
+        }
         function formatUsdAmount(val, opts = {}) {
             const n = parseFloat(val);
             if (!Number.isFinite(n)) return '';
@@ -24436,6 +24557,37 @@
             const fillRate = Number(data.fill_rate_per_hour || 0);
             const xchUsdPrice = parseFloat(data.xch_usd_price || 0);
             const hasUsdPrice = Number.isFinite(xchUsdPrice) && xchUsdPrice > 0;
+            const pnlBreakdown = derivePnlBreakdown(data);
+            const pendingMetricSuffix = pendingCount > 0 ? ' - ' + pendingCount + ' pending' : '';
+            const realizedUsd = hasUsdPrice
+                ? formatUsdAmount(data.realised_pnl_usd || (pnlBreakdown.realized * xchUsdPrice), { signed: true })
+                : '';
+            const unrealizedUsd = hasUsdPrice
+                ? formatUsdAmount(data.unrealised_pnl_usd || data.unrealized_pnl_usd || (pnlBreakdown.unrealized * xchUsdPrice), { signed: true })
+                : '';
+            const totalUsd = hasUsdPrice
+                ? formatUsdAmount(data.total_pnl_usd || (pnlBreakdown.total * xchUsdPrice), { signed: true })
+                : '';
+            updatePnlMetricCard(
+                'pnlRealizedMetric',
+                'pnlRealizedMetricSub',
+                pnlBreakdown.realized,
+                realizedUsd ? realizedUsd + ' realized' + pendingMetricSuffix : 'Round trips booked in XCH' + pendingMetricSuffix
+            );
+            updatePnlMetricCard(
+                'pnlUnrealizedMetric',
+                'pnlUnrealizedMetricSub',
+                pnlBreakdown.unrealized,
+                pnlBreakdown.mid > 0
+                    ? ((unrealizedUsd ? unrealizedUsd + ' - ' : '') + 'Marked at ' + formatXchAmount(pnlBreakdown.mid) + ' XCH mid')
+                    : 'Waiting for live mid price'
+            );
+            updatePnlMetricCard(
+                'pnlTotalMetric',
+                'pnlTotalMetricSub',
+                pnlBreakdown.total,
+                totalUsd ? totalUsd + ' total mark' : 'Realized + Unrealized PnL'
+            );
             const sniperStats = data.sniper || ((_dashboardData && _dashboardData.sniper) ? _dashboardData.sniper : null);
             try { updatePnlFlowDiagnostics({ stats: data }); } catch (_) {}
 
@@ -24465,8 +24617,8 @@
                 const source = data.xch_usd_source ? ' via ' + data.xch_usd_source : '';
                 const pendingSuffix = pendingCount > 0 ? ' • ' + pendingCount + ' pending' : '';
                 el('pnlRealisedSub').textContent = usdPnl
-                    ? usdPnl + ' realised' + source + pendingSuffix
-                    : (pendingCount > 0 ? 'Verified only • ' + pendingCount + ' pending' : 'XCH realised');
+                    ? usdPnl + ' realized' + source + pendingSuffix
+                    : (pendingCount > 0 ? 'Verified only • ' + pendingCount + ' pending' : 'XCH realized');
             }
             if (el('v4PnlChartStatus') && verifiedFills === 0 && _v4PnlHistory.length === 0) {
                 if (pendingCount > 0) {
@@ -29847,7 +29999,7 @@
                         'This will PERMANENTLY clear:',
                         `• ${fills} fills`,
                         `• ${trips} round trips`,
-                        `• ${pnl} XCH realised PnL`,
+                        `• ${pnl} XCH realized PnL`,
                         `• Net position (${posTxt}) reset to zero`,
                         '',
                         'Coins and open offers are NOT touched — only historical stats.',
