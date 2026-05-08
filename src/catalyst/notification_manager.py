@@ -34,7 +34,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 DEFAULT_CATEGORIES = {
     "fill": {
-        "enabled": True,
+        # Fills are already shown in the GUI activity stream/toasts. Keeping
+        # native OS fill notifications off by default avoids a Windows ping
+        # storm during active markets; the category can still be re-enabled.
+        "enabled": False,
         "title_prefix": "",
         "cooldown_secs": 5,       # Min gap between fill notifications
     },
@@ -45,7 +48,9 @@ DEFAULT_CATEGORIES = {
         "dedupe_secs": 300,
     },
     "warning": {
-        "enabled": True,
+        # Warning alerts stay visible in-app. Native Windows notifications are
+        # reserved for errors/critical events so advisory chatter stays quiet.
+        "enabled": False,
         "title_prefix": "",
         "cooldown_secs": 300,
         "dedupe_secs": 1800,
