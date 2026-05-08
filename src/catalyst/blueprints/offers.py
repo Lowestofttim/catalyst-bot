@@ -52,6 +52,32 @@ def _usd_string(amount, usd_price: Decimal | None) -> str:
     return str((amount_dec * usd_price).quantize(Decimal("0.0001")))
 
 
+def _resolve_pnl_mid_price(bot, server) -> Decimal:
+    price = _decimal_or_none(getattr(bot, "_current_mid_price", None))
+    if price is None or price <= 0:
+        try:
+            price = _decimal_or_none(server._get_live_mid_price_str())
+        except Exception:
+            price = None
+    return price if price is not None and price > 0 else Decimal("0")
+
+
+def _calculate_pnl_breakdown(
+    stats: dict,
+    inventory: dict,
+    mid_price: Decimal,
+) -> tuple[Decimal, Decimal, Decimal]:
+    realised = _decimal_or_none(stats.get("realised_pnl_xch", "0")) or Decimal("0")
+    net_position = (
+        _decimal_or_none(inventory.get("net_position_cat"))
+        or _decimal_or_none(stats.get("net_position"))
+        or Decimal("0")
+    )
+    unrealised = net_position * mid_price if mid_price > 0 else Decimal("0")
+    total = realised + unrealised
+    return realised, unrealised, total
+
+
 def _build_fill_history_for_gui(asset_id: str, limit: int = 20) -> list:
     """Return DB-backed fill history in the shape the Offers history tab expects."""
     if not asset_id:
@@ -1378,6 +1404,12 @@ def api_pnl():
         stats = server.get_stats(cfg.CAT_ASSET_ID, since=server._get_run_history_cutoff())
         inventory = bot.risk_manager.get_inventory_state()
         sniper_stats = bot.sniper.get_stats() if getattr(bot, "sniper", None) else {}
+        pnl_mid_price = _resolve_pnl_mid_price(bot, server)
+        realised_pnl, unrealised_pnl, total_pnl = _calculate_pnl_breakdown(
+            stats,
+            inventory,
+            pnl_mid_price,
+        )
 
         xch_usd_price = None
         xch_usd_source = ""
@@ -1398,8 +1430,13 @@ def api_pnl():
             pass
 
         pnl_data = {
-            "realised_pnl_xch": stats.get("realised_pnl_xch", "0"),
-            "realised_pnl_usd": _usd_string(stats.get("realised_pnl_xch", "0"), xch_usd_price),
+            "realised_pnl_xch": realised_pnl,
+            "realised_pnl_usd": _usd_string(realised_pnl, xch_usd_price),
+            "unrealised_pnl_xch": unrealised_pnl,
+            "unrealised_pnl_usd": _usd_string(unrealised_pnl, xch_usd_price),
+            "total_pnl_xch": total_pnl,
+            "total_pnl_usd": _usd_string(total_pnl, xch_usd_price),
+            "pnl_mid_price_xch": str(pnl_mid_price) if pnl_mid_price > 0 else "",
             "xch_usd_price": str(xch_usd_price) if xch_usd_price is not None else "",
             "xch_usd_source": xch_usd_source,
             "cat_usd_price": str(cat_usd_price) if cat_usd_price is not None else "",

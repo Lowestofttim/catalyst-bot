@@ -2630,27 +2630,53 @@
         }
         .pnl-terms-panel {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: var(--space-3);
             margin-bottom: var(--space-5);
-            padding: var(--space-3);
-            border: 1px solid rgba(96,165,250,0.20);
-            border-radius: 8px;
-            background: rgba(96,165,250,0.05);
         }
         .pnl-term {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: var(--space-4) var(--space-5);
+            text-align: center;
             min-width: 0;
+            transition: border-color var(--transition-fast);
+        }
+        .pnl-term:hover {
+            border-color: var(--border-default);
         }
         .pnl-term-title {
-            margin-bottom: 4px;
+            margin-bottom: var(--space-1);
+            color: var(--text-secondary);
+            font-size: var(--text-xs);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .pnl-term-value {
             color: var(--text-primary);
-            font-size: var(--text-sm);
+            font-family: var(--font-mono);
+            font-size: var(--text-xl);
             font-weight: 700;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+        .pnl-term-value.positive {
+            color: var(--status-warning);
+        }
+        .pnl-term-value.negative {
+            color: var(--info-300);
+        }
+        .pnl-term-value.neutral {
+            color: var(--text-secondary);
         }
         .pnl-term-copy {
             color: var(--text-secondary);
             font-size: var(--text-xs);
             line-height: 1.45;
+            margin-top: 2px;
         }
         .pnl-flow-diagnostics {
             display: grid;
@@ -2665,6 +2691,9 @@
             }
             .pnl-flow-diagnostics {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .pnl-terms-panel {
+                grid-template-columns: 1fr;
             }
         }
         @media (max-width: 560px) {
@@ -9670,18 +9699,21 @@
                     </div>
                 </div>
 
-                <div class="pnl-terms-panel" aria-label="PnL term definitions">
+                <div class="pnl-terms-panel" aria-label="PnL summary">
                     <div class="pnl-term">
-                        <div class="pnl-term-title">Realized PnL</div>
-                        <div class="pnl-term-copy">Shows profit/loss from completed round trips.</div>
+                        <div class="pnl-term-title">Realized PnL <span class="cc-help">?<span class="cc-tooltip">Shows profit/loss from completed round trips.</span></span></div>
+                        <div class="pnl-term-value neutral" id="pnlRealizedMetric">0.0000</div>
+                        <div class="pnl-term-copy" id="pnlRealizedMetricSub">Shows profit/loss from completed round trips.</div>
                     </div>
                     <div class="pnl-term">
-                        <div class="pnl-term-title">Unrealized PnL</div>
-                        <div class="pnl-term-copy">Shows profit/loss on inventory you still hold.</div>
+                        <div class="pnl-term-title">Unrealized PnL <span class="cc-help">?<span class="cc-tooltip">Shows profit/loss on inventory you still hold.</span></span></div>
+                        <div class="pnl-term-value neutral" id="pnlUnrealizedMetric">0.0000</div>
+                        <div class="pnl-term-copy" id="pnlUnrealizedMetricSub">Shows profit/loss on inventory you still hold.</div>
                     </div>
                     <div class="pnl-term">
-                        <div class="pnl-term-title">Total PnL</div>
-                        <div class="pnl-term-copy">Realized PnL + Unrealized PnL.</div>
+                        <div class="pnl-term-title">Total PnL <span class="cc-help">?<span class="cc-tooltip">Realized PnL + Unrealized PnL.</span></span></div>
+                        <div class="pnl-term-value neutral" id="pnlTotalMetric">0.0000</div>
+                        <div class="pnl-term-copy" id="pnlTotalMetricSub">Realized PnL + Unrealized PnL.</div>
                     </div>
                 </div>
 
@@ -24441,6 +24473,56 @@
             if (n === 0) return '0.0000';
             return (n >= 0 ? '+' : '') + formatXchAmount(val);
         }
+        function parseFiniteNumber(val, fallback = 0) {
+            const n = parseFloat(val);
+            return Number.isFinite(n) ? n : fallback;
+        }
+        function resolvePnlMidPrice(data = {}) {
+            const candidates = [
+                data.pnl_mid_price_xch,
+                data.mid_price,
+                data.current_mid_price,
+                (typeof bot_state !== 'undefined' && bot_state?.pricing?.mid) ? bot_state.pricing.mid : null,
+                (typeof bot_state !== 'undefined' && bot_state?.mid_price) ? bot_state.mid_price : null,
+            ];
+            for (const candidate of candidates) {
+                const mid = parseFiniteNumber(candidate, 0);
+                if (mid > 0) return mid;
+            }
+            return 0;
+        }
+        function derivePnlBreakdown(data = {}) {
+            const realized = parseFiniteNumber(
+                data.realised_pnl_xch ?? data.realized_pnl_xch,
+                0
+            );
+            const mid = resolvePnlMidPrice(data);
+            const netPositionCat = parseFiniteNumber(
+                data.net_position_cat ?? data.net_position ?? data.net_cat_flow,
+                0
+            );
+            let unrealized = parseFiniteNumber(
+                data.unrealised_pnl_xch ?? data.unrealized_pnl_xch,
+                Number.NaN
+            );
+            if (!Number.isFinite(unrealized)) {
+                unrealized = mid > 0 ? netPositionCat * mid : 0;
+            }
+            let total = parseFiniteNumber(data.total_pnl_xch, Number.NaN);
+            if (!Number.isFinite(total)) total = realized + unrealized;
+            return { realized, unrealized, total, mid };
+        }
+        function updatePnlMetricCard(valueId, subId, value, subText) {
+            const valueEl = document.getElementById(valueId);
+            if (valueEl) {
+                const display = formatPnlXch(value);
+                valueEl.textContent = display;
+                valueEl.className = 'pnl-term-value ' + (value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral');
+                v4FlashIfChanged(valueId, display);
+            }
+            const subEl = document.getElementById(subId);
+            if (subEl && subText) subEl.textContent = subText;
+        }
         function formatUsdAmount(val, opts = {}) {
             const n = parseFloat(val);
             if (!Number.isFinite(n)) return '';
@@ -24475,6 +24557,37 @@
             const fillRate = Number(data.fill_rate_per_hour || 0);
             const xchUsdPrice = parseFloat(data.xch_usd_price || 0);
             const hasUsdPrice = Number.isFinite(xchUsdPrice) && xchUsdPrice > 0;
+            const pnlBreakdown = derivePnlBreakdown(data);
+            const pendingMetricSuffix = pendingCount > 0 ? ' - ' + pendingCount + ' pending' : '';
+            const realizedUsd = hasUsdPrice
+                ? formatUsdAmount(data.realised_pnl_usd || (pnlBreakdown.realized * xchUsdPrice), { signed: true })
+                : '';
+            const unrealizedUsd = hasUsdPrice
+                ? formatUsdAmount(data.unrealised_pnl_usd || data.unrealized_pnl_usd || (pnlBreakdown.unrealized * xchUsdPrice), { signed: true })
+                : '';
+            const totalUsd = hasUsdPrice
+                ? formatUsdAmount(data.total_pnl_usd || (pnlBreakdown.total * xchUsdPrice), { signed: true })
+                : '';
+            updatePnlMetricCard(
+                'pnlRealizedMetric',
+                'pnlRealizedMetricSub',
+                pnlBreakdown.realized,
+                realizedUsd ? realizedUsd + ' realized' + pendingMetricSuffix : 'Round trips booked in XCH' + pendingMetricSuffix
+            );
+            updatePnlMetricCard(
+                'pnlUnrealizedMetric',
+                'pnlUnrealizedMetricSub',
+                pnlBreakdown.unrealized,
+                pnlBreakdown.mid > 0
+                    ? ((unrealizedUsd ? unrealizedUsd + ' - ' : '') + 'Marked at ' + formatXchAmount(pnlBreakdown.mid) + ' XCH mid')
+                    : 'Waiting for live mid price'
+            );
+            updatePnlMetricCard(
+                'pnlTotalMetric',
+                'pnlTotalMetricSub',
+                pnlBreakdown.total,
+                totalUsd ? totalUsd + ' total mark' : 'Realized + Unrealized PnL'
+            );
             const sniperStats = data.sniper || ((_dashboardData && _dashboardData.sniper) ? _dashboardData.sniper : null);
             try { updatePnlFlowDiagnostics({ stats: data }); } catch (_) {}
 
