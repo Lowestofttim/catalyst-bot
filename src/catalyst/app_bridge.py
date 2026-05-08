@@ -461,6 +461,47 @@ class AppBridge:
             resp = api_server.api_pnl()
         return _unwrap_flask_response(resp)
 
+    @_safe
+    def get_pnl_reset_preview(self):
+        """Preview the data cleared by Reset All Stats."""
+        import api_server
+        with api_server.app.test_request_context('/api/pnl/reset-preview'):
+            resp = api_server.api_pnl_reset_preview()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def reset_pnl(self, body=None):
+        """Reset PnL counters. Maps to POST /api/pnl/reset."""
+        import api_server
+        body_json = json.dumps(body or {})
+        with api_server.app.test_request_context('/api/pnl/reset', method='POST',
+                                                  content_type='application/json',
+                                                  data=body_json):
+            resp = api_server.api_pnl_reset()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def reset_offer_history(self, body=None):
+        """Clear terminal offer-history rows. Maps to POST /api/reset/offer-history."""
+        import api_server
+        body_json = json.dumps(body or {})
+        with api_server.app.test_request_context('/api/reset/offer-history', method='POST',
+                                                  content_type='application/json',
+                                                  data=body_json):
+            resp = api_server.api_reset_offer_history()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def reset_full(self, body=None):
+        """Run the combined data reset. Maps to POST /api/reset/full."""
+        import api_server
+        body_json = json.dumps(body or {})
+        with api_server.app.test_request_context('/api/reset/full', method='POST',
+                                                  content_type='application/json',
+                                                  data=body_json):
+            resp = api_server.api_reset_full()
+        return _unwrap_flask_response(resp)
+
     # -----------------------------------------------------------------------
     # Session
     # -----------------------------------------------------------------------
@@ -1268,4 +1309,3 @@ def _unwrap_flask_response(resp):
         return resp
 
     return {"success": False, "error": f"Could not parse response: {type(resp).__name__}"}
-

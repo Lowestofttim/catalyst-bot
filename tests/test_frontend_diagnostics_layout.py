@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GUI = ROOT / "bot_gui.html"
 RISK_MANAGER = ROOT / "src" / "catalyst" / "risk_manager.py"
+APP_BRIDGE = ROOT / "src" / "catalyst" / "app_bridge.py"
 
 
 def test_dashboard_sse_keeps_advisor_performance_state_fresh():
@@ -26,6 +27,52 @@ def test_recommendations_clear_stale_rotator_cache_when_empty():
                     clearInterval(_alertRotatorTimer);
                     _alertRotatorTimer = null;
                 }""" in html
+
+
+def test_recommendation_action_row_wraps_inside_guidance_card():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert ".alert-item .alert-content { flex: 1; min-width: 0;" in html
+    assert ".alert-item .alert-msg { color: var(--text-secondary); font-size: 10px; overflow-wrap: anywhere;" in html
+    assert ".alert-actions-row" in html
+    assert "flex-wrap: wrap" in html
+    assert "max-width: 100%" in html
+    assert '<div class="alert-actions-row">' in html
+
+
+def test_update_badge_is_compact_sidebar_control():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert 'id="v4UpdateBadge" class="v4-update-badge"' in html
+    assert ".v4-update-badge" in html
+    assert "width: 44px" in html
+    assert "white-space: normal" in html
+    assert "v4-update-badge-version" in html
+
+
+def test_data_reset_success_refreshes_visible_stats():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert "async function refreshAfterDataReset" in html
+    assert "await refreshAfterDataReset();" in html
+    assert "fetchDashboard()" in html
+    assert "fetchPnLData()" in html
+    assert "updateDashboard()" not in html
+
+
+def test_desktop_bridge_covers_reset_routes_used_by_data_buttons():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+    bridge = APP_BRIDGE.read_text(encoding="utf-8", errors="replace")
+
+    for route, method in (
+        ("pnl/reset-preview", "get_pnl_reset_preview"),
+        ("pnl/reset", "reset_pnl"),
+        ("reset/offer-history", "reset_offer_history"),
+        ("reset/full", "reset_full"),
+    ):
+        assert f"clean === '{route}'" in html
+        assert f"return '{method}'" in html
+        assert f"def {method}" in bridge
 
 
 def test_diagnostics_are_distributed_across_existing_workflow_tabs():
