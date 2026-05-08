@@ -7,6 +7,11 @@ NotificationManager rate limiting + category control.
 """
 
 import unittest
+import importlib
+import os
+import queue
+import sys
+import time
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
@@ -241,15 +246,27 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
         mgr._send = MagicMock()  # Suppress actual OS notifications
         return mgr
 
-    def test_notify_returns_true_when_first_call(self):
+    def test_fill_notifications_are_quiet_by_default(self):
         mgr = self._make_nm()
         result = mgr.notify("Title", "Message", category="fill")
+        self.assertFalse(result)
+        mgr._send.assert_not_called()
+
+    def test_warning_notifications_are_quiet_by_default(self):
+        mgr = self._make_nm()
+        result = mgr.notify("Bot Health Warning", "Message", category="warning")
+        self.assertFalse(result)
+        mgr._send.assert_not_called()
+
+    def test_error_notifications_still_send_by_default(self):
+        mgr = self._make_nm()
+        result = mgr.notify("Bot Error", "Message", category="error")
         self.assertTrue(result)
 
     def test_notify_returns_false_within_cooldown(self):
         mgr = self._make_nm()
-        mgr.notify("T", "M", category="fill")
-        result = mgr.notify("T", "M", category="fill")
+        mgr.notify("T", "M", category="error")
+        result = mgr.notify("T", "M", category="error")
         self.assertFalse(result)
 
     def test_notify_returns_false_when_disabled(self):
@@ -266,9 +283,9 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
 
     def test_set_category_enabled_updates_state(self):
         mgr = self._make_nm()
-        mgr.set_category_enabled("fill", False)
+        mgr.set_category_enabled("error", False)
         cats = mgr.get_categories()
-        self.assertFalse(cats["fill"]["enabled"])
+        self.assertFalse(cats["error"]["enabled"])
 
     def test_get_categories_returns_all_default_categories(self):
         mgr = self._make_nm()
@@ -280,24 +297,24 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
     def test_get_categories_returns_copy(self):
         mgr = self._make_nm()
         c1 = mgr.get_categories()
-        c1["fill"]["enabled"] = False
+        c1["error"]["enabled"] = False
         c2 = mgr.get_categories()
-        self.assertTrue(c2["fill"]["enabled"])  # original unchanged
+        self.assertTrue(c2["error"]["enabled"])  # original unchanged
 
     def test_different_categories_have_independent_rate_limits(self):
         mgr = self._make_nm()
-        mgr.notify("T", "M", category="fill")
-        result = mgr.notify("T", "M", category="error")
+        mgr.notify("T", "M", category="error")
+        result = mgr.notify("T", "M", category="critical")
         self.assertTrue(result)
 
-    def test_duplicate_warning_notification_is_suppressed_after_cooldown(self):
+    def test_duplicate_error_notification_is_suppressed_after_cooldown(self):
         mgr = self._make_nm()
-        mgr._categories["warning"]["cooldown_secs"] = 0
-        mgr._categories["warning"]["dedupe_secs"] = 3600
+        mgr._categories["error"]["cooldown_secs"] = 0
+        mgr._categories["error"]["dedupe_secs"] = 3600
 
-        self.assertTrue(mgr.notify("Bot Health Warning", "same message", category="warning"))
-        self.assertFalse(mgr.notify("Bot Health Warning", "same message", category="warning"))
-        self.assertTrue(mgr.notify("Bot Health Warning", "different message", category="warning"))
+        self.assertTrue(mgr.notify("Bot Error", "same message", category="error"))
+        self.assertFalse(mgr.notify("Bot Error", "same message", category="error"))
+        self.assertTrue(mgr.notify("Bot Error", "different message", category="error"))
 
     def test_send_truncates_windows_balloon_text_limits(self):
         with patch.object(_nm, "PLYER_AVAILABLE", True):
@@ -309,6 +326,43 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
         kwargs = notify.call_args.kwargs
         self.assertLessEqual(len(kwargs["title"]), 64)
         self.assertLessEqual(len(kwargs["message"]), 240)
+
+
+class TestDesktopNotificationBridge(unittest.TestCase):
+    def test_fill_notification_uses_size_xch_payload(self):
+        old_cwd = os.getcwd()
+        try:
+            with patch.object(sys, "platform", "linux"):
+                desktop_app = importlib.import_module("desktop_app")
+        finally:
+            os.chdir(old_cwd)
+
+        q = queue.Queue()
+        fake_bus = SimpleNamespace(subscribe=lambda: q)
+        fake_api_server = SimpleNamespace(events=fake_bus)
+        notifier = MagicMock()
+
+        with patch.dict(sys.modules, {"api_server": fake_api_server}):
+            desktop_app._wire_notifications(notifier)
+
+        q.put({
+            "type": "fill",
+            "data": {
+                "side": "buy",
+                "size_xch": "0.1234",
+                "price": "0.002",
+            },
+        })
+
+        deadline = time.time() + 1
+        while time.time() < deadline and not notifier.notify.called:
+            time.sleep(0.01)
+
+        notifier.notify.assert_called_with(
+            title="Offer Filled",
+            message="BUY: 0.1234 at 0.002",
+            category="fill",
+        )
 
 
 if __name__ == "__main__":
