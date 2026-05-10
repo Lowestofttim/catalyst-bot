@@ -1745,6 +1745,10 @@ def api_logs_download():
     Privacy guarantees:
       * Bech32 wallet addresses (xch1...) and Sage wallet fingerprints
         are redacted from log text and event messages before bundling.
+      * RPC TLS path values are redacted from log text before bundling.
+      * Sensitive labelled fields (API keys, auth tokens, passwords,
+        secrets, seed phrases, private keys) are redacted recursively.
+      * User-home path prefixes are redacted from log text.
       * Config snapshot uses cfg.to_dict() which already excludes
         SPACESCAN_API_KEY, RPC TLS paths, and wallet fingerprints.
       * The DB file, .env, user_secrets.json, and TLS keys are NEVER
@@ -1765,6 +1769,7 @@ def api_logs_download():
         import re
         import sys as _sys
         import zipfile
+        from pathlib import Path
         from database import (
             get_recent_events, get_open_offers, get_fills,
             get_live_tier_group_counts, get_coin_summary,
@@ -1782,6 +1787,151 @@ def api_logs_download():
         # appearing elsewhere in logs (offer counts, mojo amounts, etc.)
         # are NOT redacted to keep the log readable.
         _RE_FP = re.compile(r"(?i)(fingerprint[\"'\s:=\-]+)(\d{8,12})")
+        _TLS_PATH_KEYS = (
+            "CHIA_WALLET_CERT", "CHIA_WALLET_KEY",
+            "SAGE_CERT_PATH", "SAGE_KEY_PATH",
+            "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH",
+        )
+        _TLS_FILENAME_RE = (
+            r"(?:wallet|client|private_wallet|private_full_node|private_ca)"
+            r"\.(?:crt|key)"
+        )
+        _RE_TLS_PATH_AFTER_LABEL = re.compile(
+            rf"(?i)((?:certificate|cert|key|tls|path)[^\r\n:=]*[:=]\s*)"
+            rf"([^\r\n]*?{_TLS_FILENAME_RE})"
+        )
+        _RE_TLS_PATH_TOKEN = re.compile(
+            rf"(?i)(?:[A-Za-z]:)?(?:[^\s\"'<>|]+[\\/])+{_TLS_FILENAME_RE}"
+        )
+        _RE_SECRET_ASSIGNMENT = re.compile(
+            r"(?i)\b("
+            r"(?:spacescan[_\-\s]?api[_\-\s]?key|"
+            r"x[_\-\s]?api[_\-\s]?key|"
+            r"api[_\-\s]?key|"
+            r"auth(?:orization)?[_\-\s]?token|"
+            r"access[_\-\s]?token|"
+            r"refresh[_\-\s]?token|"
+            r"bot[_\-\s]?local[_\-\s]?write[_\-\s]?token|"
+            r"password|secret|mnemonic|seed(?:\s+phrase)?|"
+            r"private[_\-\s]?key)"
+            r"\s*[:=]\s*)"
+            r"([^\s,;]+)"
+        )
+        _RE_SECRET_LINE = re.compile(
+            r"(?i)\b("
+            r"(?:mnemonic|seed(?:\s+phrase)?|private[_\-\s]?key|secret)"
+            r"\s*[:=]\s*)"
+            r"([^\r\n]+)"
+        )
+        _RE_AUTH_BEARER = re.compile(
+            r"(?i)\b(authorization\s*:\s*bearer\s+)([A-Za-z0-9._~+/=-]+)"
+        )
+        _RE_WINDOWS_USER_PATH = re.compile(
+            r"(?i)\b([A-Z]:[\\/]+Users[\\/]+)[^\\/:\r\n]+"
+        )
+        _RE_POSIX_USER_PATH = re.compile(
+            r"(?i)(/[Uu]sers|/home)/[^/\s\"'<>]+"
+        )
+        _SENSITIVE_VALUE_KEYS = (
+            "CHIA_WALLET_CERT", "CHIA_WALLET_KEY",
+            "SAGE_CERT_PATH", "SAGE_KEY_PATH",
+            "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH",
+            "SPACESCAN_API_KEY", "BOT_LOCAL_WRITE_TOKEN",
+        )
+        _SENSITIVE_KEY_EXACT = {
+            "chia_wallet_cert", "chia_wallet_key",
+            "sage_cert_path", "sage_key_path", "sage_fingerprint",
+            "full_node_cert_path", "full_node_key_path",
+            "wallet_fingerprint", "spacescan_api_key",
+            "bot_local_write_token", "x_bot_local_token",
+            "api_key", "x_api_key", "auth_token", "authorization_token",
+            "authorization", "proxy_authorization", "access_token",
+            "refresh_token", "cookie", "set_cookie", "password", "secret",
+            "mnemonic", "seed", "seed_phrase", "private_key",
+        }
+        _SENSITIVE_KEY_FRAGMENTS = (
+            "api_key", "auth_token", "access_token", "refresh_token",
+            "authorization", "cookie", "bot_local_write_token",
+            "password", "secret", "mnemonic", "seed_phrase",
+            "private_key", "cert_path", "key_path",
+            "fingerprint",
+        )
+
+        def _known_tls_paths():
+            paths = set()
+            for key in _TLS_PATH_KEYS:
+                for value in (
+                    getattr(cfg, key, ""),
+                    os.environ.get(key, ""),
+                ):
+                    value = str(value or "").strip()
+                    if not value:
+                        continue
+                    paths.add(value)
+                    try:
+                        paths.add(os.path.realpath(os.path.expanduser(value)))
+                    except Exception:
+                        pass
+            return sorted(paths, key=len, reverse=True)
+
+        known_tls_paths = _known_tls_paths()
+
+        def _known_secret_values():
+            values = set()
+            for key in _SENSITIVE_VALUE_KEYS:
+                for value in (
+                    getattr(cfg, key, ""),
+                    os.environ.get(key, ""),
+                ):
+                    value = str(value or "").strip()
+                    if len(value) >= 8:
+                        values.add(value)
+            local_token = str(getattr(api_server, "_LOCAL_API_TOKEN", "") or "").strip()
+            if len(local_token) >= 8:
+                values.add(local_token)
+            return sorted(values, key=len, reverse=True)
+
+        known_secret_values = _known_secret_values()
+
+        def _known_local_path_prefixes():
+            prefixes = set()
+            for value in (
+                os.environ.get("USERPROFILE", ""),
+                os.environ.get("HOME", ""),
+                os.environ.get("APPDATA", ""),
+                os.environ.get("LOCALAPPDATA", ""),
+                str(Path.home()),
+            ):
+                value = str(value or "").strip()
+                if len(value) >= 8:
+                    prefixes.add(value)
+            try:
+                from user_paths import data_dir as _data_dir, log_dir as _log_dir
+                for value in (_data_dir(), _log_dir()):
+                    value = str(value or "").strip()
+                    if len(value) >= 8:
+                        prefixes.add(value)
+            except Exception:
+                pass
+
+            variants = set()
+            for path in prefixes:
+                variants.add(path.rstrip("\\/"))
+                variants.add(path.replace("\\", "/").rstrip("/"))
+                variants.add(path.replace("/", "\\").rstrip("\\"))
+            return sorted(variants, key=len, reverse=True)
+
+        known_local_path_prefixes = _known_local_path_prefixes()
+
+        def _normalise_key(key):
+            return re.sub(r"[^a-z0-9]+", "_", str(key or "").lower()).strip("_")
+
+        def _is_sensitive_bundle_key(key):
+            normalised = _normalise_key(key)
+            return (
+                normalised in _SENSITIVE_KEY_EXACT
+                or any(fragment in normalised for fragment in _SENSITIVE_KEY_FRAGMENTS)
+            )
 
         def _redact_text(text):
             if not isinstance(text, str) or not text:
@@ -1789,6 +1939,46 @@ def api_logs_download():
             try:
                 text = _RE_BECH32.sub(r"\1<redacted>", text)
                 text = _RE_FP.sub(r"\1<redacted>", text)
+                for value in known_secret_values:
+                    text = re.sub(
+                        re.escape(value),
+                        "<secret-redacted>",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
+                text = _RE_SECRET_LINE.sub(
+                    r"\1<secret-redacted>",
+                    text,
+                )
+                text = _RE_SECRET_ASSIGNMENT.sub(
+                    r"\1<secret-redacted>",
+                    text,
+                )
+                text = _RE_AUTH_BEARER.sub(
+                    r"\1<secret-redacted>",
+                    text,
+                )
+                for path in known_tls_paths:
+                    text = re.sub(
+                        re.escape(path),
+                        "<tls-path-redacted>",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
+                for path in known_local_path_prefixes:
+                    text = re.sub(
+                        re.escape(path),
+                        "<local-path-redacted>",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
+                text = _RE_WINDOWS_USER_PATH.sub(r"\1<user-home>", text)
+                text = _RE_POSIX_USER_PATH.sub(r"\1/<user-home>", text)
+                text = _RE_TLS_PATH_AFTER_LABEL.sub(
+                    r"\1<tls-path-redacted>",
+                    text,
+                )
+                text = _RE_TLS_PATH_TOKEN.sub("<tls-path-redacted>", text)
             except Exception:
                 pass
             return text
@@ -1798,7 +1988,10 @@ def api_logs_download():
             if isinstance(obj, str):
                 return _redact_text(obj)
             if isinstance(obj, dict):
-                return {k: _redact_obj(v) for k, v in obj.items()}
+                return {
+                    k: "<secret-redacted>" if _is_sensitive_bundle_key(k) else _redact_obj(v)
+                    for k, v in obj.items()
+                }
             if isinstance(obj, list):
                 return [_redact_obj(v) for v in obj]
             if isinstance(obj, tuple):
@@ -2047,6 +2240,12 @@ def api_logs_download():
             "-------",
             "* Wallet bech32 addresses (xch1...) and Sage fingerprints are",
             "  redacted from log text and event messages before bundling.",
+            "* RPC TLS path values are redacted from log text before",
+            "  bundling.",
+            "* Sensitive labelled fields such as API keys, auth tokens,",
+            "  passwords, seed phrases, and private keys are redacted",
+            "  recursively.",
+            "* User-home path prefixes are redacted from log text.",
             "* Configuration excludes SPACESCAN_API_KEY, RPC TLS paths, and",
             "  wallet fingerprints (filtered by cfg.to_dict()).",
             "* The DB file, .env, user_secrets.json, and TLS keys are NOT",

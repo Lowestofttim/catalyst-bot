@@ -165,10 +165,13 @@ def _set_sage_data_dir_from_cert_env(env: dict, cert_path: str) -> None:
 
 def _log_coin_prep_sage_rpc_context(cert_path: str, source: str) -> None:
     try:
+        cert_name = os.path.basename(cert_path) or "wallet.crt"
         log_event(
             "info",
             "coin_prep_sage_rpc_context",
-            f"Passing {source} Sage RPC certificate to coin prep worker: {cert_path}",
+            "Passing "
+            f"{source} Sage RPC certificate to coin prep worker: "
+            f"{cert_name} (path redacted)",
         )
     except Exception:
         pass

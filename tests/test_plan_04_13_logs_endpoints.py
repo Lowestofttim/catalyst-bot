@@ -11,6 +11,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 import zipfile
 from unittest.mock import MagicMock, patch
@@ -157,6 +158,11 @@ class TestLogsDownload(_FlaskBase):
             "details": {
                 "recipient": sensitive_address,
                 "sage": "fingerprint=1234567890",
+                "SPACESCAN_API_KEY": "sk_live_secret_123456",
+                "auth_token": "token_secret_123456",
+                "Authorization": "Bearer structured_bearer_secret_123456",
+                "headers": {"X-API-Key": "header_api_key_secret_123456"},
+                "password": "password_secret_123456",
                 "trade_id": "trade-public-id",
             },
         }
@@ -190,6 +196,62 @@ class TestLogsDownload(_FlaskBase):
         self.assertEqual(config.get("FULL_NODE_CERT_PATH"), None)
         self.assertEqual(config.get("FULL_NODE_KEY_PATH"), None)
         self.assertNotIn("spacescan-secret", bundle_text)
+        self.assertNotIn("sk_live_secret_123456", bundle_text)
+        self.assertNotIn("token_secret_123456", bundle_text)
+        self.assertNotIn("structured_bearer_secret_123456", bundle_text)
+        self.assertNotIn("header_api_key_secret_123456", bundle_text)
+        self.assertNotIn("password_secret_123456", bundle_text)
+
+    def test_bundle_redacts_tls_paths_from_log_tails(self):
+        sage_cert = r"C:\Users\Alice\AppData\Roaming\Sage\mainnet\ssl\wallet.crt"
+        sage_key = r"C:\Users\Alice\AppData\Roaming\Sage\mainnet\ssl\wallet.key"
+        full_node_cert = (
+            r"C:\Users\Alice\.chia\mainnet\config\ssl\full_node"
+            r"\private_full_node.crt"
+        )
+        user_log_path = r"C:\Users\Alice\AppData\Roaming\Catalyst\bot_superlog.log"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = os.path.join(temp_dir, "bot_superlog_20260510.log")
+            with open(log_path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "Passing configured Sage RPC certificate to coin prep "
+                    f"worker: {sage_cert}\n"
+                    f"Sage key path: {sage_key}\n"
+                    f"Full node cert: {full_node_cert}\n"
+                    "SPACESCAN_API_KEY=sk_log_secret_123456\n"
+                    "Authorization: Bearer bearer_secret_123456\n"
+                    "seed phrase: abandon abandon abandon abandon\n"
+                    f"Logging to {user_log_path}\n"
+                )
+
+            with patch("database.get_recent_events", return_value=[]), \
+                 patch("database.get_open_offers", return_value=[]), \
+                 patch("database.get_fills", return_value=[]), \
+                 patch("database.get_live_tier_group_counts", return_value={}), \
+                 patch("database.get_coin_summary", return_value={}), \
+                 patch("super_log.get_archive_summary", return_value=[]), \
+                 patch("super_log.get_log_path", return_value=log_path), \
+                 patch("super_log.get_log_stats", return_value={}):
+                resp = self.client.get("/api/logs/download",
+                                       environ_base=self._LOOPBACK)
+
+        self.assertEqual(resp.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(resp.data)) as zf:
+            bundle_text = "\n".join(
+                zf.read(name).decode("utf-8", errors="replace")
+                for name in zf.namelist()
+            )
+
+        self.assertNotIn(sage_cert, bundle_text)
+        self.assertNotIn(sage_key, bundle_text)
+        self.assertNotIn(full_node_cert, bundle_text)
+        self.assertNotIn("sk_log_secret_123456", bundle_text)
+        self.assertNotIn("bearer_secret_123456", bundle_text)
+        self.assertNotIn("abandon abandon", bundle_text)
+        self.assertNotIn(r"C:\Users\Alice", bundle_text)
+        self.assertIn("<tls-path-redacted>", bundle_text)
+        self.assertIn("<user-home>", bundle_text)
 
 
 if __name__ == "__main__":
