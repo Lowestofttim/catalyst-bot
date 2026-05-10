@@ -7,9 +7,12 @@ Tests GET /api/logs, POST /api/logs/clear, GET /api/logs/download:
   - download returns a zip file (Content-Type check)
 """
 
+import io
+import json
 import os
 import sys
 import unittest
+import zipfile
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -141,6 +144,52 @@ class TestLogsDownload(_FlaskBase):
                                    environ_base=self._LOOPBACK)
         content_type = resp.content_type or ""
         self.assertIn("zip", content_type.lower())
+
+    def test_bundle_redacts_wallet_identifiers_and_excludes_config_secrets(self):
+        sensitive_address = "xch1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+        event = {
+            "timestamp": "2026-05-10T12:00:00Z",
+            "severity": "info",
+            "event_type": "wallet",
+            "message": (
+                f"paid {sensitive_address} with fingerprint: 1234567890"
+            ),
+            "details": {
+                "recipient": sensitive_address,
+                "sage": "fingerprint=1234567890",
+                "trade_id": "trade-public-id",
+            },
+        }
+
+        with patch.object(api_server.cfg, "FULL_NODE_CERT_PATH", "C:/secret/full_node.crt"), \
+             patch.object(api_server.cfg, "FULL_NODE_KEY_PATH", "C:/secret/full_node.key"), \
+             patch.object(api_server.cfg, "SPACESCAN_API_KEY", "spacescan-secret"), \
+             patch("database.get_recent_events", return_value=[event]), \
+             patch("database.get_open_offers", return_value=[]), \
+             patch("database.get_fills", return_value=[]), \
+             patch("database.get_live_tier_group_counts", return_value={}), \
+             patch("database.get_coin_summary", return_value={}), \
+             patch("super_log.get_archive_summary", return_value=[]), \
+             patch("super_log.get_log_path", return_value=None), \
+             patch("super_log.get_log_stats", return_value={}):
+            resp = self.client.get("/api/logs/download",
+                                   environ_base=self._LOOPBACK)
+
+        self.assertEqual(resp.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(resp.data)) as zf:
+            bundle_text = "\n".join(
+                zf.read(name).decode("utf-8", errors="replace")
+                for name in zf.namelist()
+            )
+            config = json.loads(zf.read("snapshots/config.json"))
+
+        self.assertNotIn(sensitive_address, bundle_text)
+        self.assertNotIn("1234567890", bundle_text)
+        self.assertIn("xch1<redacted>", bundle_text)
+        self.assertIn("fingerprint: <redacted>", bundle_text)
+        self.assertEqual(config.get("FULL_NODE_CERT_PATH"), None)
+        self.assertEqual(config.get("FULL_NODE_KEY_PATH"), None)
+        self.assertNotIn("spacescan-secret", bundle_text)
 
 
 if __name__ == "__main__":

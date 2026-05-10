@@ -202,6 +202,8 @@ class TestToDict(unittest.TestCase):
             "SAGE_FINGERPRINT": "fp",
             "SAGE_EXE_PATH": "exe",
             "SAGE_DATA_DIR": "data",
+            "FULL_NODE_CERT_PATH": "full_node_cert",
+            "FULL_NODE_KEY_PATH": "full_node_key",
         }
         c = _bare_config(SPREAD_BPS=Decimal("800"), **sensitive)
         d = c.to_dict()

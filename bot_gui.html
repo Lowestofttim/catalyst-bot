@@ -11227,7 +11227,7 @@
                 <div style="margin-left: auto; display: flex; gap: var(--space-2);">
                     <button class="btn-small" id="logsRunDoctorBtn" onclick="runDoctorFromLogs(this)">Run Doctor <span class="cc-help">?<span class="cc-tooltip">Runs the same preflight Doctor checks used before starting the bot and opens the Doctor Report modal.</span></span></button>
                     <button class="btn-small" onclick="showApiStatsReport()">API Stats <span class="cc-help">?<span class="cc-tooltip">Live counters for Spacescan / Coinset / Dexie usage — calls today, hit rates, queue depth, and rate-limit cooldowns.</span></span></button>
-                    <button class="btn-small" onclick="downloadDebugLogs()">Debug Bundle <span class="cc-help">?<span class="cc-tooltip">Downloads a zip of recent logs and state snapshots. Share with support to diagnose trading issues.</span></span></button>
+                    <button class="btn-small" onclick="downloadDebugLogs()">Debug Bundle <span class="cc-help">?<span class="cc-tooltip">Downloads a redacted zip of recent logs and state snapshots. Wallet addresses and Sage fingerprints are redacted; the Spacescan API key, TLS paths, .env, database files, and wallet secret files are not included.</span></span></button>
                     <button class="btn-small" onclick="clearLogs()">Clear</button>
                 </div>
             </div>

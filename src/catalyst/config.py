@@ -1224,7 +1224,8 @@ class Config:
         excluded = {"CHIA_WALLET_CERT", "CHIA_WALLET_KEY", "WALLET_FINGERPRINT",
                     "SPACESCAN_API_KEY",
                     "SAGE_CERT_PATH", "SAGE_KEY_PATH", "SAGE_FINGERPRINT",
-                    "SAGE_EXE_PATH", "SAGE_DATA_DIR"}
+                    "SAGE_EXE_PATH", "SAGE_DATA_DIR",
+                    "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH"}
         result = {}
         for key, value in self.__dict__.items():
             if key.startswith("_") or key in excluded:
