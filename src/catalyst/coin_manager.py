@@ -1652,11 +1652,17 @@ class CoinManager:
 
         max_buy = int(getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
         max_sell = int(getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
-        max_per_side = max(max_buy, max_sell)
+        wallet_norm = (wallet_type or "").strip().lower()
+        if wallet_norm in ("xch", "buy"):
+            max_offers = max_buy
+        elif wallet_norm in ("cat", "sell"):
+            max_offers = max_sell
+        else:
+            max_offers = max(max_buy, max_sell)
 
         multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
         tier_counts = get_weighted_tier_prep_counts(
-            max_per_side, multiplier, side=wallet_type)
+            max_offers, multiplier, side=wallet_type)
 
         if self._sniper_pool_enabled():
             tier_counts["sniper"] = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
@@ -2431,13 +2437,14 @@ class CoinManager:
             has_locked_collateral = locked_xch > Decimal("0.000001")
 
             multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
-            max_per_side = max(
-                getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-                getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25))
+            max_buy_offers = int(getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+            max_sell_offers = int(getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
+            max_per_side = max(max_buy_offers, max_sell_offers)
 
             if cfg.TIER_ENABLED:
-                tier_dist = get_tier_distribution(max_per_side, side="xch")
-                prepared_counts = get_weighted_tier_prep_counts(max_per_side, multiplier, side="xch")
+                tier_dist = get_tier_distribution(max_buy_offers, side="xch")
+                prepared_counts = get_weighted_tier_prep_counts(
+                    max_buy_offers, multiplier, side="xch")
                 per_tier_needs = {}
                 total_tier_xch = Decimal("0")
                 # F62 (2026-04-09): this block computes XCH wallet needs
@@ -4025,13 +4032,12 @@ class CoinManager:
             return report
 
         # ---- Tiered readiness ----
-        max_per_side = max(
-            getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-            getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25))
+        max_buy_offers = int(getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+        max_sell_offers = int(getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
         # Per-side distributions: buy and sell can now have independent
         # live tier counts (BUY_*_TIER_COUNT vs SELL_*_TIER_COUNT).
-        xch_dist = get_tier_distribution(max_per_side, side="xch")
-        cat_dist = get_tier_distribution(max_per_side, side="cat")
+        xch_dist = get_tier_distribution(max_buy_offers, side="xch")
+        cat_dist = get_tier_distribution(max_sell_offers, side="cat")
         # Shared dist (max of both sides) is what callers reading
         # tier_info["slots_per_side"] expect for display purposes.
         tier_dist = {
@@ -4039,8 +4045,10 @@ class CoinManager:
             for t in ("inner", "mid", "outer", "extreme")
         }
         multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
-        prepared_xch = get_weighted_tier_prep_counts(max_per_side, multiplier, side="xch")
-        prepared_cat = get_weighted_tier_prep_counts(max_per_side, multiplier, side="cat")
+        prepared_xch = get_weighted_tier_prep_counts(
+            max_buy_offers, multiplier, side="xch")
+        prepared_cat = get_weighted_tier_prep_counts(
+            max_sell_offers, multiplier, side="cat")
 
         any_critical = False
         any_low = False
@@ -4443,10 +4451,12 @@ class CoinManager:
         max_sell = int(getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25))
         multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", 1.0)
         if cfg.TIER_ENABLED:
-            max_per_side = max(max_buy, max_sell)
-            tier_counts = get_weighted_tier_prep_counts(max_per_side, multiplier)
-            target_xch = max(cfg.XCH_TARGET_COINS, sum(tier_counts.values()))
-            target_cat = target_xch  # symmetric baseline: CAT mirrors XCH total
+            xch_tier_counts = get_weighted_tier_prep_counts(
+                max_buy, multiplier, side="xch")
+            cat_tier_counts = get_weighted_tier_prep_counts(
+                max_sell, multiplier, side="cat")
+            target_xch = max(cfg.XCH_TARGET_COINS, sum(xch_tier_counts.values()))
+            target_cat = max(cfg.CAT_TARGET_COINS, sum(cat_tier_counts.values()))
         else:
             computed = int((max_buy + max_sell) * float(multiplier))
             computed = max(computed, max_buy + max_sell)
@@ -4599,13 +4609,14 @@ class CoinManager:
             trigger_wallet_types: set[str] = set()
             trigger_log: list = []
             trigger_source_checks: list[tuple[str, str, int, int, int]] = []
-            max_per_side = max(
-                getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-                getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25))
-            xch_dist = get_tier_distribution(max_per_side, side="xch")
-            cat_dist = get_tier_distribution(max_per_side, side="cat")
-            prepared_xch = get_weighted_tier_prep_counts(max_per_side, multiplier, side="xch")
-            prepared_cat = get_weighted_tier_prep_counts(max_per_side, multiplier, side="cat")
+            max_buy_offers = int(getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+            max_sell_offers = int(getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
+            xch_dist = get_tier_distribution(max_buy_offers, side="xch")
+            cat_dist = get_tier_distribution(max_sell_offers, side="cat")
+            prepared_xch = get_weighted_tier_prep_counts(
+                max_buy_offers, multiplier, side="xch")
+            prepared_cat = get_weighted_tier_prep_counts(
+                max_sell_offers, multiplier, side="cat")
 
             for tier_name in ("inner", "mid", "outer", "extreme"):
                 # XCH coins serve buy offers, CAT coins serve sell offers.
@@ -5316,15 +5327,15 @@ class CoinManager:
             spare_deficit_total = 0
             spare_deficit_summary = ""
             if cfg.TIER_ENABLED:
-                max_per_side_for_priority = max(
-                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25),
-                )
+                max_buy_for_priority = int(
+                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+                max_sell_for_priority = int(
+                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
                 xch_dist_for_priority = get_tier_distribution(
-                    max_per_side_for_priority, side="xch"
+                    max_buy_for_priority, side="xch"
                 )
                 cat_dist_for_priority = get_tier_distribution(
-                    max_per_side_for_priority, side="cat"
+                    max_sell_for_priority, side="cat"
                 )
                 topup_offer_deficits = self._topup_offer_deficits_by_tier(
                     xch_dist_for_priority,
@@ -5346,13 +5357,13 @@ class CoinManager:
                 buy_sizes_for_priority = self._configured_tier_sizes_xch(side="buy")
                 sell_sizes_for_priority = self._configured_tier_sizes_xch(side="sell")
                 prepared_xch_for_priority = get_weighted_tier_prep_counts(
-                    max_per_side_for_priority,
+                    max_buy_for_priority,
                     multiplier_for_priority,
                     tier_sizes_xch=buy_sizes_for_priority,
                     side="xch",
                 )
                 prepared_cat_for_priority = get_weighted_tier_prep_counts(
-                    max_per_side_for_priority,
+                    max_sell_for_priority,
                     multiplier_for_priority,
                     tier_sizes_xch=sell_sizes_for_priority,
                     side="cat",
@@ -5500,14 +5511,15 @@ class CoinManager:
 
             if cfg.TIER_ENABLED:
                 # ---- Tier-aware topup: check each tier ----
-                max_per_side = max(
-                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25))
+                max_buy_for_topup = int(
+                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+                max_sell_for_topup = int(
+                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
                 # Per-side distributions: BUY_*_TIER_COUNT shapes XCH topup,
                 # SELL_*_TIER_COUNT shapes CAT topup. They no longer have to
                 # match — reverse-buy ladders are typically asymmetric.
-                xch_dist = get_tier_distribution(max_per_side, side="xch")
-                cat_dist = get_tier_distribution(max_per_side, side="cat")
+                xch_dist = get_tier_distribution(max_buy_for_topup, side="xch")
+                cat_dist = get_tier_distribution(max_sell_for_topup, side="cat")
 
                 # V3 Adaptive threshold: spare buffer % based on trading pace
                 multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
@@ -5572,13 +5584,13 @@ class CoinManager:
                 # size when replenishing XCH coins).
                 live_tier_sizes_xch = buy_tier_sizes_xch
                 prepared_xch_counts = get_weighted_tier_prep_counts(
-                    max_per_side,
+                    max_buy_for_topup,
                     multiplier,
                     tier_sizes_xch=buy_tier_sizes_xch,
                     side="xch",
                 )
                 prepared_cat_counts = get_weighted_tier_prep_counts(
-                    max_per_side,
+                    max_sell_for_topup,
                     multiplier,
                     tier_sizes_xch=sell_tier_sizes_xch,
                     side="cat",
@@ -6428,9 +6440,12 @@ class CoinManager:
         # mid — undoing the split we just did. A coin is only "excess"
         # if the tier already has >= its target count.
         try:
-            _rebuild_max_per_side = max(
-                getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-                getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25),
+            _rebuild_max_offers = int(
+                getattr(
+                    cfg,
+                    "MAX_ACTIVE_SELL_OFFERS" if is_cat else "MAX_ACTIVE_BUY_OFFERS",
+                    25,
+                ) or 25
             )
             _rebuild_multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
             _rebuild_side_key = "cat" if is_cat else "xch"
@@ -6440,7 +6455,7 @@ class CoinManager:
                 self._configured_tier_sizes_xch(side="buy")
             )
             _per_tier_targets = get_weighted_tier_prep_counts(
-                _rebuild_max_per_side, _rebuild_multiplier,
+                _rebuild_max_offers, _rebuild_multiplier,
                 tier_sizes_xch=_rebuild_tier_sizes,
                 side=_rebuild_side_key,
             )
@@ -6887,9 +6902,12 @@ class CoinManager:
             return 0
 
         try:
-            max_per_side = max(
-                getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25),
-                getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25),
+            max_offers = int(
+                getattr(
+                    cfg,
+                    "MAX_ACTIVE_SELL_OFFERS" if is_cat else "MAX_ACTIVE_BUY_OFFERS",
+                    25,
+                ) or 25
             )
             multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
             side_key = "cat" if is_cat else "xch"
@@ -6899,7 +6917,7 @@ class CoinManager:
                 self._configured_tier_sizes_xch(side="buy")
             )
             per_tier_targets = get_weighted_tier_prep_counts(
-                max_per_side, multiplier,
+                max_offers, multiplier,
                 tier_sizes_xch=tier_sizes,
                 side=side_key,
             )
@@ -8735,14 +8753,13 @@ class CoinManager:
                 # worker preps XCH coins at BUY sizes and CAT coins at SELL sizes.
                 # Using the old shared --tier-sizes defaulted to SELL-side sizes for
                 # both wallets, causing XCH coins to be wrong size when BUY≠SELL.
-                max_per_side = max(max_buy, max_sell)
                 buy_tier_sizes  = self._configured_tier_sizes_xch(side="buy")
                 sell_tier_sizes = self._configured_tier_sizes_xch(side="sell")
                 xch_tier_counts = get_weighted_tier_prep_counts(
-                    max_per_side, multiplier,
+                    max_buy, multiplier,
                     tier_sizes_xch=buy_tier_sizes, side="xch")
                 cat_tier_counts = get_weighted_tier_prep_counts(
-                    max_per_side, multiplier,
+                    max_sell, multiplier,
                     tier_sizes_xch=sell_tier_sizes, side="cat")
                 # Liquidity mode overrides — zero the disabled side's tier
                 # counts so coin prep doesn't build a pool that won't be used.

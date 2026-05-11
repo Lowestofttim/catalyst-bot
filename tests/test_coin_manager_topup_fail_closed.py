@@ -3,6 +3,7 @@ from unittest.mock import patch
 import sys
 import types
 from decimal import Decimal
+from contextlib import ExitStack
 
 # Track which stub modules we installed so we can clean them up after the
 # test class runs.  Other test files (test_amm_monitor.py) import the real
@@ -702,6 +703,123 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertNotIn("XCH", absorb_calls)
         smart_topup.assert_called_once()
         self.assertEqual(smart_topup.call_args.args[0], "CAT-inner")
+
+    def test_topup_uses_sell_cap_for_sell_offer_deficit_scan(self):
+        manager = self._make_manager()
+        manager._topup_is_drip = True
+
+        def _coins(n, prefix):
+            return [_record(f"0x{prefix}{i}", 1_000_000) for i in range(n)]
+
+        xch_inv = {
+            "reserve": [_record("0xxchreserve", 10_000_000_000_000)],
+            "small": [_record("0xxchmisfit", 500_000_000_000)],
+            "inner": _coins(100, "xi"),
+            "mid": _coins(100, "xm"),
+            "outer": _coins(100, "xo"),
+            "extreme": _coins(100, "xe"),
+            "sniper": [],
+            "fees": _coins(50, "xf"),
+        }
+        cat_inv = {
+            "reserve": [_record("0xcatreserve", 500_000_000)],
+            "small": [],
+            "inner": _coins(100, "ci"),
+            "mid": _coins(100, "cm"),
+            "outer": _coins(100, "co"),
+            "extreme": _coins(100, "ce"),
+            "sniper": [],
+            "fees": [],
+        }
+
+        def classify(_records, wallet_type, _tier_sizes):
+            return xch_inv if wallet_type == "xch" else cat_inv
+
+        def open_offers(side=None, cat_asset_id=None, **_kwargs):
+            del cat_asset_id
+            counts = {
+                "buy": {"inner": 14, "mid": 13, "outer": 11, "extreme": 7},
+                "sell": {"inner": 14, "mid": 13, "outer": 11, "extreme": 6},
+            }.get(side, {})
+            return [
+                {"side": side, "tier": tier}
+                for tier, count in counts.items()
+                for _ in range(count)
+            ]
+
+        fake_wallet = types.ModuleType("wallet")
+        fake_wallet.get_wallet_sync_status = lambda: {"synced": True, "reachable": True}
+        prepared_counts = {"inner": 100, "mid": 100, "outer": 100, "extreme": 100}
+        tier_sizes = {
+            "inner": 26_000_000,
+            "mid": 13_000_000,
+            "outer": 6_500_000,
+            "extreme": 3_250_000,
+        }
+        absorb_calls = []
+
+        def absorb(name, *_args, **_kwargs):
+            absorb_calls.append(name)
+            return name == "XCH"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(sys.modules, {"wallet": fake_wallet}))
+            for name, value in {
+                "TIER_ENABLED": True,
+                "ENABLE_BUY": True,
+                "ENABLE_SELL": True,
+                "BUY_LADDER_REVERSED": True,
+                "MAX_ACTIVE_BUY_OFFERS": 45,
+                "MAX_ACTIVE_SELL_OFFERS": 44,
+                "BUY_INNER_TIER_COUNT": 14,
+                "BUY_MID_TIER_COUNT": 13,
+                "BUY_OUTER_TIER_COUNT": 11,
+                "BUY_EXTREME_TIER_COUNT": 7,
+                "SELL_INNER_TIER_COUNT": 14,
+                "SELL_MID_TIER_COUNT": 13,
+                "SELL_OUTER_TIER_COUNT": 11,
+                "SELL_EXTREME_TIER_COUNT": 7,
+                "WALLET_ID_XCH": 1,
+                "CAT_WALLET_ID": 2,
+                "CAT_ASSET_ID": "a" * 64,
+                "CAT_DECIMALS": 3,
+                "COIN_PREP_MULTIPLIER": Decimal("1"),
+            }.items():
+                stack.enter_context(patch.object(coin_manager.cfg, name, value))
+            stack.enter_context(patch.object(
+                coin_manager,
+                "get_weighted_tier_prep_counts",
+                return_value=prepared_counts,
+            ))
+            stack.enter_context(patch.object(coin_manager, "_get_free_coins_rpc", return_value={
+                "confirmed_records": [_record("0xwalletcoin", 1)]
+            }))
+            stack.enter_context(patch.object(
+                manager,
+                "_classify_coins_by_designation",
+                side_effect=classify,
+            ))
+            stack.enter_context(patch.object(
+                manager,
+                "_get_tier_sizes_mojos",
+                return_value=tier_sizes,
+            ))
+            stack.enter_context(patch.object(manager, "get_trading_pace", return_value="normal"))
+            stack.enter_context(patch.object(
+                manager,
+                "_absorb_misfits_to_reserve",
+                side_effect=absorb,
+            ))
+            stack.enter_context(patch.object(manager, "_smart_topup_wallet", return_value=True))
+            log_event = stack.enter_context(patch.object(coin_manager, "log_event"))
+            stack.enter_context(patch("database.get_open_offers", side_effect=open_offers))
+            manager._topup_worker(active_buy=45, active_sell=44)
+
+        self.assertIn("XCH", absorb_calls)
+        self.assertNotIn(
+            "topup_missing_offers_prioritized",
+            [call.args[1] for call in log_event.call_args_list],
+        )
 
     def test_topup_prioritizes_floor_spares_over_xch_misfit_absorption(self):
         manager = self._make_manager()
