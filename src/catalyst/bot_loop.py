@@ -642,8 +642,12 @@ class BotLoop:
         self._pending_cancel_dexie_max_checks_per_cycle: int = 8
         self._pending_cancel_dexie_detail_timeout_secs: float = 2.0
         self._pending_cancel_settle_seen: Dict[str, Dict] = {}
-        self._pending_cancel_settle_retry_secs: float = 300.0
-        self._pending_cancel_settle_max_retries: int = 5
+        self._pending_cancel_settle_retry_secs: float = float(
+            getattr(cfg, "PENDING_CANCEL_SETTLE_RETRY_SECS", 120) or 120
+        )
+        self._pending_cancel_settle_max_retries: int = int(
+            getattr(cfg, "PENDING_CANCEL_SETTLE_MAX_RETRIES", 5) or 5
+        )
         self._pending_cancel_notice_seen: Dict[str, Dict] = {}
         self._pending_cancel_notice_repeat_secs: float = 300.0
 
@@ -739,6 +743,120 @@ class BotLoop:
             f"{base:.0f}s so wallet cancels/coin reconciliation can settle",
             data=payload,
         )
+
+    def _process_emergency_requote_result(
+        self,
+        side: str,
+        requote_result,
+        requote_mid: Decimal,
+        plain_mid: Decimal,
+    ) -> Dict:
+        """Apply emergency-requote result semantics and return compact state."""
+        side_norm = str(side or "").strip().lower()
+        new_offers = []
+        replaced = 0
+        original_target = 0
+        any_progress = False
+        waiting_for_cancel_settle = False
+
+        if isinstance(requote_result, dict):
+            new_offers = requote_result.get("offers", []) or []
+            replaced = int(requote_result.get("replaced_count", 0) or 0)
+            original_target = int(
+                requote_result.get(
+                    "original_target_count",
+                    requote_result.get("target_count", 0) or 0,
+                ) or 0
+            )
+            pending_cancel_count = int(
+                requote_result.get("pending_cancel_count", 0) or 0
+            )
+            failed_cancel_count = int(
+                requote_result.get("failed_cancel_count", 0) or 0
+            )
+            fully_replaced = bool(requote_result.get("fully_replaced"))
+            any_progress = replaced > 0 or len(new_offers) > 0
+
+            if fully_replaced:
+                # Clean full replace: advance baseline and refresh ladder anchor
+                # so Step 10 does not force another emergency next cycle.
+                self._last_quoted_price[side_norm] = requote_mid
+                self._last_quoted_plain_mid[side_norm] = plain_mid
+                self._ladder_grid_mid[side_norm] = requote_mid
+                self._ladder_anchor_plain_mid[side_norm] = plain_mid
+            elif any_progress:
+                log_event(
+                    "warning",
+                    "emergency_requote_partial",
+                    f"Emergency {side_norm} requote replaced "
+                    f"{replaced}/{original_target} offers; holding baseline "
+                    f"so the next cycle re-detects remaining stale quotes",
+                    data={
+                        "side": side_norm,
+                        "replaced": replaced,
+                        "original_target": original_target,
+                    },
+                )
+                # Do not advance _last_quoted_price; drift will re-fire next
+                # cycle to finish the job.
+            elif pending_cancel_count > 0 and failed_cancel_count == 0:
+                waiting_for_cancel_settle = True
+                log_event(
+                    "info",
+                    "emergency_requote_waiting_for_cancel_settle",
+                    f"Emergency {side_norm} requote submitted "
+                    f"{pending_cancel_count} cancel(s); waiting for wallet "
+                    f"settlement before creating replacements",
+                    data={
+                        "side": side_norm,
+                        "original_target": original_target,
+                        "pending_cancel_count": pending_cancel_count,
+                        "failed_cancel_count": failed_cancel_count,
+                    },
+                )
+            else:
+                log_event(
+                    "error",
+                    "emergency_requote_no_progress",
+                    f"Emergency {side_norm} requote replaced 0/"
+                    f"{original_target} offers despite severe price shock; "
+                    f"leaving stale offers exposed until wallet state settles",
+                    data={
+                        "side": side_norm,
+                        "original_target": original_target,
+                        "pending_cancel_count": pending_cancel_count,
+                        "failed_cancel_count": failed_cancel_count,
+                    },
+                )
+                self._set_requote_failure_backoff(
+                    side_norm,
+                    "emergency_no_progress",
+                    data={
+                        "original_target": original_target,
+                        "pending_cancel_count": pending_cancel_count,
+                        "failed_cancel_count": failed_cancel_count,
+                    },
+                )
+        else:
+            # Legacy return format (list)
+            new_offers = requote_result if isinstance(requote_result, list) else []
+            any_progress = bool(new_offers)
+            replaced = len(new_offers)
+            original_target = len(new_offers)
+            if new_offers:
+                self._last_quoted_price[side_norm] = requote_mid
+                self._last_quoted_plain_mid[side_norm] = plain_mid
+                self._ladder_grid_mid[side_norm] = requote_mid
+                self._ladder_anchor_plain_mid[side_norm] = plain_mid
+            # No-offers legacy path: hold baseline for retry.
+
+        return {
+            "new_offers": new_offers,
+            "any_progress": any_progress,
+            "replaced": replaced,
+            "original_target": original_target,
+            "waiting_for_cancel_settle": waiting_for_cancel_settle,
+        }
 
     def _set_state(self, **updates):
         """Update _bot_state under the state lock (GUI-visible state).
@@ -5522,6 +5640,8 @@ class BotLoop:
             except Exception as e:
                 log_event("warning", "db_cleanup_failed", f"DB offer cleanup failed: {e}")
 
+            recovered_startup_trade_ids = set()
+
             # ---- Recover unknown offers ----
             # If the bot created offers on-chain but couldn't write to the DB
             # (e.g., DB was locked, bot crashed), import them now.
@@ -5529,6 +5649,11 @@ class BotLoop:
                 from database import recover_unknown_offers
                 all_wallet_offers = open_buys + open_sells
                 recovery = recover_unknown_offers(all_wallet_offers, cfg.CAT_ASSET_ID)
+                recovered_startup_trade_ids = {
+                    str(tid)
+                    for tid in recovery.get("trade_ids", [])
+                    if tid
+                }
                 if recovery.get("recovered", 0) > 0:
                     log_event("info", "startup_offer_recovery",
                               f"Recovered {recovery['recovered']} unknown offers from wallet "
@@ -5615,12 +5740,24 @@ class BotLoop:
                             bech32_map[tid] = bech
 
                     repost_count = 0
+                    deferred_recovered = 0
                     for db_offer in missing_dexie:
                         tid = db_offer.get("trade_id", "")
+                        if tid in recovered_startup_trade_ids:
+                            deferred_recovered += 1
+                            continue
                         bech = bech32_map.get(tid, "")
                         if bech and tid:
                             self.dexie_manager.queue_post(bech, tid, force=True)
                             repost_count += 1
+
+                    if deferred_recovered > 0:
+                        log_event(
+                            "info",
+                            "dexie_repost_deferred_recovered",
+                            f"Deferred {deferred_recovered} recovered offer(s) until "
+                            f"coin-linking and locked-coin reclaim finish",
+                        )
 
                     if repost_count > 0:
                         log_event("info", "dexie_repost",
@@ -7736,59 +7873,18 @@ class BotLoop:
                     # the next cycle re-fires the emergency path, which
                     # chips away at the residual stale offers on each
                     # subsequent pass.
-                    if isinstance(requote_result, dict):
-                        new_offers = requote_result.get("offers", [])
-                        replaced = int(requote_result.get("replaced_count", 0) or 0)
-                        original_target = int(
-                            requote_result.get(
-                                "original_target_count",
-                                requote_result.get("target_count", 0) or 0,
-                            ) or 0
-                        )
-                        fully_replaced = bool(requote_result.get("fully_replaced"))
-                        any_progress = (replaced > 0 or len(new_offers) > 0)
-                        if fully_replaced:
-                            # Clean full replace — advance baseline and
-                            # refresh ladder anchor so Step 10 does not
-                            # force another emergency next cycle.
-                            self._last_quoted_price[eq_side] = requote_mid
-                            self._last_quoted_plain_mid[eq_side] = mid_price  # F67
-                            self._ladder_grid_mid[eq_side] = requote_mid
-                            self._ladder_anchor_plain_mid[eq_side] = mid_price
-                        elif any_progress:
-                            log_event("warning", "emergency_requote_partial",
-                                      f"Emergency {eq_side} requote replaced "
-                                      f"{replaced}/{original_target} offers — "
-                                      f"holding baseline so the next cycle "
-                                      f"re-detects the remaining stale quotes",
-                                      data={"side": eq_side,
-                                            "replaced": replaced,
-                                            "original_target": original_target})
-                            # Don't advance _last_quoted_price; drift will
-                            # re-fire next cycle to finish the job.
-                        else:
-                            log_event("error", "emergency_requote_no_progress",
-                                      f"Emergency {eq_side} requote replaced "
-                                      f"0/{original_target} offers despite "
-                                      f"severe price shock — leaving stale "
-                                      f"offers exposed until wallet state settles",
-                                      data={"side": eq_side,
-                                            "original_target": original_target})
-                            self._set_requote_failure_backoff(
-                                eq_side,
-                                "emergency_no_progress",
-                                data={"original_target": original_target},
-                            )
-                    else:
-                        # Legacy return format (list)
-                        new_offers = requote_result if isinstance(requote_result, list) else []
-                        any_progress = bool(new_offers)
-                        if new_offers:
-                            self._last_quoted_price[eq_side] = requote_mid
-                            self._last_quoted_plain_mid[eq_side] = mid_price  # F67
-                            self._ladder_grid_mid[eq_side] = requote_mid
-                            self._ladder_anchor_plain_mid[eq_side] = mid_price
-                        # No-offers legacy path — hold baseline for retry.
+                    processed_requote = self._process_emergency_requote_result(
+                        eq_side,
+                        requote_result,
+                        requote_mid,
+                        mid_price,
+                    )
+                    new_offers = processed_requote["new_offers"]
+                    any_progress = bool(processed_requote["any_progress"])
+                    replaced = int(processed_requote.get("replaced", 0) or 0)
+                    waiting_for_cancel_settle = bool(
+                        processed_requote.get("waiting_for_cancel_settle", False)
+                    )
                     buy_q = self._last_quoted_price.get("buy")
                     sell_q = self._last_quoted_price.get("sell")
                     self.amm_monitor.notify_quoted_price(buy_q, sell_q)
@@ -7820,11 +7916,19 @@ class BotLoop:
                         print(done_msg, flush=True)  # Terminal-visible
                         log_event("info", "emergency_requote_done", done_msg)
                     else:
-                        skipped_msg = (f"[WARN] Emergency requote {eq_side}: "
-                                       f"0 new offers produced — backing off "
-                                       f"so wallet settlement/reconcile can catch up")
+                        if waiting_for_cancel_settle:
+                            skipped_msg = (
+                                f"[INFO] Emergency requote {eq_side}: "
+                                f"cancel submitted, waiting for wallet settlement"
+                            )
+                            event_level = "info"
+                        else:
+                            skipped_msg = (f"[WARN] Emergency requote {eq_side}: "
+                                           f"0 new offers produced — backing off "
+                                           f"so wallet settlement/reconcile can catch up")
+                            event_level = "warning"
                         print(skipped_msg, flush=True)
-                        log_event("warning", "emergency_requote_retry_eligible",
+                        log_event(event_level, "emergency_requote_retry_eligible",
                                   skipped_msg,
                                   data={"side": eq_side})
 
@@ -8201,44 +8305,7 @@ class BotLoop:
             skip_sell=_skip_sell,
         )
 
-        # ---- Step 11: Direct post to Dexie first ----
-        self._set_cycle_step("step11_dexie_post")
-        if cfg.DEXIE_AUTO_POST:
-            q_len = len(self.dexie_manager._queue)
-            if q_len > 0:
-                print(f"   [11] Posting {q_len} offers to Dexie...", end="", flush=True)
-                log_event("debug", "dexie_flush_start", f"Flushing {q_len} offers to Dexie...")
-            result = self.dexie_manager.flush_queue()
-            if q_len > 0:
-                print(f" {result}", flush=True)
-                log_event("info", "dexie_flush_result",
-                          f"Dexie flush: {result}")
-            else:
-                print("   [11] Dexie queue empty", flush=True)
-        else:
-            print("   [11] Dexie auto-post OFF", flush=True)
-            log_event("debug", "dexie_disabled", "DEXIE_AUTO_POST is off")
-
-        # ---- Step 11b: Broadcast to Splash after Dexie visibility is live ----
-        if getattr(cfg, "SPLASH_ENABLED", False):
-            try:
-                splash_q = len(self.splash_manager._queue)
-                if splash_q > 0:
-                    print(f"   [11b] Broadcasting {splash_q} offers to Splash...", end="", flush=True)
-                    log_event("debug", "splash_flush_start",
-                              f"Broadcasting {splash_q} offers to Splash...")
-                result = self.splash_manager.flush_queue()
-                if splash_q > 0:
-                    print(f" {result}", flush=True)
-                    log_event("info", "splash_flush_result",
-                              f"Splash broadcast: {result}")
-                else:
-                    print("   [11b] Splash queue empty", flush=True)
-            except Exception as e:
-                print(f"   [11b] Splash broadcast error: {e}", flush=True)
-                log_event("debug", "splash_error", f"Splash flush failed: {e}")
-        else:
-            print("   [11b] Splash OFF", flush=True)
+        self._flush_public_offer_queues()
 
         # ---- Step 12: Coin management ----
         print("   [12] Coin health...", end="", flush=True)
@@ -9636,6 +9703,75 @@ class BotLoop:
     # -------------------------------------------------------------------
     # Coin management
     # -------------------------------------------------------------------
+
+    def _flush_public_offer_queues(self):
+        """Flush public offer queues after reclaiming unsafe locked coins."""
+        self._set_cycle_step("step11_dexie_post")
+
+        # Recovered wallet offers can be inserted before offer-to-coin linking
+        # finishes. Reclaim reserve/oversized locked coins before posting queued
+        # offers publicly, so a just-recovered unsafe offer is cancelled and
+        # purged from Dexie/Splash queues before it becomes visible.
+        dexie_q_pending = (
+            bool(cfg.DEXIE_AUTO_POST)
+            and len(getattr(self.dexie_manager, "_queue", []) or []) > 0
+        )
+        splash_q_pending = (
+            bool(getattr(cfg, "SPLASH_ENABLED", False))
+            and len(getattr(self.splash_manager, "_queue", []) or []) > 0
+        )
+        if dexie_q_pending or splash_q_pending:
+            try:
+                if self._reclaim_oversized_locked_offers():
+                    log_event(
+                        "info",
+                        "oversized_coin_reclaim_pre_public_post",
+                        "Reclaimed unsafe locked-coin offer(s) before public posting",
+                    )
+            except Exception as e:
+                log_event(
+                    "debug",
+                    "oversized_coin_reclaim_pre_public_post_failed",
+                    f"Pre-public-post oversized reclaim failed: {e}",
+                )
+
+        # ---- Step 11: Direct post to Dexie first ----
+        if cfg.DEXIE_AUTO_POST:
+            q_len = len(getattr(self.dexie_manager, "_queue", []) or [])
+            if q_len > 0:
+                print(f"   [11] Posting {q_len} offers to Dexie...", end="", flush=True)
+                log_event("debug", "dexie_flush_start", f"Flushing {q_len} offers to Dexie...")
+            result = self.dexie_manager.flush_queue()
+            if q_len > 0:
+                print(f" {result}", flush=True)
+                log_event("info", "dexie_flush_result",
+                          f"Dexie flush: {result}")
+            else:
+                print("   [11] Dexie queue empty", flush=True)
+        else:
+            print("   [11] Dexie auto-post OFF", flush=True)
+            log_event("debug", "dexie_disabled", "DEXIE_AUTO_POST is off")
+
+        # ---- Step 11b: Broadcast to Splash after Dexie visibility is live ----
+        if getattr(cfg, "SPLASH_ENABLED", False):
+            try:
+                splash_q = len(getattr(self.splash_manager, "_queue", []) or [])
+                if splash_q > 0:
+                    print(f"   [11b] Broadcasting {splash_q} offers to Splash...", end="", flush=True)
+                    log_event("debug", "splash_flush_start",
+                              f"Broadcasting {splash_q} offers to Splash...")
+                result = self.splash_manager.flush_queue()
+                if splash_q > 0:
+                    print(f" {result}", flush=True)
+                    log_event("info", "splash_flush_result",
+                              f"Splash broadcast: {result}")
+                else:
+                    print("   [11b] Splash queue empty", flush=True)
+            except Exception as e:
+                print(f"   [11b] Splash broadcast error: {e}", flush=True)
+                log_event("debug", "splash_error", f"Splash flush failed: {e}")
+        else:
+            print("   [11b] Splash OFF", flush=True)
 
     def _reclaim_oversized_locked_offers(self) -> bool:
         """Cancel offers that are pinning reserve/oversized topup coins."""

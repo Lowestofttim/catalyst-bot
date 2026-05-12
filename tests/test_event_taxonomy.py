@@ -35,6 +35,7 @@ class TestEventTaxonomy(unittest.TestCase):
         self.assertEqual(categorize_event("mempool_defensive_cancel_done"), EventCategory.OFFER)
         self.assertEqual(categorize_event("mempool_preconfirm_defensive_cancel_done"), EventCategory.OFFER)
         self.assertEqual(categorize_event("mempool_preconfirm_cancel_deferred_pending_cancel_settle"), EventCategory.OFFER)
+        self.assertEqual(categorize_event("emergency_requote_waiting_for_cancel_settle"), EventCategory.OFFER)
         self.assertEqual(categorize_event("pending_cancel_settle_retry_queued"), EventCategory.OFFER)
 
     def test_wallet_events(self):

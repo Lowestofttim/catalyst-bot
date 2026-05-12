@@ -453,6 +453,14 @@ class Config:
         # (F77) — never read by any verification code.
         self.CANCEL_POLL_INTERVAL_SECS = _int("CANCEL_POLL_INTERVAL_SECS", 10)
         self.CANCEL_MAX_WAIT_SECS = _int("CANCEL_MAX_WAIT_SECS", 90)
+        self.PENDING_CANCEL_SETTLE_RETRY_SECS = _int(
+            "PENDING_CANCEL_SETTLE_RETRY_SECS",
+            120,
+        )
+        self.PENDING_CANCEL_SETTLE_MAX_RETRIES = _int(
+            "PENDING_CANCEL_SETTLE_MAX_RETRIES",
+            5,
+        )
 
         # ----- Coin Preparation -----
         self.ENABLE_COIN_PREP = _bool("ENABLE_COIN_PREP", False)
@@ -858,6 +866,7 @@ class Config:
         "TOPUP_POOL_PCT", "TOPUP_POOL_XCH", "TOPUP_POOL_CAT",
         # Cancel poll tuning (F51). CANCEL_RETRY_WAIT_SECS removed F77.
         "CANCEL_POLL_INTERVAL_SECS", "CANCEL_MAX_WAIT_SECS",
+        "PENDING_CANCEL_SETTLE_RETRY_SECS", "PENDING_CANCEL_SETTLE_MAX_RETRIES",
         # Coin prep. COIN_PREP_COOLDOWN_SECS removed F77 (never consumed).
         "ENABLE_COIN_PREP",
         "XCH_TARGET_COINS", "XCH_COIN_SIZE",

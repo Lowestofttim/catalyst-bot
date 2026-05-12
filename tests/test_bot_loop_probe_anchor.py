@@ -987,6 +987,55 @@ class ProbeAnchorTests(unittest.TestCase):
         self.assertEqual(loop._pending_cancel_settle_seen["stuck-sell"]["retries"], 1)
         self.assertNotIn("gone-sell", loop._pending_cancel_settle_seen)
 
+    def test_pending_cancel_settle_retry_window_comes_from_config(self):
+        with patch.object(fake_config.cfg, "PENDING_CANCEL_SETTLE_RETRY_SECS", 120, create=True), \
+                patch.object(fake_config.cfg, "PENDING_CANCEL_SETTLE_MAX_RETRIES", 7, create=True):
+            loop = bot_loop.BotLoop()
+
+        self.assertEqual(loop._pending_cancel_settle_retry_secs, 120.0)
+        self.assertEqual(loop._pending_cancel_settle_max_retries, 7)
+
+    def test_emergency_requote_pending_cancels_are_waiting_not_failure(self):
+        loop = bot_loop.BotLoop()
+        loop._last_quoted_price["buy"] = Decimal("1.30")
+        loop._last_quoted_plain_mid["buy"] = Decimal("1.30")
+        backoffs = []
+        events = []
+
+        def _log_event(severity, event_type, message, data=None):
+            events.append((severity, event_type, message, data or {}))
+
+        loop._set_requote_failure_backoff = (
+            lambda side, reason, data=None: backoffs.append((side, reason, data or {}))
+        )
+
+        with patch.object(bot_loop, "log_event", side_effect=_log_event):
+            result = loop._process_emergency_requote_result(
+                "buy",
+                {
+                    "offers": [],
+                    "fully_replaced": False,
+                    "replaced_count": 0,
+                    "original_target_count": 24,
+                    "pending_cancel_count": 24,
+                    "failed_cancel_count": 0,
+                },
+                Decimal("1.10"),
+                Decimal("1.10"),
+            )
+
+        self.assertFalse(result["any_progress"])
+        self.assertEqual(backoffs, [])
+        self.assertEqual(loop._last_quoted_price["buy"], Decimal("1.30"))
+        self.assertTrue(any(
+            severity == "info" and event_type == "emergency_requote_waiting_for_cancel_settle"
+            for severity, event_type, _, _ in events
+        ))
+        self.assertFalse(any(
+            event_type == "emergency_requote_no_progress"
+            for _, event_type, _, _ in events
+        ))
+
     def test_wallet_active_pending_cancel_watchdog_aggregates_retry_log(self):
         loop = bot_loop.BotLoop()
         loop.offer_manager._pending_cancel_retries = {}

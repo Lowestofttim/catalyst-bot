@@ -366,6 +366,8 @@ class OfferManagerCoinIdTests(unittest.TestCase):
         self.assertEqual(calls, ["cancel"])
         self.assertEqual(result["offers"], [])
         self.assertEqual(result["replaced_count"], 0)
+        self.assertEqual(result["pending_cancel_count"], 1)
+        self.assertEqual(result["failed_cancel_count"], 0)
         self.assertFalse(result["fully_replaced"])
 
     def test_retry_failed_cancels_exhaustion_does_not_mark_cancelled(self):

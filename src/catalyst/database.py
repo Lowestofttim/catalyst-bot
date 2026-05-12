@@ -1287,7 +1287,7 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
     """
     from config import cfg
 
-    stats = {"recovered": 0, "skipped": 0, "errors": 0}
+    stats = {"recovered": 0, "skipped": 0, "errors": 0, "trade_ids": []}
 
     if not wallet_offers:
         return stats
@@ -1396,7 +1396,7 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
             for _attempt in range(3):
                 try:
                     conn.execute("BEGIN IMMEDIATE")
-                    conn.execute(
+                    cur = conn.execute(
                         """INSERT OR IGNORE INTO offers
                            (trade_id, side, price_xch, size_xch, size_cat,
                             tier, status, cat_asset_id, created_at, expires_at)
@@ -1405,8 +1405,12 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
                          tier, cat_asset_id, _now(), expires_at)
                     )
                     conn.execute("COMMIT")
-                    stats["recovered"] += 1
-                    db_trade_ids.add(tid)
+                    if cur.rowcount:
+                        stats["recovered"] += 1
+                        stats["trade_ids"].append(tid)
+                        db_trade_ids.add(tid)
+                    else:
+                        stats["skipped"] += 1
                     break
                 except sqlite3.OperationalError:
                     try:
