@@ -3045,8 +3045,8 @@ class OfferManager:
                 "replaced_count": 0,
                 "target_count": target_count,
                 "original_target_count": original_target_count,
-                "pending_cancel_count": len(pending_cancel_ids),
-                "failed_cancel_count": len(failed_cancel_ids),
+                "pending_cancel_count": 0,
+                "failed_cancel_count": 0,
                 "tier_filter_drained": False,
             }
 
@@ -3077,8 +3077,8 @@ class OfferManager:
                 "replaced_count": 0,
                 "target_count": target_count,
                 "original_target_count": original_target_count,
-                "pending_cancel_count": len(pending_cancel_ids),
-                "failed_cancel_count": len(failed_cancel_ids),
+                "pending_cancel_count": 0,
+                "failed_cancel_count": 0,
                 "tier_filter_drained": False,
             }
 
