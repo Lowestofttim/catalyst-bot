@@ -4455,8 +4455,8 @@ class CoinManager:
                 max_buy, multiplier, side="xch")
             cat_tier_counts = get_weighted_tier_prep_counts(
                 max_sell, multiplier, side="cat")
-            target_xch = max(cfg.XCH_TARGET_COINS, sum(xch_tier_counts.values()))
-            target_cat = max(cfg.CAT_TARGET_COINS, sum(cat_tier_counts.values()))
+            target_xch = sum(xch_tier_counts.values())
+            target_cat = sum(cat_tier_counts.values())
         else:
             computed = int((max_buy + max_sell) * float(multiplier))
             computed = max(computed, max_buy + max_sell)
@@ -4473,10 +4473,13 @@ class CoinManager:
         if not sell_enabled:
             target_cat = 0
 
+        critical_xch = max(1, int(target_xch * 0.1)) if target_xch > 0 else 0
+        critical_cat = max(1, int(target_cat * 0.1)) if target_cat > 0 else 0
+
         needs_xch = (buy_enabled and target_xch > 0
-                     and est_xch_total < int(target_xch * 0.1))
+                     and est_xch_total < critical_xch)
         needs_cat = (sell_enabled and target_cat > 0
-                     and est_cat_total < int(target_cat * 0.1))
+                     and est_cat_total < critical_cat)
 
         if needs_xch or needs_cat:
             log_event("warning", "low_coins_total",
