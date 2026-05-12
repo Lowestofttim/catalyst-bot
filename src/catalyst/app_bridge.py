@@ -935,6 +935,52 @@ class AppBridge:
         return _unwrap_flask_response(resp)
 
     @_safe
+    def set_sage_fingerprint(self, body=None):
+        """Persist and start Sage fingerprint. Maps to POST /api/sage/fingerprint."""
+        import api_server
+        body_json = json.dumps(body or {})
+        with api_server.app.test_request_context('/api/sage/fingerprint', method='POST',
+                                                  content_type='application/json',
+                                                  data=body_json):
+            resp = api_server.api_sage_set_fingerprint()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def get_sage_cert_candidates(self, body=None):
+        """Get likely Sage wallet.crt paths. Maps to GET /api/sage/cert-candidates."""
+        import api_server
+        query = ""
+        if isinstance(body, dict) and body.get("data_dir"):
+            from urllib.parse import urlencode
+            query = "?" + urlencode({"data_dir": str(body.get("data_dir", ""))})
+        with api_server.app.test_request_context('/api/sage/cert-candidates' + query):
+            resp = api_server.api_sage_cert_candidates()
+        return _unwrap_flask_response(resp)
+
+    @_safe
+    def browse_sage_cert(self):
+        """Open a native file picker for Sage's wallet.crt in desktop mode."""
+        try:
+            import webview
+            if not webview.windows:
+                return {"success": False, "error": "No desktop window available"}
+
+            result = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=(
+                    "Sage wallet certificate (*.crt)",
+                    "All files (*.*)",
+                ),
+            )
+            if not result:
+                return {"success": False, "cancelled": True}
+            selected = result[0] if isinstance(result, (list, tuple)) else result
+            return {"success": True, "cert_path": str(selected)}
+        except Exception:
+            return {"success": False, "error": "File picker unavailable"}
+
+    @_safe
     def setup_certs(self, body=None):
         """Setup Sage certificates. Maps to POST /api/sage/setup-certs."""
         import api_server

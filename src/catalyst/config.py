@@ -965,6 +965,10 @@ class Config:
         "CAT_ASSET_ID", "CAT_TICKER_ID", "CAT_NAME", "CAT_DECIMALS",
         # TibetSwap pair (auto-resolved by cat_resolver at startup)
         "TIBET_PAIR_ID",
+        # Sage startup preference. This is intentionally blocked from the
+        # generic /api/config route and changed only through the Sage wallet
+        # session endpoint, which applies wallet-switch safety checks first.
+        "SAGE_FINGERPRINT",
     }
 
     def update(self, key: str, value: str,

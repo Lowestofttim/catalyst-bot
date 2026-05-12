@@ -2628,6 +2628,7 @@ from blueprints.sage import (
     api_wallet_sage_running, api_wallet_retry_sage_connect,
     api_wallet_begin_startup, api_chia_startup_status,
     api_chia_fingerprints, api_chia_start_with_fingerprint,
+    api_sage_set_fingerprint, api_sage_cert_candidates,
     api_sage_setup_certs,
 )
 from blueprints.cat import (

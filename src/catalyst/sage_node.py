@@ -1393,6 +1393,29 @@ def detect_sage_cert_path(extra_data_dirs: Optional[List[str]] = None) -> Option
     return None
 
 
+def get_sage_cert_candidates(extra_data_dirs: Optional[List[str]] = None) -> List[str]:
+    """Return likely Sage wallet.crt paths for GUI pre-fill/browse fallback.
+
+    These are path suggestions only. Callers must still validate with
+    validate_sage_cert_pair() before saving anything.
+    """
+    candidates: List[str] = []
+
+    configured = os.getenv("SAGE_CERT_PATH", "").strip()
+    if configured:
+        try:
+            configured_path = _normalise_path(configured)
+            if os.path.basename(configured_path).lower() == "wallet.crt":
+                candidates.append(configured_path)
+        except Exception:
+            pass
+
+    for ssl_dir in _candidate_sage_ssl_dirs(extra_data_dirs):
+        candidates.append(os.path.join(ssl_dir, "wallet.crt"))
+
+    return _dedupe_paths(candidates)
+
+
 def _detect_sage_cert_path() -> Optional[str]:
     """Backward-compatible private wrapper for older imports/tests."""
     return detect_sage_cert_path()

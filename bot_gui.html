@@ -2804,6 +2804,14 @@
         .v4-settings-amber  { border-left: 3px solid rgba(251,191,36,0.4); }
         .v4-settings-blue   { border-left: 3px solid rgba(59,130,246,0.4); }
         .v4-settings-orange { border-left: 3px solid rgba(234,88,12,0.4); }
+        @media (max-width: 720px) {
+            #settingsWalletSessionGrid {
+                grid-template-columns: 1fr !important;
+            }
+            #settingsSageCertPath {
+                min-width: 0;
+            }
+        }
         /* Liquidity mode picker: highlight the selected card and dim the others */
         .liquidity-mode-card.selected {
             border-color: rgba(96,165,250,0.85) !important;
@@ -8317,6 +8325,7 @@
                                style="flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: var(--slate-200); font-size: 13px; font-family: monospace;">
                     </div>
                     <div style="display: flex; gap: 8px;">
+                        <button id="startupCertBrowseBtn" onclick="startupCertBrowse()" style="padding: 12px 20px; background: rgba(148,163,184,0.12); border: 1px solid rgba(148,163,184,0.35); color: var(--slate-200); border-radius: 10px; cursor: pointer; font-size: 15px;">Browse</button>
                         <button onclick="startupCertAutoDetect()" style="padding: 12px 20px; background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.4); color: var(--accent-cyan); border-radius: 10px; cursor: pointer; font-size: 15px;">Auto-Detect</button>
                         <button onclick="startupCertSubmit()" style="padding: 12px 20px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: var(--status-success); border-radius: 10px; cursor: pointer; font-size: 15px;">Save &amp; Continue</button>
                     </div>
@@ -10374,6 +10383,35 @@
 
                     <!-- ========= SETUP SUB-VIEW ========= -->
                     <div class="v4-settings-subview is-active" id="settingsSetupView">
+
+                    <!-- Wallet Session -->
+                    <div class="v4-settings-section v4-settings-blue" id="settingsWalletSessionSection">
+                        <div class="v4-settings-section-title" style="color: var(--info-300);">
+                            Wallet Session
+                            <span class="cc-help">?<span class="cc-tooltip">Choose the Sage fingerprint CATalyst should use and configure Sage's wallet RPC certificate path without editing .env.</span></span>
+                        </div>
+                        <div class="v4-settings-hint" style="margin-bottom: 12px;">Wallet changes are blocked while the bot is running so active offers stay tied to the wallet that created them.</div>
+                        <div id="settingsWalletSessionGrid" style="display: grid; grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.6fr); gap: 14px;">
+                            <div style="padding: 12px 14px; background: rgba(15,23,42,0.38); border: 1px solid rgba(148,163,184,0.18); border-radius: 8px;">
+                                <div style="font-size: 0.78em; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">Active Fingerprint</div>
+                                <div id="settingsWalletFingerprint" style="font-family: var(--font-mono); font-size: 1.05em; color: var(--slate-100); margin-bottom: 10px;">Loading...</div>
+                                <button type="button" class="btn btn-config btn-secondary" id="settingsWalletChangeBtn" onclick="showWalletPickerModal()" style="width: 100%;">Change Wallet</button>
+                                <div class="v4-settings-hint" id="settingsWalletStatus" style="margin-top: 8px;">Checking wallet session...</div>
+                            </div>
+                            <div style="padding: 12px 14px; background: rgba(15,23,42,0.38); border: 1px solid rgba(148,163,184,0.18); border-radius: 8px;">
+                                <div style="font-size: 0.78em; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">Sage Certificate</div>
+                                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                    <input type="text" id="settingsSageCertPath" placeholder="Sage ssl\wallet.crt path" style="flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.82em;">
+                                    <button type="button" class="btn btn-config btn-secondary" id="settingsSageCertBrowseBtn" onclick="settingsBrowseSageCert()">Browse</button>
+                                </div>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-config btn-secondary" onclick="settingsAutoDetectSageCert()">Auto-Detect</button>
+                                    <button type="button" class="btn btn-start btn-primary" onclick="settingsSaveSageCert()">Save Certificate</button>
+                                </div>
+                                <div class="v4-settings-hint" id="settingsSageCertStatus" style="margin-top: 8px;">Loading likely Sage path...</div>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- ══ SECTION: Configuration Presets ══
                          Save the current form state under a name and recall
@@ -13023,6 +13061,7 @@
             if (viewName === 'settings') {
                 // Update lock state to show/hide banner and lock sections
                 updateSettingsLock();
+                try { updateWalletSessionSettings().catch(() => {}); } catch (_) {}
 
                 // PRESERVE-ON-TAB-SWITCH: if the user already has unsaved
                 // edits in the Settings form (e.g. they just ran Smart
@@ -14810,6 +14849,8 @@
             if (m === 'GET'  && (clean === 'sage/startup-status' || clean === 'chia/startup-status')) return 'get_startup_status';
             if (m === 'GET'  && (clean === 'sage/fingerprints'  || clean === 'chia/fingerprints'))   return 'get_fingerprints';
             if (m === 'POST' && (clean === 'sage/start-with-fingerprint' || clean === 'chia/start-with-fingerprint')) return 'start_with_fingerprint';
+            if (m === 'POST' && clean === 'sage/fingerprint')    return 'set_sage_fingerprint';
+            if (m === 'GET'  && clean === 'sage/cert-candidates') return 'get_sage_cert_candidates';
             if (m === 'POST' && clean === 'sage/setup-certs')   return 'setup_certs';
             if (m === 'POST' && (clean === 'sage/restart' || clean === 'chia/restart')) return 'restart_sage';
 
@@ -17029,6 +17070,183 @@
                 if (valEl) valEl.textContent = 'Connect ▸';
             }
             updateWalletPickerAvailability();
+            try { updateWalletSessionSettings().catch(() => {}); } catch (_) {}
+        }
+
+        function desktopSageCertBrowseAvailable() {
+            return !!(IS_DESKTOP && window.pywebview && window.pywebview.api &&
+                typeof window.pywebview.api.browse_sage_cert === 'function');
+        }
+
+        function setSageCertStatus(statusId, message, color) {
+            const el = document.getElementById(statusId);
+            if (!el) return;
+            el.textContent = message || '';
+            el.style.color = color || 'var(--slate-400)';
+        }
+
+        async function prefillSageCertPath(inputId, statusId, { overwrite = false } = {}) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            try {
+                const resp = await apiFetch(`${API_URL}/sage/cert-candidates`, {
+                    signal: AbortSignal.timeout(8000)
+                });
+                const data = await resp.json();
+                const suggested = data && data.success ? (data.suggested_cert_path || '') : '';
+                if (suggested && (overwrite || !input.value.trim())) {
+                    input.value = suggested;
+                }
+                if (suggested) {
+                    const copy = data.detected_cert_path
+                        ? 'Detected Sage certificate path.'
+                        : 'Suggested default Sage certificate path. Save will verify wallet.key is beside it.';
+                    setSageCertStatus(statusId, copy, 'var(--slate-400)');
+                } else {
+                    setSageCertStatus(statusId, 'Paste Sage ssl\\wallet.crt, or use Auto-Detect.', 'var(--slate-400)');
+                }
+            } catch (err) {
+                debugWarn('[Sage Cert] Could not load certificate suggestions:', err.message || err);
+                setSageCertStatus(statusId, 'Paste Sage ssl\\wallet.crt, or use Auto-Detect.', 'var(--slate-400)');
+            }
+        }
+
+        async function browseSageCertPath(inputId, statusId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            if (!desktopSageCertBrowseAvailable()) {
+                setSageCertStatus(statusId, 'Browse is available in the desktop app. Paste the path here in browser mode.', 'var(--warning-300)');
+                return;
+            }
+            setSageCertStatus(statusId, 'Opening file picker...', 'var(--slate-400)');
+            try {
+                const result = await window.pywebview.api.browse_sage_cert();
+                if (result && result.success && result.cert_path) {
+                    input.value = result.cert_path;
+                    setSageCertStatus(statusId, 'Selected certificate path. Click Save Certificate to verify it.', 'var(--slate-400)');
+                } else if (result && result.cancelled) {
+                    setSageCertStatus(statusId, 'File picker cancelled.', 'var(--slate-400)');
+                } else {
+                    setSageCertStatus(statusId, (result && result.error) || 'File picker unavailable.', 'var(--warning-300)');
+                }
+            } catch (err) {
+                setSageCertStatus(statusId, 'File picker unavailable: ' + (err.message || 'unknown error'), 'var(--warning-300)');
+            }
+        }
+
+        async function autoDetectSageCertPath(inputId, statusId, { continueStartup = false } = {}) {
+            const input = document.getElementById(inputId);
+            setSageCertStatus(statusId, 'Searching for certificates...', 'var(--slate-400)');
+            try {
+                const resp = await apiFetch(`${API_URL}/sage/setup-certs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                    signal: AbortSignal.timeout(10000)
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    if (input) input.value = result.cert_path || '';
+                    setSageCertStatus(statusId, 'Certificates saved: ' + (result.cert_path || 'configured.'), 'var(--status-success)');
+                    if (continueStartup) continueStartupAfterCertSetup();
+                    return result;
+                }
+                setSageCertStatus(statusId, result.error || 'Could not auto-detect. Please enter the path manually.', 'var(--sell-color)');
+                return result;
+            } catch (err) {
+                setSageCertStatus(statusId, 'Auto-detect failed: ' + (err.message || 'Unknown error'), 'var(--sell-color)');
+                return { success: false, error: err.message || 'Auto-detect failed' };
+            }
+        }
+
+        async function saveSageCertPath(inputId, statusId, { continueStartup = false } = {}) {
+            const input = document.getElementById(inputId);
+            const certPath = input ? input.value.trim() : '';
+            if (!certPath) {
+                setSageCertStatus(statusId, 'Paste the full path to Sage ssl\\wallet.crt, or use Auto-Detect.', 'var(--sell-color)');
+                return { success: false, error: 'missing_cert_path' };
+            }
+            setSageCertStatus(statusId, 'Saving certificate path...', 'var(--slate-400)');
+            try {
+                const resp = await apiFetch(`${API_URL}/sage/setup-certs`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cert_path: certPath }),
+                    signal: AbortSignal.timeout(10000)
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    if (input) input.value = result.cert_path || certPath;
+                    setSageCertStatus(statusId, 'Certificates saved: ' + (result.cert_path || 'configured.'), 'var(--status-success)');
+                    if (continueStartup) continueStartupAfterCertSetup();
+                    return result;
+                }
+                setSageCertStatus(statusId, result.error || 'Failed to save certificates.', 'var(--sell-color)');
+                return result;
+            } catch (err) {
+                setSageCertStatus(statusId, 'Error: ' + (err.message || 'Unknown error'), 'var(--sell-color)');
+                return { success: false, error: err.message || 'save_failed' };
+            }
+        }
+
+        function continueStartupAfterCertSetup() {
+            setTimeout(() => {
+                document.getElementById('startupCertSection').style.display = 'none';
+                document.getElementById('startupProgressTrack').style.display = 'block';
+                document.getElementById('startupStartingFeedback').style.display = 'block';
+                document.getElementById('startupStartingText').textContent = 'Certificates configured - continuing startup...';
+                startupPollUntilReady();
+            }, 1200);
+        }
+
+        async function updateWalletSessionSettings() {
+            const section = document.getElementById('settingsWalletSessionSection');
+            if (!section) return;
+
+            const fpEl = document.getElementById('settingsWalletFingerprint');
+            const walletStatus = document.getElementById('settingsWalletStatus');
+            const changeBtn = document.getElementById('settingsWalletChangeBtn');
+            const browseBtn = document.getElementById('settingsSageCertBrowseBtn');
+            const lockedReason = walletSwitchLockedReason();
+
+            if (changeBtn) {
+                changeBtn.disabled = !!lockedReason;
+                changeBtn.title = lockedReason || 'Choose a different Sage fingerprint';
+                changeBtn.style.opacity = lockedReason ? '0.55' : '';
+                changeBtn.style.cursor = lockedReason ? 'not-allowed' : '';
+            }
+            if (walletStatus) {
+                walletStatus.textContent = lockedReason || 'Safe to change while the bot is stopped.';
+                walletStatus.style.color = lockedReason ? 'var(--warning-300)' : 'var(--slate-400)';
+            }
+            if (browseBtn) {
+                browseBtn.style.display = desktopSageCertBrowseAvailable() ? '' : 'none';
+            }
+
+            try {
+                const response = await apiFetch(`${API_URL}/fingerprint`);
+                const data = await response.json();
+                if (fpEl) {
+                    fpEl.textContent = data.success && data.fingerprint ? data.fingerprint : 'Not connected';
+                }
+            } catch (err) {
+                if (fpEl) fpEl.textContent = 'Not connected';
+            }
+            await prefillSageCertPath('settingsSageCertPath', 'settingsSageCertStatus');
+        }
+
+        async function settingsBrowseSageCert() {
+            await browseSageCertPath('settingsSageCertPath', 'settingsSageCertStatus');
+        }
+
+        async function settingsAutoDetectSageCert() {
+            const result = await autoDetectSageCertPath('settingsSageCertPath', 'settingsSageCertStatus');
+            if (result && result.success) showToast('Sage certificate path saved', 'success');
+        }
+
+        async function settingsSaveSageCert() {
+            const result = await saveSageCertPath('settingsSageCertPath', 'settingsSageCertStatus');
+            if (result && result.success) showToast('Sage certificate path saved', 'success');
         }
 
         function walletSwitchLockedReason() {
@@ -31211,7 +31429,7 @@
 
             try {
                 _walletSwitchInProgress = true;
-                const resp = await apiFetch(`${API_URL}/sage/start-with-fingerprint`, {
+                const resp = await apiFetch(`${API_URL}/sage/fingerprint`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ fingerprint: fingerprint })
@@ -34860,7 +35078,7 @@ async function startupSelectFingerprint(fingerprint, cardEl) {
         'Starting ' + _startupWalletLabel + ' with fingerprint ' + fingerprint + '...';
 
     try {
-        const resp = await apiFetch(`${API_URL}/sage/start-with-fingerprint`, {
+        const resp = await apiFetch(`${API_URL}/sage/fingerprint`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fingerprint: fingerprint }),
@@ -34939,6 +35157,13 @@ function startupShowCertSetup() {
     document.getElementById('startupStartingFeedback').style.display = 'none';
     document.getElementById('startupCertSection').style.display = 'block';
     document.getElementById('startupCertStatus').textContent = '';
+    const browseBtn = document.getElementById('startupCertBrowseBtn');
+    if (browseBtn) browseBtn.style.display = desktopSageCertBrowseAvailable() ? '' : 'none';
+    prefillSageCertPath('startupCertPath', 'startupCertStatus');
+}
+
+async function startupCertBrowse() {
+    await browseSageCertPath('startupCertPath', 'startupCertStatus');
 }
 
 async function startupCertAutoDetect() {

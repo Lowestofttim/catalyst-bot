@@ -215,6 +215,78 @@ def api_chia_start_with_fingerprint():
         return api_server._api_error(e, request.path)
 
 
+@bp.route("/api/sage/fingerprint", methods=["POST"])
+def api_sage_set_fingerprint():
+    """Persist and start the user-selected Sage wallet fingerprint."""
+    try:
+        import chia_node
+        data = request.get_json(silent=True)
+
+        if not isinstance(data, dict):
+            return jsonify({"success": False, "error": "Invalid request body"}), 400
+
+        fingerprint = str(data.get("fingerprint", "")).strip()
+        if not fingerprint or not fingerprint.isdigit():
+            return jsonify({"success": False, "error": "Invalid fingerprint"}), 400
+
+        bot = api_server.bot
+        if bot and bot.is_running():
+            return jsonify({
+                "success": False,
+                "error": "Stop the bot before changing wallet fingerprint",
+            }), 409
+
+        result = chia_node.trigger_start(fingerprint)
+        if not result.get("success"):
+            return jsonify({
+                "success": False,
+                "fingerprint": fingerprint,
+                **result,
+            }), 400
+
+        ok = api_server.cfg.update(
+            "SAGE_FINGERPRINT",
+            fingerprint,
+            source="sage_wallet_settings",
+            note="User selected Sage wallet fingerprint",
+        )
+        if not ok:
+            return jsonify({
+                "success": False,
+                "error": "Could not save Sage fingerprint",
+            }), 500
+
+        os.environ["SAGE_FINGERPRINT"] = fingerprint
+
+        return jsonify({
+            "success": True,
+            "fingerprint": fingerprint,
+            "message": result.get("message", "Sage fingerprint saved"),
+        })
+    except Exception as e:
+        return api_server._api_error(e, request.path)
+
+
+@bp.route("/api/sage/cert-candidates")
+def api_sage_cert_candidates():
+    """Return likely Sage wallet.crt paths for UI pre-fill."""
+    try:
+        import sage_node
+        data_dir = str(request.args.get("data_dir", "") or "").strip()
+        extra_dirs = [data_dir] if data_dir else None
+        candidates = sage_node.get_sage_cert_candidates(extra_dirs)
+        detected = sage_node.detect_sage_cert_path(extra_dirs)
+        suggested = detected or (candidates[0] if candidates else "")
+        return jsonify({
+            "success": True,
+            "candidates": candidates,
+            "suggested_cert_path": suggested,
+            "detected_cert_path": detected or "",
+        })
+    except Exception as e:
+        return api_server._api_error(e, request.path)
+
+
 @bp.route("/api/sage/setup-certs", methods=["POST"])
 def api_sage_setup_certs():
     """Auto-detect or set Sage certificate paths.

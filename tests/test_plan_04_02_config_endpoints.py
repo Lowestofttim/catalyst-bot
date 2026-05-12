@@ -138,6 +138,11 @@ class TestConfigPost(_FlaskBase):
                                {"key": "WALLET_TYPE", "value": "chia"})
         self.assertEqual(resp.status_code, 403)
 
+    def test_blocked_sage_fingerprint_returns_403(self):
+        resp = self._post_json("/api/config",
+                               {"key": "SAGE_FINGERPRINT", "value": "12345678"})
+        self.assertEqual(resp.status_code, 403)
+
     def test_valid_key_update_returns_success(self):
         """Patch cfg.update to return True without touching real .env."""
         fake_cfg = MagicMock()

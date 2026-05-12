@@ -230,6 +230,85 @@ class TestSageStartWithFingerprint(_FlaskBase):
 
 
 # ---------------------------------------------------------------------------
+# 5a. POST /api/sage/fingerprint
+# ---------------------------------------------------------------------------
+
+@unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
+class TestSageFingerprintPersistence(_FlaskBase):
+
+    def test_requires_token(self):
+        resp = self._post("/api/sage/fingerprint",
+                          {"fingerprint": "12345678"}, auth=False)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_invalid_body_returns_400(self):
+        resp = self.client.post(
+            "/api/sage/fingerprint",
+            data="not json",
+            content_type="text/plain",
+            headers=self.auth,
+            environ_base=self._LOOPBACK,
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_non_digit_fingerprint_returns_400(self):
+        resp = self._post("/api/sage/fingerprint",
+                          {"fingerprint": "abc"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_rejects_change_while_bot_running(self):
+        fake_bot = MagicMock()
+        fake_bot.is_running.return_value = True
+        with patch.object(api_server, "bot", fake_bot), \
+             patch("chia_node.trigger_start", return_value={"success": True}):
+            resp = self._post("/api/sage/fingerprint",
+                              {"fingerprint": "12345678"})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 409, body)
+        self.assertFalse(body.get("success"))
+
+    def test_valid_fingerprint_persists_and_triggers_start(self):
+        fake_cfg = MagicMock()
+        fake_cfg.update.return_value = True
+        fake_cfg.SAGE_FINGERPRINT = ""
+        with patch.object(api_server, "bot", None), \
+             patch.object(api_server, "cfg", fake_cfg), \
+             patch("chia_node.trigger_start",
+                   return_value={"success": True}) as mock_trigger:
+            resp = self._post("/api/sage/fingerprint",
+                              {"fingerprint": "12345678"})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200, body)
+        self.assertTrue(body.get("success"))
+        self.assertEqual(body.get("fingerprint"), "12345678")
+        fake_cfg.update.assert_called_once_with(
+            "SAGE_FINGERPRINT",
+            "12345678",
+            source="sage_wallet_settings",
+            note="User selected Sage wallet fingerprint",
+        )
+        mock_trigger.assert_called_once_with("12345678")
+
+    def test_failed_start_does_not_persist_fingerprint(self):
+        fake_cfg = MagicMock()
+        fake_cfg.update.return_value = True
+        with patch.object(api_server, "bot", None), \
+             patch.object(api_server, "cfg", fake_cfg), \
+             patch("chia_node.trigger_start",
+                   return_value={"success": False, "error": "unsupported"}) as mock_trigger:
+            resp = self._post("/api/sage/fingerprint",
+                              {"fingerprint": "12345678"})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 400, body)
+        self.assertFalse(body.get("success"))
+        fake_cfg.update.assert_not_called()
+        mock_trigger.assert_called_once_with("12345678")
+
+
+# ---------------------------------------------------------------------------
 # 5b. POST /api/sage/setup-certs
 # ---------------------------------------------------------------------------
 
@@ -320,6 +399,54 @@ class TestSageSetupCerts(_FlaskBase):
         body = resp.get_json()
         self.assertEqual(resp.status_code, 400, body)
         self.assertIn("wallet.crt", body.get("error", ""))
+
+
+# ---------------------------------------------------------------------------
+# 5c. GET /api/sage/cert-candidates
+# ---------------------------------------------------------------------------
+
+@unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
+class TestSageCertCandidates(_FlaskBase):
+
+    def test_returns_sage_wallet_crt_candidates(self):
+        with patch("sage_node.get_sage_cert_candidates",
+                   return_value=["C:\\Users\\Tester\\AppData\\Roaming\\com.rigidnetwork.sage\\ssl\\wallet.crt"]), \
+             patch("sage_node.detect_sage_cert_path", return_value=None):
+            resp = self.client.get("/api/sage/cert-candidates",
+                                   environ_base=self._LOOPBACK)
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200, body)
+        self.assertTrue(body.get("success"))
+        self.assertEqual(
+            body.get("candidates"),
+            ["C:\\Users\\Tester\\AppData\\Roaming\\com.rigidnetwork.sage\\ssl\\wallet.crt"],
+        )
+        self.assertEqual(
+            body.get("suggested_cert_path"),
+            "C:\\Users\\Tester\\AppData\\Roaming\\com.rigidnetwork.sage\\ssl\\wallet.crt",
+        )
+
+    def test_candidate_helper_uses_default_sage_ssl_wallet_crt_shape(self):
+        with tempfile.TemporaryDirectory() as appdata, \
+             tempfile.TemporaryDirectory() as localappdata:
+            env = {
+                "APPDATA": appdata,
+                "LOCALAPPDATA": localappdata,
+                "USERPROFILE": os.path.join(appdata, "Profile"),
+                "SAGE_DATA_DIR": "",
+                "SAGE_HOME": "",
+                "SAGE_ALLOWED_CERT_ROOTS": "",
+            }
+            with patch("platform.system", return_value="Windows"), \
+                 patch.dict(os.environ, env, clear=False):
+                import sage_node
+                candidates = sage_node.get_sage_cert_candidates()
+
+        self.assertGreaterEqual(len(candidates), 2)
+        self.assertTrue(all(path.endswith(os.path.join("ssl", "wallet.crt"))
+                            for path in candidates))
+        self.assertTrue(any("com.rigidnetwork.sage" in path for path in candidates))
 
 
 # ---------------------------------------------------------------------------
