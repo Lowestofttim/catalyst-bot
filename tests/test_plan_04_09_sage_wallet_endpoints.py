@@ -260,6 +260,8 @@ class TestSageFingerprintPersistence(_FlaskBase):
         fake_bot = MagicMock()
         fake_bot.is_running.return_value = True
         with patch.object(api_server, "bot", fake_bot), \
+             patch("chia_node.get_available_fingerprints",
+                   return_value=[{"fingerprint": "12345678"}]), \
              patch("chia_node.trigger_start", return_value={"success": True}):
             resp = self._post("/api/sage/fingerprint",
                               {"fingerprint": "12345678"})
@@ -274,8 +276,10 @@ class TestSageFingerprintPersistence(_FlaskBase):
         fake_cfg.SAGE_FINGERPRINT = ""
         with patch.object(api_server, "bot", None), \
              patch.object(api_server, "cfg", fake_cfg), \
+             patch("chia_node.get_available_fingerprints",
+                   return_value=[{"fingerprint": "12345678"}]), \
              patch("chia_node.trigger_start",
-                   return_value={"success": True}) as mock_trigger:
+                    return_value={"success": True}) as mock_trigger:
             resp = self._post("/api/sage/fingerprint",
                               {"fingerprint": "12345678"})
 
@@ -296,8 +300,10 @@ class TestSageFingerprintPersistence(_FlaskBase):
         fake_cfg.update.return_value = True
         with patch.object(api_server, "bot", None), \
              patch.object(api_server, "cfg", fake_cfg), \
+             patch("chia_node.get_available_fingerprints",
+                   return_value=[{"fingerprint": "12345678"}]), \
              patch("chia_node.trigger_start",
-                   return_value={"success": False, "error": "unsupported"}) as mock_trigger:
+                    return_value={"success": False, "error": "unsupported"}) as mock_trigger:
             resp = self._post("/api/sage/fingerprint",
                               {"fingerprint": "12345678"})
 
@@ -306,6 +312,25 @@ class TestSageFingerprintPersistence(_FlaskBase):
         self.assertFalse(body.get("success"))
         fake_cfg.update.assert_not_called()
         mock_trigger.assert_called_once_with("12345678")
+
+    def test_rejects_fingerprint_not_reported_by_sage(self):
+        fake_cfg = MagicMock()
+        fake_cfg.update.return_value = True
+        with patch.object(api_server, "bot", None), \
+             patch.object(api_server, "cfg", fake_cfg), \
+             patch("chia_node.get_available_fingerprints",
+                   return_value=[{"fingerprint": "11111111"}]), \
+             patch("chia_node.trigger_start",
+                   return_value={"success": True}) as mock_trigger:
+            resp = self._post("/api/sage/fingerprint",
+                              {"fingerprint": "99999999"})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 400, body)
+        self.assertFalse(body.get("success"))
+        self.assertIn("not available", body.get("error", ""))
+        fake_cfg.update.assert_not_called()
+        mock_trigger.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

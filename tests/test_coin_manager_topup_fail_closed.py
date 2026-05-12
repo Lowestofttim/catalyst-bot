@@ -1338,6 +1338,59 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             {"0xreserve", "0xmida", "0xmidb"},
         )
 
+    def test_needs_coin_prep_ignores_stale_static_targets_in_tier_mode(self):
+        manager = self._make_manager()
+        manager._xch_coins = 20
+        manager._cat_coins = 30
+
+        def prep_counts(_max_side, _multiplier, **kwargs):
+            side = kwargs.get("side")
+            if side == "xch":
+                return {"inner": 20}
+            if side == "cat":
+                return {"inner": 30}
+            return {"inner": 1}
+
+        # CAT_TARGET_COINS can be stale from older non-tier setup. Tier mode
+        # should use the tier plan itself so a successful prep does not keep
+        # re-triggering against an unrelated static floor.
+        with patch.object(coin_manager.cfg, "TIER_ENABLED", True), \
+                patch.object(coin_manager.cfg, "ENABLE_COIN_PREP", True), \
+                patch.object(coin_manager.cfg, "ENABLE_BUY", True), \
+                patch.object(coin_manager.cfg, "ENABLE_SELL", True), \
+                patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 20), \
+                patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 30), \
+                patch.object(coin_manager.cfg, "XCH_TARGET_COINS", 500), \
+                patch.object(coin_manager.cfg, "CAT_TARGET_COINS", 500), \
+                patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")), \
+                patch.object(coin_manager, "get_weighted_tier_prep_counts",
+                             side_effect=prep_counts):
+            self.assertFalse(manager.needs_coin_prep())
+
+    def test_needs_coin_prep_has_minimum_threshold_for_small_tier_plan(self):
+        manager = self._make_manager()
+        manager._xch_coins = 0
+        manager._cat_coins = 0
+
+        def prep_counts(_max_side, _multiplier, **kwargs):
+            side = kwargs.get("side")
+            if side == "xch":
+                return {"inner": 2}
+            if side == "cat":
+                return {"inner": 1}
+            return {}
+
+        with patch.object(coin_manager.cfg, "TIER_ENABLED", True), \
+                patch.object(coin_manager.cfg, "ENABLE_COIN_PREP", True), \
+                patch.object(coin_manager.cfg, "ENABLE_BUY", True), \
+                patch.object(coin_manager.cfg, "ENABLE_SELL", True), \
+                patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 2), \
+                patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 1), \
+                patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")), \
+                patch.object(coin_manager, "get_weighted_tier_prep_counts",
+                             side_effect=prep_counts):
+            self.assertTrue(manager.needs_coin_prep())
+
 
 if __name__ == "__main__":
     unittest.main()

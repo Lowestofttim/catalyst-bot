@@ -236,6 +236,19 @@ def api_sage_set_fingerprint():
                 "error": "Stop the bot before changing wallet fingerprint",
             }), 409
 
+        available_values = set()
+        for item in chia_node.get_available_fingerprints() or []:
+            value = item.get("fingerprint") if isinstance(item, dict) else item
+            value = str(value or "").strip()
+            if value.isdigit():
+                available_values.add(value)
+        if fingerprint not in available_values:
+            return jsonify({
+                "success": False,
+                "fingerprint": fingerprint,
+                "error": "Selected Sage fingerprint is not available",
+            }), 400
+
         result = chia_node.trigger_start(fingerprint)
         if not result.get("success"):
             return jsonify({
