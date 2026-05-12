@@ -142,6 +142,7 @@ class OfferManager:
         # Used to purge cancelled offer IDs from the Dexie post queue so
         # they don't generate spurious "Invalid Offer" 400 errors on flush.
         self.dexie_manager = None
+        self.splash_manager = None
 
         # ----- Fee coin pool reference -----
         # Injected by bot_loop: self.offer_manager._fee_pool = self.coin_manager.fee_pool
@@ -3345,15 +3346,20 @@ class OfferManager:
                 request_fast_reconcile(reason=f"cancel:{reason}")
             except Exception:
                 pass  # best-effort; the normal cadence still runs
-            # Purge successfully cancelled offers from the Dexie post queue so
-            # they don't generate "Invalid Offer" 400 errors on the next flush.
+            # Purge successfully cancelled offers from public post queues so
+            # they don't leak stale/invalid offers on the next flush.
+            cancelled_ids = [tid for tid, r in results.items()
+                             if r and r.get("success")]
             if self.dexie_manager is not None:
-                cancelled_ids = [tid for tid, r in results.items()
-                                 if r and r.get("success")]
                 try:
                     self.dexie_manager.purge_trade_ids(cancelled_ids)
                 except Exception:
                     pass  # non-critical — flush will handle the 400 gracefully
+            if self.splash_manager is not None:
+                try:
+                    self.splash_manager.purge_trade_ids(cancelled_ids)
+                except Exception:
+                    pass  # non-critical - flush will retry/skip invalid offers
         if failures > 0:
             log_event("warning", "offers_cancel_pending",
                       f"{failures} offers failed to cancel and remain queued for retry "

@@ -79,6 +79,22 @@ class SplashManager:
                 "force": force,
             })
 
+    def purge_trade_ids(self, trade_ids):
+        """Remove queued entries for cancelled trade IDs."""
+        if not trade_ids:
+            return
+        ids = set(trade_ids)
+        with self._lock:
+            before = len(self._queue)
+            self._queue = [
+                item for item in self._queue
+                if item.get("trade_id") not in ids
+            ]
+            removed = before - len(self._queue)
+        if removed:
+            log_event("debug", "splash_queue_purged",
+                      f"Removed {removed} cancelled offer(s) from Splash queue")
+
     def flush_queue(self, flush_all: bool = False) -> Dict:
         """Broadcast all queued offers to Splash.
 

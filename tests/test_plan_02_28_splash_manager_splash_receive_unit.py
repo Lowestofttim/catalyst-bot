@@ -53,6 +53,20 @@ class TestSplashFingerprint(unittest.TestCase):
         self.assertEqual(r1, r2)
 
 
+@unittest.skipIf(_SKIP_SM is not None, f"splash_manager unavailable: {_SKIP_SM}")
+class TestSplashQueuePurge(unittest.TestCase):
+    def test_purge_trade_ids_removes_only_matching_queued_offers(self):
+        manager = SplashManager()
+        manager.queue_post("offer1aaa", trade_id="keep")
+        manager.queue_post("offer1bbb", trade_id="drop")
+        manager.queue_post("offer1ccc", trade_id="keep-too")
+
+        manager.purge_trade_ids(["drop", "missing"])
+
+        remaining = [item["trade_id"] for item in manager._queue]
+        self.assertEqual(remaining, ["keep", "keep-too"])
+
+
 # ---------------------------------------------------------------------------
 # _asset_key
 # ---------------------------------------------------------------------------

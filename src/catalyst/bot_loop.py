@@ -338,9 +338,10 @@ class BotLoop:
         # (prevents MEMPOOL_CONFLICT from concurrent Sage operations)
         self.offer_manager._fee_pool = self.coin_manager.fee_pool
         # Wire dexie_manager into offer_manager so cancel_offers can purge
-        # cancelled trade IDs from the Dexie post queue, preventing spurious
-        # "Invalid Offer" 400 errors on the next flush cycle.
+        # cancelled trade IDs from public post queues, preventing invalid or
+        # unsafe offers from being posted after a cancel wins the race.
         self.offer_manager.dexie_manager = self.dexie_manager
+        self.offer_manager.splash_manager = self.splash_manager
         # Wire boost_manager into risk_manager for spread convergence
         self.risk_manager._boost_manager = self.boost_manager
 
