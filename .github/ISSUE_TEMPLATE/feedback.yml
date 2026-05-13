@@ -1,0 +1,54 @@
+name: CATalyst beta feedback
+description: Share tester feedback, confusing setup steps, rough edges, or feature ideas.
+title: "[Feedback]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for feedback that is not a crash or clear bug. Public beta feedback is collected here in the app source repo.
+
+        Please do not post seed phrases, private keys, wallet backups, API keys, or anything sensitive.
+  - type: dropdown
+    id: feedback-type
+    attributes:
+      label: Feedback type
+      options:
+        - Setup was confusing
+        - App wording was unclear
+        - Missing feature
+        - Workflow improvement
+        - Website / docs improvement
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: What should change?
+      description: Describe the rough edge, idea, or improvement.
+      placeholder: "It would help if..."
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Why would this help?
+      description: Tell us what you were trying to do and what would make it easier.
+    validations:
+      required: false
+  - type: input
+    id: catalyst-version
+    attributes:
+      label: CATalyst version, if relevant
+      placeholder: "v1.2.27"
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public feedback safety check
+      options:
+        - label: I have not included seed phrases, private keys, wallet backups, API keys, or other sensitive secrets.
+          required: true

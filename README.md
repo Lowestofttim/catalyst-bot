@@ -400,7 +400,7 @@ The in-app updater does not need the source repo to be public. It reads only the
 public release-channel manifest at
 `https://github.com/Lowestofttim/catalyst-releases/releases/latest/download/latest.json`
 and verifies `latest.json.sig` with the Ed25519 public key pinned in the app.
-The matching private key must be stored only in the private repo secret
+The matching private key must be stored only in the repository secret
 `CATALYST_UPDATE_SIGNING_KEY_B64`. To publish the public release-channel repo
 automatically, set `CATALYST_RELEASE_CHANNEL_REPO` to `Lowestofttim/catalyst-releases`
 and add a least-privilege `CATALYST_RELEASE_CHANNEL_TOKEN` secret that can write

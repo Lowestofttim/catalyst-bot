@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Send beta feedback
+    url: https://github.com/Lowestofttim/catalyst-bot/issues/new?template=feedback.yml
+    about: Share tester feedback, confusing setup steps, rough edges, or feature ideas.
   - name: Ask a question
     url: https://github.com/Lowestofttim/catalyst-bot/discussions/categories/q-a
     about: Questions about configuration, setup, or usage belong in Q&A Discussions.
