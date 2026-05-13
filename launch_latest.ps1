@@ -12,8 +12,8 @@ $app = Join-Path $repo "desktop_app.py"
 $logDir = Join-Path $env:APPDATA "Catalyst"
 $log = Join-Path $logDir "launcher.log"
 $expectedRemotes = @(
-    "https://github.com/Lowestofttim/catalyst-bot.git",
-    "git@github.com:Lowestofttim/catalyst-bot.git"
+    "https://github.com/catalystxch/catalyst-bot.git",
+    "git@github.com:catalystxch/catalyst-bot.git"
 )
 
 function Write-LaunchLog {

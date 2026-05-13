@@ -63,7 +63,7 @@ class TestAppUpdateSecurity(unittest.TestCase):
         self.assertFalse(is_allowed_manifest_url("https://example.invalid/latest.json"))
         self.assertFalse(
             is_allowed_manifest_url(
-                "https://api.github.com/repos/Lowestofttim/catalyst-bot/releases/latest"
+                "https://api.github.com/repos/catalystxch/catalyst-bot/releases/latest"
             )
         )
 

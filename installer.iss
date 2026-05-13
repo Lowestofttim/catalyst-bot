@@ -16,7 +16,7 @@
 #define MyAppName        "CATalyst"
 #define MyAppVersion     "1.0.0"
 #define MyAppPublisher   "MonkeyZoo"
-#define MyAppURL         "https://github.com/Lowestofttim/catalyst-bot"
+#define MyAppURL         "https://github.com/catalystxch/catalyst-bot"
 #define MyAppExeName     "Catalyst.exe"
 #define MySourceDir      "dist\Catalyst"
 

@@ -6,12 +6,12 @@ Thanks for taking an interest. CATalyst is beta software controlling live tradin
 
 | What you want to do | Where |
 |---|---|
-| Ask a question with a concrete answer | [Discussions - Q&A](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/q-a) |
-| Report a confirmed bug | [Bug report form](https://github.com/Lowestofttim/catalyst-bot/issues/new?template=bug_report.yml) |
-| Send beta feedback or a rough feature idea | [Feedback form](https://github.com/Lowestofttim/catalyst-bot/issues/new?template=feedback.yml) |
-| Propose a larger design change | [Discussions - Ideas](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/ideas) |
-| Share a config, dashboard, or result | [Discussions - Show and tell](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/show-and-tell) |
-| Offer expert review (Chialisp, wallet security, MM theory, etc.) | [Discussions - General](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/general) |
+| Ask a question with a concrete answer | [Discussions - Q&A](https://github.com/catalystxch/catalyst-bot/discussions/categories/q-a) |
+| Report a confirmed bug | [Bug report form](https://github.com/catalystxch/catalyst-bot/issues/new?template=bug_report.yml) |
+| Send beta feedback or a rough feature idea | [Feedback form](https://github.com/catalystxch/catalyst-bot/issues/new?template=feedback.yml) |
+| Propose a larger design change | [Discussions - Ideas](https://github.com/catalystxch/catalyst-bot/discussions/categories/ideas) |
+| Share a config, dashboard, or result | [Discussions - Show and tell](https://github.com/catalystxch/catalyst-bot/discussions/categories/show-and-tell) |
+| Offer expert review (Chialisp, wallet security, MM theory, etc.) | [Discussions - General](https://github.com/catalystxch/catalyst-bot/discussions/categories/general) |
 | Submit a code change | Open a pull request (see below) |
 
 **Rule of thumb:** Issues are for things we will close. Discussions are for things that stay open-ended. If you're unsure, start in Discussions; a maintainer will promote it to an Issue if it fits there.

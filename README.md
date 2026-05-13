@@ -15,7 +15,7 @@ CATalyst runs locally as a desktop application and connects to your
 
 ![CATalyst dashboard quick-start view](docs/screenshots/catalyst-dashboard.png)
 
-### [Download the latest release](https://github.com/Lowestofttim/catalyst-bot/releases/latest)
+### [Download the latest release](https://github.com/catalystxch/catalyst-bot/releases/latest)
 
 ---
 
@@ -146,7 +146,7 @@ when pending spends suggest a fill or price shock.
 - End-to-end browser tests require Playwright's Chromium browser install.
 
 Release packages are published on the
-[Releases page](https://github.com/Lowestofttim/catalyst-bot/releases).
+[Releases page](https://github.com/catalystxch/catalyst-bot/releases).
 
 ## Quick Start
 
@@ -161,7 +161,7 @@ where CATalyst is running.
 ### From the Installer (Recommended)
 
 1. Download `Catalyst-Setup-v*.exe` from the
-   [latest release](https://github.com/Lowestofttim/catalyst-bot/releases/latest).
+   [latest release](https://github.com/catalystxch/catalyst-bot/releases/latest).
 2. Run the installer. It places CATalyst in Program Files and adds a desktop
    shortcut.
 3. Launch CATalyst on the same computer as Sage wallet. On first run it checks
@@ -174,7 +174,7 @@ Use this path if you want the current source code or plan to develop the app.
 Run these commands on the same PC as Sage wallet:
 
 ```powershell
-git clone https://github.com/Lowestofttim/catalyst-bot.git
+git clone https://github.com/catalystxch/catalyst-bot.git
 cd catalyst-bot
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -193,7 +193,7 @@ python desktop_app.py
 ### From Source on macOS or Linux
 
 ```bash
-git clone https://github.com/Lowestofttim/catalyst-bot.git
+git clone https://github.com/catalystxch/catalyst-bot.git
 cd catalyst-bot
 python3 -m venv .venv
 source .venv/bin/activate

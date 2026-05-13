@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-REPO="Lowestofttim/catalyst-bot"
+REPO="catalystxch/catalyst-bot"
 
 apply_protection() {
     local branch="$1"

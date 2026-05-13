@@ -23,7 +23,7 @@ alerts and automated security fixes are enabled for dependency updates.
 Please do not open a public issue for suspected vulnerabilities.
 
 Use GitHub private vulnerability reporting when available:
-https://github.com/Lowestofttim/catalyst-bot/security/advisories/new
+https://github.com/catalystxch/catalyst-bot/security/advisories/new
 
 If GitHub does not allow private reporting for your account, contact the
 maintainer privately through the contact route listed on the GitHub profile.
