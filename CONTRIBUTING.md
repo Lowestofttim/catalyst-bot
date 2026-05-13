@@ -6,11 +6,12 @@ Thanks for taking an interest. CATalyst is beta software controlling live tradin
 
 | What you want to do | Where |
 |---|---|
-| Ask a question with a concrete answer | [Discussions → Q&A](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/q-a) |
-| Report a confirmed bug | [Issues](https://github.com/Lowestofttim/catalyst-bot/issues) |
-| Propose a new feature or design change | [Discussions → Ideas](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/ideas) |
-| Share a config, dashboard, or result | [Discussions → Show and tell](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/show-and-tell) |
-| Offer expert review (Chialisp, wallet security, MM theory, etc.) | [Discussions → General](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/general) |
+| Ask a question with a concrete answer | [Discussions - Q&A](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/q-a) |
+| Report a confirmed bug | [Bug report form](https://github.com/Lowestofttim/catalyst-bot/issues/new?template=bug_report.yml) |
+| Send beta feedback or a rough feature idea | [Feedback form](https://github.com/Lowestofttim/catalyst-bot/issues/new?template=feedback.yml) |
+| Propose a larger design change | [Discussions - Ideas](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/ideas) |
+| Share a config, dashboard, or result | [Discussions - Show and tell](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/show-and-tell) |
+| Offer expert review (Chialisp, wallet security, MM theory, etc.) | [Discussions - General](https://github.com/Lowestofttim/catalyst-bot/discussions/categories/general) |
 | Submit a code change | Open a pull request (see below) |
 
 **Rule of thumb:** Issues are for things we will close. Discussions are for things that stay open-ended. If you're unsure, start in Discussions; a maintainer will promote it to an Issue if it fits there.
@@ -18,18 +19,21 @@ Thanks for taking an interest. CATalyst is beta software controlling live tradin
 ## Reporting bugs
 
 Include:
-- **Version.** Run `Help → About` or check the `Catalyst-Setup-*.exe` filename.
+- **Version.** Run `Help - About` or check the `Catalyst-Setup-*.exe` filename.
 - **OS.** Windows 10/11, macOS, or Linux.
 - **Wallet.** Sage version.
 - **CAT pair.** Asset ID or ticker.
 - **What you expected vs. what happened.**
-- **Logs.** Tail of `%APPDATA%\Catalyst\bot_superlog_*.log` (redact asset IDs if you prefer).
+- **Logs.** Tail of `%APPDATA%\Catalyst\bot_superlog_*.log` or the Logs tab Debug Bundle after reviewing it.
 
 Never paste wallet certs, private keys, or the contents of `.env` or `user_secrets.json`.
 
-## Suggesting features
+## Sending feedback and suggesting features
 
-Start an **Idea** discussion describing:
+Use the feedback form for beta-test rough edges, confusing setup steps, wording
+problems, and small feature ideas.
+
+For larger design changes, start an **Idea** discussion describing:
 - The problem you're solving (not just the solution)
 - Current behaviour you'd replace
 - Rough sketch of how it would work

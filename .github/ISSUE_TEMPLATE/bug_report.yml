@@ -1,61 +1,103 @@
-name: Bug report
-description: Report a confirmed bug in CATalyst
-labels: ["bug"]
+name: CATalyst beta bug report
+description: Report a problem with the CATalyst beta app, installer, website, or docs.
+title: "[Bug]: "
+labels:
+  - bug
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug. Please include the information below so it can be reproduced.
-        **Never paste wallet certs, private keys, or full `.env` contents.**
+        Thank you for helping test CATalyst. Public beta reports are collected here in the app source repo.
+
+        Do not post seed phrases, private keys, wallet backups, API keys, or anything you would not want public. Logs can be useful, but please review anything you attach because reports here are public.
+
+        If the app is still opening, go to the Logs tab and click Debug Bundle. The bundle is redacted by default: wallet addresses and Sage fingerprints are redacted; the Spacescan API key, TLS paths, `.env`, database files, and wallet secret files are not included. Trade IDs, coin IDs, and asset IDs remain because they are public on-chain data and useful for debugging.
+
+        The downloaded `bot_debug_bundle_...zip` can be attached here if it is under GitHub's file upload limit.
   - type: input
-    id: version
+    id: catalyst-version
     attributes:
       label: CATalyst version
-      placeholder: e.g. v1.2.2 or v4.0.0-beta (from Help -> About or the installer filename)
+      description: Use the version shown in the app or on the website download panel.
+      placeholder: "v1.2.27"
     validations:
       required: true
   - type: dropdown
-    id: os
+    id: area
     attributes:
-      label: Operating system
+      label: Where did it happen?
       options:
-        - Windows 10
-        - Windows 11
-        - macOS
-        - Linux
+        - Installer / update
+        - First launch / setup
+        - Sage wallet connection
+        - Dashboard
+        - Offers / fills
+        - PnL / inventory
+        - Market Intel
+        - Settings
+        - Website / docs
         - Other
     validations:
       required: true
-  - type: input
-    id: sage
+  - type: textarea
+    id: summary
     attributes:
-      label: Sage wallet version
-      placeholder: e.g. 0.12.10 or newer
-  - type: input
-    id: cat
+      label: What happened?
+      description: A short description of the problem.
+      placeholder: "The app..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
     attributes:
-      label: CAT pair
-      placeholder: ticker or asset ID
+      label: Steps to reproduce
+      description: What were you doing just before it happened?
+      placeholder: |
+        1. Opened CATalyst
+        2. Chose ...
+        3. Clicked ...
+    validations:
+      required: false
   - type: textarea
     id: expected
     attributes:
-      label: What did you expect to happen?
+      label: What did you expect instead?
+      placeholder: "I expected..."
     validations:
-      required: true
-  - type: textarea
-    id: actual
+      required: false
+  - type: input
+    id: os-version
     attributes:
-      label: What actually happened?
+      label: Operating system
+      placeholder: "Windows 11 23H2"
     validations:
-      required: true
-  - type: textarea
-    id: logs
+      required: false
+  - type: input
+    id: sage-version
     attributes:
-      label: Relevant log lines
-      description: Tail of bot_superlog_*.log from %APPDATA%\Catalyst\. Redact asset IDs if you prefer.
-      render: text
-  - type: textarea
-    id: notes
+      label: Sage Wallet version
+      placeholder: "Sage ..."
+    validations:
+      required: false
+  - type: input
+    id: cat-pair
     attributes:
-      label: Anything else?
-      description: Screenshots, reproduction steps, timing, market conditions, etc.
+      label: CAT pair, if relevant
+      placeholder: "Ticker or asset ID"
+    validations:
+      required: false
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots, debug bundle, logs, or crash reports
+      description: Drag in the Logs tab Debug Bundle zip, screenshots, or a crash report after reviewing it. The Debug Bundle is redacted by default, but GitHub reports are public. GitHub supports .zip and .log attachments, with a 25 MB limit for non-image files.
+      placeholder: "Attach bot_debug_bundle_...zip, screenshots, or redacted logs here, or describe what the report showed."
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public report safety check
+      options:
+        - label: I have not included seed phrases, private keys, wallet backups, API keys, or other sensitive secrets.
+          required: true
