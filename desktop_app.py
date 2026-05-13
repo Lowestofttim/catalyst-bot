@@ -993,7 +993,7 @@ def run_flask_mode():
 
     # Register signal handlers — must call sys.exit() so Werkzeug's
     # serve_forever() loop actually terminates after cleanup.
-    def _flask_shutdown(sig, frame):
+    def _flask_shutdown(sig, _):
         _cleanup()
         sys.exit(0)
 
