@@ -18,6 +18,132 @@ from database import log_event
 
 bp = Blueprint("sage", __name__)
 
+_STARTUP_MESSAGES = {
+    "idle": "Startup thread not running",
+    "starting": "Wallet services are starting...",
+    "launching": "Launching wallet application...",
+    "rpc_disabled": "Sage is open but RPC is not enabled",
+    "waiting_certs": "Sage needs certificate configuration",
+    "waiting_fingerprint": "Wallet connected - select a wallet",
+    "version_blocked": "Sage version is not supported",
+    "ready": "Wallet is healthy",
+    "syncing": "Wallet is syncing...",
+    "error": "Wallet startup status unavailable",
+}
+
+
+def _safe_startup_phase(status):
+    if not isinstance(status, dict):
+        return "error"
+    if status.get("error"):
+        return "error"
+    text = str(status.get("phase") or "").strip().lower()
+    if text == "idle":
+        return "idle"
+    if text == "launching":
+        return "launching"
+    if text == "rpc_disabled":
+        return "rpc_disabled"
+    if text == "waiting_certs":
+        return "waiting_certs"
+    if text == "waiting_fingerprint":
+        return "waiting_fingerprint"
+    if text == "version_blocked":
+        return "version_blocked"
+    if text == "ready":
+        return "ready"
+    if text == "syncing":
+        return "syncing"
+    if text == "error":
+        return "error"
+    return "starting"
+
+
+def _safe_node_status(status):
+    if not isinstance(status, dict):
+        return "unknown"
+    text = str(status.get("node_status") or "").strip().lower()
+    if text == "checking":
+        return "checking"
+    if text == "healthy":
+        return "healthy"
+    if text == "syncing":
+        return "syncing"
+    if text == "node_not_synced":
+        return "node_not_synced"
+    if text == "unreachable":
+        return "unreachable"
+    return "unknown"
+
+
+def _safe_wallet_type(status):
+    if not isinstance(status, dict):
+        return "sage"
+    text = str(status.get("wallet_type") or "").strip().lower()
+    if text == "chia":
+        return "chia"
+    return "sage"
+
+
+def _safe_digit_text(value):
+    text = str(value or "").strip()
+    return text if text.isdigit() else ""
+
+
+def _safe_int(value, default=0):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, number)
+
+
+def _safe_version_text(value, default=""):
+    text = str(value or "").strip()
+    if not text or len(text) > 40:
+        return default
+    allowed = set("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-+_")
+    return text if all(ch in allowed for ch in text) else default
+
+
+def _safe_wallet_service_result(result):
+    if isinstance(result, dict) and result.get("success"):
+        return {"success": True, "message": "Wallet services start requested"}
+
+    log_event(
+        "warning",
+        "wallet_service_start_failed",
+        "Wallet service start request failed",
+    )
+    return {"success": False, "error": "Could not start wallet services"}
+
+
+def _safe_wallet_start_result(result):
+    if isinstance(result, dict) and result.get("success"):
+        return {"success": True, "message": "Wallet start requested"}
+
+    payload = {"success": False, "error": "Could not start selected wallet"}
+    if isinstance(result, dict) and result.get("unsupported_version"):
+        installed = _safe_version_text(result.get("sage_version"), "unknown")
+        minimum = _safe_version_text(
+            result.get("sage_min_required_version"),
+            str(getattr(api_server, "MIN_SUPPORTED_SAGE_VERSION", "0.12.10")),
+        )
+        payload.update({
+            "unsupported_version": True,
+            "error": "Sage version is not supported",
+            "sage_version": installed,
+            "sage_min_required_version": minimum,
+        })
+    else:
+        log_event(
+            "warning",
+            "wallet_fingerprint_start_failed",
+            "Wallet fingerprint start request failed",
+        )
+    return payload
+
+
 
 @bp.route("/api/fingerprint")
 def api_fingerprint():
@@ -149,7 +275,8 @@ def api_sage_daemon_start():
         data = request.get_json(silent=True) or {}
         services = str(data.get("services", "all") or "all").lower().strip()
         import sage_node
-        return jsonify(sage_node.start_chia(services))
+        result = sage_node.start_chia(services)
+        return jsonify(_safe_wallet_service_result(result))
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -180,7 +307,53 @@ def api_chia_startup_status():
     """Get current Chia startup phase for the main GUI to display."""
     try:
         import chia_node
-        return jsonify(chia_node.get_startup_status())
+        import sage_node
+        status = chia_node.get_startup_status()
+        phase = _safe_startup_phase(status)
+        wallet_type = _safe_wallet_type(status)
+        payload = {
+            "phase": phase,
+            "message": _STARTUP_MESSAGES[phase],
+            "fingerprint": _safe_digit_text(
+                getattr(sage_node, "_selected_fingerprint", "")
+            ),
+            "node_status": _safe_node_status(status),
+            "preload_running": bool(getattr(sage_node, "_preload_running", False)),
+            "wallet_type": wallet_type,
+        }
+
+        if phase == "syncing":
+            cached_status = getattr(sage_node, "_node_status_cache", {}) or {}
+            payload["sync_progress"] = _safe_int(
+                cached_status.get("sync_progress_height")
+            )
+            payload["sync_tip"] = _safe_int(cached_status.get("sync_tip_height"))
+
+        if wallet_type == "sage" and phase not in ("idle", "waiting_certs"):
+            try:
+                version_gate = sage_node.get_sage_version_requirement()
+                minimum = _safe_version_text(
+                    version_gate.get("minimum_required_version")
+                )
+                if minimum:
+                    payload["sage_min_required_version"] = minimum
+                installed = _safe_version_text(version_gate.get("installed_version"))
+                if installed and installed != "unknown":
+                    payload["sage_version"] = installed
+                if version_gate.get("supported") is False:
+                    payload["sage_version_supported"] = False
+                    payload["sage_version_requirement_message"] = (
+                        "Sage version is not supported"
+                    )
+                elif version_gate.get("supported") is True:
+                    payload["sage_version_supported"] = True
+            except Exception:
+                payload["sage_version_supported"] = None
+                payload["sage_version_requirement_message"] = (
+                    "Unable to determine Sage version support"
+                )
+
+        return jsonify(payload)
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -210,7 +383,7 @@ def api_chia_start_with_fingerprint():
             return jsonify({"success": False, "error": "Invalid fingerprint"}), 400
 
         result = chia_node.trigger_start(fingerprint)
-        return jsonify(result)
+        return jsonify(_safe_wallet_start_result(result))
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -251,10 +424,11 @@ def api_sage_set_fingerprint():
 
         result = chia_node.trigger_start(fingerprint)
         if not result.get("success"):
+            safe_result = _safe_wallet_start_result(result)
             return jsonify({
                 "success": False,
                 "fingerprint": fingerprint,
-                **result,
+                **safe_result,
             }), 400
 
         ok = api_server.cfg.update(
@@ -274,7 +448,7 @@ def api_sage_set_fingerprint():
         return jsonify({
             "success": True,
             "fingerprint": fingerprint,
-            "message": result.get("message", "Sage fingerprint saved"),
+            "message": "Sage fingerprint saved",
         })
     except Exception:
         return api_server._api_exception(request.path)

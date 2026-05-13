@@ -82,7 +82,9 @@ def api_splash_receive():
             started = bot.splash_node.start()
             node_action = "started" if started else "start_failed"
     except Exception as e:
-        node_action = f"error:{e}"
+        log_event("warning", "splash_receive_toggle_failed",
+                  f"Splash listener update failed: {e}")
+        node_action = "error"
 
     log_event(
         "info",
