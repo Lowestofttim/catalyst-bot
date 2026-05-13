@@ -631,7 +631,7 @@ def start_preload():
                 else:
                     log_event("warning", "sage_startup",
                               "Cannot find sage-tauri.exe — please start Sage manually "
-                              "or set SAGE_EXE_PATH in .env")
+                              "and return to the CATalyst window")
                     print("[Sage] sage-tauri.exe not found — waiting for manual start",
                           flush=True)
 
@@ -685,9 +685,9 @@ def start_preload():
                     _sage_startup_phase = "waiting_certs"
                 log_event("warning", "sage_startup",
                           "Sage certificates not configured — "
-                          "set SAGE_CERT_PATH in .env or provide via GUI")
+                          "waiting for setup in the CATalyst window")
                 print("[Sage] Certs not configured — waiting for setup", flush=True)
-                # Wait for user to configure certs (via GUI or .env edit)
+                # Wait for the user to configure certs through the frontend.
                 while _preload_running:
                     from dotenv import load_dotenv
                     try:
@@ -2152,7 +2152,7 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
     load_dotenv()
     fingerprint = os.getenv("CHIA_FINGERPRINT", "")
     if not fingerprint:
-        return {"success": False, "error": "CHIA_FINGERPRINT not set in .env"}
+        return {"success": False, "error": "Select a wallet fingerprint in the app before starting Chia"}
 
     # Normalize coin_id
     if not coin_id.startswith("0x"):

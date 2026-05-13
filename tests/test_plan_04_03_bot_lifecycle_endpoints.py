@@ -106,6 +106,10 @@ class TestBotStart(_FlaskBase):
         body = resp.get_json()
         self.assertIn("errors", body)
         self.assertGreater(len(body["errors"]), 0)
+        joined_errors = " ".join(str(error) for error in body["errors"])
+        self.assertIn("Choose a trading pair", joined_errors)
+        self.assertNotIn(".env", joined_errors)
+        self.assertNotIn("CAT_ASSET_ID", joined_errors)
 
     def test_zero_spread_returns_400_with_errors(self):
         fake_cfg = _fake_cfg(spread_bps=0)

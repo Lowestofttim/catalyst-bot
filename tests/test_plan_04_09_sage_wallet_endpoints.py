@@ -373,6 +373,7 @@ class TestSageSetupCerts(_FlaskBase):
         self.assertEqual(resp.status_code, 200, body)
         self.assertTrue(body.get("success"))
         self.assertIn("saved", body.get("message", "").lower())
+        self.assertNotIn(".env", body.get("message", ""))
         self.assertIn(os.path.normpath(cert_path), body.get("cert_path", ""))
 
     def test_manual_custom_sage_data_dir_cert_pair_is_accepted(self):
@@ -396,6 +397,30 @@ class TestSageSetupCerts(_FlaskBase):
         body = resp.get_json()
         self.assertEqual(resp.status_code, 200, body)
         self.assertTrue(body.get("success"))
+
+    def test_auto_detect_failure_keeps_user_on_gui_path(self):
+        env = {
+            "APPDATA": "",
+            "LOCALAPPDATA": "",
+            "USERPROFILE": "",
+            "SAGE_CERT_PATH": "",
+            "SAGE_KEY_PATH": "",
+            "SAGE_DATA_DIR": "",
+            "SAGE_HOME": "",
+            "SAGE_ALLOWED_CERT_ROOTS": "",
+        }
+        with patch("platform.system", return_value="Windows"), \
+             patch.dict(os.environ, env, clear=False):
+            resp = self._post("/api/sage/setup-certs", {})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 404, body)
+        message = body.get("error", "")
+        self.assertIn("Paste", message)
+        self.assertIn("Browse", message)
+        self.assertNotIn(".env", message)
+        self.assertNotIn("SAGE_", message)
+        self.assertNotIn("environment", message.lower())
 
     def test_manual_cert_rejects_non_wallet_cert_name(self):
         with tempfile.TemporaryDirectory() as appdata, \

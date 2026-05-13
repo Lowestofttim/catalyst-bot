@@ -328,8 +328,8 @@ def api_sage_setup_certs():
                 return jsonify({
                     "success": False,
                     "error": "Could not auto-detect Sage certificates. "
-                             "Paste the full path to Sage's ssl\\wallet.crt, "
-                             "or set SAGE_DATA_DIR to the Sage data folder.",
+                             "Use Browse in the desktop app, or Paste the "
+                             "full path to Sage's ssl\\wallet.crt.",
                 }), 404
 
         ok, reason, cert_path, key_path = sage_node.validate_sage_cert_pair(cert_path, key_path)
@@ -383,7 +383,7 @@ def api_sage_setup_certs():
 
         return jsonify({
             "success": True,
-            "message": "Certificate paths saved to .env",
+            "message": "Certificate paths saved",
             "cert_path": cert_path,
             "key_path": key_path,
             "data_dir": sage_data_dir,

@@ -120,7 +120,7 @@ def api_bot_start():
 
     # Check CAT_ASSET_ID is configured
     if not cfg.CAT_ASSET_ID or cfg.CAT_ASSET_ID == "":
-        errors.append("CAT_ASSET_ID is not set in .env — bot cannot trade")
+        errors.append("Choose a trading pair before starting the bot")
 
     # Check wallet connectivity (non-blocking, best effort)
     try:

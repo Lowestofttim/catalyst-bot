@@ -401,11 +401,14 @@ class TestStartupPhase6BotStartValidation(_TempDB):
         self.assertEqual(resp.status_code, 400)
 
     def test_start_without_cat_includes_error_message(self):
-        """400 response explains what is missing."""
+        """400 response gives a user-facing setup action."""
         resp = self._try_start(asset_id="")
         body = resp.get_json()
         errors = body.get("errors", [])
-        self.assertTrue(any("CAT_ASSET_ID" in str(e) for e in errors))
+        joined_errors = " ".join(str(error) for error in errors)
+        self.assertIn("Choose a trading pair", joined_errors)
+        self.assertNotIn(".env", joined_errors)
+        self.assertNotIn("CAT_ASSET_ID", joined_errors)
 
     def test_start_with_valid_config_returns_success(self):
         """All config valid → 200 success."""

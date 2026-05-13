@@ -661,8 +661,8 @@ def api_fills_arb_wallets():
         already_known     — true if already in KNOWN_ARB_PUZZLE_HASHES
         sides             — list of distinct sides swept ("buy", "sell")
 
-    Usage: copy high-confidence puzzle_hash values into KNOWN_ARB_PUZZLE_HASHES
-    in your .env file (comma-separated).
+    Usage: high-confidence puzzle_hash values are surfaced for future
+    app-level review/tuning.
     """
     bot = api_server.bot
     cfg = api_server.cfg
@@ -768,8 +768,8 @@ def api_fills_arb_wallets():
             "unconfigured_high_confidence": unconfigured_high,
             "known_hashes_configured":  sorted(known_hashes),
             "tip": (
-                "Add high-confidence puzzle_hash values to KNOWN_ARB_PUZZLE_HASHES "
-                "in your .env (comma-separated) to enable ARB_SWEEP_BUY/SELL classification."
+                "High-confidence puzzle hashes found. Review them in Market Intel; "
+                "ARB sweep tuning is not yet exposed as a one-click setting."
                 if unconfigured_high else
                 "No unconfigured high-confidence candidates found yet. "
                 "More fills needed or all known hashes are already configured."

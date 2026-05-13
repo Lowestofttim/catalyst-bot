@@ -96,6 +96,18 @@ class PublicReadinessSmokeTests(unittest.TestCase):
         self.assertEqual(body.get("error"), "Internal server error")
         self.assertNotIn("secret wallet rpc traceback", resp.get_data(as_text=True))
 
+    def test_sage_setup_copy_keeps_testers_on_gui_path(self):
+        html = (REPO_ROOT / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("configure Sage's wallet RPC certificate path from the app", html)
+        self.assertNotIn("configure Sage's wallet RPC certificate path without editing .env", html)
+
+    def test_spacescan_setup_copy_describes_app_storage(self):
+        html = (REPO_ROOT / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("Key stored locally by CATalyst", html)
+        self.assertNotIn("Key stored locally in <code", html)
+
     def test_splash_setup_check_handles_unavailable_binary_without_token(self):
         unavailable = {
             "installed": False,
