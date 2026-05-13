@@ -54,6 +54,20 @@ class TestSageStartupVersionGate(unittest.TestCase):
         self.assertIsNone(sage_node._selected_fingerprint)
         self.assertFalse(sage_node._start_triggered.is_set())
 
+    def test_saved_sage_fingerprint_does_not_skip_startup_picker(self):
+        with patch.dict(
+            os.environ,
+            {
+                "WALLET_TYPE": "sage",
+                "SAGE_FINGERPRINT": "1234567890",
+                "WALLET_FINGERPRINT": "9876543210",
+            },
+            clear=False,
+        ):
+            fingerprint = sage_node._resolve_startup_fingerprint()
+
+        self.assertIsNone(fingerprint)
+
 
 if __name__ == "__main__":
     unittest.main()

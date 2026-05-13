@@ -405,30 +405,45 @@ def _log_in_fingerprint(fingerprint: str) -> bool:
 
 
 def _resolve_startup_fingerprint() -> Optional[str]:
-    """Determine which fingerprint to use for auto-start.
+    """Determine whether startup may use a fingerprint without prompting.
 
-    Priority:
-    1. .env SAGE_FINGERPRINT or WALLET_FINGERPRINT (optional override)
-    2. None → GUI startup modal will show fingerprint picker
+    Sage behaviour:
+    1. Saved SAGE_FINGERPRINT/WALLET_FINGERPRINT values are ignored on fresh startup.
+    2. None makes the GUI startup modal show the fingerprint picker.
 
-    We deliberately do NOT auto-detect via RPC here. The user should always
-    choose which wallet to use via the GUI picker on startup. Auto-detection
-    would silently pick whatever wallet happened to be logged in last, which
-    may not be the one the user wants.
+    The user should always choose which wallet to use via the GUI picker on
+    startup; a saved setting is not consent for a new process.
     """
     from dotenv import load_dotenv
     load_dotenv()
 
-    tag = "[Sage]"
+    wallet_type = os.getenv("WALLET_TYPE", "sage").lower().strip()
+    tag = "[Sage]" if wallet_type == "sage" else "[Chia]"
 
-    # Optional .env override (rare — most users skip this)
+    if wallet_type == "sage":
+        saved = [
+            env_key
+            for env_key in ("SAGE_FINGERPRINT", "WALLET_FINGERPRINT")
+            if os.getenv(env_key, "").strip()
+        ]
+        if saved:
+            print(
+                f"{tag} Saved fingerprint found ({', '.join(saved)}) - waiting for GUI selection",
+                flush=True,
+            )
+        else:
+            print(f"{tag} No fingerprint in .env - waiting for GUI selection",
+                  flush=True)
+        return None
+
+    # Optional .env override for legacy Chia startup.
     for env_key in ("SAGE_FINGERPRINT", "WALLET_FINGERPRINT"):
         fp = os.getenv(env_key, "").strip()
         if fp and fp.isdigit():
             print(f"{tag} Using {env_key} from .env: {fp}", flush=True)
             return fp
 
-    print(f"{tag} No fingerprint in .env — waiting for GUI selection",
+    print(f"{tag} No fingerprint in .env - waiting for GUI selection",
           flush=True)
     return None
 
