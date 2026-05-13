@@ -14,14 +14,30 @@ Key responsibilities:
     - Clip excess positional args injected by PyWebView's `undefined` serialization
 
 Security note: because bridge calls do not traverse the HTTP layer, the
-loopback and per-run token checks are skipped. The bridge trusts the GUI,
+per-run token checks in before_request are skipped. The bridge trusts the GUI,
 which must escape all server-sourced data before rendering (see `escapeHtml`).
+Bridge methods that call route handlers with their own loopback guard provide
+a synthetic loopback remote address.
 """
 
 import inspect
 import json
 import traceback
 from decimal import Decimal
+
+
+_LOOPBACK_ENVIRON = {"REMOTE_ADDR": "127.0.0.1"}
+
+
+def _loopback_environ():
+    return dict(_LOOPBACK_ENVIRON)
+
+
+def _truthy_param(params, key):
+    if not isinstance(params, dict):
+        return False
+    value = str(params.get(key) or "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -784,10 +800,14 @@ class AppBridge:
         return _unwrap_flask_response(resp)
 
     @_safe
-    def check_update(self):
+    def check_update(self, params=None):
         """Check for a newer CATalyst release. Maps to GET /api/check-update."""
         import api_server
-        with api_server.app.test_request_context('/api/check-update'):
+        query = '?force=1' if _truthy_param(params, 'force') else ''
+        with api_server.app.test_request_context(
+            '/api/check-update' + query,
+            environ_base=_loopback_environ(),
+        ):
             resp = api_server.api_check_update()
         return _unwrap_flask_response(resp)
 
@@ -795,7 +815,10 @@ class AppBridge:
     def get_update_status(self):
         """Get secure updater progress. Maps to GET /api/update/status."""
         import api_server
-        with api_server.app.test_request_context('/api/update/status'):
+        with api_server.app.test_request_context(
+            '/api/update/status',
+            environ_base=_loopback_environ(),
+        ):
             resp = api_server.api_update_status()
         return _unwrap_flask_response(resp)
 
@@ -805,7 +828,8 @@ class AppBridge:
         import api_server
         with api_server.app.test_request_context('/api/update/install', method='POST',
                                                   content_type='application/json',
-                                                  data='{}'):
+                                                  data='{}',
+                                                  environ_base=_loopback_environ()):
             resp = api_server.api_update_install()
         return _unwrap_flask_response(resp)
 
@@ -1304,7 +1328,8 @@ class AppBridge:
         body_json = json.dumps(body or {})
         with api_server.app.test_request_context('/api/open-external', method='POST',
                                                   content_type='application/json',
-                                                  data=body_json):
+                                                  data=body_json,
+                                                  environ_base=_loopback_environ()):
             resp = api_server.api_open_external()
         return _unwrap_flask_response(resp)
 

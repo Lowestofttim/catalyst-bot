@@ -292,6 +292,33 @@ class TestAppUpdateApi(unittest.TestCase):
         self.assertTrue(get_update_info.call_args.kwargs["force"])
 
 
+class TestAppUpdateBridge(unittest.TestCase):
+    def test_desktop_bridge_check_update_uses_loopback_and_forwards_force(self):
+        import api_server
+        from app_bridge import AppBridge
+
+        update_info = {
+            "success": True,
+            "enabled": True,
+            "current": "1.2.26",
+            "latest": "1.2.27",
+            "latest_tag": "v1.2.27",
+            "update_available": True,
+            "installer_ready": True,
+            "manifest_verified": True,
+            "url": "https://github.com/Lowestofttim/catalyst-releases/releases/tag/v1.2.27",
+            "release_notes": "Maintenance update.",
+        }
+
+        with patch.object(api_server, "get_app_version", return_value="1.2.26"), \
+                patch("app_update.get_update_info", return_value=update_info) as get_update_info:
+            result = AppBridge().check_update({"force": "1"})
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["update_available"])
+        self.assertTrue(get_update_info.call_args.kwargs["force"])
+
+
 class TestAppUpdateFrontendAndReleaseWorkflow(unittest.TestCase):
     def test_gui_has_upgrade_modal_and_install_call(self):
         html = (ROOT / "bot_gui.html").read_text(encoding="utf-8")
