@@ -322,6 +322,34 @@ def _api_exception(endpoint: str = "", status: int = 500):
     return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
 
 
+def _client_safe_result(payload: object, *, error_message: str = "Operation failed") -> object:
+    """Return an API-safe copy of a helper result without exception-derived text."""
+    if not isinstance(payload, dict):
+        return payload
+
+    safe = _sanitize_config_dict(dict(payload))
+    failed = (
+        safe.get("success") is False
+        or bool(safe.get("error"))
+        or str(safe.get("phase") or "").lower() == "error"
+    )
+    if not failed:
+        return safe
+
+    for key in ("error", "message", "detail", "details", "traceback"):
+        if key in safe:
+            safe[key] = error_message
+    if "output" in safe:
+        safe["output"] = ""
+    for key in ("errors", "warnings"):
+        value = safe.get(key)
+        if isinstance(value, list) and value:
+            safe[key] = [error_message]
+        elif isinstance(value, str) and value:
+            safe[key] = error_message
+    return safe
+
+
 # ---------------------------------------------------------------------------
 # Startup security checks
 # ---------------------------------------------------------------------------
@@ -700,6 +728,7 @@ def _serve_bootstrapped_html(filename: str):
     response = Response(html_doc, mimetype="text/html")
     response.set_cookie(
         _LOCAL_API_COOKIE,
+        # codeql[py/clear-text-storage-sensitive-data] Per-process loopback auth nonce in an HttpOnly, SameSite cookie.
         _LOCAL_API_TOKEN,
         httponly=True,
         samesite="Strict",

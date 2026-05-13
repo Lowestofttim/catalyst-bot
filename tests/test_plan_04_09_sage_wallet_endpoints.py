@@ -131,7 +131,10 @@ class TestSageDaemonStart(_FlaskBase):
             resp = self._post("/api/sage/daemon/start", {"services": "all"})
 
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), result)
+        self.assertEqual(resp.get_json(), {
+            "success": True,
+            "message": "Wallet services start requested",
+        })
         mock_start.assert_called_once_with("all")
 
     def test_defaults_services_to_all(self):
@@ -161,6 +164,48 @@ class TestSageStartupStatus(_FlaskBase):
             resp = self.client.get("/api/sage/startup-status",
                                    environ_base=self._LOOPBACK)
         self.assertIsInstance(resp.get_json(), dict)
+
+    def test_response_keeps_safe_startup_fields(self):
+        version_gate = {
+            "supported": True,
+            "installed_version": "0.12.10",
+            "minimum_required_version": "0.12.10",
+        }
+        with patch("chia_node.get_startup_status", return_value={
+                "phase": "syncing",
+                "message": "raw backend status",
+                "fingerprint": "raw-status-fingerprint",
+                "node_status": "syncing",
+                "preload_running": False,
+                "wallet_type": "sage",
+                "sync_progress": "raw-status-progress",
+                "sync_tip": "raw-status-tip",
+                "sage_version": "raw-status-version",
+                "sage_min_required_version": "raw-status-minimum",
+                "sage_version_supported": True,
+            }), \
+                patch("sage_node._selected_fingerprint", "12345678"), \
+                patch("sage_node._preload_running", True), \
+                patch("sage_node._node_status_cache", {
+                    "sync_progress_height": "20",
+                    "sync_tip_height": "40",
+                }), \
+                patch("sage_node.get_sage_version_requirement",
+                      return_value=version_gate):
+            resp = self.client.get("/api/sage/startup-status",
+                                   environ_base=self._LOOPBACK)
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200, body)
+        self.assertEqual(body["phase"], "syncing")
+        self.assertEqual(body["fingerprint"], "12345678")
+        self.assertEqual(body["node_status"], "syncing")
+        self.assertTrue(body["preload_running"])
+        self.assertEqual(body["wallet_type"], "sage")
+        self.assertEqual(body["sync_progress"], 20)
+        self.assertEqual(body["sync_tip"], 40)
+        self.assertEqual(body["sage_version"], "0.12.10")
+        self.assertNotIn("raw backend status", str(body))
 
 
 # ---------------------------------------------------------------------------

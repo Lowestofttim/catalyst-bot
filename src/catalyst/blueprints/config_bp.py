@@ -67,7 +67,7 @@ def _apply_sage_change_address_setting() -> dict:
         error = (result or {}).get("error", "unknown_error")
         log_event("warning", "sage_change_address_failed",
                   f"Could not set Sage change address via API: {error}")
-        return {"attempted": True, "success": False, "error": error}
+        return {"attempted": True, "success": False, "error": "change_address_failed"}
     except Exception as e:
         log_event("warning", "sage_change_address_failed",
                   f"Error applying Sage change address via API: {e}")

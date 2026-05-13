@@ -135,7 +135,9 @@ def api_bot_start():
         else:
             warnings.append("Could not reach wallet RPC — check if Sage/Chia is running")
     except Exception as e:
-        warnings.append(f"Wallet check failed: {str(e)[:100]}")
+        log_event("warning", "wallet_check_failed",
+                  f"Pre-start wallet sync check failed: {e}")
+        warnings.append("Wallet check failed - check if Sage/Chia is running")
 
     signing_block_reason = server._get_sage_signing_block_reason()
     if signing_block_reason:
@@ -195,7 +197,9 @@ def api_bot_start():
             )
             coin_prep_error = errors[-1]
     except Exception as _drift_err:
-        warnings.append(f"Tier-drift gate skipped: {_drift_err}")
+        log_event("warning", "tier_drift_gate_failed",
+                  f"Tier-drift gate skipped: {_drift_err}")
+        warnings.append("Tier-drift gate skipped - check logs before trading")
 
     if getattr(cfg, "ENABLE_COIN_PREP", False):
         try:
@@ -214,13 +218,15 @@ def api_bot_start():
             elif _prep_error or _prep_phase == "error":
                 needs_coin_prep = True
                 coin_prep_reason = "coin_prep_failed"
-                detail = f": {_prep_error}" if _prep_error else ""
-                coin_prep_error = (
-                    "Coin Prep failed - rerun Coin Prep before starting the bot" + detail
-                )
+                if _prep_error:
+                    log_event("warning", "coin_prep_gate_failed",
+                              f"Coin Prep failure blocked bot start: {_prep_error}")
+                coin_prep_error = "Coin Prep failed - rerun Coin Prep before starting the bot"
                 errors.append(coin_prep_error)
         except Exception as _prep_gate_err:
-            warnings.append(f"Coin-prep gate skipped: {_prep_gate_err}")
+            log_event("warning", "coin_prep_gate_check_failed",
+                      f"Coin-prep gate check failed: {_prep_gate_err}")
+            warnings.append("Coin-prep gate skipped - check logs before trading")
 
     # Block start on critical errors
     if errors:
@@ -716,9 +722,7 @@ def api_status():
                     print(f"[STATUS] Pre-bot offers: {len(offers_buy_pre)} buys, "
                           f"{len(offers_sell_pre)} sells", flush=True)
             except Exception as e:
-                import traceback
-                print(f"[STATUS] Pre-bot offer fetch error: {e}", flush=True)
-                traceback.print_exc()
+                slog("API_STATUS", f"Pre-bot offer fetch error: {e}", level="warning")
 
             # Build coin tracking for pre-bot display (matches running format)
             xch_free = 0
@@ -977,9 +981,7 @@ def api_status():
                         offers_sell.append(_extract_offer_data(tr, "sell"))
 
             except Exception as e:
-                import traceback
-                print(f"[STATUS] Wallet offer fetch (bot stopped): {e}", flush=True)
-                traceback.print_exc()
+                slog("API_STATUS", f"Wallet offer fetch (bot stopped): {e}", level="warning")
 
         # Enrich wallet-sourced offers with Dexie links from bot's dexie_manager
         # and/or database records (prices, sizes, tier, expiry)
@@ -1315,9 +1317,7 @@ def api_status():
                           f"({len(offers_sell)} sell offers)", flush=True)
 
             except Exception as e:
-                import traceback
-                print(f"[STATUS] Coin tracking RPC failed: {e}", flush=True)
-                traceback.print_exc()
+                slog("API_STATUS", f"Coin tracking RPC failed: {e}", level="warning")
 
         # --- Spread BPS for Close the Gap modal ---
         spread_bps_val = "0"
