@@ -991,11 +991,16 @@ def run_flask_mode():
         print(f"  Port {FLASK_PORT} is already in use!")
         sys.exit(1)
 
-    # Register signal handlers
-    signal.signal(signal.SIGINT, lambda s, f: _cleanup())
-    signal.signal(signal.SIGTERM, lambda s, f: _cleanup())
+    # Register signal handlers — must call sys.exit() so Werkzeug's
+    # serve_forever() loop actually terminates after cleanup.
+    def _flask_shutdown(sig, frame):
+        _cleanup()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _flask_shutdown)
+    signal.signal(signal.SIGTERM, _flask_shutdown)
     if hasattr(signal, 'SIGBREAK'):
-        signal.signal(signal.SIGBREAK, lambda s, f: _cleanup())
+        signal.signal(signal.SIGBREAK, _flask_shutdown)
 
     start_flask_server()
 
