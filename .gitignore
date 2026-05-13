@@ -9,6 +9,7 @@
 !.env.example
 user_secrets.json
 secrets.json
+.venv/
 
 # --- SSL / TLS certs and keys (Sage wallet mTLS) ---
 sage_client_ssl/
