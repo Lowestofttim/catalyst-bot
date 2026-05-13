@@ -6,7 +6,7 @@ ruff>=0.15.12,<1
 bandit>=1.7,<2
 vulture>=2.16,<3
 pip-audit>=2.10,<3
-pyinstaller>=6,<7
+pyinstaller>=6.20.0,<7
 # E2E browser tests against the live Flask GUI. After install run:
 #     python -m playwright install chromium
 playwright>=1.58,<2
