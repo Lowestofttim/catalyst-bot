@@ -206,8 +206,8 @@ def api_deposit_advisory_allocate():
             "new_budget": budget_str,
             "new_reserve": reserve_str,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/token_overview")
@@ -241,7 +241,7 @@ def api_token_overview():
         return jsonify({"success": True, "description": "", "website": ""})
     except Exception as e:
         print(f"[TOKEN_OVERVIEW] Failed for {dexie_asset_id[:12]}: {e}")
-        return jsonify({"success": False, "description": "", "website": "", "error": str(e)})
+        return jsonify({"success": False, "description": "", "website": "", "error": "token_overview_lookup_failed"})
 
 
 @bp.route("/api/dexie/v3-pairs")
@@ -253,8 +253,8 @@ def api_dexie_v3_pairs():
     try:
         pairs = bot.dexie_manager.fetch_v3_pairs() or []
         return jsonify({"pairs": pairs, "count": len(pairs)})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/cats")
@@ -575,5 +575,5 @@ def api_balances_refresh():
                 "cat": cat_bal,
             }
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

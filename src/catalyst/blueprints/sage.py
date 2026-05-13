@@ -55,8 +55,8 @@ def api_fingerprint():
             fp = os.getenv("WALLET_FINGERPRINT", "")
 
         return jsonify({"success": bool(fp), "fingerprint": fp or "Not detected"})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/full-node/status", methods=["GET"])
@@ -120,8 +120,8 @@ def api_wallet_sage_running():
             "rpc_authenticated": bool(authenticated),
             "rpc_port_listening": bool(port_listening),
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/wallet/retry-sage-connect", methods=["POST"])
@@ -132,8 +132,8 @@ def api_wallet_retry_sage_connect():
         sage_node.reset_preload()
         sage_node.start_preload()
         return jsonify({"started": True})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/daemon/start", methods=["POST"])
@@ -150,8 +150,8 @@ def api_sage_daemon_start():
         services = str(data.get("services", "all") or "all").lower().strip()
         import sage_node
         return jsonify(sage_node.start_chia(services))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/wallet/begin-startup", methods=["POST"])
@@ -171,8 +171,8 @@ def api_wallet_begin_startup():
         chia_node.set_auto_launch(bool(auto_launch))
         chia_node.start_preload()
         return jsonify({"started": True})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/startup-status")
@@ -181,8 +181,8 @@ def api_chia_startup_status():
     try:
         import chia_node
         return jsonify(chia_node.get_startup_status())
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/fingerprints")
@@ -192,8 +192,8 @@ def api_chia_fingerprints():
         import chia_node
         fps = chia_node.get_available_fingerprints()
         return jsonify({"success": True, "fingerprints": fps})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/start-with-fingerprint", methods=["POST"])
@@ -211,8 +211,8 @@ def api_chia_start_with_fingerprint():
 
         result = chia_node.trigger_start(fingerprint)
         return jsonify(result)
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/fingerprint", methods=["POST"])
@@ -276,8 +276,8 @@ def api_sage_set_fingerprint():
             "fingerprint": fingerprint,
             "message": result.get("message", "Sage fingerprint saved"),
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/cert-candidates")
@@ -296,8 +296,8 @@ def api_sage_cert_candidates():
             "suggested_cert_path": suggested,
             "detected_cert_path": detected or "",
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/sage/setup-certs", methods=["POST"])
@@ -388,5 +388,5 @@ def api_sage_setup_certs():
             "key_path": key_path,
             "data_dir": sage_data_dir,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

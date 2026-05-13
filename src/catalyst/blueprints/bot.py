@@ -1397,8 +1397,8 @@ def api_status():
         }
 
         return jsonify(api_server._serialize_dict(result))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/diagnostics/runtime")
 def api_runtime_diagnostics():
@@ -1409,8 +1409,8 @@ def api_runtime_diagnostics():
     try:
         raw = bot.get_state() or {}
         return jsonify(api_server._serialize_dict(raw.get("diagnostics") or {}))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/diagnostics/api-stats")
 def api_diagnostics_api_stats():

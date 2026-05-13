@@ -101,7 +101,7 @@ def api_watchdog_cancel_mismatched_offers():
         except Exception as e:
             log_event("error", "watchdog_cancel_failed",
                       f"Watchdog-triggered cancel failed: {e}")
-            return jsonify({"success": False, "error": str(e)}), 500
+            return jsonify({"success": False, "error": "watchdog_cancel_failed"}), 500
         cancelled = [tid for tid, r in (result or {}).items()
                      if isinstance(r, dict) and r.get("success")]
         failed = [tid for tid in unique_tids if tid not in cancelled]

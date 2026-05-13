@@ -139,8 +139,8 @@ def api_splash_node_start():
             "message": "Splash node started" if started else "Failed to start Splash node",
             "status": status
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/splash/node/output")
@@ -160,8 +160,8 @@ def api_splash_setup_check():
     try:
         from splash_setup import check_installed
         return jsonify(check_installed())
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/splash/setup/download", methods=["POST"])
@@ -171,8 +171,8 @@ def api_splash_setup_download():
         from splash_setup import start_background_download
         result = start_background_download()
         return jsonify(result)
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/splash/setup/progress")
@@ -181,8 +181,8 @@ def api_splash_setup_progress():
     try:
         from splash_setup import get_download_status
         return jsonify(get_download_status())
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/splash/setup/release")
@@ -196,8 +196,8 @@ def api_splash_setup_release():
             "release": release,
             "platform": platform_info,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/splash/incoming", methods=["POST"])
@@ -260,8 +260,8 @@ def api_splash_incoming():
                     pass
 
         return jsonify({"ok": True, "new": was_new})
-    except Exception as e:
-        return server._api_error(e, request.path)
+    except Exception:
+        return server._api_exception(request.path)
 
 
 @bp.route("/api/splash/incoming/list")
@@ -277,5 +277,5 @@ def api_splash_incoming_list():
         from database import get_splash_incoming_offers
         offers = get_splash_incoming_offers(status=status_filter, limit=limit)
         return jsonify({"offers": offers, "count": len(offers)})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

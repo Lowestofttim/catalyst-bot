@@ -290,8 +290,35 @@ def _api_error(e: Exception, endpoint: str = "", status: int = 500):
         log_event("error", "api_error",
                   f"Unhandled exception on {endpoint or 'unknown'}: {e}",
                   {"endpoint": endpoint})
-    except Exception:
-        pass
+    except Exception as log_exc:
+        from contextlib import suppress
+        with suppress(Exception):
+            slog(
+                "API_ERROR",
+                f"Failed to record API error for {endpoint or 'unknown'}: {log_exc}",
+                level="warning",
+            )
+    return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
+
+
+def _api_exception(endpoint: str = "", status: int = 500):
+    """Return a safe JSON response for the exception currently being handled."""
+    try:
+        import traceback
+        log_event(
+            "error",
+            "api_error",
+            f"Unhandled exception on {endpoint or 'unknown'}:\n{traceback.format_exc()}",
+            {"endpoint": endpoint},
+        )
+    except Exception as log_exc:
+        from contextlib import suppress
+        with suppress(Exception):
+            slog(
+                "API_ERROR",
+                f"Failed to record API exception for {endpoint or 'unknown'}: {log_exc}",
+                level="warning",
+            )
     return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
 
 
@@ -1166,23 +1193,24 @@ def serve_brand_asset(filename: str):
     gui_dir = _APP_ROOT
     assets_dir = os.path.join(gui_dir, "assets")
     allowed = {
-        "bot_icon_new.png",
-        "favicon.ico",
-        "sage_logo_official.png",
-        "dexie_logo_official.png",
-        "dexie_logo_official.ico",
-        "tibetswap_logo_official.png",
-        "MonkeyZoo_Logo.png",
-        "monkeyzoo-logo-1.gif",
-        "spacescan-logo-192.webp",
-        "sage_rpc_advanced.png",
+        "bot_icon_new.png": "bot_icon_new.png",
+        "favicon.ico": "favicon.ico",
+        "sage_logo_official.png": "sage_logo_official.png",
+        "dexie_logo_official.png": "dexie_logo_official.png",
+        "dexie_logo_official.ico": "dexie_logo_official.ico",
+        "tibetswap_logo_official.png": "tibetswap_logo_official.png",
+        "MonkeyZoo_Logo.png": "MonkeyZoo_Logo.png",
+        "monkeyzoo-logo-1.gif": "monkeyzoo-logo-1.gif",
+        "spacescan-logo-192.webp": "spacescan-logo-192.webp",
+        "sage_rpc_advanced.png": "sage_rpc_advanced.png",
     }
-    if filename not in allowed:
+    safe_name = allowed.get(filename)
+    if safe_name is None:
         return Response("Not Found", status=404, mimetype="text/plain")
     # Try assets/ folder first, fall back to app root for backward compat
-    if os.path.isfile(os.path.join(assets_dir, filename)):
-        return send_from_directory(assets_dir, filename)
-    return send_from_directory(gui_dir, filename)
+    if os.path.isfile(os.path.join(assets_dir, safe_name)):
+        return send_from_directory(assets_dir, safe_name)
+    return send_from_directory(gui_dir, safe_name)
 
 
 def _get_session_pending_verification_count() -> int:
@@ -1513,7 +1541,8 @@ def api_open_data_folder():
         from user_paths import data_dir as _dd
         folder = _dd()
     except Exception as e:
-        return jsonify({"success": False, "error": f"data dir unavailable: {e}"}), 500
+        log_event("error", "open_data_folder_data_dir_unavailable", str(e))
+        return jsonify({"success": False, "error": "data_dir_unavailable"}), 500
 
     if not os.path.isdir(folder):
         return jsonify({"success": False, "error": f"data dir does not exist: {folder}"}), 500
@@ -1528,7 +1557,8 @@ def api_open_data_folder():
             import subprocess as _sp
             _sp.Popen(["xdg-open", folder])
     except Exception as e:
-        return jsonify({"success": False, "error": f"could not open folder: {e}"}), 500
+        log_event("error", "open_data_folder_failed", str(e))
+        return jsonify({"success": False, "error": "open_folder_failed"}), 500
 
     return jsonify({"success": True, "folder": folder})
 
@@ -1550,7 +1580,8 @@ def api_crash_log():
         path = crash_log_file()
         data_folder = _dd()
     except Exception as e:
-        return jsonify({"success": False, "error": f"data dir unavailable: {e}"}), 500
+        log_event("error", "crash_log_data_dir_unavailable", str(e))
+        return jsonify({"success": False, "error": "data_dir_unavailable"}), 500
 
     if not os.path.isfile(path):
         return jsonify({
@@ -1565,7 +1596,8 @@ def api_crash_log():
     try:
         st = os.stat(path)
     except OSError as e:
-        return jsonify({"success": False, "error": f"stat failed: {e}"}), 500
+        log_event("error", "crash_log_stat_failed", str(e))
+        return jsonify({"success": False, "error": "crash_log_stat_failed"}), 500
 
     MAX_BYTES = 256 * 1024  # 256 KiB cap — plenty for a traceback
     try:
@@ -1576,7 +1608,8 @@ def api_crash_log():
             else:
                 content = fh.read()
     except OSError as e:
-        return jsonify({"success": False, "error": f"read failed: {e}"}), 500
+        log_event("error", "crash_log_read_failed", str(e))
+        return jsonify({"success": False, "error": "crash_log_read_failed"}), 500
 
     return jsonify({
         "success": True,
@@ -1659,8 +1692,8 @@ def api_update_status():
         status = app_update.get_update_status()
         status["success"] = True
         return jsonify(status)
-    except Exception as e:
-        return _api_error(e, request.path)
+    except Exception:
+        return _api_exception(request.path)
 
 
 @app.route("/api/update/install", methods=["POST"])
@@ -1693,8 +1726,8 @@ def api_update_install():
         )
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
-    except Exception as e:
-        return _api_error(e, request.path)
+    except Exception:
+        return _api_exception(request.path)
 
 
 # ---------------------------------------------------------------------------
@@ -1759,7 +1792,8 @@ def api_sage_latest_release():
                 result = {"success": True, "tag": tag, "url": url}
     except Exception as e:
         # Network error, timeout, DNS, etc. — non-fatal
-        result = {"success": False, "error": f"fetch_failed: {e}"}
+        log_event("warning", "sage_latest_release_fetch_failed", str(e))
+        result = {"success": False, "error": "fetch_failed"}
 
     _SAGE_RELEASE_CACHE["at"] = now
     _SAGE_RELEASE_CACHE["data"] = result

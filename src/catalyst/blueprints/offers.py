@@ -213,7 +213,8 @@ def api_open_offer_count():
         open_offers = get_open_offers()
         return jsonify({"success": True, "open_count": len(open_offers)})
     except Exception as e:
-        return jsonify({"success": False, "open_count": -1, "error": str(e)})
+        log_event("error", "open_offer_count_failed", str(e))
+        return jsonify({"success": False, "open_count": -1, "error": "open_offer_count_failed"})
 
 @bp.route("/api/offers/cancel_all", methods=["POST"])
 def api_cancel_all():
@@ -291,7 +292,7 @@ def api_cancel_all():
                 finished_at=datetime.now(timezone.utc).isoformat(),
                 message=f"Cancel all failed: {e}",
             )
-            return api_server._api_error(e, request.path)
+            return api_server._api_exception(request.path)
     else:
         # Bot stopped or not started — cancel directly via wallet RPC.
         # Always use the wallet as source of truth, not the database,
@@ -464,7 +465,7 @@ def api_cancel_all():
                 finished_at=datetime.now(timezone.utc).isoformat(),
                 message=f"Cancel all failed: {e}",
             )
-            return api_server._api_error(e, request.path)
+            return api_server._api_exception(request.path)
 
     return jsonify({
         "success": True,
@@ -489,8 +490,8 @@ def api_cleanup_orphans():
     try:
         result = bot.cleanup_orphaned_offers()
         return jsonify({"success": True, **result})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/offers/cancel", methods=["POST"])
 def api_cancel_offer():
@@ -518,8 +519,8 @@ def api_cancel_offer():
 
     try:
         result = bot.offer_manager.cancel_offers([trade_id], reason="manual_api")
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
     # cancel_offers returns a dict; surface any storm-protection refusal
     if isinstance(result, dict) and result.get("error"):
         return jsonify({"success": False, "trade_id": trade_id, **result}), 400
@@ -643,8 +644,8 @@ def api_fills_classified():
             "summary":         summary,
             "sweep_pending":   sweep_pending,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/fills/arb-wallets")
 def api_fills_arb_wallets():
@@ -775,8 +776,8 @@ def api_fills_arb_wallets():
                 "More fills needed or all known hashes are already configured."
             ),
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/market/fill-intel")
 def api_market_fill_intel():
@@ -913,8 +914,8 @@ def api_market_fill_intel():
             "data_window_days": days,
             "fill_count": total,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/offers/diagnostic")
 def api_offers_diagnostic():
@@ -1034,8 +1035,8 @@ def api_offers_diagnostic():
             "summary": db_summary,
             "open_offers": db_open,
         }))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/fills/purge", methods=["POST"])
 def api_purge_fills():
@@ -1085,8 +1086,8 @@ def api_purge_fills():
             "round_trips_purged": rt_count,
             "message": f"Purged {fill_count} fills — position reset to 0"
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/pnl/reset-preview", methods=["GET"])
 def api_pnl_reset_preview():
@@ -1161,8 +1162,8 @@ def api_pnl_reset_preview():
             "net_position_cat": str(net_position_cat),
             "offer_history_rows": offer_history_rows,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/pnl/reset", methods=["POST"])
 def api_pnl_reset():
@@ -1208,7 +1209,7 @@ def api_pnl_reset():
     except Exception as e:
         log_event("warning", "pnl_reset_failed",
                   f"Explicit PnL reset failed: {e}")
-        return api_server._api_error(e, request.path)
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/reset/offer-history", methods=["POST"])
 def api_reset_offer_history():
@@ -1278,7 +1279,7 @@ def api_reset_offer_history():
     except Exception as e:
         log_event("warning", "offer_history_clear_failed",
                   f"Clear offer history failed: {e}")
-        return api_server._api_error(e, request.path)
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/reset/full", methods=["POST"])
 def api_reset_full():
@@ -1402,7 +1403,7 @@ def api_reset_full():
     except Exception as e:
         log_event("warning", "full_reset_failed",
                   f"Full reset failed: {e}")
-        return api_server._api_error(e, request.path)
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/pnl")
 def api_pnl():
@@ -1506,8 +1507,8 @@ def api_pnl():
         }
 
         return jsonify(server._serialize_dict(pnl_data))
-    except Exception as e:
-        return server._api_error(e, request.path)
+    except Exception:
+        return server._api_exception(request.path)
 
 def _new_cancel_all_state():
     return {

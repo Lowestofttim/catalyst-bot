@@ -271,7 +271,7 @@ def api_dbx_pending():
         return jsonify(result)
     except Exception as e:
         log_event("error", "dbx_claim", f"pending lookup failed: {e}")
-        return jsonify({"success": False, "error": str(e), "offers": [], "totals": {}})
+        return jsonify({"success": False, "error": "pending_rewards_lookup_failed", "offers": [], "totals": {}})
 
 
 @bp.route("/api/dbx/claim", methods=["POST"])
@@ -289,7 +289,7 @@ def api_dbx_claim():
         result = claim_all(target_address=target)
     except Exception as e:
         log_event("error", "dbx_claim", f"claim failed: {e}")
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": False, "error": "reward_claim_failed"})
     log_event(
         "success" if result.get("success") else "warning",
         "dbx_claim",
@@ -337,8 +337,8 @@ def api_market_price_history():
             "range_hours": hours,
             "points": points,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/market/orderbook")
@@ -373,8 +373,8 @@ def api_market_slippage():
         if quote:
             return jsonify(quote)
         return jsonify({"error": "Could not get quote"}), 404
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/market/dbx")
@@ -396,8 +396,8 @@ def api_market_dbx():
         dbx["spread_eligible"] = bool(dbx.get("eligible_offers", 0))
         dbx.update(_fetch_dbx_pair_status(asset_id, ticker_id))
         return jsonify(api_server._serialize_dict(dbx))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/coinset/stats")
@@ -652,7 +652,8 @@ def api_amm_price():
         }
         return jsonify(result)
     except Exception as e:
-        return jsonify({"available": False, "error": str(e)})
+        log_event("warning", "amm_price_unavailable", str(e))
+        return jsonify({"available": False, "error": "amm_price_unavailable"})
 
 
 @bp.route("/api/debug/coinprep")
@@ -908,5 +909,5 @@ def api_debug_sage_single_offer_test():
         }
         log_event("info", "sage_single_offer_test", json.dumps(payload, default=str)[:1500])
         return jsonify(payload)
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

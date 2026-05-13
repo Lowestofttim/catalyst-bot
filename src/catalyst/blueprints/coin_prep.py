@@ -225,8 +225,8 @@ def api_db_backup():
         # avoid leaking the user's directory structure to the GUI.
         filename = os.path.basename(path) if path else ""
         return jsonify({"status": "backed_up", "filename": filename})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/logs")
 def api_logs():
@@ -249,8 +249,8 @@ def api_logs():
         else:
             events_list = get_recent_events(limit=limit, category=category)
         return jsonify({"logs": api_server._serialize_list(events_list)})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/log", methods=["POST"])
 def api_log_event():
@@ -297,8 +297,8 @@ def api_log_event():
                 })
 
         return jsonify({"success": True})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/coin-prep/status")
 def api_coin_prep_status():
@@ -637,8 +637,8 @@ def api_coin_prep_status():
             result["log_lines"] = []
 
         return jsonify(result)
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/coin-prep/verify")
 def api_coin_prep_verify():
@@ -935,8 +935,8 @@ def api_coin_prep_verify():
                 "balance_warnings": balance_warnings,
             })
 
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/coin-prep/trigger", methods=["POST"])
 def api_coin_prep_trigger():
@@ -1581,7 +1581,7 @@ def _api_coin_prep_trigger_locked():
             log_event("error", "coin_prep_trigger_failed", str(e))
         except Exception:
             pass
-        return api_server._api_error(e, request.path)
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/coin-prep/reset", methods=["POST"])
 def api_coin_prep_reset():
@@ -1717,8 +1717,8 @@ def api_fills_export():
         csv_data = output.getvalue()
         return Response(csv_data, mimetype="text/csv",
                         headers={"Content-Disposition": "attachment; filename=fills_export.csv"})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/logs/clear", methods=["POST"])
 def api_logs_clear():
@@ -2292,5 +2292,5 @@ def api_logs_download():
             mimetype="application/zip",
             headers={"Content-Disposition": f"attachment; filename={bundle_name}"},
         )
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

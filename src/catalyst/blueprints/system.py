@@ -111,5 +111,5 @@ def api_wallets_switch():
             "message": f"Switched to {new_type}. Please restart the bot for the change to take effect.",
             "restart_required": True,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
