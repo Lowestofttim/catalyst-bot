@@ -751,6 +751,9 @@ def api_status():
             }
 
             cat_name = api_server._active_cat.get("name") or (cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else "")
+            # Pre-bot status contains sanitized offer summaries and local
+            # cached pricing data, not exception text.
+            # codeql[py/stack-trace-exposure]
             return jsonify({
                 "running": False,
                 "stats": {"loop_count": 0, "uptime_seconds": 0, "last_loop_time": 0,

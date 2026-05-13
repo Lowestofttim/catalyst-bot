@@ -873,6 +873,9 @@ def api_coin_prep_verify():
             }
             if tier_drift:
                 _mark_payload_needs_coin_prep_for_drift(response, tier_drift)
+            # Response fields are derived from numeric wallet balances and
+            # sanitized tier-size drift summaries.
+            # codeql[py/stack-trace-exposure]
             return jsonify(response)
         else:
             # Flat mode
@@ -916,6 +919,9 @@ def api_coin_prep_verify():
                     f"CAT balance too low: need {cat_need:,.0f} CAT but only have {cat_have:,.0f} CAT"
                 )
 
+            # Response fields are derived from numeric wallet balances and
+            # deterministic coin-size counts.
+            # codeql[py/stack-trace-exposure]
             return jsonify({
                 "success": True,
                 "tier_enabled": False,

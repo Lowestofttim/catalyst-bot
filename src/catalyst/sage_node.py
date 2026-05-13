@@ -1360,10 +1360,12 @@ def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, s
         return False, "wallet.crt and wallet.key must be in the same Sage ssl folder.", cert_real, key_real
     if os.path.basename(os.path.dirname(cert_real)).lower() != "ssl":
         return False, "wallet.crt and wallet.key must be inside Sage's ssl folder.", cert_real, key_real
-    # codeql[py/path-injection] User-selected desktop path is restricted to ssl/wallet.crt plus sibling key.
+    # User-selected desktop path is restricted to ssl/wallet.crt plus sibling key.
+    # codeql[py/path-injection]
     if not os.path.isfile(cert_real):
         return False, "Certificate file not found at the specified path.", cert_real, key_real
-    # codeql[py/path-injection] Key path is derived from or validated against the same Sage ssl folder.
+    # Key path is derived from or validated against the same Sage ssl folder.
+    # codeql[py/path-injection]
     if not os.path.isfile(key_real):
         return False, "Key file not found next to wallet.crt.", cert_real, key_real
 

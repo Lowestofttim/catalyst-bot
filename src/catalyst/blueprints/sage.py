@@ -180,6 +180,7 @@ def api_fingerprint():
         if not fp:
             fp = os.getenv("WALLET_FINGERPRINT", "")
 
+        fp = _safe_digit_text(fp)
         return jsonify({"success": bool(fp), "fingerprint": fp or "Not detected"})
     except Exception:
         return api_server._api_exception(request.path)

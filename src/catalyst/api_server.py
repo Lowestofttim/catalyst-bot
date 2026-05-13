@@ -728,7 +728,8 @@ def _serve_bootstrapped_html(filename: str):
     response = Response(html_doc, mimetype="text/html")
     response.set_cookie(
         _LOCAL_API_COOKIE,
-        # codeql[py/clear-text-storage-sensitive-data] Per-process loopback auth nonce in an HttpOnly, SameSite cookie.
+        # Per-process loopback auth nonce in an HttpOnly, SameSite cookie.
+        # codeql[py/clear-text-storage-sensitive-data]
         _LOCAL_API_TOKEN,
         httponly=True,
         samesite="Strict",
