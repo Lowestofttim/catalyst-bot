@@ -55,7 +55,8 @@ def api_health():
             "consecutive_failures": 0,
         }
     except Exception as e:
-        health_data = {"status": "unreachable", "error": str(e), "consecutive_failures": 0}
+        log_event("warning", "health_check_unreachable", str(e))
+        health_data = {"status": "unreachable", "error": "health_check_unreachable", "consecutive_failures": 0}
 
     bot = api_server.bot
     return jsonify({
@@ -126,8 +127,8 @@ def api_config_history():
         since_hours_int = int(since_hours) if since_hours else None
         rows = get_config_history(limit=limit, key=key, since_hours=since_hours_int)
         return jsonify({"rows": rows, "count": len(rows)})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/self-test")
@@ -145,7 +146,8 @@ def api_self_test():
             try:
                 bot._run_startup_self_test()
             except Exception as e:
-                return jsonify({"error": f"self-test failed: {e}"}), 500
+                log_event("error", "self_test_failed", str(e))
+                return jsonify({"error": "self_test_failed"}), 500
         results = getattr(bot, "_startup_self_test_results", {}) if bot else {}
         all_ok = all(r.get("ok", False) for r in results.values()
                      if not r.get("skipped", False))
@@ -153,8 +155,8 @@ def api_self_test():
             "all_ok": all_ok,
             "results": results,
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/config/validate")
@@ -169,8 +171,8 @@ def api_config_validate():
         from config_validator import validate_config
         report = validate_config(cfg)
         return jsonify(report.to_dict())
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/config/export-env")
@@ -275,5 +277,5 @@ def api_config_export_env():
             mimetype="text/plain",
             headers={"Content-Disposition": "attachment; filename=chia_bot_settings.env"},
         )
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
