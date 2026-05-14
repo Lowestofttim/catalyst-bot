@@ -434,7 +434,7 @@ class TestSageSetupCerts(_FlaskBase):
                 "SAGE_KEY_PATH": "",
                 "SAGE_DATA_DIR": "",
                 "SAGE_HOME": "",
-                "SAGE_ALLOWED_CERT_ROOTS": "",
+                "SAGE_ALLOWED_CERT_ROOTS": os.path.join(custom_root, "PortableSage"),
             }
             with patch.dict(os.environ, env, clear=False):
                 resp = self._post("/api/sage/setup-certs", {"cert_path": cert_path})
@@ -466,6 +466,16 @@ class TestSageSetupCerts(_FlaskBase):
         self.assertNotIn(".env", message)
         self.assertNotIn("SAGE_", message)
         self.assertNotIn("environment", message.lower())
+
+    def test_data_dir_shortcut_rejected_without_scanning_custom_path(self):
+        with patch("sage_node.detect_sage_cert_path") as detect:
+            resp = self._post("/api/sage/setup-certs", {"data_dir": "C:\\unsafe\\custom"})
+
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 400, body)
+        self.assertFalse(body.get("success"))
+        self.assertIn("allowed certificate roots", body.get("error", ""))
+        detect.assert_not_called()
 
     def test_manual_cert_rejects_non_wallet_cert_name(self):
         with tempfile.TemporaryDirectory() as appdata, \

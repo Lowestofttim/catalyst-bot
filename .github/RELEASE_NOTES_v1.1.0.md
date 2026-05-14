@@ -4,9 +4,9 @@
 
 | Platform | Installer | Portable |
 |----------|-----------|----------|
-| **Windows** | [Catalyst-Setup-v1.1.0.exe](https://github.com/Lowestofttim/catalyst-bot/releases/download/v1.1.0/Catalyst-Setup-v1.1.0.exe) | [Catalyst-windows-v1.1.0.zip](https://github.com/Lowestofttim/catalyst-bot/releases/download/v1.1.0/Catalyst-windows-v1.1.0.zip) |
-| **macOS** | n/a | [Catalyst-macos-v1.1.0.zip](https://github.com/Lowestofttim/catalyst-bot/releases/download/v1.1.0/Catalyst-macos-v1.1.0.zip) |
-| **Linux** | n/a | [Catalyst-linux-v1.1.0.tar.gz](https://github.com/Lowestofttim/catalyst-bot/releases/download/v1.1.0/Catalyst-linux-v1.1.0.tar.gz) |
+| **Windows** | [Catalyst-Setup-v1.1.0.exe](https://github.com/catalystxch/catalyst-bot/releases/download/v1.1.0/Catalyst-Setup-v1.1.0.exe) | [Catalyst-windows-v1.1.0.zip](https://github.com/catalystxch/catalyst-bot/releases/download/v1.1.0/Catalyst-windows-v1.1.0.zip) |
+| **macOS** | n/a | [Catalyst-macos-v1.1.0.zip](https://github.com/catalystxch/catalyst-bot/releases/download/v1.1.0/Catalyst-macos-v1.1.0.zip) |
+| **Linux** | n/a | [Catalyst-linux-v1.1.0.tar.gz](https://github.com/catalystxch/catalyst-bot/releases/download/v1.1.0/Catalyst-linux-v1.1.0.tar.gz) |
 
 **Windows users**: Use the Setup installer for a proper install with Start Menu shortcut and desktop icon. The portable zip works too; just unzip and run.
 

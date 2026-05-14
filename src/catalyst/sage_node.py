@@ -1328,7 +1328,47 @@ def _candidate_sage_ssl_dirs(extra_dirs: Optional[List[str]] = None) -> List[str
     return _dedupe_paths(ssl_dirs)
 
 
-def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, str, str, str]:
+def _realpath_is_within(child: str, parent: str) -> bool:
+    """Return True when child is inside parent after realpath resolution."""
+    try:
+        child_real = os.path.normcase(os.path.realpath(child))
+        parent_real = os.path.normcase(os.path.realpath(parent))
+        return os.path.commonpath([child_real, parent_real]) == parent_real
+    except (OSError, ValueError):
+        return False
+
+
+def _known_sage_cert_pair(
+    cert_real: str,
+    key_real: str,
+    extra_data_dirs: Optional[List[str]] = None,
+) -> Tuple[str, str]:
+    """Return the matching known Sage cert/key paths, or blanks if unknown."""
+    wanted_cert = os.path.normcase(os.path.realpath(cert_real))
+    wanted_key = os.path.normcase(os.path.realpath(key_real))
+
+    for ssl_dir in _candidate_sage_ssl_dirs(extra_data_dirs):
+        try:
+            ssl_real = os.path.realpath(_normalise_path(ssl_dir))
+            expected_cert = os.path.realpath(os.path.join(ssl_real, "wallet.crt"))
+            expected_key = os.path.realpath(os.path.join(ssl_real, "wallet.key"))
+        except Exception:
+            continue
+
+        if (
+            os.path.normcase(expected_cert) == wanted_cert
+            and os.path.normcase(expected_key) == wanted_key
+        ):
+            return expected_cert, expected_key
+
+    return "", ""
+
+
+def validate_sage_cert_pair(
+    cert_path: str,
+    key_path: str = "",
+    extra_data_dirs: Optional[List[str]] = None,
+) -> Tuple[bool, str, str, str]:
     """Validate and normalise a Sage wallet TLS cert/key pair.
 
     Security posture: accept flexible data roots, but only the Sage-shaped
@@ -1360,16 +1400,30 @@ def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, s
         return False, "wallet.crt and wallet.key must be in the same Sage ssl folder.", cert_real, key_real
     if os.path.basename(os.path.dirname(cert_real)).lower() != "ssl":
         return False, "wallet.crt and wallet.key must be inside Sage's ssl folder.", cert_real, key_real
-    # User-selected desktop path is restricted to ssl/wallet.crt plus sibling key.
-    # codeql[py/path-injection]
-    if not os.path.isfile(cert_real):
-        return False, "Certificate file not found at the specified path.", cert_real, key_real
-    # Key path is derived from or validated against the same Sage ssl folder.
-    # codeql[py/path-injection]
-    if not os.path.isfile(key_real):
-        return False, "Key file not found next to wallet.crt.", cert_real, key_real
 
-    return True, "", cert_real, key_real
+    sage_root = os.path.dirname(cert_dir)
+    expected_ssl_dir = os.path.join(sage_root, "ssl")
+    if os.path.normcase(cert_dir) != os.path.normcase(os.path.realpath(expected_ssl_dir)):
+        return False, "wallet.crt and wallet.key must be in Sage's ssl folder.", cert_real, key_real
+    if not _realpath_is_within(cert_real, sage_root) or not _realpath_is_within(key_real, sage_root):
+        return False, "Sage certificate paths must stay inside the selected Sage data folder.", cert_real, key_real
+
+    known_cert, known_key = _known_sage_cert_pair(cert_real, key_real, extra_data_dirs)
+    if not known_cert:
+        return (
+            False,
+            "Choose Sage's wallet.crt from a detected Sage data folder, "
+            "or add the portable Sage folder to allowed certificate roots.",
+            cert_real,
+            key_real,
+        )
+
+    if not os.path.isfile(known_cert):
+        return False, "Certificate file not found at the specified path.", known_cert, known_key
+    if not os.path.isfile(known_key):
+        return False, "Key file not found next to wallet.crt.", known_cert, known_key
+
+    return True, "", known_cert, known_key
 
 
 def _set_sage_cert_env_and_reload(cert_path: str, key_path: str) -> bool:
@@ -1403,7 +1457,7 @@ def detect_sage_cert_path(extra_data_dirs: Optional[List[str]] = None) -> Option
     for d in _candidate_sage_ssl_dirs(extra_data_dirs):
         cert = os.path.join(d, "wallet.crt")
         key = os.path.join(d, "wallet.key")
-        ok, _, cert_real, _ = validate_sage_cert_pair(cert, key)
+        ok, _, cert_real, _ = validate_sage_cert_pair(cert, key, extra_data_dirs)
         if ok:
             print(f"[Sage] Auto-detected certs: {d}", flush=True)
             return cert_real

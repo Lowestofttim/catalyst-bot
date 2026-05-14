@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import api_server
+import sage_node
 from blueprints import config_bp
 import coin_prep_worker
 
@@ -45,16 +46,103 @@ def test_open_data_folder_error_does_not_expose_exception_details():
 
 
 def test_api_exception_response_hides_current_exception():
-    with api_server.app.test_request_context("/api/example"):
-        try:
-            raise RuntimeError("secret traceback details")
-        except RuntimeError:
-            response, status = api_server._api_exception("/api/example")
+    with patch.object(api_server, "log_event") as log_event:
+        with api_server.app.test_request_context("/api/example"):
+            try:
+                raise RuntimeError("secret traceback details")
+            except RuntimeError:
+                response, status = api_server._api_exception("/api/example")
 
     assert status == 500
     body = response.get_json()
     assert body == {"error": "Internal server error", "code": "SERVER_ERROR"}
     assert "secret" not in str(body).lower()
+    logged_message = str(log_event.call_args.args[2]).lower()
+    assert "secret traceback details" not in logged_message
+    assert "traceback" not in logged_message
+
+
+def test_api_error_event_log_hides_exception_details():
+    with patch.object(api_server, "log_event") as log_event:
+        with api_server.app.test_request_context("/api/example"):
+            response, status = api_server._api_error(
+                RuntimeError("secret api error details"),
+                "/api/example",
+            )
+
+    assert status == 500
+    assert response.get_json() == {"error": "Internal server error", "code": "SERVER_ERROR"}
+    logged_message = str(log_event.call_args.args[2]).lower()
+    assert "secret api error details" not in logged_message
+
+
+def test_spacescan_context_hides_exception_details():
+    with patch("database.get_market_analysis_cache",
+               side_effect=RuntimeError("secret spacescan path")):
+        context = api_server._get_spacescan_market_context("a" * 64)
+
+    assert context["message"] == "Spacescan context unavailable right now."
+    assert "secret" not in str(context).lower()
+
+
+def test_sage_cert_pair_accepts_only_wallet_pair_under_same_ssl_dir(tmp_path):
+    ssl_dir = tmp_path / "PortableSage" / "ssl"
+    ssl_dir.mkdir(parents=True)
+    cert = ssl_dir / "wallet.crt"
+    key = ssl_dir / "wallet.key"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    with patch.dict(
+        "os.environ",
+        {"SAGE_ALLOWED_CERT_ROOTS": str(tmp_path / "PortableSage")},
+        clear=False,
+    ):
+        ok, reason, cert_real, key_real = sage_node.validate_sage_cert_pair(
+            str(cert),
+            str(key),
+        )
+
+    assert ok is True
+    assert reason == ""
+    assert cert_real == str(cert.resolve())
+    assert key_real == str(key.resolve())
+
+
+def test_sage_cert_pair_rejects_key_outside_selected_ssl_dir(tmp_path):
+    ssl_dir = tmp_path / "PortableSage" / "ssl"
+    ssl_dir.mkdir(parents=True)
+    cert = ssl_dir / "wallet.crt"
+    cert.write_text("cert", encoding="utf-8")
+
+    outside = tmp_path / "other" / "wallet.key"
+    outside.parent.mkdir()
+    outside.write_text("key", encoding="utf-8")
+
+    with patch.dict(
+        "os.environ",
+        {"SAGE_ALLOWED_CERT_ROOTS": str(tmp_path / "PortableSage")},
+        clear=False,
+    ):
+        ok, reason, _, _ = sage_node.validate_sage_cert_pair(str(cert), str(outside))
+
+    assert ok is False
+    assert "same Sage ssl folder" in reason
+
+
+def test_sage_cert_pair_rejects_unknown_custom_root(tmp_path):
+    ssl_dir = tmp_path / "PortableSage" / "ssl"
+    ssl_dir.mkdir(parents=True)
+    cert = ssl_dir / "wallet.crt"
+    key = ssl_dir / "wallet.key"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    with patch.dict("os.environ", {"SAGE_ALLOWED_CERT_ROOTS": ""}, clear=False):
+        ok, reason, _, _ = sage_node.validate_sage_cert_pair(str(cert), str(key))
+
+    assert ok is False
+    assert "detected Sage data folder" in reason
 
 
 class _StartableBot:

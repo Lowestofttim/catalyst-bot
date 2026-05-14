@@ -12054,13 +12054,15 @@
                         </div>
                     </div>
                     <div class="v4-modal-panel">
-                        <div class="v4-modal-panel-title">What's current — May 2026 beta build</div>
+                        <div class="v4-modal-panel-title">What's current - May 2026 public beta</div>
                         <div class="v4-modal-panel-copy">
-                            <strong>Sage wallet startup</strong> - Startup asks testers to choose the Sage signing wallet/fingerprint before trading, then guides through Sage RPC, Spacescan setup, Splash setup, Smart Settings, coin prep, and the start guard using the same wallet path the live bot uses.<br>
+                            <strong>Public beta release flow</strong> - The website, installer metadata, and in-app update badge now track the current release so testers can download the latest build from one place.<br>
+                            <strong>Sage wallet selection</strong> - Startup asks testers to choose the Sage signing wallet/fingerprint on every launch, then runs RPC, version, Spacescan, Splash, Smart Settings, coin prep, and start-guard checks against that wallet.<br>
                             <strong>Smart Settings refresh</strong> - Smart Settings uses the selected CAT, live Dexie/TibetSwap/Spacescan/Sage context where available, handles thin or new CATs conservatively, and writes TibetSwap shock-cancel fields, reserves, ladder depth, tier sizes, topup pool, and safety limits together.<br>
-                            <strong>Safer requote and cancel recovery</strong> - Defensive TibetSwap shock cancels block replacement stacking until Sage stops reporting cancelled offers as active. A stale pending-cancel watchdog retries old wallet-active cancels while keeping replacement creation blocked.<br>
+                            <strong>Safer requote, cancel, and Close the Gap recovery</strong> - Dynamic pricing can tighten when the market supports it while stale-cancel and shock-cancel guards keep replacement offers from stacking on top of older wallet-active offers.<br>
                             <strong>Coin prep and topup improvements</strong> - Prepared XCH/CAT pools, fee coins, reserve coins, and sniper/topup outputs are classified immediately so live topup does not churn useful coins back into reserve.<br>
                             <strong>Close the Gap probes</strong> - Manual gap closing uses small per-side probes to discover where active arbers respond, then plants tighter inner-tier offers while cancelling the furthest inner offers to keep the book from stacking.<br>
+                            <strong>Beta feedback and diagnostics</strong> - Debug Bundle, crash reports, and public issue forms are ready for early testers to report bugs or rough edges in the bot repo.<br>
                             <strong>Dashboard guidance cleanup</strong> - Guidance waits for stronger tipping points before showing advice, deduplicates overlapping alerts, and keeps action items separate from lower-confidence advisor notes.<br>
                             <strong>Diagnostics and charts</strong> - Market Diagnostics show Dexie, TibetSwap, Spacescan, Sage, Splash, and arb-gap health in the relevant tabs, with longer price context and more detailed order/depth views where the data exists.
                         </div>
@@ -12560,11 +12562,12 @@
 
                     <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 24px 0 16px 0;">
                     <h3 style="color: var(--accent-primary-hover); margin-top: 0;">Diagnostics &amp; support</h3>
-                    <p style="margin-bottom: 12px;">If the app crashes or behaves unexpectedly, grab the crash report or the full data folder below. Send the files to support along with a short description of what you were doing.</p>
+                    <p style="margin-bottom: 12px;">If the app crashes or behaves unexpectedly, open the Logs tab and click Debug Bundle, or grab the crash report / data folder below. During beta testing, open a public bot repo report with the bundle and a short description of what you were doing.</p>
                     <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
                         <button class="btn btn-secondary" type="button" onclick="viewCrashLog()" style="padding: 8px 14px;">📄 View last crash report</button>
                         <button class="btn btn-secondary" type="button" onclick="openDataFolder()" style="padding: 8px 14px;">📁 Open data folder</button>
                     </div>
+                    <p style="margin-bottom: 12px;">Public beta links: <a href="https://github.com/catalystxch/catalyst-bot/issues/new?template=bug_report.yml" target="_blank" rel="noopener">Report a bug</a> | <a href="https://github.com/catalystxch/catalyst-bot/issues/new?template=feedback.yml" target="_blank" rel="noopener">Send feedback</a> | <a href="https://github.com/catalystxch/catalyst-bot/releases/latest" target="_blank" rel="noopener">Latest release</a>.</p>
                     <div id="crashLogViewer" style="display:none; margin-top: 12px;">
                         <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap;">
                             <strong id="crashLogPath" style="font-size: 0.85em; color: var(--text-secondary); font-family: var(--font-mono); word-break: break-all;"></strong>
@@ -23484,7 +23487,7 @@
         }
 
         // ================================================
-        // WALLET PICKER — disabled for now (Sage support parked)
+        // STARTUP WALLET STATUS + APP INFO HELPERS
         // ================================================
 
         // ================================================

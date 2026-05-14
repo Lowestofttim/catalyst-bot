@@ -566,7 +566,8 @@ def api_status():
                                 break
                 except Exception as e:
                     print(f"[STATUS] TibetSwap failed: {e}")
-                    log_event("warning", "price_lookup", f"TibetSwap failed: {e}")
+                    slog("API_STATUS", f"TibetSwap price lookup failed: {e!r}", level="debug")
+                    log_event("warning", "price_lookup", "TibetSwap price lookup failed")
 
                 # --- Fallback to Dexie if TibetSwap had no match ---
                 if mid == 0:
@@ -615,7 +616,8 @@ def api_status():
                                         log_event("success", "price_found", f"Dexie orderbook price: {mid:.8f} XCH")
                     except Exception as e:
                         print(f"[STATUS] Dexie fallback failed: {e}")
-                        log_event("warning", "price_lookup", f"Dexie fallback failed: {e}")
+                        slog("API_STATUS", f"Dexie fallback price lookup failed: {e!r}", level="debug")
+                        log_event("warning", "price_lookup", "Dexie fallback price lookup failed")
 
                 if mid == 0:
                     print("[STATUS] No price from any source")

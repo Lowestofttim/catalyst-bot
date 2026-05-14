@@ -29,6 +29,7 @@ class TestApiLocalGuard(unittest.TestCase):
         self.assertNotIn("BOT_LOCAL_WRITE_TOKEN", body)
         cookie_header = resp.headers.get("Set-Cookie", "")
         self.assertIn("catalyst_local_session=", cookie_header)
+        self.assertNotIn(api_server._LOCAL_API_TOKEN, cookie_header)
         self.assertIn("HttpOnly", cookie_header)
         self.assertIn("SameSite=Strict", cookie_header)
 

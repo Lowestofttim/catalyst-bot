@@ -480,8 +480,8 @@ def api_sage_setup_certs():
     """Auto-detect or set Sage certificate paths.
 
     POST with {"cert_path": "...", "key_path": "..."} to set manually,
-    {"data_dir": "..."} to search a custom Sage data root, or {} to
-    auto-detect from common Sage locations.
+    or {} to auto-detect from common Sage locations. Custom portable Sage
+    roots must be configured as allowed certificate roots before setup.
     """
     try:
         import sage_node
@@ -492,10 +492,16 @@ def api_sage_setup_certs():
         cert_path = data.get("cert_path", "").strip()
         key_path = data.get("key_path", "").strip()
         data_dir = data.get("data_dir", "").strip()
-        extra_dirs = [data_dir] if data_dir else None
+        if data_dir:
+            return jsonify({
+                "success": False,
+                "error": "Custom Sage data folders must be added to allowed "
+                         "certificate roots before setup. Use Browse to choose "
+                         "Sage's ssl\\wallet.crt from a detected Sage folder.",
+            }), 400
 
         if not cert_path:
-            detected = sage_node.detect_sage_cert_path(extra_dirs)
+            detected = sage_node.detect_sage_cert_path()
             if detected:
                 cert_path = detected
                 key_path = os.path.join(os.path.dirname(detected), "wallet.key")
