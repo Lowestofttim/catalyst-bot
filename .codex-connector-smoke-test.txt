@@ -1,0 +1,1 @@
+Temporary connector smoke test for PR creation on 2026-05-14. This branch/PR is safe to delete.
