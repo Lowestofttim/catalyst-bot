@@ -1,0 +1,61 @@
+from decimal import Decimal
+
+from market_toxicity import ToxicitySnapshot
+from risk_manager import RiskManager
+
+
+def _patch_spread_cfg(monkeypatch):
+    monkeypatch.setattr("risk_manager.cfg.DYNAMIC_SPREAD_ENABLED", True, raising=False)
+    monkeypatch.setattr("risk_manager.cfg.INVENTORY_ENABLED", False, raising=False)
+    monkeypatch.setattr("risk_manager.cfg.BASE_SPREAD_BPS", Decimal("800"), raising=False)
+    monkeypatch.setattr("risk_manager.cfg.MIN_SPREAD_BPS", Decimal("300"), raising=False)
+    monkeypatch.setattr("risk_manager.cfg.MAX_SPREAD_BPS", Decimal("3000"), raising=False)
+    monkeypatch.setattr("risk_manager.cfg.MIN_EDGE_BPS", Decimal("200"), raising=False)
+    monkeypatch.setattr("risk_manager.cfg.COMPETITOR_AWARE_ENABLED", False, raising=False)
+    monkeypatch.setattr("risk_manager.cfg.MARKET_TOXICITY_ENABLED", True, raising=False)
+
+
+def test_toxicity_multiplier_widens_before_clamp(monkeypatch):
+    _patch_spread_cfg(monkeypatch)
+    rm = RiskManager()
+    rm.set_market_toxicity(
+        ToxicitySnapshot(
+            score=82,
+            buy_score=82,
+            sell_score=12,
+            level="high",
+            buy_spread_multiplier=Decimal("1.75"),
+            sell_spread_multiplier=Decimal("1.20"),
+            throttled_sides=["buy"],
+            throttle_until={"buy": 9999999999.0},
+            reasons=[],
+            suggested_action="Throttle buy",
+        )
+    )
+
+    assert rm.get_adjusted_spread("buy") == Decimal("0.14")
+    assert rm.get_adjusted_spread("sell") == Decimal("0.096")
+    assert rm.should_enable_side("buy", Decimal("0.01")) is False
+    assert rm.should_enable_side("sell", Decimal("0.01")) is True
+
+
+def test_inventory_state_exposes_toxicity_snapshot(monkeypatch):
+    _patch_spread_cfg(monkeypatch)
+    rm = RiskManager()
+    rm.set_market_toxicity(
+        ToxicitySnapshot(
+            score=61,
+            buy_score=61,
+            sell_score=0,
+            level="elevated",
+            buy_spread_multiplier=Decimal("1.35"),
+            sell_spread_multiplier=Decimal("1.10"),
+            reasons=[{"key": "fast_fills", "side": "buy", "score": 35, "detail": "fast"}],
+        )
+    )
+
+    state = rm.get_inventory_state()
+
+    assert state["market_toxicity"]["score"] == 61
+    assert state["market_toxicity"]["level"] == "elevated"
+    assert state["market_toxicity"]["buy_spread_multiplier"] == "1.35"

@@ -109,6 +109,9 @@ class RiskManager:
         self._competitor_adjustment_bps: Decimal = Decimal("0")
         self._competitor_updated: float = 0
 
+        # Market toxicity guard snapshot (set by bot_loop once per cycle)
+        self._market_toxicity_snapshot = None
+
     # -------------------------------------------------------------------
     # Inventory tracking
     # -------------------------------------------------------------------
@@ -183,6 +186,7 @@ class RiskManager:
         self._pool_depth_updated = 0
         self._competitor_adjustment_bps = Decimal("0")
         self._competitor_updated = 0
+        self._market_toxicity_snapshot = None
         log_event("info", "risk_session_reset",
                   "Risk manager session state fully reset")
 
@@ -229,6 +233,7 @@ class RiskManager:
             "circuit_breaker_reason": self._circuit_breaker_reason,
             "pool_depth_ratio": str(self._pool_depth_ratio),
             "competitor_aware": getattr(cfg, "COMPETITOR_AWARE_ENABLED", False),
+            "market_toxicity": self.get_market_toxicity(),
         }
 
     # -------------------------------------------------------------------
@@ -273,6 +278,10 @@ class RiskManager:
             if convergence < Decimal("1.0"):
                 base = base * convergence
 
+        # Apply market-toxicity widening last so adverse-selection protection
+        # can override ordinary tightening/convergence, then respect clamps.
+        base = self._apply_market_toxicity(base, side)
+
         # Clamp to min/max
         min_spread = cfg.MIN_SPREAD_BPS / Decimal("10000")
         max_spread = cfg.MAX_SPREAD_BPS / Decimal("10000")
@@ -287,6 +296,50 @@ class RiskManager:
             base = min_outer
 
         return base
+
+    def set_market_toxicity(self, snapshot) -> None:
+        """Store the latest market-toxicity snapshot from the trading loop."""
+        self._market_toxicity_snapshot = snapshot
+
+    def get_market_toxicity(self) -> Dict:
+        """Return a JSON-safe view of the latest toxicity snapshot."""
+        snap = self._market_toxicity_snapshot
+        if snap is None:
+            return {
+                "score": 0,
+                "buy_score": 0,
+                "sell_score": 0,
+                "level": "normal",
+                "buy_spread_multiplier": "1.0",
+                "sell_spread_multiplier": "1.0",
+                "throttled_sides": [],
+                "throttle_until": {},
+                "reasons": [],
+                "suggested_action": "No toxicity action needed.",
+                "enabled": bool(getattr(cfg, "MARKET_TOXICITY_ENABLED", True)),
+            }
+        if hasattr(snap, "to_dict"):
+            return snap.to_dict()
+        return dict(snap or {})
+
+    def _apply_market_toxicity(self, spread: Decimal, side: str) -> Decimal:
+        if not bool(getattr(cfg, "MARKET_TOXICITY_ENABLED", True)):
+            return spread
+        snap = self._market_toxicity_snapshot
+        if snap is None:
+            return spread
+        try:
+            if side == "buy":
+                multiplier = Decimal(str(getattr(snap, "buy_spread_multiplier", "1.0") or "1.0"))
+            elif side == "sell":
+                multiplier = Decimal(str(getattr(snap, "sell_spread_multiplier", "1.0") or "1.0"))
+            else:
+                multiplier = Decimal("1.0")
+            if multiplier <= 0:
+                return spread
+            return spread * multiplier
+        except Exception:
+            return spread
 
     def _get_base_spread(self) -> Decimal:
         """Get the base spread fraction from config."""
@@ -962,6 +1015,23 @@ class RiskManager:
                 return False
             # blocked != side: this is the correcting side — let it run
 
+        # --- 1b. Market toxicity side throttle ---
+        if bool(getattr(cfg, "MARKET_TOXICITY_ENABLED", True)):
+            snap = self._market_toxicity_snapshot
+            try:
+                if snap is not None and snap.is_side_throttled(side, time.time()):
+                    return False
+            except AttributeError:
+                try:
+                    throttled = set((snap or {}).get("throttled_sides") or [])
+                    until = (snap or {}).get("throttle_until") or {}
+                    if side in throttled and float(until.get(side, 0) or 0) > time.time():
+                        return False
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
         # --- 2. Inventory soft limits ---
         if not cfg.INVENTORY_ENABLED:
             return True  # No inventory management
@@ -1082,6 +1152,14 @@ class RiskManager:
         metrics["pool_depth_ratio"] = str(self._pool_depth_ratio)
         metrics["fill_rate_per_hour"] = str(self._recent_fill_rate)
         metrics["volatility"] = str(self._cached_volatility)
+        toxicity = self.get_market_toxicity()
+        metrics["toxicity_score"] = toxicity.get("score", 0)
+        metrics["toxicity_level"] = toxicity.get("level", "normal")
+        metrics["toxicity_buy_score"] = toxicity.get("buy_score", 0)
+        metrics["toxicity_sell_score"] = toxicity.get("sell_score", 0)
+        metrics["toxicity_throttled_sides"] = toxicity.get("throttled_sides", [])
+        metrics["toxicity_reasons"] = toxicity.get("reasons", [])
+        metrics["toxicity_suggested_action"] = toxicity.get("suggested_action", "")
 
         # F44 (2026-04-08): wire Dexie v3 historical-trades market metrics
         # so the dashboard / Smart Settings / Advisor can compare the
@@ -1155,6 +1233,22 @@ class RiskManager:
         # --- Evaluate RED conditions (critical) ---
         if self._circuit_breaker_active:
             conditions.append(("red", f"Circuit breaker tripped: {self._circuit_breaker_reason} — Go to Settings → Safety to review price limits and reset."))
+
+        try:
+            tox_score = int(toxicity.get("score", 0) or 0)
+            tox_level = str(toxicity.get("level", "normal") or "normal")
+            tox_throttled = toxicity.get("throttled_sides") or []
+            tox_reasons = toxicity.get("reasons") or []
+            top_reason = ""
+            if tox_reasons:
+                top_reason = str(tox_reasons[0].get("detail") or tox_reasons[0].get("key") or "")
+            if tox_level == "extreme":
+                conditions.append(("red", f"Market toxicity extreme ({tox_score}/100): {top_reason or 'offers are at high adverse-selection risk'}"))
+            elif tox_level in ("elevated", "high") or tox_throttled:
+                sides = ", ".join(str(s).upper() for s in tox_throttled) if tox_throttled else "none"
+                conditions.append(("amber", f"Market toxicity {tox_level} ({tox_score}/100); throttled sides: {sides}. {top_reason}"))
+        except Exception:
+            pass
 
         # Position vs limit
         try:

@@ -565,6 +565,20 @@ class Config:
             "DYNAMIC_FILL_RATE_MAX_BPS", "100"
         )
 
+        # ----- Market Toxicity Guard -----
+        self.MARKET_TOXICITY_ENABLED = _bool("MARKET_TOXICITY_ENABLED", True)
+        self.TOXICITY_WIDEN_START = _int("TOXICITY_WIDEN_START", 30)
+        self.TOXICITY_ELEVATED_START = _int("TOXICITY_ELEVATED_START", 55)
+        self.TOXICITY_THROTTLE_START = _int("TOXICITY_THROTTLE_START", 75)
+        self.TOXICITY_CANCEL_START = _int("TOXICITY_CANCEL_START", 90)
+        self.TOXICITY_THROTTLE_SECS = _int("TOXICITY_THROTTLE_SECS", 120)
+        self.TOXICITY_DECAY_PER_LOOP = _int("TOXICITY_DECAY_PER_LOOP", 8)
+        self.TOXICITY_MAX_SPREAD_MULTIPLIER = _decimal(
+            "TOXICITY_MAX_SPREAD_MULTIPLIER", "2.0"
+        )
+        self.TOXICITY_MIN_THROTTLE_SIGNALS = _int("TOXICITY_MIN_THROTTLE_SIGNALS", 2)
+        self.TOXICITY_CANCEL_ENABLED = _bool("TOXICITY_CANCEL_ENABLED", False)
+
         # ----- Tiered Orders (V2) -----
         self.TIER_ENABLED = _bool("TIER_ENABLED", False)
         # When True, buy-side tier sizes are reversed: smallest offer closest to
@@ -897,6 +911,17 @@ class Config:
         "DYNAMIC_FILL_RATE_START_PER_HOUR",
         "DYNAMIC_FILL_RATE_FULL_PER_HOUR",
         "DYNAMIC_FILL_RATE_MAX_BPS",
+        # Market toxicity guard
+        "MARKET_TOXICITY_ENABLED",
+        "TOXICITY_WIDEN_START",
+        "TOXICITY_ELEVATED_START",
+        "TOXICITY_THROTTLE_START",
+        "TOXICITY_CANCEL_START",
+        "TOXICITY_THROTTLE_SECS",
+        "TOXICITY_DECAY_PER_LOOP",
+        "TOXICITY_MAX_SPREAD_MULTIPLIER",
+        "TOXICITY_MIN_THROTTLE_SIGNALS",
+        "TOXICITY_CANCEL_ENABLED",
         # Tiered orders
         "TIER_ENABLED", "BUY_LADDER_REVERSED", "INNER_SIZE_XCH", "MID_SIZE_XCH",
         "OUTER_SIZE_XCH", "EXTREME_SIZE_XCH",

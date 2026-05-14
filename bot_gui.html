@@ -9304,6 +9304,10 @@
                         <div class="cc-metric-val" id="ccCbBlocked" style="opacity: 0.3;">pending</div>
                     </div>
                     <div class="cc-metric-box">
+                        <div class="cc-metric-label">Toxicity <span class="cc-help">?<span class="cc-tooltip">Adverse-selection score from fast fills, one-sided flow, public depth, small-balance exposure, and sweep risk. Higher means the bot widens or pauses the risky side.</span></span></div>
+                        <div class="cc-metric-val" id="ccToxicity" style="opacity: 0.3;">pending</div>
+                    </div>
+                    <div class="cc-metric-box">
                         <div class="cc-metric-label">Activity Level <span class="cc-help">?<span class="cc-tooltip">Spacescan on-chain activity for this token. High activity can signal increased risk or opportunity.</span></span></div>
                         <div class="cc-metric-val" id="ccSpacescanActivity" style="opacity: 0.3;">pending</div>
                     </div>
@@ -25880,7 +25884,7 @@
 
             // --- New metrics ---
             // Clear pending opacity for new boxes
-            ['ccMhFillRate','ccVolatility','ccPosition','ccTradingPace','ccProbeState','ccCbBlocked','ccSpacescanActivity','ccSpacescanRisk','ccHolders'].forEach(id => {
+            ['ccMhFillRate','ccVolatility','ccPosition','ccTradingPace','ccProbeState','ccCbBlocked','ccToxicity','ccSpacescanActivity','ccSpacescanRisk','ccHolders'].forEach(id => {
                 const e = el(id);
                 if (e) e.style.opacity = '1';
             });
@@ -25958,6 +25962,23 @@
                     cbEl.style.color = 'var(--success-400)';
                 }
                 cbEl.style.opacity = '1';
+            }
+
+            const toxEl = el('ccToxicity');
+            if (toxEl) {
+                const score = parseInt(m.toxicity_score || 0, 10);
+                const level = String(m.toxicity_level || 'normal').toLowerCase();
+                const buyScore = parseInt(m.toxicity_buy_score || 0, 10);
+                const sellScore = parseInt(m.toxicity_sell_score || 0, 10);
+                const throttled = Array.isArray(m.toxicity_throttled_sides)
+                    ? m.toxicity_throttled_sides.map(s => String(s).toUpperCase()).join('/')
+                    : '';
+                toxEl.textContent = `${Number.isFinite(score) ? score : 0}/100 ${level}${throttled ? ' · ' + throttled : ''}`;
+                toxEl.title = `Buy ${Number.isFinite(buyScore) ? buyScore : 0}/100, sell ${Number.isFinite(sellScore) ? sellScore : 0}/100`;
+                toxEl.style.color = level === 'extreme' || level === 'high'
+                    ? 'var(--status-danger)'
+                    : (level === 'elevated' || level === 'mild' ? 'var(--status-warning)' : 'var(--success-400)');
+                toxEl.style.opacity = '1';
             }
 
             // Spacescan render priority:
