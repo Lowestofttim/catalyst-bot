@@ -155,6 +155,31 @@ class TestConfigPost(_FlaskBase):
         body = resp.get_json()
         self.assertTrue(body.get("success"))
 
+    def test_bulk_toxicity_settings_map_to_env_keys(self):
+        fake_cfg = MagicMock()
+        fake_cfg.update.return_value = True
+        fake_cfg.to_dict.return_value = {}
+        fake_cfg.LIQUIDITY_MODE = "two_sided"
+        fake_cfg.SNIPER_ENABLED = False
+        fake_cfg.MAX_ACTIVE_BUY_OFFERS = 3
+        fake_cfg.MAX_ACTIVE_SELL_OFFERS = 3
+        payload = {
+            "market_toxicity_enabled": True,
+            "toxicity_protection_level": "defensive",
+            "toxicity_throttle_secs": 180,
+            "toxicity_max_spread_multiplier": 2.0,
+        }
+
+        with patch.object(api_server, "cfg", fake_cfg):
+            resp = self._post_json("/api/config", payload)
+
+        self.assertEqual(resp.status_code, 200)
+        written = {call.args[0]: call.args[1] for call in fake_cfg.update.call_args_list}
+        self.assertEqual(written["MARKET_TOXICITY_ENABLED"], "True")
+        self.assertEqual(written["TOXICITY_PROTECTION_LEVEL"], "defensive")
+        self.assertEqual(written["TOXICITY_THROTTLE_SECS"], "180")
+        self.assertEqual(written["TOXICITY_MAX_SPREAD_MULTIPLIER"], "2.0")
+
     def test_failed_cfg_update_returns_500(self):
         """Patch cfg.update to return False."""
         fake_cfg = MagicMock()

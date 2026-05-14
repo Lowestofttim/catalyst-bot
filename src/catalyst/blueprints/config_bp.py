@@ -158,6 +158,17 @@ _KEY_MAP = {
     "min_spread_bps": "MIN_SPREAD_BPS",
     "max_spread_bps": "MAX_SPREAD_BPS",
     "volatility_window_hours": "VOLATILITY_WINDOW_HOURS",
+    "market_toxicity_enabled": "MARKET_TOXICITY_ENABLED",
+    "toxicity_protection_level": "TOXICITY_PROTECTION_LEVEL",
+    "toxicity_widen_start": "TOXICITY_WIDEN_START",
+    "toxicity_elevated_start": "TOXICITY_ELEVATED_START",
+    "toxicity_throttle_start": "TOXICITY_THROTTLE_START",
+    "toxicity_cancel_start": "TOXICITY_CANCEL_START",
+    "toxicity_throttle_secs": "TOXICITY_THROTTLE_SECS",
+    "toxicity_decay_per_loop": "TOXICITY_DECAY_PER_LOOP",
+    "toxicity_max_spread_multiplier": "TOXICITY_MAX_SPREAD_MULTIPLIER",
+    "toxicity_min_throttle_signals": "TOXICITY_MIN_THROTTLE_SIGNALS",
+    "toxicity_cancel_enabled": "TOXICITY_CANCEL_ENABLED",
     "inventory_enabled": "INVENTORY_ENABLED",
     "skew_intensity": "SKEW_INTENSITY",
     "max_position_xch": "MAX_POSITION_XCH",
@@ -270,6 +281,14 @@ def api_config_update():
                     "error": "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first"
                 }), 409
 
+        if key == "TOXICITY_PROTECTION_LEVEL":
+            _allowed = ("gentle", "balanced", "defensive")
+            if str(value).lower().strip() not in _allowed:
+                return jsonify({
+                    "success": False,
+                    "error": f"TOXICITY_PROTECTION_LEVEL must be one of: {', '.join(_allowed)}"
+                }), 400
+
         if key == "SPREAD_BPS":
             try:
                 _bps_val = int(float(value))
@@ -320,6 +339,12 @@ def api_config_update():
                 errors.append(
                     "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first"
                 )
+                continue
+
+        if env_key == "TOXICITY_PROTECTION_LEVEL":
+            _allowed = ("gentle", "balanced", "defensive")
+            if str(value).lower().strip() not in _allowed:
+                errors.append(f"TOXICITY_PROTECTION_LEVEL must be one of: {', '.join(_allowed)}")
                 continue
 
         if env_key == "SPREAD_BPS":

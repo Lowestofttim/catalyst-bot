@@ -567,6 +567,7 @@ class Config:
 
         # ----- Market Toxicity Guard -----
         self.MARKET_TOXICITY_ENABLED = _bool("MARKET_TOXICITY_ENABLED", True)
+        self.TOXICITY_PROTECTION_LEVEL = _str("TOXICITY_PROTECTION_LEVEL", "balanced")
         self.TOXICITY_WIDEN_START = _int("TOXICITY_WIDEN_START", 30)
         self.TOXICITY_ELEVATED_START = _int("TOXICITY_ELEVATED_START", 55)
         self.TOXICITY_THROTTLE_START = _int("TOXICITY_THROTTLE_START", 75)
@@ -913,6 +914,7 @@ class Config:
         "DYNAMIC_FILL_RATE_MAX_BPS",
         # Market toxicity guard
         "MARKET_TOXICITY_ENABLED",
+        "TOXICITY_PROTECTION_LEVEL",
         "TOXICITY_WIDEN_START",
         "TOXICITY_ELEVATED_START",
         "TOXICITY_THROTTLE_START",

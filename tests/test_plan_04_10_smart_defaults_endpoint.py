@@ -245,6 +245,10 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
 
         self.assertIn('"tibet_shock_cancel_trigger_pct"', result_block)
         self.assertIn('"arb_alert_threshold_bps"', result_block)
+        self.assertIn('"market_toxicity_enabled"', result_block)
+        self.assertIn('"toxicity_protection_level"', result_block)
+        self.assertIn('"toxicity_max_spread_multiplier"', result_block)
+        self.assertIn('"toxicity_throttle_secs"', result_block)
 
     def test_frontend_has_safety_fields_and_matches_backend_keys(self):
         root = Path(__file__).resolve().parents[1]
@@ -256,6 +260,68 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
         self.assertIn("data.arb_alert_threshold_bps", html)
         self.assertNotIn("data.arb_threshold_bps", html)
         self.assertIn("'ARB_ALERT_THRESHOLD_BPS':    'configArbThreshold'", html)
+
+    def test_frontend_has_market_toxicity_settings_and_save_mapping(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "bot_gui.html").read_text(encoding="utf-8")
+
+        for field_id in (
+            "configMarketToxicityEnabled",
+            "configToxicityProtectionLevel",
+            "configToxicityMaxSpreadMultiplier",
+            "configToxicityThrottleSecs",
+        ):
+            self.assertIn(f'id="{field_id}"', html)
+            self.assertIn(f"'{field_id}'", html)
+
+        self.assertIn("data.market_toxicity_enabled", html)
+        self.assertIn("data.toxicity_protection_level", html)
+        self.assertIn("market_toxicity_enabled:", html)
+        self.assertIn("toxicity_protection_level:", html)
+        self.assertIn("toxicity_max_spread_multiplier:", html)
+        self.assertIn("toxicity_throttle_secs:", html)
+
+    def test_smart_toxicity_defaults_defensive_for_small_thin_one_sided_wallet(self):
+        from blueprints.smart_defaults import _smart_toxicity_defaults
+
+        rec = _smart_toxicity_defaults(
+            avail_xch=1.5,
+            avail_cat=500,
+            liquidity_mode="buy_only",
+            risk_level="thin",
+            activity_level="quiet",
+            fills_per_day=0.2,
+            daily_volume=0.05,
+            regime="volatile",
+            arb_gap_bps=350,
+            orderbook={"has_data": True, "num_buy_offers": 1, "num_sell_offers": 1},
+        )
+
+        self.assertTrue(rec["market_toxicity_enabled"])
+        self.assertEqual(rec["toxicity_protection_level"], "defensive")
+        self.assertLessEqual(rec["toxicity_throttle_start"], 65)
+        self.assertEqual(rec["toxicity_min_throttle_signals"], 1)
+        self.assertEqual(rec["toxicity_cancel_enabled"], False)
+
+    def test_smart_toxicity_defaults_gentle_for_deep_healthy_market(self):
+        from blueprints.smart_defaults import _smart_toxicity_defaults
+
+        rec = _smart_toxicity_defaults(
+            avail_xch=50,
+            avail_cat=1_000_000,
+            liquidity_mode="two_sided",
+            risk_level="healthy",
+            activity_level="active",
+            fills_per_day=12,
+            daily_volume=15,
+            regime="normal",
+            arb_gap_bps=20,
+            orderbook={"has_data": True, "num_buy_offers": 30, "num_sell_offers": 28},
+        )
+
+        self.assertEqual(rec["toxicity_protection_level"], "gentle")
+        self.assertGreaterEqual(rec["toxicity_throttle_start"], 85)
+        self.assertLessEqual(rec["toxicity_max_spread_multiplier"], 1.5)
 
     def test_frontend_sends_selected_cat_to_smart_settings(self):
         root = Path(__file__).resolve().parents[1]

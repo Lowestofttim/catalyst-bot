@@ -11014,13 +11014,36 @@
                             </div>
                         </div>
 
-                        <!-- Inventory Management — hidden in single-sided modes.
-                             Inventory skew adjusts quotes based on how far net
-                             position has drifted from the balanced target, but
-                             in buy-only / sell-only the position deliberately
-                             drifts in one direction so the skew concept doesn't
-                             apply. Max position is still tracked implicitly via
-                             wallet balance + reserves in single-sided. -->
+                        <!-- Adverse Selection Guard -->
+                        <div style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" id="configMarketToxicityEnabled" style="width: auto; margin: 0;">
+                                    <span style="font-weight: bold; color: var(--warning-300);">Adverse Selection Guard <span class="cc-help">?<span class="cc-tooltip">Watches for predatory fills, thin public depth, one-sided pressure, sweep risk, and stale price signals. It widens spreads or pauses only the risky side.</span></span></span>
+                                </label>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Protection Level <span class="cc-help">?<span class="cc-tooltip">Smart Settings chooses this from wallet size, token health, public depth, volatility, and liquidity mode.</span></span></label>
+                                    <select id="configToxicityProtectionLevel" class="v4-settings-select" onchange="applyToxicityPresetFromUi()">
+                                        <option value="gentle">Gentle</option>
+                                        <option value="balanced" selected>Balanced</option>
+                                        <option value="defensive">Defensive</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Max Widening <span class="cc-help">?<span class="cc-tooltip">Maximum spread multiplier when adverse-selection risk is high. 2.0x means a 5% spread can widen to at most 10%.</span></span></label>
+                                    <input type="number" id="configToxicityMaxSpreadMultiplier" value="2.0" step="0.1" min="1.0" max="3.0">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Pause Seconds <span class="cc-help">?<span class="cc-tooltip">How long to pause fresh offers on a risky side after the guard sees enough independent warning signals.</span></span></label>
+                                    <input type="number" id="configToxicityThrottleSecs" value="120" step="15" min="30" max="600">
+                                </div>
+                            </div>
+                            <div class="v4-settings-hint">Smart Settings keeps this gentle on deep markets and defensive for small wallets, one-sided setups, thin books, or volatile tokens.</div>
+                        </div>
+
+                        <!-- Inventory Management -->
                         <div class="mode-hide-on-buy-only mode-hide-on-sell-only" style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
                             <div class="form-group" style="margin-bottom: 8px;">
                                 <label style="display: flex; align-items: center; gap: 10px;">
@@ -13219,6 +13242,20 @@
                             const xs = parseFloat(g('MAX_SPREAD_BPS') || 0); if (xs > 0) document.getElementById('configMaxSpreadBps').value = (xs / 100).toFixed(1);
                             const vw = g('VOLATILITY_WINDOW_HOURS'); if (vw) document.getElementById('configVolatilityWindow').value = vw;
                         }
+
+                        // Adverse-selection guard settings are safe to load for every pair.
+                        const mt = g('MARKET_TOXICITY_ENABLED');
+                        if (mt !== null) {
+                            document.getElementById('configMarketToxicityEnabled').checked =
+                                mt === true || mt === 'true' || mt === '1' || mt === 'True';
+                        }
+                        const tl = String(g('TOXICITY_PROTECTION_LEVEL') || 'balanced').toLowerCase();
+                        const tlSelect = document.getElementById('configToxicityProtectionLevel');
+                        if (tlSelect) tlSelect.value = TOXICITY_UI_PRESETS[tl] ? tl : 'balanced';
+                        const tm = parseFloat(g('TOXICITY_MAX_SPREAD_MULTIPLIER') || 0);
+                        if (tm > 0) document.getElementById('configToxicityMaxSpreadMultiplier').value = tm;
+                        const ts = parseInt(g('TOXICITY_THROTTLE_SECS') || 0);
+                        if (ts > 0) document.getElementById('configToxicityThrottleSecs').value = ts;
 
                         // INVENTORY_ENABLED toggle is a user preference — always load
                         const ie = g('INVENTORY_ENABLED'); if (ie !== null) document.getElementById('configInventoryEnabled').checked = ie === true || ie === 'true' || ie === '1' || ie === 'True';
@@ -19029,6 +19066,20 @@
                 document.getElementById('configMinEdgeBps').value = _bps2pct(data.min_edge_bps ?? data.inner_edge_bps);
                 document.getElementById('configMinSpreadBps').value = _bps2pct(data.min_spread_bps);
                 document.getElementById('configMaxSpreadBps').value = _bps2pct(data.max_spread_bps);
+                if (data.market_toxicity_enabled !== undefined) {
+                    document.getElementById('configMarketToxicityEnabled').checked = !!data.market_toxicity_enabled;
+                }
+                if (data.toxicity_protection_level !== undefined) {
+                    const toxLevel = String(data.toxicity_protection_level || 'balanced').toLowerCase();
+                    const toxSelect = document.getElementById('configToxicityProtectionLevel');
+                    if (toxSelect) toxSelect.value = TOXICITY_UI_PRESETS[toxLevel] ? toxLevel : 'balanced';
+                }
+                if (data.toxicity_max_spread_multiplier !== undefined) {
+                    document.getElementById('configToxicityMaxSpreadMultiplier').value = data.toxicity_max_spread_multiplier;
+                }
+                if (data.toxicity_throttle_secs !== undefined) {
+                    document.getElementById('configToxicityThrottleSecs').value = data.toxicity_throttle_secs;
+                }
 
                 // Smart Pricing — Inventory Management
                 document.getElementById('configInventoryEnabled').checked = data.inventory_enabled;
@@ -19576,6 +19627,8 @@
             'configDynamicSpreadEnabled', 'configBaseSpreadBps',
             'configVolatilityWindow', 'configMinEdgeBps',
             'configMinSpreadBps', 'configMaxSpreadBps',
+            'configMarketToxicityEnabled', 'configToxicityProtectionLevel',
+            'configToxicityMaxSpreadMultiplier', 'configToxicityThrottleSecs',
             'configInventoryEnabled', 'configSkewIntensity',
             'configMaxPositionXch', 'configSpreadBps',
             'configLoopSeconds', 'configAutoRequote',
@@ -31672,6 +31725,8 @@
             'configMinMid','configMaxMid',
             'configDynamicSpreadEnabled','configBaseSpreadBps','configMinEdgeBps',
             'configMinSpreadBps','configMaxSpreadBps','configVolatilityWindow',
+            'configMarketToxicityEnabled','configToxicityProtectionLevel',
+            'configToxicityMaxSpreadMultiplier','configToxicityThrottleSecs',
             'configInventoryEnabled','configSkewIntensity','configMaxPositionXch',
             'configTierEnabled','configBuyLadderReversed',
             'configInnerSizeXch','configMidSizeXch','configOuterSizeXch','configExtremeSizeXch',
@@ -31829,6 +31884,7 @@
         const SMART_DIFF_LABELS = {
             'configBaseSpreadBps': 'Spread',
             'configSpreadBps':     'Spread (fallback)',
+            'configToxicityProtectionLevel': 'Adverse guard',
             'configMaxBuy':        'Buy offers',
             'configMaxSell':       'Sell offers',
             'configMinMid':        'Min price',
@@ -31865,6 +31921,58 @@
             }
             if (priceRailChanged) parts.push('Price rails updated');
             return parts;
+        }
+
+        const TOXICITY_UI_PRESETS = {
+            gentle: {
+                toxicity_widen_start: 40,
+                toxicity_elevated_start: 65,
+                toxicity_throttle_start: 85,
+                toxicity_cancel_start: 95,
+                toxicity_throttle_secs: 60,
+                toxicity_decay_per_loop: 10,
+                toxicity_max_spread_multiplier: 1.5,
+                toxicity_min_throttle_signals: 2,
+                toxicity_cancel_enabled: false,
+            },
+            balanced: {
+                toxicity_widen_start: 30,
+                toxicity_elevated_start: 55,
+                toxicity_throttle_start: 75,
+                toxicity_cancel_start: 90,
+                toxicity_throttle_secs: 120,
+                toxicity_decay_per_loop: 8,
+                toxicity_max_spread_multiplier: 2.0,
+                toxicity_min_throttle_signals: 2,
+                toxicity_cancel_enabled: false,
+            },
+            defensive: {
+                toxicity_widen_start: 20,
+                toxicity_elevated_start: 45,
+                toxicity_throttle_start: 65,
+                toxicity_cancel_start: 85,
+                toxicity_throttle_secs: 180,
+                toxicity_decay_per_loop: 6,
+                toxicity_max_spread_multiplier: 2.0,
+                toxicity_min_throttle_signals: 1,
+                toxicity_cancel_enabled: false,
+            },
+        };
+
+        function getToxicityPresetValues(level) {
+            const key = String(level || 'balanced').toLowerCase();
+            return TOXICITY_UI_PRESETS[key] || TOXICITY_UI_PRESETS.balanced;
+        }
+
+        function applyToxicityPresetFromUi() {
+            const level = document.getElementById('configToxicityProtectionLevel')?.value || 'balanced';
+            const preset = getToxicityPresetValues(level);
+            const maxEl = document.getElementById('configToxicityMaxSpreadMultiplier');
+            const secsEl = document.getElementById('configToxicityThrottleSecs');
+            if (maxEl) maxEl.value = preset.toxicity_max_spread_multiplier;
+            if (secsEl) secsEl.value = preset.toxicity_throttle_secs;
+            try { updateUnsavedBadge(); } catch (_) {}
+            try { checkSmartSettingsDirty(); } catch (_) {}
         }
 
         // ============================================================
@@ -31913,6 +32021,12 @@
                 ['MIN_EDGE_BPS', String(Math.round(parseFloat(document.getElementById('configMinEdgeBps')?.value || 0) * 100))],
                 ['MIN_SPREAD_BPS', String(Math.round(parseFloat(document.getElementById('configMinSpreadBps')?.value || 0) * 100))],
                 ['MAX_SPREAD_BPS', String(Math.round(parseFloat(document.getElementById('configMaxSpreadBps')?.value || 0) * 100))],
+                ['', null],
+                ['# Adverse Selection Guard', null],
+                ['MARKET_TOXICITY_ENABLED', document.getElementById('configMarketToxicityEnabled')?.checked ? 'true' : 'false'],
+                ['TOXICITY_PROTECTION_LEVEL', document.getElementById('configToxicityProtectionLevel')?.value || 'balanced'],
+                ['TOXICITY_MAX_SPREAD_MULTIPLIER', document.getElementById('configToxicityMaxSpreadMultiplier')?.value || '2.0'],
+                ['TOXICITY_THROTTLE_SECS', document.getElementById('configToxicityThrottleSecs')?.value || '120'],
             ];
             const lines = ['# CATalyst — exported settings (client fallback)', ''];
             for (const [k, v] of fields) {
@@ -32323,6 +32437,11 @@
             if (maxBuyEl) maxBuyEl.value = effectiveOffers.maxBuy || '';
             if (maxSellEl) maxSellEl.value = effectiveOffers.maxSell || '';
 
+            const toxicityLevel = document.getElementById('configToxicityProtectionLevel')?.value || 'balanced';
+            const toxicityPreset = getToxicityPresetValues(toxicityLevel);
+            const toxicityThrottleSecs = parseInt(document.getElementById('configToxicityThrottleSecs')?.value) || toxicityPreset.toxicity_throttle_secs;
+            const toxicityMaxMultiplier = parseFloat(document.getElementById('configToxicityMaxSpreadMultiplier')?.value) || toxicityPreset.toxicity_max_spread_multiplier;
+
             let config = {
                 loop_seconds: parseInt(document.getElementById('configLoopSeconds').value),
                 spread_bps: Math.round(parseFloat(document.getElementById('configSpreadBps').value) * 100),
@@ -32382,6 +32501,19 @@
                 min_spread_bps: Math.round(parseFloat(document.getElementById('configMinSpreadBps').value) * 100),
                 max_spread_bps: Math.round(parseFloat(document.getElementById('configMaxSpreadBps').value) * 100),
                 volatility_window_hours: parseInt(document.getElementById('configVolatilityWindow').value),
+
+                // Adverse Selection Guard
+                market_toxicity_enabled: !!document.getElementById('configMarketToxicityEnabled')?.checked,
+                toxicity_protection_level: toxicityLevel,
+                toxicity_widen_start: toxicityPreset.toxicity_widen_start,
+                toxicity_elevated_start: toxicityPreset.toxicity_elevated_start,
+                toxicity_throttle_start: toxicityPreset.toxicity_throttle_start,
+                toxicity_cancel_start: toxicityPreset.toxicity_cancel_start,
+                toxicity_throttle_secs: Math.max(30, Math.min(600, toxicityThrottleSecs)),
+                toxicity_decay_per_loop: toxicityPreset.toxicity_decay_per_loop,
+                toxicity_max_spread_multiplier: Math.max(1.0, Math.min(3.0, toxicityMaxMultiplier)),
+                toxicity_min_throttle_signals: toxicityPreset.toxicity_min_throttle_signals,
+                toxicity_cancel_enabled: false,
 
                 // V2: Inventory Management
                 inventory_enabled: document.getElementById('configInventoryEnabled').checked,
