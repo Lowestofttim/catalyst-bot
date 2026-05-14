@@ -290,8 +290,14 @@ def _api_error(e: Exception, endpoint: str = "", status: int = 500):
     endpoint_name = endpoint or "unknown"
     try:
         slog("API_ERROR", f"Unhandled exception on {endpoint_name}: {e!r}", level="error")
-    except Exception:
-        pass
+    except Exception as log_exc:
+        from contextlib import suppress
+        # Last-resort diagnostics only; API error handling must never raise.
+        with suppress(Exception):
+            import sys
+            sys.stderr.write(
+                f"CATalyst API error logging failed for {endpoint_name}: {log_exc!r}\n"
+            )
     try:
         log_event(
             "error",
@@ -313,15 +319,14 @@ def _api_error(e: Exception, endpoint: str = "", status: int = 500):
 def _api_exception(endpoint: str = "", status: int = 500):
     """Return a safe JSON response for the exception currently being handled."""
     endpoint_name = endpoint or "unknown"
-    try:
+    from contextlib import suppress
+    with suppress(Exception):
         import traceback
         slog(
             "API_ERROR",
             f"Unhandled exception on {endpoint_name}:\n{traceback.format_exc()}",
             level="error",
         )
-    except Exception:
-        pass
     try:
         log_event(
             "error",
