@@ -230,6 +230,7 @@ _LOCAL_API_TOKEN_HEADER = "X-Bot-Local-Token"
 _LOCAL_API_COOKIE = "catalyst_local_session"
 _LOCAL_API_TOKEN = os.environ.get("BOT_LOCAL_WRITE_TOKEN") or secrets.token_urlsafe(32)
 os.environ["BOT_LOCAL_WRITE_TOKEN"] = _LOCAL_API_TOKEN
+_LOCAL_API_COOKIE_VALUE = secrets.token_urlsafe(32)
 
 # ---------------------------------------------------------------------------
 # Security helpers
@@ -283,32 +284,19 @@ def _decimal_safe(obj):
 def _api_error(e: Exception, endpoint: str = "", status: int = 500):
     """Return a safe JSON error response that does NOT expose internal details.
 
-    The real exception is written to the database event log so it is still
-    visible in the debug log download, but clients only see a generic message.
+    The real exception is written to the local superlog so it is still visible
+    in the debug bundle, while the UI-visible event log gets generic text.
     """
+    endpoint_name = endpoint or "unknown"
     try:
-        log_event("error", "api_error",
-                  f"Unhandled exception on {endpoint or 'unknown'}: {e}",
-                  {"endpoint": endpoint})
-    except Exception as log_exc:
-        from contextlib import suppress
-        with suppress(Exception):
-            slog(
-                "API_ERROR",
-                f"Failed to record API error for {endpoint or 'unknown'}: {log_exc}",
-                level="warning",
-            )
-    return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
-
-
-def _api_exception(endpoint: str = "", status: int = 500):
-    """Return a safe JSON response for the exception currently being handled."""
+        slog("API_ERROR", f"Unhandled exception on {endpoint_name}: {e!r}", level="error")
+    except Exception:
+        pass
     try:
-        import traceback
         log_event(
             "error",
             "api_error",
-            f"Unhandled exception on {endpoint or 'unknown'}:\n{traceback.format_exc()}",
+            f"Unhandled exception on {endpoint_name}; see debug bundle for details.",
             {"endpoint": endpoint},
         )
     except Exception as log_exc:
@@ -316,7 +304,37 @@ def _api_exception(endpoint: str = "", status: int = 500):
         with suppress(Exception):
             slog(
                 "API_ERROR",
-                f"Failed to record API exception for {endpoint or 'unknown'}: {log_exc}",
+                f"Failed to record API error for {endpoint_name}: {log_exc}",
+                level="warning",
+            )
+    return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
+
+
+def _api_exception(endpoint: str = "", status: int = 500):
+    """Return a safe JSON response for the exception currently being handled."""
+    endpoint_name = endpoint or "unknown"
+    try:
+        import traceback
+        slog(
+            "API_ERROR",
+            f"Unhandled exception on {endpoint_name}:\n{traceback.format_exc()}",
+            level="error",
+        )
+    except Exception:
+        pass
+    try:
+        log_event(
+            "error",
+            "api_error",
+            f"Unhandled exception on {endpoint_name}; see debug bundle for details.",
+            {"endpoint": endpoint},
+        )
+    except Exception as log_exc:
+        from contextlib import suppress
+        with suppress(Exception):
+            slog(
+                "API_ERROR",
+                f"Failed to record API exception for {endpoint_name}: {log_exc}",
                 level="warning",
             )
     return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
@@ -625,7 +643,8 @@ def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
             msg += f", explorer gap {context['price_gap_bps'] / 100:.1f}%"
         context["message"] = msg
     except Exception as e:
-        context["message"] = f"Spacescan context unavailable: {e}"
+        slog("API_STATUS", f"Spacescan context unavailable: {e!r}", level="debug")
+        context["message"] = "Spacescan context unavailable right now."
 
     return context
 
@@ -670,12 +689,15 @@ def _is_loopback_addr(addr: str) -> bool:
 
 
 def _has_valid_local_token() -> bool:
-    supplied = (
-        request.headers.get(_LOCAL_API_TOKEN_HEADER, "")
-        or request.cookies.get(_LOCAL_API_COOKIE, "")
+    supplied_header = str(request.headers.get(_LOCAL_API_TOKEN_HEADER, "") or "")
+    if supplied_header and secrets.compare_digest(supplied_header, _LOCAL_API_TOKEN):
+        return True
+
+    supplied_cookie = str(request.cookies.get(_LOCAL_API_COOKIE, "") or "")
+    return bool(supplied_cookie) and secrets.compare_digest(
+        supplied_cookie,
+        _LOCAL_API_COOKIE_VALUE,
     )
-    supplied = str(supplied or "")
-    return bool(supplied) and secrets.compare_digest(supplied, _LOCAL_API_TOKEN)
 
 
 def _request_origin_matches_app() -> bool:
@@ -728,9 +750,9 @@ def _serve_bootstrapped_html(filename: str):
     response = Response(html_doc, mimetype="text/html")
     response.set_cookie(
         _LOCAL_API_COOKIE,
-        # Per-process loopback auth nonce in an HttpOnly, SameSite cookie.
-        # codeql[py/clear-text-storage-sensitive-data]
-        _LOCAL_API_TOKEN,
+        # Per-process loopback browser session nonce. The worker/header token
+        # stays out of browser storage.
+        _LOCAL_API_COOKIE_VALUE,
         httponly=True,
         samesite="Strict",
         secure=False,

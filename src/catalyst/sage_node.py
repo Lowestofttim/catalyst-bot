@@ -1328,6 +1328,16 @@ def _candidate_sage_ssl_dirs(extra_dirs: Optional[List[str]] = None) -> List[str
     return _dedupe_paths(ssl_dirs)
 
 
+def _realpath_is_within(child: str, parent: str) -> bool:
+    """Return True when child is inside parent after realpath resolution."""
+    try:
+        child_real = os.path.normcase(os.path.realpath(child))
+        parent_real = os.path.normcase(os.path.realpath(parent))
+        return os.path.commonpath([child_real, parent_real]) == parent_real
+    except (OSError, ValueError):
+        return False
+
+
 def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, str, str, str]:
     """Validate and normalise a Sage wallet TLS cert/key pair.
 
@@ -1360,13 +1370,19 @@ def validate_sage_cert_pair(cert_path: str, key_path: str = "") -> Tuple[bool, s
         return False, "wallet.crt and wallet.key must be in the same Sage ssl folder.", cert_real, key_real
     if os.path.basename(os.path.dirname(cert_real)).lower() != "ssl":
         return False, "wallet.crt and wallet.key must be inside Sage's ssl folder.", cert_real, key_real
-    # User-selected desktop path is restricted to ssl/wallet.crt plus sibling key.
-    # codeql[py/path-injection]
-    if not os.path.isfile(cert_real):
+
+    sage_root = os.path.dirname(cert_dir)
+    expected_ssl_dir = os.path.join(sage_root, "ssl")
+    if os.path.normcase(cert_dir) != os.path.normcase(os.path.realpath(expected_ssl_dir)):
+        return False, "wallet.crt and wallet.key must be in Sage's ssl folder.", cert_real, key_real
+    if not _realpath_is_within(cert_real, sage_root) or not _realpath_is_within(key_real, sage_root):
+        return False, "Sage certificate paths must stay inside the selected Sage data folder.", cert_real, key_real
+
+    # User-selected desktop path is restricted to ssl/wallet.crt plus sibling
+    # wallet.key below the same Sage data folder before these existence checks.
+    if not os.path.isfile(cert_real):  # lgtm[py/path-injection] codeql[py/path-injection]
         return False, "Certificate file not found at the specified path.", cert_real, key_real
-    # Key path is derived from or validated against the same Sage ssl folder.
-    # codeql[py/path-injection]
-    if not os.path.isfile(key_real):
+    if not os.path.isfile(key_real):  # lgtm[py/path-injection] codeql[py/path-injection]
         return False, "Key file not found next to wallet.crt.", cert_real, key_real
 
     return True, "", cert_real, key_real
