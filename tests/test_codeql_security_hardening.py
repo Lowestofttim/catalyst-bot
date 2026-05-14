@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import api_server
 import sage_node
+from blueprints import bot as bot_routes
 from blueprints import config_bp
 import coin_prep_worker
 
@@ -320,3 +322,84 @@ def test_splash_receive_node_action_hides_exception_details(monkeypatch):
 
     assert resp.status_code == 200
     assert "secret splash traceback" not in resp.get_data(as_text=True).lower()
+
+
+def test_client_safe_payload_removes_traceback_shaped_text():
+    payload = {
+        "success": True,
+        "details": {
+            "message": "Traceback (most recent call last): secret local path",
+            "count": 3,
+        },
+    }
+
+    safe = api_server._client_safe_payload(payload)
+
+    assert safe["details"]["message"] == "Details unavailable"
+    assert safe["details"]["count"] == 3
+    assert "secret local path" not in str(safe).lower()
+
+
+def test_status_prebot_response_hides_traceback_shaped_cached_values(monkeypatch):
+    client, loopback = _api_client()
+    asset_id = "ab" * 32
+    monkeypatch.setattr(api_server, "bot", None)
+    monkeypatch.setitem(api_server._active_cat, "asset_id", asset_id)
+    monkeypatch.setitem(api_server._active_cat, "decimals", 3)
+    monkeypatch.setattr(api_server.cfg, "CAT_ASSET_ID", asset_id, raising=False)
+    monkeypatch.setattr(api_server.cfg, "CAT_DECIMALS", 3, raising=False)
+    monkeypatch.setattr(
+        bot_routes,
+        "_prebot_price_cache",
+        {
+            "pricing": {
+                "mid": "Traceback (most recent call last): secret price traceback",
+                "bid": 0,
+                "ask": 0,
+            },
+            "asset_id": asset_id,
+            "fetched_at": time.time(),
+        },
+        raising=False,
+    )
+
+    with patch("wallet.get_all_offers", return_value=[]), \
+            patch("wallet.get_spendable_coin_count", return_value=0), \
+            patch("chia_node.is_startup_authorised", return_value=False):
+        resp = client.get("/api/status", environ_base=loopback)
+
+    body = resp.get_data(as_text=True).lower()
+    assert resp.status_code == 200
+    assert "secret price traceback" not in body
+    assert "traceback" not in body
+
+
+def test_coin_prep_verify_response_hides_traceback_shaped_drift_details(monkeypatch):
+    client, loopback = _api_client()
+    monkeypatch.setitem(api_server._active_cat, "wallet_id", 2)
+    monkeypatch.setitem(api_server._active_cat, "decimals", 3)
+
+    drift = [{
+        "tier": "inner",
+        "side": "xch",
+        "detail": "Traceback (most recent call last): secret drift traceback",
+    }]
+    balance = {"wallet_balance": {"confirmed_wallet_balance": 0}}
+    with patch("wallet.get_wallet_balance", return_value=balance), \
+            patch("wallet.get_spendable_coins_rpc", return_value={"success": True, "records": []}), \
+            patch("coin_manager.check_tier_size_drift_standalone", return_value=drift):
+        resp = client.get(
+            "/api/coin-prep/verify",
+            query_string={
+                "tier_enabled": "true",
+                "inner_xch": "1",
+                "inner_cat": "10",
+                "inner_count": "1",
+            },
+            environ_base=loopback,
+        )
+
+    body = resp.get_data(as_text=True).lower()
+    assert resp.status_code == 200
+    assert "secret drift traceback" not in body
+    assert "traceback" not in body

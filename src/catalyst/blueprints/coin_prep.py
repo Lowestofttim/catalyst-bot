@@ -875,8 +875,7 @@ def api_coin_prep_verify():
                 _mark_payload_needs_coin_prep_for_drift(response, tier_drift)
             # Response fields are derived from numeric wallet balances and
             # sanitized tier-size drift summaries.
-            # codeql[py/stack-trace-exposure]
-            return jsonify(response)
+            return jsonify(api_server._client_safe_payload(response))
         else:
             # Flat mode
             trade_size = float(request.args.get("trade_size", "0"))
@@ -921,8 +920,7 @@ def api_coin_prep_verify():
 
             # Response fields are derived from numeric wallet balances and
             # deterministic coin-size counts.
-            # codeql[py/stack-trace-exposure]
-            return jsonify({
+            return jsonify(api_server._client_safe_payload({
                 "success": True,
                 "tier_enabled": False,
                 "liquidity_mode": liquidity_mode,
@@ -939,7 +937,7 @@ def api_coin_prep_verify():
                 "cat_needed_mojos": total_cat_needed_mojos,
                 "balance_sufficient": xch_balance_sufficient and cat_balance_sufficient,
                 "balance_warnings": balance_warnings,
-            })
+            }))
 
     except Exception:
         return api_server._api_exception(request.path)

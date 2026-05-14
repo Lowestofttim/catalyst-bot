@@ -627,11 +627,17 @@ def api_status():
                 log_event("warning", "price_lookup", "No asset_id configured — cannot fetch price")
 
             # Compute actual bid/ask from mid using configured spread
-            if pricing.get("mid", 0) > 0 and pricing.get("bid") == pricing.get("mid"):
+            try:
+                _mid_for_spread = Decimal(str(pricing.get("mid", 0)))
+                _bid_for_spread = Decimal(str(pricing.get("bid", 0)))
+            except Exception:
+                _mid_for_spread = Decimal(0)
+                _bid_for_spread = Decimal(0)
+            if _mid_for_spread > 0 and _bid_for_spread == _mid_for_spread:
                 _spread_bps = Decimal(str(getattr(cfg, "BASE_SPREAD_BPS", 0) or getattr(cfg, "SPREAD_BPS", 200) or 200))
                 _spread_frac = _spread_bps / Decimal("10000")
-                pricing["bid"] = pricing["mid"] * (1 - _spread_frac / 2)
-                pricing["ask"] = pricing["mid"] * (1 + _spread_frac / 2)
+                pricing["bid"] = _mid_for_spread * (1 - _spread_frac / 2)
+                pricing["ask"] = _mid_for_spread * (1 + _spread_frac / 2)
 
             # Cache the freshly-fetched result so the next ~60 s of polls
             # serves this response without refetching. We stash the
@@ -755,8 +761,7 @@ def api_status():
             cat_name = api_server._active_cat.get("name") or (cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else "")
             # Pre-bot status contains sanitized offer summaries and local
             # cached pricing data, not exception text.
-            # codeql[py/stack-trace-exposure]
-            return jsonify({
+            return jsonify(api_server._client_safe_payload({
                 "running": False,
                 "stats": {"loop_count": 0, "uptime_seconds": 0, "last_loop_time": 0,
                            "total_fills": 0, "errors": 0},
@@ -778,7 +783,7 @@ def api_status():
                     "decimals": api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3),
                     "ticker_id": api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", None),
                 },
-            })
+            }))
 
         # Get raw state from bot
         raw = bot.get_state()

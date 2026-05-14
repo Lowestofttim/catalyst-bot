@@ -373,6 +373,36 @@ def _client_safe_result(payload: object, *, error_message: str = "Operation fail
     return safe
 
 
+_TRACEBACK_TEXT_MARKERS = (
+    "traceback (most recent call last)",
+    "\n  file ",
+    "runtimeerror:",
+    "valueerror:",
+    "exception:",
+)
+
+
+def _looks_like_traceback_text(value: str) -> bool:
+    text = str(value or "").lower()
+    return any(marker in text for marker in _TRACEBACK_TEXT_MARKERS)
+
+
+def _client_safe_payload(payload: object, *, error_message: str = "Details unavailable") -> object:
+    """Strip exception and traceback-shaped values from client JSON payloads."""
+    if isinstance(payload, BaseException):
+        return error_message
+    if isinstance(payload, dict):
+        return {
+            key: "***" if _is_sensitive_key(str(key)) else _client_safe_payload(value, error_message=error_message)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, (list, tuple)):
+        return [_client_safe_payload(value, error_message=error_message) for value in payload]
+    if isinstance(payload, str) and _looks_like_traceback_text(payload):
+        return error_message
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Startup security checks
 # ---------------------------------------------------------------------------
