@@ -310,6 +310,9 @@ class MarketToxicityGuard:
                 add("buy", "public_depth_imbalance", 18, "public sell depth dominates buy depth")
         for whale in intel.get("whale_orders") or []:
             side = str(whale.get("side") or "").lower()
+            is_ours = whale.get("is_ours")
+            if is_ours is True or str(is_ours).strip().lower() in {"1", "true", "yes"}:
+                continue
             if side in SIDES:
                 add(side, "whale_public_offer", 12, f"large public {side} offer visible on Dexie")
 

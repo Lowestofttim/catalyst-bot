@@ -88,6 +88,30 @@ def test_public_market_thin_side_scores_matching_side():
     assert "thin_public_depth" in {r["key"] for r in snap.reasons}
 
 
+def test_own_whale_orders_do_not_self_throttle():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            market_intel={
+                "whale_orders": [
+                    {"side": "buy", "xch_amount": "4.0", "is_ours": True},
+                    {"side": "buy", "xch_amount": "3.0", "is_ours": True},
+                    {"side": "buy", "xch_amount": "2.0", "is_ours": True},
+                    {"side": "buy", "xch_amount": "1.5", "is_ours": True},
+                    {"side": "buy", "xch_amount": "1.1", "is_ours": True},
+                ],
+                "orderbook_refreshes": 3,
+                "orderbook_age_secs": 12,
+            }
+        )
+    )
+
+    assert snap.buy_score == 0
+    assert snap.throttled_sides == []
+    assert "whale_public_offer" not in {r["key"] for r in snap.reasons}
+
+
 def test_scores_decay_when_conditions_calm():
     guard = MarketToxicityGuard()
     hot = guard.update(
