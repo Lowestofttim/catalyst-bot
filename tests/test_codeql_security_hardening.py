@@ -93,10 +93,15 @@ def test_sage_cert_pair_accepts_only_wallet_pair_under_same_ssl_dir(tmp_path):
     cert.write_text("cert", encoding="utf-8")
     key.write_text("key", encoding="utf-8")
 
-    ok, reason, cert_real, key_real = sage_node.validate_sage_cert_pair(
-        str(cert),
-        str(key),
-    )
+    with patch.dict(
+        "os.environ",
+        {"SAGE_ALLOWED_CERT_ROOTS": str(tmp_path / "PortableSage")},
+        clear=False,
+    ):
+        ok, reason, cert_real, key_real = sage_node.validate_sage_cert_pair(
+            str(cert),
+            str(key),
+        )
 
     assert ok is True
     assert reason == ""
@@ -114,10 +119,30 @@ def test_sage_cert_pair_rejects_key_outside_selected_ssl_dir(tmp_path):
     outside.parent.mkdir()
     outside.write_text("key", encoding="utf-8")
 
-    ok, reason, _, _ = sage_node.validate_sage_cert_pair(str(cert), str(outside))
+    with patch.dict(
+        "os.environ",
+        {"SAGE_ALLOWED_CERT_ROOTS": str(tmp_path / "PortableSage")},
+        clear=False,
+    ):
+        ok, reason, _, _ = sage_node.validate_sage_cert_pair(str(cert), str(outside))
 
     assert ok is False
     assert "same Sage ssl folder" in reason
+
+
+def test_sage_cert_pair_rejects_unknown_custom_root(tmp_path):
+    ssl_dir = tmp_path / "PortableSage" / "ssl"
+    ssl_dir.mkdir(parents=True)
+    cert = ssl_dir / "wallet.crt"
+    key = ssl_dir / "wallet.key"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    with patch.dict("os.environ", {"SAGE_ALLOWED_CERT_ROOTS": ""}, clear=False):
+        ok, reason, _, _ = sage_node.validate_sage_cert_pair(str(cert), str(key))
+
+    assert ok is False
+    assert "detected Sage data folder" in reason
 
 
 class _StartableBot:
