@@ -72,6 +72,9 @@ ToxicityContext:
     inventory_state
     wallet_health
     dexie_market_quality
+    market_intel
+    orderbook_snapshot
+    recent_sweep_events
 
 ToxicitySnapshot:
     score
@@ -106,6 +109,13 @@ Example:
 
 If recent fills are mostly buys or mostly sells, score that side. One-sided flow can be normal, but combined with inventory drift or price movement it becomes toxic.
 
+The guard must distinguish between two cases:
+
+- an intentional one-sided setup, such as buy-only accumulation or sell-only distribution
+- an unintentional one-sided market event where takers repeatedly hit the same side because CATalyst is stale or too tight
+
+For intentional one-sided modes, the missing opposite side is not itself toxic. The guard should still score fast fills, adverse moves, balance pressure, and sweep risk on the active side.
+
 ### Post-Fill Adverse Move
 
 Compare the current mid/Tibet price with the price at or near fill time.
@@ -126,6 +136,49 @@ If TibetSwap moves materially away from CATalyst's quoted mid after offers were 
 ### Inventory Accumulation
 
 If fills push inventory toward the max position, increase toxicity on the side that would worsen the imbalance.
+
+### Small-Balance Sweep Risk
+
+Small wallets are more exposed because one public taker can consume a meaningful share of the whole working balance. The guard should explicitly score this, instead of only looking at price movement after the damage happens.
+
+For each side, calculate:
+
+- open exposure on that side as XCH notional
+- available spendable balance and total confirmed balance from Sage/Chia
+- percentage of available balance locked or exposed in live offers
+- largest own offer and largest same-side offer cluster
+- recent sweep events from `SweepCoordinator`
+- visible public Dexie depth and whale-sized offers from `MarketIntel`
+
+If one taker or one same-block sweep could consume a large percentage of the user's working balance, the guard should widen and may throttle that side sooner. This matters most for beta testers running small amounts, thin CAT markets, and newly prepared wallets with only a few usable coins.
+
+Suggested initial thresholds:
+
+```text
+exposed side > 25% of spendable balance: mild
+exposed side > 50% of spendable balance: elevated
+recent same-block sweep on same side: elevated to high, depending on size
+single offer > 35% of spendable balance: elevated
+single offer > 60% of spendable balance: high
+```
+
+These thresholds should be configurable after the first implementation if live testing shows they are too conservative.
+
+### Public Market Depth
+
+Use the existing `MarketIntel` snapshot as a full-public-market signal:
+
+- best competing bid and ask
+- competitor spread
+- overall spread including CATalyst offers
+- buy and sell depth in XCH
+- thin side
+- whale orders
+- orderbook age, refresh count, and truncation flags
+
+This is not a complete view of every possible buyer or seller because Chia offers can be shared privately and not every taker intent appears on Dexie before it fills. The guard should treat Dexie as the best public orderbook view, then combine it with TibetSwap reserve/slippage data and CATalyst's own fill/sweep history.
+
+If Dexie depth is stale, empty, truncated, or API-limited, that should raise data-quality caution rather than pretending the market is safe.
 
 ### Market Data Quality
 
@@ -260,6 +313,9 @@ Unit tests:
 - score one-sided fill streaks
 - score adverse post-fill movement
 - score inventory accumulation
+- score small-balance sweep risk
+- score public market depth imbalance
+- do not penalize intentional one-sided mode solely for being one-sided
 - score Dexie/Tibet dislocation
 - decay scores when conditions calm
 - apply spread multipliers by level
