@@ -19,7 +19,7 @@ body:
     attributes:
       label: CATalyst version
       description: Use the version shown in the app or on the website download panel.
-      placeholder: "v1.2.27"
+      placeholder: "v1.2.30"
     validations:
       required: true
   - type: dropdown

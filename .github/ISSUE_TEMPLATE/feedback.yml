@@ -42,7 +42,7 @@ body:
     id: catalyst-version
     attributes:
       label: CATalyst version, if relevant
-      placeholder: "v1.2.27"
+      placeholder: "v1.2.30"
     validations:
       required: false
   - type: checkboxes
