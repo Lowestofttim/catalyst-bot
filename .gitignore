@@ -148,6 +148,11 @@ version_info.txt
 outputs/
 capture_screenshots.py
 
+# --- Local marketing/video render workspace (stay off GitHub) ---
+output/
+tmp/
+.superpowers/
+
 # --- Claude Code agent scratch ---
 .claude/
 
