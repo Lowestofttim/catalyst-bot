@@ -340,7 +340,8 @@ class PriceEngine:
     def _fetch_dexie_price(self, ticker_id: str) -> Optional[Decimal]:
         """Fetch mid price from Dexie API.
 
-        Tries multiple price fields in order: current_avg_price -> last_price -> price
+        Uses live bid/ask midpoint only. Historical ticker fields are not a
+        safe trading reference on thin CAT markets.
         """
         if not ticker_id:
             return None
@@ -408,84 +409,45 @@ class PriceEngine:
                                    f"suppressed for {int(cooldown // 60)}m"
                                    if self._crossed_repeats >= 2
                                    else f"suppressed for {self._warn_cooldown_secs}s")
-                        # Logged at INFO, not WARNING: the bot handles this
-                        # transparently by falling back to current_avg_price.
-                        # Nothing the user can act on — promoting to WARNING
-                        # just creates red noise for an event we already
-                        # absorbed cleanly. Stays in the diagnostic log.
                         log_event("info", "dexie_crossed_market",
                                   f"Dexie ticker returned crossed bid/ask "
-                                  f"(bid={bid_d}, ask={ask_d}) — using "
-                                  f"current_avg_price instead ({suffix})")
+                                  f"(bid={bid_d}, ask={ask_d}) — rejecting "
+                                  f"Dexie ticker for this cycle ({suffix})")
                         self._last_crossed_warn = _now
                     _logged_ticker_problem = True
             except InvalidOperation:
                 pass
 
-            # Fallback to other price fields when bid/ask unavailable or crossed.
-            # Order matters:
-            #   current_avg_price — Dexie's time-weighted average, stable and independent
-            #                       of live bid/ask. Safe even when bid is corrupted.
-            #   price_24h         — 24h average, also stable
-            #   price             — generic fallback
-            # NOTE: last_price is intentionally excluded — it reflects the most recent
-            # single trade and can be an anomalous spike (e.g. MZ last_price = 0.9648
-            # from a single outlier trade). Using it caused a real-money loss event.
+            # Historical Dexie fields are diagnostic only here. They can lag
+            # the live book on thin CAT markets, so they must not become the
+            # bot's trading reference.
 
-            # Check if we've had a good price recently; if the last accepted price is
-            # too stale, refuse to quote from historical averages (thin/empty orderbook
-            # during volatile periods is exactly when historical averages mislead most).
-            # Ceiling at PRICE_HARD_PAUSE_SECS so the Dexie historical fallback
-            # cannot outlive the hard-pause policy.
-            _hp = int(getattr(cfg, "PRICE_HARD_PAUSE_SECS", 120))
-            max_stale_secs = min(int(getattr(cfg, "TIBET_MAX_STALE_SECS", _hp)), _hp)
-            last_price_age = time.time() - self._last_price_time
-            if self._last_price_time > 0 and last_price_age > max_stale_secs:
-                log_event("warning", "dexie_fallback_too_stale",
-                          f"Dexie ticker bid/ask unusable + last accepted price is "
-                          f"{last_price_age:.0f}s old (> {max_stale_secs}s max). "
-                          f"Refusing to quote — price too uncertain.")
-                return None
-
-            for field in ["current_avg_price", "price_24h", "price"]:
-                val = ticker.get(field)
-                if val and val != "0":
-                    try:
-                        fallback_price = Decimal(str(val))
-                        if fallback_price > 0:
-                            _now = time.time()
-                            sig = f"{field}/{fallback_price}"
-                            if sig == self._last_empty_signature:
-                                self._empty_repeats += 1
-                            else:
-                                self._last_empty_signature = sig
-                                self._empty_repeats = 1
-                            cooldown = (self._stuck_cooldown_secs
-                                        if self._empty_repeats >= 2
-                                        else self._warn_cooldown_secs)
-                            # Suppress the "unavailable" warning when the
-                            # crossed branch already logged the same root
-                            # cause for this call — saves the user from
-                            # seeing two warnings per cycle for one event.
-                            if (not _logged_ticker_problem
-                                    and _now - self._last_empty_warn >= cooldown):
-                                suffix = (f"appears stuck; suppressed for "
-                                           f"{int(cooldown // 60)}m"
-                                           if self._empty_repeats >= 2
-                                           else f"suppressed for "
-                                                f"{self._warn_cooldown_secs}s")
-                                # INFO, not WARNING: same reasoning as
-                                # dexie_crossed_market — fallback works,
-                                # nothing for the user to do.
-                                log_event("info", "dexie_ticker_unusable",
-                                          f"Dexie ticker bid/ask unavailable "
-                                          f"(thin/illiquid pair). Using "
-                                          f"historical '{field}' = "
-                                          f"{fallback_price}. ({suffix})")
-                                self._last_empty_warn = _now
-                            return fallback_price
-                    except InvalidOperation:
-                        continue
+            if not _logged_ticker_problem:
+                _now = time.time()
+                signature_fields = []
+                for field in ("current_avg_price", "price_24h", "last_price", "price"):
+                    val = ticker.get(field)
+                    if val and str(val) != "0":
+                        signature_fields.append(f"{field}={val}")
+                sig = "|".join(signature_fields) or "no-historical-fields"
+                if sig == self._last_empty_signature:
+                    self._empty_repeats += 1
+                else:
+                    self._last_empty_signature = sig
+                    self._empty_repeats = 1
+                cooldown = (self._stuck_cooldown_secs
+                            if self._empty_repeats >= 2
+                            else self._warn_cooldown_secs)
+                if _now - self._last_empty_warn >= cooldown:
+                    suffix = (f"appears stuck; suppressed for "
+                              f"{int(cooldown // 60)}m"
+                              if self._empty_repeats >= 2
+                              else f"suppressed for {self._warn_cooldown_secs}s")
+                    log_event("info", "dexie_ticker_unusable",
+                              f"Dexie ticker bid/ask unavailable "
+                              f"(thin/illiquid pair). Rejecting historical "
+                              f"ticker fields for trading. ({suffix})")
+                    self._last_empty_warn = _now
 
             return None
 
