@@ -1377,6 +1377,11 @@ class FillTracker:
         coin_id = verified_coin_id  # use the coin that gave a decisive answer
 
         if is_real_fill:
+            reused_coin_verdict = self._reused_coin_fill_verdict(
+                trade_id, side, coin_id, db_offer
+            )
+            if reused_coin_verdict:
+                return reused_coin_verdict
             log_event(
                 "success",
                 "fill_verified",
@@ -1600,6 +1605,136 @@ class FillTracker:
                 f"inconclusive. NOT recording (retry will re-verify).",
             )
             return "unverified"
+
+    def _reused_coin_fill_verdict(
+        self, trade_id: str, side: str, coin_id: str, db_offer: Optional[Dict]
+    ) -> Optional[str]:
+        """Require offer-specific proof when a source coin backed re-quotes.
+
+        Spacescan can prove a Chia coin was spent, but if the same source coin
+        appears on several local re-quoted offers, that spend alone does not
+        identify which offer was actually taken. In that narrow case, require
+        Dexie or Sage to confirm this exact trade before recording a fill.
+        """
+        try:
+            from database import get_offer_coin_usage_summary
+
+            summary = get_offer_coin_usage_summary(
+                coin_id,
+                cat_asset_id=(db_offer or {}).get("cat_asset_id")
+                or getattr(cfg, "CAT_ASSET_ID", None),
+            )
+        except Exception as exc:
+            log_event(
+                "debug",
+                "fill_reused_coin_summary_failed",
+                f"Could not check reused source coin {coin_id[:16]}... "
+                f"for {trade_id[:16]}...: {exc}",
+            )
+            return None
+
+        try:
+            offer_count = int(summary.get("offer_count") or 0)
+            verified_fill_count = int(summary.get("verified_fill_count") or 0)
+        except Exception:
+            offer_count = 0
+            verified_fill_count = 0
+
+        verified_trade_ids = {
+            str(tid) for tid in (summary.get("verified_trade_ids") or []) if tid
+        }
+        if offer_count <= 1 and not (verified_trade_ids - {trade_id}):
+            return None
+        if trade_id in verified_trade_ids:
+            return None
+
+        if verified_fill_count > 0:
+            log_event(
+                "warning",
+                "fill_reused_coin_duplicate_rejected",
+                f"Spacescan saw source coin {coin_id[:16]}... spent for "
+                f"{trade_id[:16]}..., but that coin is already attributed to "
+                f"{verified_fill_count} verified fill(s). Rejecting duplicate "
+                f"fill attribution.",
+                data={
+                    "trade_id": trade_id,
+                    "side": side,
+                    "coin_id": coin_id,
+                    "offer_count": offer_count,
+                    "verified_fill_count": verified_fill_count,
+                },
+            )
+            return "rejected"
+
+        dexie_terminal = self._dexie_terminal_status(trade_id)
+        if dexie_terminal == "filled":
+            log_event(
+                "success",
+                "fill_reused_coin_confirmed",
+                f"Source coin {coin_id[:16]}... appears on {offer_count} "
+                f"re-quotes, and Dexie confirms {trade_id[:16]}... was filled.",
+                data={
+                    "trade_id": trade_id,
+                    "side": side,
+                    "coin_id": coin_id,
+                    "offer_count": offer_count,
+                    "source": "dexie",
+                },
+            )
+            return None
+        if dexie_terminal == "cancelled":
+            log_event(
+                "info",
+                "fill_reused_coin_cancel_confirmed",
+                f"Source coin {coin_id[:16]}... appears on {offer_count} "
+                f"re-quotes, but Dexie reports {trade_id[:16]}... was cancelled. "
+                f"Rejecting fill attribution.",
+                data={
+                    "trade_id": trade_id,
+                    "side": side,
+                    "coin_id": coin_id,
+                    "offer_count": offer_count,
+                    "source": "dexie",
+                },
+            )
+            return "rejected"
+
+        try:
+            sage_confirmed = self._check_sage_offer_confirmed(trade_id)
+        except Exception:
+            sage_confirmed = False
+        if sage_confirmed:
+            log_event(
+                "success",
+                "fill_reused_coin_confirmed",
+                f"Source coin {coin_id[:16]}... appears on {offer_count} "
+                f"re-quotes, and Sage confirms {trade_id[:16]}... was filled.",
+                data={
+                    "trade_id": trade_id,
+                    "side": side,
+                    "coin_id": coin_id,
+                    "offer_count": offer_count,
+                    "source": "sage",
+                },
+            )
+            return None
+
+        log_event(
+            "warning",
+            "fill_reused_coin_needs_trade_confirmation",
+            f"Spacescan saw source coin {coin_id[:16]}... spent, but that coin "
+            f"appears on {offer_count} local re-quotes. Dexie/Sage did not "
+            f"confirm this exact trade {trade_id[:16]}..., so the bot will "
+            f"retry instead of booking a likely duplicate fill.",
+            data={
+                "trade_id": trade_id,
+                "side": side,
+                "coin_id": coin_id,
+                "offer_count": offer_count,
+                "verified_fill_count": verified_fill_count,
+            },
+        )
+        return "unverified"
 
     def _check_sage_offer_confirmed(self, trade_id: str) -> bool:
         """Ask Sage directly whether this offer is in a filled/confirmed state.

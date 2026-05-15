@@ -2179,6 +2179,65 @@ def get_offer(trade_id: str) -> Optional[Dict]:
     return dict(row) if row else None
 
 
+def get_offer_coin_usage_summary(
+    coin_id: str, cat_asset_id: str = None
+) -> Dict[str, object]:
+    """Summarise how many local offer rows reference one source coin.
+
+    Chia coins can be spent only once, but the bot may create multiple
+    re-quotes against the same still-locked source coin before it is finally
+    taken or cancelled. Fill attribution uses this to avoid letting one
+    on-chain coin spend validate every old local re-quote row.
+    """
+    norm = norm_coin_id(coin_id)
+    summary = {
+        "coin_id": norm,
+        "offer_count": 0,
+        "verified_fill_count": 0,
+        "trade_ids": [],
+        "verified_trade_ids": [],
+    }
+    if not norm:
+        return summary
+    norm_lookup = norm[2:] if norm.startswith("0x") else norm
+
+    try:
+        conn = get_connection()
+        params = [norm_lookup]
+        query = """SELECT o.trade_id, f.fill_id
+                   FROM offers o
+                   LEFT JOIN fills f
+                     ON f.trade_id = o.trade_id
+                    AND COALESCE(f.verification_status, 'legacy') = 'verified'
+                   WHERE REPLACE(LOWER(COALESCE(o.coin_id, '')), '0x', '') = ?"""
+        if cat_asset_id:
+            query += " AND o.cat_asset_id=?"
+            params.append(cat_asset_id)
+
+        rows = conn.execute(query, params).fetchall()
+        trade_ids = []
+        verified_trade_ids = []
+        for row in rows:
+            trade_id = row["trade_id"]
+            if trade_id and trade_id not in trade_ids:
+                trade_ids.append(trade_id)
+            if row["fill_id"] is not None and trade_id not in verified_trade_ids:
+                verified_trade_ids.append(trade_id)
+
+        summary["offer_count"] = len(trade_ids)
+        summary["verified_fill_count"] = len(verified_trade_ids)
+        summary["trade_ids"] = trade_ids
+        summary["verified_trade_ids"] = verified_trade_ids
+        return summary
+    except Exception as e:
+        log_event(
+            "warning",
+            "offer_coin_usage_summary_failed",
+            f"Failed to summarise offer coin usage for {norm[:16]}...: {e}",
+        )
+        return summary
+
+
 def get_offers_by_trade_ids(trade_ids: list) -> list:
     """Batch-fetch offer records for a list of trade_ids.
     More efficient than N individual get_offer() calls.
