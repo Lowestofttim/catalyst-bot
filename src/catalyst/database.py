@@ -4723,6 +4723,43 @@ def get_events_since(since: str, limit: int = 100, category: str = None) -> List
 # ---------------------------------------------------------------------------
 
 
+def _get_economic_verified_fill_ids(
+    conn: sqlite3.Connection, cat_asset_id: str = None, since: str = None
+) -> List[int]:
+    """Return one verified fill row per source coin/trade for dashboard stats."""
+    params = []
+    query = """SELECT MAX(fill_id) AS fill_id
+               FROM (
+                   SELECT f.fill_id,
+                          CASE
+                            WHEN COALESCE(o.coin_id, '') != ''
+                              THEN 'coin:' || REPLACE(LOWER(o.coin_id), '0x', '')
+                            ELSE 'trade:' || f.trade_id
+                          END AS source_key
+                   FROM fills f
+                   LEFT JOIN offers o ON o.trade_id = f.trade_id
+                   WHERE COALESCE(f.verification_status, 'legacy') = 'verified'"""
+    if cat_asset_id:
+        query += " AND f.cat_asset_id=?"
+        params.append(cat_asset_id)
+    if since:
+        query += " AND f.filled_at>=?"
+        params.append(_sqlite_ts(since))
+    query += """
+               )
+               GROUP BY source_key"""
+    rows = conn.execute(query, params).fetchall()
+    return [int(row["fill_id"]) for row in rows if row["fill_id"] is not None]
+
+
+def _fill_id_scope(fill_ids: List[int], alias: str = "") -> tuple[str, List[int]]:
+    if not fill_ids:
+        return " AND 1=0", []
+    column = f"{alias}.fill_id" if alias else "fill_id"
+    placeholders = ",".join("?" * len(fill_ids))
+    return f" AND {column} IN ({placeholders})", list(fill_ids)
+
+
 def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     """Get summary statistics for the dashboard.
 
@@ -4765,7 +4802,11 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         elif row["side"] == "sell":
             stats["open_sells"] = row["cnt"]
 
-    # Total fills
+    economic_fill_ids = _get_economic_verified_fill_ids(conn, cat_asset_id, since)
+
+    # Total fills. raw_total_fills preserves the DB row count for diagnostics;
+    # total_fills reports economic fills after collapsing impossible duplicate
+    # attributions where one source coin was counted against several re-quotes.
     query_base = "SELECT COUNT(*) as cnt FROM fills WHERE COALESCE(verification_status, 'legacy') = 'verified'"
     params = []
     if cat_asset_id:
@@ -4775,20 +4816,18 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         query_base += " AND filled_at>=?"
         params.append(_sqlite_ts(since))
     row = conn.execute(query_base, params).fetchone()
-    stats["total_fills"] = row["cnt"]
+    stats["raw_total_fills"] = row["cnt"]
+    stats["total_fills"] = len(economic_fill_ids)
+    stats["duplicate_fill_rows"] = max(
+        int(stats["raw_total_fills"] or 0) - stats["total_fills"], 0
+    )
 
     # Realised PnL (from matched round-trips)
     query_base = """SELECT pnl_xch FROM fills
                     WHERE round_trip_id IS NOT NULL AND side='buy'
-                      AND COALESCE(verification_status, 'legacy') = 'verified'
                       AND pnl_xch IS NOT NULL"""
-    params = []
-    if cat_asset_id:
-        query_base += " AND cat_asset_id=?"
-        params.append(cat_asset_id)
-    if since:
-        query_base += " AND filled_at>=?"
-        params.append(_sqlite_ts(since))
+    scope_sql, params = _fill_id_scope(economic_fill_ids)
+    query_base += scope_sql
     rows = conn.execute(query_base, params).fetchall()
     stats["realised_pnl_xch"] = str(
         sum((Decimal(str(r["pnl_xch"])) for r in rows), Decimal("0"))
@@ -4796,15 +4835,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
 
     # Round-trip stats
     query_base = """SELECT COUNT(*) as cnt FROM fills
-                    WHERE round_trip_id IS NOT NULL AND side='buy'
-                      AND COALESCE(verification_status, 'legacy') = 'verified'"""
-    params = []
-    if cat_asset_id:
-        query_base += " AND cat_asset_id=?"
-        params.append(cat_asset_id)
-    if since:
-        query_base += " AND filled_at>=?"
-        params.append(_sqlite_ts(since))
+                    WHERE round_trip_id IS NOT NULL AND side='buy'"""
+    scope_sql, params = _fill_id_scope(economic_fill_ids)
+    query_base += scope_sql
     row = conn.execute(query_base, params).fetchone()
     stats["round_trips"] = row["cnt"]
 
@@ -4812,15 +4845,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     if stats["round_trips"] > 0:
         query_base = """SELECT COUNT(*) as cnt FROM fills
                         WHERE round_trip_id IS NOT NULL AND side='buy'
-                        AND COALESCE(verification_status, 'legacy') = 'verified'
                         AND CAST(pnl_xch AS REAL) > 0"""
-        params = []
-        if cat_asset_id:
-            query_base += " AND cat_asset_id=?"
-            params.append(cat_asset_id)
-        if since:
-            query_base += " AND filled_at>=?"
-            params.append(_sqlite_ts(since))
+        scope_sql, params = _fill_id_scope(economic_fill_ids)
+        query_base += scope_sql
         row = conn.execute(query_base, params).fetchone()
         stats["win_rate"] = round(row["cnt"] / stats["round_trips"] * 100, 1)
     else:
@@ -4829,14 +4856,11 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     # Fill counts by side
     for side in ["buy", "sell"]:
         query_base = """SELECT COUNT(*) as cnt FROM fills
-                        WHERE side=? AND COALESCE(verification_status, 'legacy') = 'verified'"""
+                        WHERE side=?"""
         params = [side]
-        if cat_asset_id:
-            query_base += " AND cat_asset_id=?"
-            params.append(cat_asset_id)
-        if since:
-            query_base += " AND filled_at>=?"
-            params.append(_sqlite_ts(since))
+        scope_sql, scope_params = _fill_id_scope(economic_fill_ids)
+        query_base += scope_sql
+        params.extend(scope_params)
         row = conn.execute(query_base, params).fetchone()
         stats[f"{side}_fills"] = row["cnt"]
 
@@ -4845,15 +4869,11 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
 
     _cutoff_1h = _sqlite_ts(datetime.now(timezone.utc) - _timedelta(hours=1))
     query_base = """SELECT COUNT(*) as cnt FROM fills
-                    WHERE filled_at > ?
-                      AND COALESCE(verification_status, 'legacy') = 'verified'"""
+                    WHERE filled_at > ?"""
     params = [_cutoff_1h]
-    if cat_asset_id:
-        query_base += " AND cat_asset_id=?"
-        params.append(cat_asset_id)
-    if since:
-        query_base += " AND filled_at>=?"
-        params.append(_sqlite_ts(since))
+    scope_sql, scope_params = _fill_id_scope(economic_fill_ids)
+    query_base += scope_sql
+    params.extend(scope_params)
     row = conn.execute(query_base, params).fetchone()
     stats["fill_rate_per_hour"] = float(row["cnt"] or 0)
 
@@ -4867,14 +4887,11 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     for side in ["buy", "sell"]:
         query_base = """SELECT COUNT(*) as cnt FROM fills
                         WHERE side=? AND round_trip_id IS NULL
-                          AND COALESCE(verification_status, 'legacy') = 'verified'"""
+                        """
         params = [side]
-        if cat_asset_id:
-            query_base += " AND cat_asset_id=?"
-            params.append(cat_asset_id)
-        if since:
-            query_base += " AND filled_at>=?"
-            params.append(_sqlite_ts(since))
+        scope_sql, scope_params = _fill_id_scope(economic_fill_ids)
+        query_base += scope_sql
+        params.extend(scope_params)
         row = conn.execute(query_base, params).fetchone()
         stats[f"unmatched_{side}_fills"] = row["cnt"]
 
@@ -4882,15 +4899,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     query_base = """SELECT side, size_xch, size_cat,
                            COALESCE(fee_mojos_xch, 0) AS fee_mojos_xch
                     FROM fills
-                    WHERE COALESCE(verification_status, 'legacy') = 'verified'
-                      AND (size_xch IS NOT NULL OR size_cat IS NOT NULL)"""
-    params = []
-    if cat_asset_id:
-        query_base += " AND cat_asset_id=?"
-        params.append(cat_asset_id)
-    if since:
-        query_base += " AND filled_at>=?"
-        params.append(_sqlite_ts(since))
+                    WHERE (size_xch IS NOT NULL OR size_cat IS NOT NULL)"""
+    scope_sql, params = _fill_id_scope(economic_fill_ids)
+    query_base += scope_sql
     rows = conn.execute(query_base, params).fetchall()
 
     # Split by side so the dashboard can show "bought vs sold" gross amounts.
@@ -4936,15 +4947,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     # Average fill size (XCH)
     if stats["total_fills"] > 0:
         query_base = """SELECT size_xch FROM fills
-                        WHERE COALESCE(verification_status, 'legacy') = 'verified'
-                          AND size_xch IS NOT NULL"""
-        params = []
-        if cat_asset_id:
-            query_base += " AND cat_asset_id=?"
-            params.append(cat_asset_id)
-        if since:
-            query_base += " AND filled_at>=?"
-            params.append(_sqlite_ts(since))
+                        WHERE size_xch IS NOT NULL"""
+        scope_sql, params = _fill_id_scope(economic_fill_ids)
+        query_base += scope_sql
         rows = conn.execute(query_base, params).fetchall()
         if rows:
             total = sum((Decimal(str(r["size_xch"])) for r in rows), Decimal("0"))
@@ -4962,14 +4967,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
                             JOIN fills f2 ON f1.round_trip_id = f2.round_trip_id
                                          AND f1.side != f2.side
                             WHERE f1.side = 'buy' AND f1.round_trip_id IS NOT NULL
-                              AND COALESCE(f1.verification_status, 'legacy') = 'verified'"""
-            params = []
-            if cat_asset_id:
-                query_base += " AND f1.cat_asset_id=?"
-                params.append(cat_asset_id)
-            if since:
-                query_base += " AND f1.filled_at>=?"
-                params.append(_sqlite_ts(since))
+                              """
+            scope_sql, params = _fill_id_scope(economic_fill_ids, alias="f1")
+            query_base += scope_sql
             row = conn.execute(query_base, params).fetchone()
             stats["avg_round_trip_secs"] = float(row["avg_secs"] or 0)
         except Exception:
