@@ -753,6 +753,13 @@ class BotLoop:
             "buy": 0,
             "sell": 0,
         }
+        self._last_toxicity_live_cancel: Dict[str, Dict] = {
+            "buy": {"at": 0.0, "signature": ""},
+            "sell": {"at": 0.0, "signature": ""},
+        }
+        self._toxicity_live_cancel_cooldown: float = float(
+            getattr(cfg, "MARKET_TOXICITY_CANCEL_COOLDOWN_SECS", 60) or 60
+        )
 
         # Flag: __init__ complete — get_state() checks this to avoid
         # AttributeError when SSE connects before all attrs are set.
@@ -2521,6 +2528,116 @@ class BotLoop:
                 "warning", "toxicity_guard_error", f"Market toxicity guard failed: {e}"
             )
             return None
+
+    def _cancel_toxicity_throttled_offers(
+        self,
+        snapshot,
+        current_buy_ids=None,
+        current_sell_ids=None,
+    ) -> Dict[str, set]:
+        """Cancel live offers on sides the toxicity guard has risked off."""
+        cancelled_by_side = {"buy": set(), "sell": set()}
+        if snapshot is None:
+            return cancelled_by_side
+        if not bool(getattr(cfg, "MARKET_TOXICITY_CANCEL_LIVE_OFFERS", True)):
+            return cancelled_by_side
+
+        now_ts = time.time()
+        side_ids = {
+            "buy": set(current_buy_ids or set()),
+            "sell": set(current_sell_ids or set()),
+        }
+
+        try:
+            snapshot_data = snapshot.to_dict()
+        except Exception:
+            snapshot_data = {}
+
+        for side, current_ids in side_ids.items():
+            try:
+                throttled = bool(snapshot.is_side_throttled(side, now_ts))
+            except Exception:
+                throttled = side in set(getattr(snapshot, "throttled_sides", []) or [])
+            if not throttled:
+                continue
+
+            pending_cancel_ids = self._pending_cancel_wallet_ids(side)
+            live_ids = {tid for tid in current_ids if tid} - pending_cancel_ids
+            if not live_ids:
+                continue
+
+            signature = ",".join(sorted(live_ids))
+            last = (self._last_toxicity_live_cancel or {}).get(side, {}) or {}
+            cooldown = float(
+                getattr(
+                    cfg,
+                    "MARKET_TOXICITY_CANCEL_COOLDOWN_SECS",
+                    self._toxicity_live_cancel_cooldown,
+                )
+                or self._toxicity_live_cancel_cooldown
+            )
+            if (
+                signature == str(last.get("signature") or "")
+                and now_ts - float(last.get("at") or 0) < cooldown
+            ):
+                continue
+
+            log_event(
+                "warning",
+                "market_toxicity_live_cancel_start",
+                f"Market toxicity is throttling {side}; cancelling "
+                f"{len(live_ids)} live {side} offer(s) instead of leaving "
+                "exposure on-book.",
+                data={
+                    "side": side,
+                    "offer_count": len(live_ids),
+                    "pending_cancel_count": len(pending_cancel_ids),
+                    "toxicity": snapshot_data,
+                },
+            )
+
+            try:
+                results = self.offer_manager.cancel_offers(
+                    sorted(live_ids),
+                    reason="market_toxicity_guard",
+                    force_storm=True,
+                    skip_confirmation=True,
+                )
+            except Exception as e:
+                log_event(
+                    "warning",
+                    "market_toxicity_live_cancel_failed",
+                    f"Could not cancel {side} offers for toxicity guard: {e}",
+                    data={"side": side, "offer_count": len(live_ids)},
+                )
+                continue
+
+            success_ids = {
+                tid
+                for tid, result in (results or {}).items()
+                if result and result.get("success")
+            }
+            failed_ids = live_ids - success_ids
+            cancelled_by_side[side] = success_ids
+            self._last_toxicity_live_cancel[side] = {
+                "at": now_ts,
+                "signature": signature,
+            }
+
+            log_event(
+                "warning" if failed_ids else "info",
+                "market_toxicity_live_cancel_result",
+                f"Market toxicity cancel for {side}: "
+                f"{len(success_ids)} submitted, {len(failed_ids)} failed.",
+                data={
+                    "side": side,
+                    "submitted_count": len(success_ids),
+                    "failed_count": len(failed_ids),
+                    "failed_trade_ids": sorted(failed_ids)[:10],
+                },
+            )
+
+        return cancelled_by_side
 
     def _clear_adaptive_target_backoff_for_confirmed_fills(
         self, buy_fills, sell_fills
@@ -8220,7 +8337,7 @@ class BotLoop:
             )
             self._apply_immediate_sweep_protection(buy_fills, sell_fills)
 
-        self._update_market_toxicity(
+        toxicity_snapshot = self._update_market_toxicity(
             price_data=price_data,
             mid_price=mid_price,
             arb_gap=arb_gap,
@@ -8229,6 +8346,24 @@ class BotLoop:
             buy_fills=buy_fills,
             sell_fills=sell_fills,
         )
+        toxicity_cancelled = self._cancel_toxicity_throttled_offers(
+            toxicity_snapshot,
+            current_buy_ids=current_buy_ids,
+            current_sell_ids=current_sell_ids,
+        )
+        if toxicity_cancelled["buy"] or toxicity_cancelled["sell"]:
+            current_buy_ids -= toxicity_cancelled["buy"]
+            current_sell_ids -= toxicity_cancelled["sell"]
+            open_buys = [
+                offer
+                for offer in open_buys
+                if str(offer.get("trade_id") or "") not in toxicity_cancelled["buy"]
+            ]
+            open_sells = [
+                offer
+                for offer in open_sells
+                if str(offer.get("trade_id") or "") not in toxicity_cancelled["sell"]
+            ]
 
         if not buy_fills and not sell_fills:
             print(" none", flush=True)
