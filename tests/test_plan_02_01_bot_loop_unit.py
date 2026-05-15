@@ -427,6 +427,32 @@ class TestBotLoopWiring(_PatchedCfg):
 
         self.assertIs(loop.risk_manager._bot_ref, loop)
 
+    def test_sage_wires_coinset_for_chain_truth_without_inventory_init(self):
+        loop = _make_loop()
+
+        class Client:
+            def __init__(self):
+                self.initialized = False
+
+            def initialize_puzzle_hashes(self):
+                self.initialized = True
+                return True
+
+        client = Client()
+        loop.coinset_client = client
+        loop.coin_manager = types.SimpleNamespace()
+
+        with (
+            patch.object(bot_loop.cfg, "COINSET_ENABLED", True, create=True),
+            patch.object(bot_loop, "log_event") as log_event,
+        ):
+            loop._initialize_coinset_for_wallet_type("sage")
+
+        self.assertIs(loop.coin_manager._coinset_client, client)
+        self.assertFalse(client.initialized)
+        event_types = [call.args[1] for call in log_event.call_args_list]
+        self.assertIn("coinset_ready", event_types)
+
     def test_record_live_offer_edges_updates_cache_and_gui_state(self):
         loop = _make_loop()
         edges = {"our_best_bid": "1.00", "our_best_ask": "1.05"}

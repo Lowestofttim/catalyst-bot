@@ -6028,6 +6028,35 @@ class BotLoop:
     # Startup sync
     # -------------------------------------------------------------------
 
+    def _initialize_coinset_for_wallet_type(self, wallet_type: str) -> None:
+        """Wire Coinset where it is safe for the active wallet backend.
+
+        Sage cannot use Coinset as an inventory source because the light wallet
+        owns address discovery, but point lookups by coin id are still useful
+        chain truth for top-up submit verification.
+        """
+        if not getattr(cfg, "COINSET_ENABLED", True):
+            return
+
+        wallet_type = str(wallet_type or "").lower().strip()
+        if wallet_type != "sage":
+            return
+
+        try:
+            self.coin_manager._coinset_client = self.coinset_client
+            log_event(
+                "info",
+                "coinset_ready",
+                "Coinset point lookups enabled for Sage chain-truth checks; "
+                "wallet RPC remains the inventory source",
+            )
+        except Exception as e:
+            log_event(
+                "info",
+                "coinset_init_error",
+                f"Coinset Sage chain-truth wiring failed: {e} - using wallet RPC only",
+            )
+
     def _startup_sync(self):
         """Sync state from the Chia wallet on startup.
 
@@ -7317,6 +7346,8 @@ class BotLoop:
                 if hasattr(cfg, "WALLET_TYPE")
                 else os.getenv("WALLET_TYPE", "sage").lower().strip()
             )
+            if getattr(cfg, "COINSET_ENABLED", True) and wallet_type == "sage":
+                self._initialize_coinset_for_wallet_type(wallet_type)
             if getattr(cfg, "COINSET_ENABLED", True) and wallet_type != "sage":
                 try:
                     ok = self.coinset_client.initialize_puzzle_hashes()

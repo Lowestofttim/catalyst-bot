@@ -8207,6 +8207,181 @@ class CoinManager:
                 f"coin(s) as tier_spare/{tier_name}",
             )
 
+    @staticmethod
+    def _normalize_coin_id_value(coin_id: str) -> str:
+        cid = str(coin_id or "").strip().lower()
+        if cid and not cid.startswith("0x"):
+            cid = "0x" + cid
+        return cid
+
+    @staticmethod
+    def _safe_int_mojos(value) -> int:
+        try:
+            if isinstance(value, str):
+                return int(Decimal(value.strip()))
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    def _extract_topup_outputs_from_sage_result(
+        self,
+        result,
+        trading_size_mojos: int,
+    ) -> Tuple[List[str], Dict[str, int]]:
+        """Extract target-sized output IDs from Sage's create-transaction summary."""
+        if not isinstance(result, dict):
+            return [], {}
+
+        summary = result.get("summary")
+        if not isinstance(summary, dict):
+            return [], {}
+
+        target = int(trading_size_mojos or 0)
+        output_ids: List[str] = []
+        owned_amounts: Dict[str, int] = {}
+        seen = set()
+
+        def visit(node) -> None:
+            if isinstance(node, dict):
+                outputs = node.get("outputs")
+                if isinstance(outputs, list):
+                    for output in outputs:
+                        if not isinstance(output, dict):
+                            continue
+                        amount = self._safe_int_mojos(
+                            output.get("amount_mojos")
+                            or output.get("amount")
+                            or output.get("value")
+                        )
+                        if amount != target:
+                            continue
+                        cid = self._normalize_coin_id_value(
+                            output.get("coin_id")
+                            or output.get("name")
+                            or output.get("id")
+                        )
+                        if not cid or cid in seen:
+                            continue
+                        seen.add(cid)
+                        output_ids.append(cid)
+                        owned_amounts[cid] = amount
+
+                for key, value in node.items():
+                    if key == "outputs":
+                        continue
+                    if isinstance(value, (dict, list)):
+                        visit(value)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+
+        visit(summary)
+        return output_ids, owned_amounts
+
+    def _coinset_descendant_topup_outputs(
+        self,
+        source_coin_id: str,
+        trading_size_mojos: int,
+    ) -> Tuple[List[str], Dict[str, int]]:
+        """Find target-sized descendants of a spent source coin via Coinset."""
+        coinset = getattr(self, "_coinset_client", None)
+        if coinset is None or not getattr(cfg, "COINSET_ENABLED", True):
+            return [], {}
+
+        frontier = [self._normalize_coin_id_value(source_coin_id)]
+        seen_parents = set(frontier)
+        seen_outputs = set()
+        output_ids: List[str] = []
+        owned_amounts: Dict[str, int] = {}
+        target = int(trading_size_mojos or 0)
+
+        for _depth in range(6):
+            if not frontier:
+                break
+            try:
+                records = coinset.get_coin_records_by_parent_ids(
+                    frontier,
+                    include_spent_coins=True,
+                )
+            except Exception:
+                return output_ids, owned_amounts
+            if records is None:
+                return output_ids, owned_amounts
+
+            next_frontier = []
+            for record in records or []:
+                cid = self._normalize_coin_id_value(_coin_id_from_record(record))
+                if not cid:
+                    continue
+                amount = self._safe_int_mojos(_coin_amount(record))
+                if amount == target and cid not in seen_outputs:
+                    seen_outputs.add(cid)
+                    output_ids.append(cid)
+                    owned_amounts[cid] = amount
+                if cid not in seen_parents and len(seen_parents) < 120:
+                    seen_parents.add(cid)
+                    next_frontier.append(cid)
+            frontier = next_frontier
+
+        return output_ids, owned_amounts
+
+    def _coinset_topup_split_state(
+        self,
+        source_coin_id: str,
+        num_to_create: int,
+        trading_size_mojos: int,
+        result=None,
+    ) -> Optional[Dict]:
+        """Return on-chain split state for a top-up source coin when available."""
+        source = self._normalize_coin_id_value(source_coin_id)
+        if not source or num_to_create <= 0:
+            return None
+        coinset = getattr(self, "_coinset_client", None)
+        if coinset is None or not getattr(cfg, "COINSET_ENABLED", True):
+            return None
+
+        try:
+            source_record = coinset.get_coin_by_name(source)
+        except Exception:
+            return None
+        if not source_record:
+            return None
+
+        spent_block_index = self._safe_int_mojos(source_record.get("spent_block_index"))
+        if spent_block_index <= 0:
+            return {
+                "source_spent": False,
+                "spent_block_index": 0,
+                "output_coin_ids": [],
+                "owned_amounts": {},
+                "confirmed": False,
+            }
+
+        output_ids, owned_amounts = self._extract_topup_outputs_from_sage_result(
+            result,
+            trading_size_mojos,
+        )
+        if len(output_ids) < num_to_create:
+            chain_ids, chain_amounts = self._coinset_descendant_topup_outputs(
+                source,
+                trading_size_mojos,
+            )
+            seen = set(output_ids)
+            for cid in chain_ids:
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                output_ids.append(cid)
+                owned_amounts[cid] = chain_amounts.get(cid, trading_size_mojos)
+
+        return {
+            "source_spent": True,
+            "spent_block_index": spent_block_index,
+            "output_coin_ids": output_ids,
+            "owned_amounts": owned_amounts,
+            "confirmed": len(output_ids) >= num_to_create,
+        }
+
     def _sage_one_step_split(
         self,
         name: str,
@@ -8296,11 +8471,69 @@ class CoinManager:
         else:
             size_str = _format_amount_xch(trading_size_mojos)
 
+        source_key = str(source_coin_id or "").strip().lower().replace("0x", "")
+
+        def _set_split_debounce() -> None:
+            if debounce_secs > 0:
+                self._recent_topup_split_submissions[split_key] = time.time()
+
+        def _clear_split_debounce() -> None:
+            if debounce_secs > 0:
+                self._recent_topup_split_submissions.pop(split_key, None)
+
+        def _source_still_selectable(selectable_ids: set) -> bool:
+            selectable_keys = {
+                str(cid or "").strip().lower().replace("0x", "")
+                for cid in (selectable_ids or set())
+            }
+            return bool(source_key and source_key in selectable_keys)
+
+        def _handle_coinset_spent_source(result_snapshot=None) -> bool:
+            state = self._coinset_topup_split_state(
+                source_coin_id=source_coin_id,
+                num_to_create=num_to_create,
+                trading_size_mojos=trading_size_mojos,
+                result=result_snapshot,
+            )
+            if not state or not state.get("source_spent"):
+                return False
+
+            output_coin_ids = state.get("output_coin_ids") or []
+            owned_amounts = state.get("owned_amounts") or {}
+            if output_coin_ids:
+                self._stamp_topup_output_designations(
+                    name=name,
+                    wallet_id=wallet_id,
+                    output_coin_ids=output_coin_ids[:num_to_create],
+                    owned_amounts=owned_amounts,
+                    is_cat=is_cat,
+                )
+
+            _set_split_debounce()
+            log_event(
+                "info",
+                f"{tag}_osstep_chain_waiting_sage",
+                "Coinset confirms the top-up source coin is already spent "
+                "on-chain; waiting for Sage to catch up instead of retrying "
+                "the same split",
+                data={
+                    "source_coin_id": str(source_coin_id or "")[:18],
+                    "spent_block_index": state.get("spent_block_index"),
+                    "outputs_found": len(output_coin_ids),
+                    "outputs_needed": num_to_create,
+                    "outputs_confirmed": bool(state.get("confirmed")),
+                },
+            )
+            return True
+
         # --- Snapshot before ---
         pre_owned_map = (
             self._get_owned_coin_amount_map(wallet_id, f"{tag}-pre-osstep") or {}
         )
         pre_owned_ids = set(pre_owned_map.keys())
+
+        if _handle_coinset_spent_source():
+            return _TOPUP_PENDING
 
         fee_mojos = self._tx_fee_mojos()
         fee_coin_id = None
@@ -8371,6 +8604,8 @@ class CoinManager:
                     self._abort_topup_for_wallet_degradation(
                         f"{name} topup paused: /create_transaction degraded ({err})."
                     )
+                elif _handle_coinset_spent_source(result):
+                    return _TOPUP_PENDING
                 else:
                     log_event(
                         "warning",
@@ -8401,14 +8636,6 @@ class CoinManager:
                 return False
 
         tx_ids = self._extract_sage_transaction_ids(result or {})
-        source_key = str(source_coin_id or "").strip().lower().replace("0x", "")
-
-        def _source_still_selectable(selectable_ids: set) -> bool:
-            selectable_keys = {
-                str(cid or "").strip().lower().replace("0x", "")
-                for cid in (selectable_ids or set())
-            }
-            return bool(source_key and source_key in selectable_keys)
 
         def _sage_pending_count() -> Optional[int]:
             try:
@@ -8421,10 +8648,6 @@ class CoinManager:
                 pass
             return None
 
-        def _clear_split_debounce() -> None:
-            if debounce_secs > 0:
-                self._recent_topup_split_submissions.pop(split_key, None)
-
         if not tx_ids and not weak_submit_onchain_confirmed:
             pending_count = _sage_pending_count()
             selectable_now = (
@@ -8434,6 +8657,8 @@ class CoinManager:
                 or set()
             )
             if pending_count == 0 and _source_still_selectable(selectable_now):
+                if _handle_coinset_spent_source(result):
+                    return _TOPUP_PENDING
                 log_event(
                     "info",
                     f"{tag}_osstep_not_submitted",
@@ -8451,8 +8676,7 @@ class CoinManager:
                     },
                 )
                 return False
-        if debounce_secs > 0:
-            self._recent_topup_split_submissions[split_key] = time.time()
+        _set_split_debounce()
         log_event(
             "info",
             f"{tag}_osstep_submitted",
@@ -8524,6 +8748,8 @@ class CoinManager:
                 pending_count = _sage_pending_count()
                 source_selectable = _source_still_selectable(selectable_ids)
                 if pending_count == 0 and source_selectable:
+                    if _handle_coinset_spent_source(result):
+                        return _TOPUP_PENDING
                     _clear_split_debounce()
                     log_event(
                         "info",
@@ -8626,6 +8852,8 @@ class CoinManager:
             pending_count = _sage_pending_count()
             source_selectable = _source_still_selectable(selectable_ids)
             if source_selectable and pending_count in (0, None):
+                if _handle_coinset_spent_source(result):
+                    return _TOPUP_PENDING
                 _clear_split_debounce()
                 log_event(
                     "info",

@@ -738,6 +738,146 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertTrue(not_submitted_levels)
         self.assertTrue(all(level == "info" for level in not_submitted_levels))
 
+    def test_one_step_split_uses_coinset_when_sage_view_is_stale_after_submit(self):
+        manager = self._make_manager()
+        source = "0x" + "01" * 32
+        output_ids = ["0x" + "11" * 32, "0x" + "22" * 32, "0x" + "33" * 32]
+
+        class FakeCoinset:
+            def __init__(self):
+                self.lookup_count = 0
+
+            def get_coin_by_name(self, coin_name):
+                self.last_coin_name = coin_name
+                self.lookup_count += 1
+                if coin_name == source:
+                    return {
+                        "coin": {
+                            "amount": 600,
+                            "parent_coin_info": "0x" + "aa" * 32,
+                            "puzzle_hash": "0x" + "bb" * 32,
+                        },
+                        "confirmed_block_index": 12,
+                        "spent_block_index": 123 if self.lookup_count > 1 else 0,
+                    }
+                return None
+
+            def get_coin_records_by_parent_ids(self, *_args, **_kwargs):
+                return []
+
+        manager._coinset_client = FakeCoinset()
+        weak_success = {
+            "success": True,
+            "submitted": True,
+            "submit_response": {},
+            "coin_spends": [{"coin": "spend"}],
+            "summary": {
+                "inputs": [
+                    {
+                        "outputs": [
+                            {"coin_id": output_ids[0], "amount": 100},
+                            {"coin_id": output_ids[1], "amount": 100},
+                            {"coin_id": output_ids[2], "amount": 100},
+                            {"coin_id": "0x" + "44" * 32, "amount": 300},
+                        ]
+                    }
+                ]
+            },
+        }
+
+        with (
+            patch(
+                "wallet_sage.sage_topup_split",
+                return_value=weak_success,
+            ) as split_mock,
+            patch("wallet_sage.get_pending_transactions", return_value=[]),
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1test"},
+            ),
+            patch.object(coin_manager.cfg, "COINSET_ENABLED", True),
+            patch.object(manager, "_tx_fee_mojos", return_value=0),
+            patch.object(manager, "_fee_pool_enabled", return_value=False),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                return_value={source: 600},
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                return_value={source},
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                return_value={"confirmed": False, "height": None},
+            ),
+            patch.object(manager, "_stamp_topup_output_designations") as stamp,
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
+            result = manager._sage_one_step_split(
+                name="CAT-mid",
+                wallet_id=2,
+                source_coin_id=source,
+                num_to_create=3,
+                trading_size_mojos=100,
+                is_cat=True,
+            )
+
+        self.assertEqual(result, coin_manager._TOPUP_PENDING)
+        split_mock.assert_called_once()
+        stamp.assert_called_once_with(
+            name="CAT-mid",
+            wallet_id=2,
+            output_coin_ids=output_ids,
+            owned_amounts={cid: 100 for cid in output_ids},
+            is_cat=True,
+        )
+        event_types = [call.args[1] for call in log_event.call_args_list]
+        self.assertIn("topup_cat-mid_osstep_chain_waiting_sage", event_types)
+        self.assertNotIn("topup_cat-mid_osstep_not_submitted", event_types)
+
+    def test_coinset_topup_state_finds_descendant_split_outputs_after_restart(self):
+        manager = self._make_manager()
+        source = "0x" + "01" * 32
+        intermediate = "0x" + "aa" * 32
+        output_ids = ["0x" + "11" * 32, "0x" + "22" * 32, "0x" + "33" * 32]
+
+        class FakeCoinset:
+            def get_coin_by_name(self, coin_name):
+                if coin_name == source:
+                    return {
+                        "coin": {"amount": 600},
+                        "confirmed_block_index": 12,
+                        "spent_block_index": 123,
+                    }
+                return None
+
+            def get_coin_records_by_parent_ids(self, parent_ids, **_kwargs):
+                if parent_ids == [source]:
+                    return [_record(intermediate, 300)]
+                if parent_ids == [intermediate]:
+                    return [_record(output_ids[0], 100), _record(output_ids[1], 100)]
+                if set(parent_ids) == set(output_ids[:2]):
+                    return [_record(output_ids[2], 100)]
+                return []
+
+        manager._coinset_client = FakeCoinset()
+
+        with patch.object(coin_manager.cfg, "COINSET_ENABLED", True):
+            state = manager._coinset_topup_split_state(
+                source_coin_id=source,
+                num_to_create=3,
+                trading_size_mojos=100,
+            )
+
+        self.assertTrue(state["source_spent"])
+        self.assertTrue(state["confirmed"])
+        self.assertEqual(state["output_coin_ids"], output_ids)
+        self.assertEqual(state["owned_amounts"], {cid: 100 for cid in output_ids})
+
     def test_one_step_split_without_txid_clears_debounce_after_grace(self):
         manager = self._make_manager()
 
