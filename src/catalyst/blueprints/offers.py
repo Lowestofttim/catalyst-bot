@@ -651,7 +651,7 @@ def api_fills_classified():
         params = [cat_asset_id]
         where = [
             "cat_asset_id = ?",
-            "COALESCE(verification_status, 'legacy') = 'verified'",
+            "COALESCE(verification_status, 'legacy') LIKE 'verified%'",
         ]
 
         if classification_filter:
@@ -765,7 +765,7 @@ def api_fills_arb_wallets():
                WHERE taker_puzzle_hash IS NOT NULL
                  AND taker_puzzle_hash != ''
                  AND cat_asset_id = ?
-                 AND COALESCE(verification_status, 'legacy') = 'verified'
+                 AND COALESCE(verification_status, 'legacy') LIKE 'verified%'
                ORDER BY filled_at DESC""",
             (cat_asset_id,),
         ).fetchall()
@@ -912,7 +912,7 @@ def api_market_fill_intel():
             """SELECT fill_classification, sweep_group_id, side, filled_at
                FROM fills
                WHERE cat_asset_id = ?
-                 AND COALESCE(verification_status, 'legacy') = 'verified'
+                 AND COALESCE(verification_status, 'legacy') LIKE 'verified%'
                  AND filled_at >= datetime('now', ? || ' days')
                ORDER BY filled_at ASC""",
             (cat_asset_id, f"-{days}"),

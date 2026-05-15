@@ -145,6 +145,7 @@ class FillTracker:
         # consumed by _record_fill(). Avoids making a second HTTP call for
         # the same offer just to pass detail to the fill classifier.
         self._last_dexie_details: Dict[str, Optional[Dict]] = {}
+        self._exact_trade_confirmations: Set[str] = set()
 
         # Unverified-fill retry bookkeeping. A disappeared offer whose on-chain
         # verification is "unverified" (Spacescan unreachable, coin data not
@@ -1414,6 +1415,7 @@ class FillTracker:
                         f"{trade_id[:16]}... (batch settlement via own address). "
                         f"Recording fill.",
                     )
+                    self._exact_trade_confirmations.add(trade_id)
                     return "filled"
 
                 # Sage also non-confirmatory — try Dexie as a final tiebreaker.
@@ -1445,6 +1447,7 @@ class FillTracker:
                                     f"Dexie status={_detail_f.get('status')} confirms FILL for "
                                     f"{trade_id[:16]}... — recording fill.",
                                 )
+                                self._exact_trade_confirmations.add(trade_id)
                                 return "filled"
                 except Exception as _dexie_err_f:
                     log_event(
@@ -1537,6 +1540,7 @@ class FillTracker:
                         f"Spacescan inconclusive BUT Sage confirms FILL for "
                         f"{trade_id[:16]}... — recording fill.",
                     )
+                    self._exact_trade_confirmations.add(trade_id)
                     return "filled"
             except Exception as _sage_err:
                 log_event(
@@ -1574,6 +1578,7 @@ class FillTracker:
                                 f"(status={detail.get('status')}) for "
                                 f"{trade_id[:16]}... — recording fill.",
                             )
+                            self._exact_trade_confirmations.add(trade_id)
                             return "filled"
                         elif _dexie_detail_confirms_cancel(detail):
                             log_event(
@@ -1663,6 +1668,7 @@ class FillTracker:
                     "source": "dexie",
                 },
             )
+            self._exact_trade_confirmations.add(trade_id)
             return None
         if dexie_terminal == "cancelled":
             log_event(
@@ -1699,6 +1705,7 @@ class FillTracker:
                     "source": "sage",
                 },
             )
+            self._exact_trade_confirmations.add(trade_id)
             return None
 
         if verified_fill_count > 0:
@@ -2108,6 +2115,11 @@ class FillTracker:
                     _fee_mojos = int(_fee_xch * Decimal("1000000000000"))
             except Exception:
                 _fee_mojos = 0
+            verification_status = (
+                "verified_exact"
+                if trade_id in self._exact_trade_confirmations
+                else "verified"
+            )
             fill_id = record_fill(
                 trade_id=trade_id,
                 side=side,
@@ -2116,8 +2128,10 @@ class FillTracker:
                 size_cat=size_cat,
                 cat_asset_id=cfg.CAT_ASSET_ID,
                 tier=tier,
+                verification_status=verification_status,
                 fee_mojos_xch=_fee_mojos,
             )
+            self._exact_trade_confirmations.discard(trade_id)
         except Exception as e:
             log_event(
                 "error",

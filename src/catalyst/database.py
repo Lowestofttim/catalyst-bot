@@ -2208,7 +2208,7 @@ def get_offer_coin_usage_summary(
                    FROM offers o
                    LEFT JOIN fills f
                      ON f.trade_id = o.trade_id
-                    AND COALESCE(f.verification_status, 'legacy') = 'verified'
+                    AND COALESCE(f.verification_status, 'legacy') LIKE 'verified%'
                    WHERE REPLACE(LOWER(COALESCE(o.coin_id, '')), '0x', '') = ?"""
         if cat_asset_id:
             query += " AND o.cat_asset_id=?"
@@ -3737,7 +3737,7 @@ def count_recent_fills(hours: int = 1) -> int:
     row = conn.execute(
         """SELECT COUNT(*) as cnt FROM fills
            WHERE filled_at > ?
-             AND COALESCE(verification_status, 'legacy') = 'verified'""",
+             AND COALESCE(verification_status, 'legacy') LIKE 'verified%'""",
         (cutoff,),
     ).fetchone()
     return row["cnt"] if row else 0
@@ -4258,7 +4258,7 @@ def get_fills(
     params = []
 
     if not include_legacy:
-        query += " AND COALESCE(verification_status, 'legacy') = 'verified'"
+        query += " AND COALESCE(verification_status, 'legacy') LIKE 'verified%'"
 
     if cat_asset_id:
         query += " AND cat_asset_id=?"
@@ -4732,13 +4732,15 @@ def _get_economic_verified_fill_ids(
                FROM (
                    SELECT f.fill_id,
                           CASE
+                            WHEN COALESCE(f.verification_status, 'legacy') LIKE 'verified_exact%'
+                              THEN 'trade:' || f.trade_id
                             WHEN COALESCE(o.coin_id, '') != ''
                               THEN 'coin:' || REPLACE(LOWER(o.coin_id), '0x', '')
                             ELSE 'trade:' || f.trade_id
                           END AS source_key
                    FROM fills f
                    LEFT JOIN offers o ON o.trade_id = f.trade_id
-                   WHERE COALESCE(f.verification_status, 'legacy') = 'verified'"""
+                   WHERE COALESCE(f.verification_status, 'legacy') LIKE 'verified%'"""
     if cat_asset_id:
         query += " AND f.cat_asset_id=?"
         params.append(cat_asset_id)
@@ -4807,7 +4809,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     # Total fills. raw_total_fills preserves the DB row count for diagnostics;
     # total_fills reports economic fills after collapsing impossible duplicate
     # attributions where one source coin was counted against several re-quotes.
-    query_base = "SELECT COUNT(*) as cnt FROM fills WHERE COALESCE(verification_status, 'legacy') = 'verified'"
+    query_base = "SELECT COUNT(*) as cnt FROM fills WHERE COALESCE(verification_status, 'legacy') LIKE 'verified%'"
     params = []
     if cat_asset_id:
         query_base += " AND cat_asset_id=?"
