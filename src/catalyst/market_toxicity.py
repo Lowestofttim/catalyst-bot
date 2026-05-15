@@ -114,22 +114,25 @@ class MarketToxicityGuard:
             return self._snapshot
 
         decay = _dec(getattr(cfg, "TOXICITY_DECAY_PER_LOOP", 8), "8")
-        buy_score = max(Decimal("0"), _dec(self._snapshot.buy_score) - decay)
-        sell_score = max(Decimal("0"), _dec(self._snapshot.sell_score) - decay)
+        # Current evidence is rescored fresh each loop; only the previous peak decays.
+        buy_memory = max(Decimal("0"), _dec(self._snapshot.buy_score) - decay)
+        sell_memory = max(Decimal("0"), _dec(self._snapshot.sell_score) - decay)
+        buy_evidence = Decimal("0")
+        sell_evidence = Decimal("0")
         reasons: List[Dict[str, Any]] = []
         signal_keys = {"buy": set(), "sell": set()}
 
         def add(side: str, key: str, points: Decimal | int, detail: str) -> None:
-            nonlocal buy_score, sell_score
+            nonlocal buy_evidence, sell_evidence
             if side not in SIDES:
                 return
             pts = _dec(points)
             if pts <= 0:
                 return
             if side == "buy":
-                buy_score += pts
+                buy_evidence += pts
             else:
-                sell_score += pts
+                sell_evidence += pts
             signal_keys[side].add(key)
             reasons.append({
                 "key": key,
@@ -152,6 +155,8 @@ class MarketToxicityGuard:
         self._score_public_depth(context, add, add_both)
         self._score_data_quality(context, add_both)
 
+        buy_score = max(buy_memory, buy_evidence)
+        sell_score = max(sell_memory, sell_evidence)
         buy_i = _bounded_score(buy_score)
         sell_i = _bounded_score(sell_score)
         score = max(buy_i, sell_i)

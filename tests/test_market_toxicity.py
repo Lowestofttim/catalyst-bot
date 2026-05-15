@@ -146,6 +146,87 @@ def test_public_market_thin_side_scores_matching_side():
     assert "thin_public_depth" in {r["key"] for r in snap.reasons}
 
 
+def test_public_depth_signal_does_not_stack_every_loop():
+    guard = MarketToxicityGuard()
+
+    first = guard.update(
+        _ctx(
+            now=1000.0,
+            market_intel={
+                "thin_side": "sell",
+                "buy_depth_xch": "3.0",
+                "sell_depth_xch": "0.2",
+                "orderbook_refreshes": 3,
+                "orderbook_age_secs": 12,
+            },
+        )
+    )
+
+    later = first
+    for i in range(1, 8):
+        later = guard.update(
+            _ctx(
+                now=1000.0 + (45.0 * i),
+                market_intel={
+                    "thin_side": "sell",
+                    "buy_depth_xch": "3.0",
+                    "sell_depth_xch": "0.2",
+                    "orderbook_refreshes": 3,
+                    "orderbook_age_secs": 12,
+                },
+            )
+        )
+
+    assert later.sell_score == first.sell_score
+    assert later.throttled_sides == []
+
+
+def test_sweep_response_cools_when_only_thin_depth_remains():
+    guard = MarketToxicityGuard()
+
+    fills = [
+        {"side": "sell", "age_secs": 8 + i, "size_xch": "0.05"}
+        for i in range(14)
+    ]
+    hot = guard.update(
+        _ctx(
+            now=1000.0,
+            recent_sweep_events=[{"side": "sell", "fill_count": 14}],
+            recent_fills=fills,
+            market_intel={
+                "thin_side": "sell",
+                "buy_depth_xch": "3.0",
+                "sell_depth_xch": "0.2",
+                "orderbook_refreshes": 3,
+                "orderbook_age_secs": 12,
+            },
+        )
+    )
+
+    cooled = hot
+    for i in range(1, 16):
+        cooled = guard.update(
+            _ctx(
+                now=1000.0 + (45.0 * i),
+                recent_sweep_events=[],
+                recent_fills=[],
+                market_intel={
+                    "thin_side": "sell",
+                    "buy_depth_xch": "3.0",
+                    "sell_depth_xch": "0.2",
+                    "orderbook_refreshes": 3,
+                    "orderbook_age_secs": 12,
+                },
+            )
+        )
+
+    assert hot.sell_score == 100
+    assert "sell" in hot.throttled_sides
+    assert cooled.sell_score < 75
+    assert "sell" not in cooled.throttled_sides
+    assert cooled.level != "extreme"
+
+
 def test_own_whale_orders_do_not_self_throttle():
     guard = MarketToxicityGuard()
 
