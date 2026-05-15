@@ -8,6 +8,8 @@ class _FakeCfg:
     SPACESCAN_ENABLED = True
     WALLET_ADDRESS = "xch1ourwalletaddress"
     CAT_ASSET_ID = "asset-test"
+    SAGE_SET_CHANGE_ADDRESS = False
+    WALLET_TYPE = "sage"
 
 
 class _FakeOfferManager:
@@ -554,6 +556,55 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(result["buy_fills"], [fill_detail])
         self.assertTrue(
             any(evt == "fill_verified_via_dexie" for _, evt, _, _ in self.logged)
+        )
+
+    def test_spacescan_rejection_beats_dexie_status3_requested_output(self):
+        sys.modules["config"].cfg.SAGE_SET_CHANGE_ADDRESS = True
+        trade_id = "trade-spacescan-cancel-dexie-status3"
+        self.db_offer = {
+            "coin_id": "0xcatcoin123",
+            "dexie_id": "dexie-status3-requested-output",
+        }
+        self.fake_spacescan.verify_fill = lambda coin_id, our_address: False
+        self.fake_wallet_sage.rpc = lambda *args, **kwargs: None
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: {
+            "status": 3,
+            "trade_id": trade_id,
+            "offered": [{"id": "asset-test", "amount": 1000}],
+            "requested": [{"id": "xch", "amount": 1}],
+            "output_coins": {
+                "xch": [
+                    {
+                        "id": "0xchange",
+                        "amount": 1000000000000,
+                        "puzzle_hash": "0xourwalletpuzzlehash",
+                    }
+                ]
+            },
+        }
+
+        tracker = self.fill_tracker.FillTracker()
+        tracker._previous_ids["sell"] = {trade_id}
+        tracker._previous_ids["buy"] = set()
+
+        result = tracker.detect_fills(
+            set(),
+            set(),
+            {
+                trade_id: {
+                    "price": "0.0001168",
+                    "size_xch": "2.5",
+                    "size_cat": "21000",
+                    "tier": "mid",
+                    "coin_id": "0xcatcoin123",
+                }
+            },
+        )
+
+        self.assertEqual(result["sell_fills"], [])
+        self.assertEqual(self.recorded, [])
+        self.assertTrue(
+            any(evt == "fill_rejected_sage_checked" for _, evt, _, _ in self.logged)
         )
 
     def test_recently_created_offer_missing_from_wallet_snapshot_can_record_fill(self):

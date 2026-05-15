@@ -1441,14 +1441,13 @@ class FillTracker:
                             )
                             if _dexie_detail_confirms_fill(_detail_f) and _match_f:
                                 log_event(
-                                    "success",
-                                    "fill_dexie_override_false_path",
+                                    "warning",
+                                    "fill_spacescan_rejected_dexie_disagrees",
                                     f"Spacescan self-spend AND Sage non-confirm BUT "
-                                    f"Dexie status={_detail_f.get('status')} confirms FILL for "
-                                    f"{trade_id[:16]}... — recording fill.",
+                                    f"Dexie status={_detail_f.get('status')} suggests FILL for "
+                                    f"{trade_id[:16]}... — Spacescan remains authoritative; "
+                                    f"NOT recording fill.",
                                 )
-                                self._exact_trade_confirmations.add(trade_id)
-                                return "filled"
                 except Exception as _dexie_err_f:
                     log_event(
                         "debug",
