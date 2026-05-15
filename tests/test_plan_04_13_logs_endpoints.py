@@ -146,6 +146,53 @@ class TestLogsDownload(_FlaskBase):
         content_type = resp.content_type or ""
         self.assertIn("zip", content_type.lower())
 
+    def test_bundle_includes_market_toxicity_snapshot(self):
+        toxicity = {
+            "score": 82,
+            "level": "high",
+            "buy_spread_multiplier": "1.75",
+            "throttled_sides": ["buy"],
+            "reasons": [{"key": "fast_fills", "detail": "buy fills clustered"}],
+        }
+        risk_manager = MagicMock()
+        risk_manager.get_market_toxicity.return_value = toxicity
+        bot = MagicMock()
+        bot.risk_manager = risk_manager
+        bot.is_running.return_value = True
+        bot.coin_manager = None
+        bot._recovery_state = {}
+        bot._probe_state = {}
+        bot.get_price_info.return_value = {}
+        bot.sniper = None
+        bot.market_intel.get_market_summary.return_value = {}
+        bot.runtime_monitor.get_state.return_value = {}
+        bot.splash_manager.get_stats.return_value = {}
+        bot.splash_node.get_status.return_value = {}
+        bot.get_splash_receive_stats.return_value = {}
+
+        with patch.object(api_server, "bot", bot), \
+             patch("database.get_recent_events", return_value=[]), \
+             patch("database.get_open_offers", return_value=[]), \
+             patch("database.get_fills", return_value=[]), \
+             patch("database.get_live_tier_group_counts", return_value={}), \
+             patch("database.get_coin_summary", return_value={}), \
+             patch("super_log.get_archive_summary", return_value=[]), \
+             patch("super_log.get_log_path", return_value=None), \
+             patch("super_log.get_log_stats", return_value={}):
+            resp = self.client.get("/api/logs/download",
+                                   environ_base=self._LOOPBACK)
+
+        self.assertEqual(resp.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(resp.data)) as zf:
+            self.assertIn("snapshots/market_toxicity.json", zf.namelist())
+            snapshot = json.loads(zf.read("snapshots/market_toxicity.json"))
+            readme = zf.read("README.txt").decode("utf-8", errors="replace")
+
+        self.assertEqual(snapshot["score"], 82)
+        self.assertEqual(snapshot["level"], "high")
+        self.assertEqual(snapshot["throttled_sides"], ["buy"])
+        self.assertIn("market_toxicity.json", readme)
+
     def test_bundle_redacts_wallet_identifiers_and_excludes_config_secrets(self):
         sensitive_address = "xch1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
         event = {

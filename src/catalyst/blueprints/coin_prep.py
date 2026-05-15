@@ -2162,6 +2162,17 @@ def api_logs_download():
                 snapshots["market_intel"] = {"error": str(e)}
 
             try:
+                risk_manager = getattr(bot, "risk_manager", None)
+                if risk_manager and hasattr(risk_manager, "get_market_toxicity"):
+                    snapshots["market_toxicity"] = api_server._serialize_dict(
+                        risk_manager.get_market_toxicity() or {}
+                    )
+                else:
+                    snapshots["market_toxicity"] = {}
+            except Exception as e:
+                snapshots["market_toxicity"] = {"error": str(e)}
+
+            try:
                 snapshots["runtime_monitor"] = api_server._serialize_dict(bot.runtime_monitor.get_state() or {})
             except Exception as e:
                 snapshots["runtime_monitor"] = {"error": str(e)}
@@ -2231,6 +2242,7 @@ def api_logs_download():
             "    runtime.json          loop count, uptime, recovery state",
             "    pnl.json              session PnL + sniper stats",
             "    market_intel.json     orderbook summary",
+            "    market_toxicity.json  adverse-selection guard snapshot",
             "    runtime_monitor.json  runtime monitor state",
             "    splash.json           splash broadcast/node/receive",
             "    superlog_stats.json   superlog rotation stats",
