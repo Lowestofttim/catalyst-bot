@@ -24,7 +24,7 @@ import threading
 import time
 import zipfile
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, Response, jsonify, request, send_file
 
@@ -43,6 +43,47 @@ _PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 bp = Blueprint("coin_prep", __name__)
 
 _coin_prep_trigger_lock = threading.Lock()
+
+
+def _safe_liquidity_mode(value: object) -> str:
+    text = str(value or "").strip().lower()
+    if text == "buy_only":
+        return "buy_only"
+    if text == "sell_only":
+        return "sell_only"
+    return "two_sided"
+
+
+def _safe_non_negative_int(value: object, default: int = 0) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return max(0, number)
+
+
+def _safe_non_negative_decimal(value: object, default: str = "0") -> Decimal:
+    try:
+        number = Decimal(str(value or default).strip())
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
+    if number.is_nan() or number.is_infinite() or number < 0:
+        return Decimal(default)
+    return number
+
+
+def _coin_prep_balance_warnings(
+    xch_balance_sufficient: bool,
+    cat_balance_sufficient: bool,
+    total_xch_needed_mojos: int,
+    total_cat_needed_mojos: int,
+) -> list[str]:
+    warnings = []
+    if not xch_balance_sufficient and total_xch_needed_mojos > 0:
+        warnings.append("xch_balance_too_low")
+    if not cat_balance_sufficient and total_cat_needed_mojos > 0:
+        warnings.append("cat_balance_too_low")
+    return warnings
 
 
 def _coin_prep_already_running_response(reason: str):
@@ -740,13 +781,11 @@ def api_coin_prep_verify():
             or 2
         )
         tier_enabled = request.args.get("tier_enabled", "false").lower() == "true"
-        liquidity_mode = (
+        liquidity_mode = _safe_liquidity_mode(
             request.args.get("liquidity_mode")
             or getattr(cfg, "LIQUIDITY_MODE", "two_sided")
             or "two_sided"
-        ).lower()
-        if liquidity_mode not in ("two_sided", "buy_only", "sell_only"):
-            liquidity_mode = "two_sided"
+        )
         tolerance = 0.05  # 5% tolerance for matching coin sizes
 
         # Fetch wallet balances for sufficiency check
@@ -759,18 +798,14 @@ def api_coin_prep_verify():
         cat_balance_mojos = 0
         if xch_bal_result and isinstance(xch_bal_result, dict):
             wb = xch_bal_result.get("wallet_balance") or xch_bal_result
-            xch_balance_mojos = wb.get("confirmed_wallet_balance", 0) or wb.get(
-                "spendable_balance", 0
+            xch_balance_mojos = _safe_non_negative_int(
+                wb.get("confirmed_wallet_balance", 0) or wb.get("spendable_balance", 0)
             )
-            if isinstance(xch_balance_mojos, str):
-                xch_balance_mojos = int(xch_balance_mojos)
         if cat_bal_result and isinstance(cat_bal_result, dict):
             wb = cat_bal_result.get("wallet_balance") or cat_bal_result
-            cat_balance_mojos = wb.get("confirmed_wallet_balance", 0) or wb.get(
-                "spendable_balance", 0
+            cat_balance_mojos = _safe_non_negative_int(
+                wb.get("confirmed_wallet_balance", 0) or wb.get("spendable_balance", 0)
             )
-            if isinstance(cat_balance_mojos, str):
-                cat_balance_mojos = int(cat_balance_mojos)
 
         # Fetch all spendable coins
         xch_result = get_spendable_coins_rpc(WALLET_ID_XCH)
@@ -779,19 +814,30 @@ def api_coin_prep_verify():
         xch_coins = []
         if xch_result and xch_result.get("success"):
             for r in xch_result.get("records", []):
-                amt = r.get("coin", {}).get("amount", 0)
+                if not isinstance(r, dict):
+                    continue
+                coin = r.get("coin", {})
+                if not isinstance(coin, dict):
+                    continue
+                amt = _safe_non_negative_int(coin.get("amount", 0))
                 if amt > 0:
                     xch_coins.append(amt)
 
         cat_coins = []
         if cat_result and cat_result.get("success"):
             for r in cat_result.get("records", []):
-                amt = r.get("coin", {}).get("amount", 0)
+                if not isinstance(r, dict):
+                    continue
+                coin = r.get("coin", {})
+                if not isinstance(coin, dict):
+                    continue
+                amt = _safe_non_negative_int(coin.get("amount", 0))
                 if amt > 0:
                     cat_coins.append(amt)
 
-        cat_decimals = int(
-            api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+        cat_decimals = _safe_non_negative_int(
+            api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3),
+            3,
         )
 
         def count_matching(coins_list, target_mojos, tol):
@@ -924,11 +970,12 @@ def api_coin_prep_verify():
             xch_balance_sufficient = xch_balance_mojos >= total_xch_needed_mojos
             cat_balance_sufficient = cat_balance_mojos >= total_cat_needed_mojos
 
-            balance_warnings = []
-            if not xch_balance_sufficient and total_xch_needed_mojos > 0:
-                balance_warnings.append("xch_balance_too_low")
-            if not cat_balance_sufficient and total_cat_needed_mojos > 0:
-                balance_warnings.append("cat_balance_too_low")
+            balance_warnings = _coin_prep_balance_warnings(
+                xch_balance_sufficient,
+                cat_balance_sufficient,
+                total_xch_needed_mojos,
+                total_cat_needed_mojos,
+            )
 
             tier_drift = []
             try:
@@ -965,13 +1012,15 @@ def api_coin_prep_verify():
             return jsonify(api_server._client_safe_payload(response))
         else:
             # Flat mode
-            trade_size = float(request.args.get("trade_size", "0"))
-            prepared_xch_size = float(
+            trade_size = _safe_non_negative_decimal(request.args.get("trade_size", "0"))
+            prepared_xch_size = _safe_non_negative_decimal(
                 request.args.get("prepared_xch_size", str(trade_size or 0))
             )
-            prepared_cat_size = float(request.args.get("prepared_cat_size", "0"))
-            max_buy = int(request.args.get("max_buy", "0"))
-            max_sell = int(request.args.get("max_sell", "0"))
+            prepared_cat_size = _safe_non_negative_decimal(
+                request.args.get("prepared_cat_size", "0")
+            )
+            max_buy = _safe_non_negative_int(request.args.get("max_buy", "0"))
+            max_sell = _safe_non_negative_int(request.args.get("max_sell", "0"))
             if liquidity_mode == "buy_only":
                 max_sell = 0
             elif liquidity_mode == "sell_only":
@@ -979,8 +1028,8 @@ def api_coin_prep_verify():
             if prepared_cat_size <= 0:
                 prepared_cat_size = trade_size
 
-            xch_mojos = int(prepared_xch_size * 1e12)
-            cat_mojos = int(prepared_cat_size * (10**cat_decimals))
+            xch_mojos = int(prepared_xch_size * Decimal(10**12))
+            cat_mojos = int(prepared_cat_size * Decimal(10**cat_decimals))
 
             xch_right_size = count_matching(xch_coins, xch_mojos, tolerance)
             cat_right_size = count_matching(cat_coins, cat_mojos, tolerance)
@@ -992,37 +1041,36 @@ def api_coin_prep_verify():
             xch_balance_sufficient = xch_balance_mojos >= total_xch_needed_mojos
             cat_balance_sufficient = cat_balance_mojos >= total_cat_needed_mojos
 
-            balance_warnings = []
-            if not xch_balance_sufficient and total_xch_needed_mojos > 0:
-                balance_warnings.append("xch_balance_too_low")
-            if not cat_balance_sufficient and total_cat_needed_mojos > 0:
-                balance_warnings.append("cat_balance_too_low")
+            balance_warnings = _coin_prep_balance_warnings(
+                xch_balance_sufficient,
+                cat_balance_sufficient,
+                total_xch_needed_mojos,
+                total_cat_needed_mojos,
+            )
 
             # Response fields are derived from numeric wallet balances and
             # deterministic coin-size counts.
-            return jsonify(
-                {
-                    "success": True,
-                    "tier_enabled": False,
-                    "liquidity_mode": liquidity_mode,
-                    "xch_coins_right_size": xch_right_size,
-                    "cat_coins_right_size": cat_right_size,
-                    "xch_needed": max_buy,
-                    "cat_needed": max_sell,
-                    "all_sufficient": (
-                        xch_right_size >= max_buy and cat_right_size >= max_sell
-                    ),
-                    "xch_total": len(xch_coins),
-                    "cat_total": len(cat_coins),
-                    "xch_balance_mojos": xch_balance_mojos,
-                    "cat_balance_mojos": cat_balance_mojos,
-                    "xch_needed_mojos": total_xch_needed_mojos,
-                    "cat_needed_mojos": total_cat_needed_mojos,
-                    "balance_sufficient": xch_balance_sufficient
-                    and cat_balance_sufficient,
-                    "balance_warnings": balance_warnings,
-                }
-            )
+            response = {
+                "success": True,
+                "tier_enabled": False,
+                "liquidity_mode": _safe_liquidity_mode(liquidity_mode),
+                "xch_coins_right_size": _safe_non_negative_int(xch_right_size),
+                "cat_coins_right_size": _safe_non_negative_int(cat_right_size),
+                "xch_needed": _safe_non_negative_int(max_buy),
+                "cat_needed": _safe_non_negative_int(max_sell),
+                "all_sufficient": (
+                    xch_right_size >= max_buy and cat_right_size >= max_sell
+                ),
+                "xch_total": _safe_non_negative_int(len(xch_coins)),
+                "cat_total": _safe_non_negative_int(len(cat_coins)),
+                "xch_balance_mojos": _safe_non_negative_int(xch_balance_mojos),
+                "cat_balance_mojos": _safe_non_negative_int(cat_balance_mojos),
+                "xch_needed_mojos": _safe_non_negative_int(total_xch_needed_mojos),
+                "cat_needed_mojos": _safe_non_negative_int(total_cat_needed_mojos),
+                "balance_sufficient": xch_balance_sufficient and cat_balance_sufficient,
+                "balance_warnings": balance_warnings,
+            }
+            return jsonify(api_server._client_safe_payload(response))
 
     except Exception:
         return api_server._api_exception(request.path)

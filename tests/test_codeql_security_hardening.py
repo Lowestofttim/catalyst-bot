@@ -9,6 +9,7 @@ from unittest.mock import patch
 import api_server
 import sage_node
 from blueprints import bot as bot_routes
+from blueprints import coin_prep as coin_prep_routes
 from blueprints import config_bp
 import coin_prep_worker
 
@@ -445,4 +446,62 @@ def test_coin_prep_verify_response_hides_traceback_shaped_drift_details(monkeypa
     body = resp.get_data(as_text=True).lower()
     assert resp.status_code == 200
     assert "secret drift traceback" not in body
+    assert "traceback" not in body
+
+
+def test_coin_prep_flat_verify_response_hides_traceback_shaped_values(monkeypatch):
+    client, loopback = _api_client()
+    monkeypatch.setitem(api_server._active_cat, "wallet_id", 2)
+    monkeypatch.setitem(api_server._active_cat, "decimals", 3)
+
+    malicious_balance = {
+        "wallet_balance": {
+            "confirmed_wallet_balance": (
+                "Traceback (most recent call last): secret balance traceback"
+            )
+        }
+    }
+    malicious_coins = {
+        "success": True,
+        "records": [
+            {
+                "coin": {
+                    "amount": "Traceback (most recent call last): secret coin traceback"
+                }
+            }
+        ],
+    }
+
+    with (
+        patch("wallet.get_wallet_balance", side_effect=[malicious_balance] * 2),
+        patch("wallet.get_spendable_coins_rpc", side_effect=[malicious_coins] * 2),
+        patch("wallet.WALLET_ID_XCH", 1),
+        patch.object(coin_prep_routes.cfg, "CAT_DECIMALS", 3),
+    ):
+        resp = client.get(
+            "/api/coin-prep/verify",
+            query_string={
+                "tier_enabled": "false",
+                "liquidity_mode": (
+                    "Traceback (most recent call last): secret mode traceback"
+                ),
+                "trade_size": (
+                    "Traceback (most recent call last): secret trade traceback"
+                ),
+                "prepared_xch_size": (
+                    "Traceback (most recent call last): secret xch traceback"
+                ),
+                "prepared_cat_size": (
+                    "Traceback (most recent call last): secret cat traceback"
+                ),
+                "max_buy": "Traceback (most recent call last): secret buy traceback",
+                "max_sell": "Traceback (most recent call last): secret sell traceback",
+            },
+            environ_base=loopback,
+        )
+
+    body = resp.get_data(as_text=True).lower()
+    assert resp.status_code == 200
+    assert resp.get_json()["liquidity_mode"] == "two_sided"
+    assert "secret" not in body
     assert "traceback" not in body
