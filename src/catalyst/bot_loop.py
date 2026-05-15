@@ -4173,6 +4173,26 @@ class BotLoop:
         self._consecutive_unhealthy = 0
         self._sweep_protection = {}
         self._recent_sweep_events = []
+        self._last_toxicity_live_cancel = {
+            "buy": {"at": 0.0, "signature": ""},
+            "sell": {"at": 0.0, "signature": ""},
+        }
+        try:
+            self.market_toxicity_guard.reset()
+        except Exception:
+            pass
+        try:
+            from sweep_coordinator import reset_coordinator as _reset_sweeps
+
+            _reset_sweeps()
+        except Exception:
+            pass
+        try:
+            from dynamic_amm_buffer import reset_buffer as _reset_dynamic_buffer
+
+            _reset_dynamic_buffer()
+        except Exception:
+            pass
         self._adaptive_target_backoff_until = {"buy": 0.0, "sell": 0.0}
         self._last_adaptive_offer_targets = {"buy": 0, "sell": 0}
         self._last_pricing_success_ts = 0

@@ -101,6 +101,10 @@ class MarketToxicityGuard:
     def __init__(self) -> None:
         self._snapshot = ToxicitySnapshot()
 
+    def reset(self) -> None:
+        """Clear per-run toxicity memory for a fresh bot session."""
+        self._snapshot = ToxicitySnapshot()
+
     def get_snapshot(self) -> ToxicitySnapshot:
         return self._snapshot
 

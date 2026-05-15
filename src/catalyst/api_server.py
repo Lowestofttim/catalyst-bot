@@ -1516,6 +1516,125 @@ def _reset_runtime_session_stats() -> Dict:
     return reset_summary
 
 
+def _reset_fresh_run_runtime_memory() -> list[str]:
+    """Clear in-memory state that should not survive a full fresh reset."""
+    reset_components: list[str] = []
+
+    if bot:
+        try:
+            if bot.is_running():
+                return ["bot_runtime_skipped_running"]
+        except Exception:
+            pass
+
+    try:
+        from sweep_coordinator import reset_coordinator
+
+        reset_coordinator()
+        reset_components.append("sweep_coordinator")
+    except Exception:
+        pass
+
+    try:
+        from dynamic_amm_buffer import reset_buffer
+
+        reset_buffer()
+        reset_components.append("dynamic_amm_buffer")
+    except Exception:
+        pass
+
+    if not bot:
+        return reset_components
+
+    try:
+        sweep_protection = getattr(bot, "_sweep_protection", None)
+        if isinstance(sweep_protection, dict):
+            sweep_protection.clear()
+        else:
+            setattr(bot, "_sweep_protection", {})
+        reset_components.append("bot.sweep_protection")
+    except Exception:
+        pass
+
+    try:
+        recent_sweeps = getattr(bot, "_recent_sweep_events", None)
+        if isinstance(recent_sweeps, list):
+            recent_sweeps.clear()
+        else:
+            setattr(bot, "_recent_sweep_events", [])
+        reset_components.append("bot.recent_sweep_events")
+    except Exception:
+        pass
+
+    try:
+        setattr(
+            bot,
+            "_last_toxicity_live_cancel",
+            {
+                "buy": {"at": 0.0, "signature": ""},
+                "sell": {"at": 0.0, "signature": ""},
+            },
+        )
+        reset_components.append("bot.toxicity_live_cancel")
+    except Exception:
+        pass
+
+    try:
+        guard = getattr(bot, "market_toxicity_guard", None)
+        if guard is not None and hasattr(guard, "reset"):
+            guard.reset()
+            reset_components.append("market_toxicity_guard")
+    except Exception:
+        pass
+
+    try:
+        risk_manager = getattr(bot, "risk_manager", None)
+        if risk_manager is not None and hasattr(risk_manager, "reset_session"):
+            risk_manager.reset_session()
+            reset_components.append("risk_manager.session")
+        elif risk_manager is not None and hasattr(risk_manager, "reset_position"):
+            risk_manager.reset_position()
+            reset_components.append("risk_manager.position")
+    except Exception:
+        pass
+
+    try:
+        sniper = getattr(bot, "sniper", None)
+        if sniper is not None:
+            with getattr(sniper, "_snipe_lock", _SNIPE_LOCK_NOOP):
+                sniper._total_snipes = 0
+                sniper._total_skipped = 0
+                if hasattr(sniper, "_snipe_history"):
+                    sniper._snipe_history.clear()
+                if hasattr(sniper, "_active_snipe_ids"):
+                    sniper._active_snipe_ids.clear()
+                sniper._last_snipe_time = 0
+            reset_components.append("sniper.counters")
+    except Exception:
+        pass
+
+    try:
+        fill_tracker = getattr(bot, "fill_tracker", None)
+        if fill_tracker is not None:
+            if hasattr(fill_tracker, "_mass_disappearance_count"):
+                fill_tracker._mass_disappearance_count = 0
+            if hasattr(fill_tracker, "_mass_disappearance_first_at"):
+                fill_tracker._mass_disappearance_first_at = None
+            reset_components.append("fill_tracker.counters")
+    except Exception:
+        pass
+
+    try:
+        watchdog_streaks = getattr(bot, "_watchdog_violation_streaks", None)
+        if isinstance(watchdog_streaks, dict):
+            watchdog_streaks.clear()
+            reset_components.append("watchdog.streaks")
+    except Exception:
+        pass
+
+    return reset_components
+
+
 def _reset_fresh_run_session(
     clear_coins: bool = False,
     clear_price_history: bool = False,
@@ -1643,6 +1762,7 @@ def _reset_fresh_run_session(
     if not preserve_history:
         stats_reset = _reset_runtime_session_stats()
         summary.update(stats_reset)
+        summary["runtime_memory_reset"] = _reset_fresh_run_runtime_memory()
     else:
         # Always drain Splash incoming (those offers reference the old
         # coin IDs) but DON'T reset market_intel / splash session stats

@@ -266,6 +266,29 @@ def test_scores_decay_when_conditions_calm():
     assert calm.score < hot.score
 
 
+def test_reset_clears_previous_toxicity_snapshot():
+    guard = MarketToxicityGuard()
+    hot = guard.update(
+        _ctx(
+            recent_sweep_events=[{"side": "sell", "fill_count": 3}],
+            recent_fills=[
+                {"side": "sell", "age_secs": 8, "size_xch": "0.04"},
+                {"side": "sell", "age_secs": 10, "size_xch": "0.05"},
+                {"side": "sell", "age_secs": 12, "size_xch": "0.06"},
+            ],
+        )
+    )
+
+    assert hot.score > 0
+
+    guard.reset()
+    snap = guard.get_snapshot()
+
+    assert snap.score == 0
+    assert snap.throttled_sides == []
+    assert snap.reasons == []
+
+
 def test_disabled_guard_returns_normal(monkeypatch):
     monkeypatch.setattr(
         "market_toxicity.cfg.MARKET_TOXICITY_ENABLED", False, raising=False

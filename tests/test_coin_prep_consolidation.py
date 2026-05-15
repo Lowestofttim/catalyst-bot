@@ -407,6 +407,43 @@ class CoinPrepConsolidationTests(unittest.TestCase):
 
         self.assertEqual(calls, {"send": 1, "resync": 1})
 
+    def test_sage_consolidation_reports_wallet_still_settling_when_resync_count_changes(
+        self,
+    ):
+        logs = []
+        counts = iter([73, 0, 73, 73, 73, 73, 73, 73, 94, 94, 94])
+
+        fake_wallet_sage = types.ModuleType("wallet_sage")
+        fake_wallet_sage.get_current_key = lambda: {"fingerprint": "123"}
+        fake_wallet_sage.get_next_address = lambda wallet_id, new_address=False: {
+            "address": "xch1self",
+        }
+        fake_wallet_sage.get_spendable_coins_rpc = lambda wallet_id: {
+            "success": True,
+            "confirmed_records": [
+                {"coin_id": "0x" + f"{i:064x}", "spent_block_index": 0, "amount": 100}
+                for i in range(1, 74)
+            ],
+        }
+        fake_wallet_sage.send_transaction = lambda *args, **kwargs: {
+            "success": True,
+            "submitted": True,
+        }
+        fake_wallet_sage.sage_login = lambda fingerprint, force_resync=False: True
+        sys.modules["wallet_sage"] = fake_wallet_sage
+
+        worker = self.coin_prep_worker.CoinPrepWorker()
+        worker.log = lambda message: logs.append(str(message))
+        worker.get_coin_count = lambda wallet_id: next(counts, 94)
+        worker._tx_fee_mojos = lambda: 0
+
+        with patch.object(self.coin_prep_worker.time, "sleep", return_value=None):
+            self.assertFalse(worker._consolidate_wallet_sage(1, "CAT"))
+
+        joined = "\n".join(logs).lower()
+        self.assertIn("sage wallet is still settling", joined)
+        self.assertNotIn("rejected or dropped", joined)
+
     def test_worker_aborts_when_consolidation_never_verifies(self):
         source = (
             Path(__file__).resolve().parent.parent

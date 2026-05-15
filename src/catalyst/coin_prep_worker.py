@@ -2607,10 +2607,20 @@ class CoinPrepWorker:
         large_consolidation = coin_count > large_threshold
 
         self._sage_consolidation_submitted = False
+        self._sage_consolidation_settling = False
+        self._sage_consolidation_resync_start_count = None
+        self._sage_consolidation_resync_last_count = None
         if self._consolidate_wallet_sage_fallback(wallet_id, name):
             return True
 
         if getattr(self, "_sage_consolidation_submitted", False):
+            if getattr(self, "_sage_consolidation_settling", False):
+                self.log(
+                    f"{name} send-to-self was submitted, but Sage wallet is still "
+                    "settling after recent activity. Wait a minute, then rerun "
+                    "Coin Prep instead of forcing another combine immediately."
+                )
+                return False
             self.log(
                 f"{name} send-to-self was submitted but never verified as one coin; "
                 "not retrying with another consolidation method"
@@ -2740,8 +2750,22 @@ class CoinPrepWorker:
                         f"{name} consolidation wallet view returned to {observed_count} coins "
                         "after a pending lock; forcing Sage resync before failing"
                     )
+                    self._sage_consolidation_resync_start_count = observed_count
+                    self._sage_consolidation_resync_last_count = observed_count
                     if self._resync_sage_after_stale_consolidation(wallet_id, name):
                         return True
+                    resync_count = getattr(
+                        self, "_sage_consolidation_resync_last_count", None
+                    )
+                    if resync_count is not None and resync_count != observed_count:
+                        self._sage_consolidation_settling = True
+                        self.log(
+                            f"{name} consolidation did not settle into one coin yet; "
+                            "Sage wallet is still settling after recent cancels/fills "
+                            f"({observed_count} -> {resync_count} coins during resync). "
+                            "Wait a minute, then rerun Coin Prep."
+                        )
+                        return False
                     self.log(
                         f"ERROR: {name} consolidation was rejected or dropped: "
                         f"wallet returned to {observed_count} coins after a pending lock"
@@ -2789,6 +2813,7 @@ class CoinPrepWorker:
                     time.sleep(5)
 
                 observed_count = self.get_coin_count(wallet_id)
+                self._sage_consolidation_resync_last_count = observed_count
                 if wallet_id == self.xch_wallet_id:
                     self._set_status_coin_counts(xch_total=observed_count)
                 else:

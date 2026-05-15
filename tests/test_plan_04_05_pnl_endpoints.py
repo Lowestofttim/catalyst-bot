@@ -11,6 +11,7 @@ Tests /api/pnl, /api/pnl/reset-preview, /api/pnl/reset (POST),
 
 import os
 import sys
+import types
 import unittest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch, call
@@ -403,7 +404,85 @@ class TestPnlReset(_FlaskBase):
 
 
 # ---------------------------------------------------------------------------
-# 4. POST /api/fills/purge
+# 4. POST /api/reset/full
+# ---------------------------------------------------------------------------
+
+
+@unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
+class TestFullReset(_FlaskBase):
+    def test_full_reset_clears_in_memory_toxicity_and_sweep_state(self):
+        api_server.init_database()
+        from dynamic_amm_buffer import get_state, record_sweep, reset_buffer
+        from sweep_coordinator import get_coordinator, reset_coordinator
+
+        reset_buffer()
+        record_sweep(fill_count=4)
+        self.assertEqual(get_state()["sweep_count_in_window"], 1)
+
+        reset_coordinator()
+        old_coordinator = get_coordinator()
+        old_coordinator.process_fill(
+            1,
+            types.SimpleNamespace(
+                trade_id="old",
+                classification="unknown",
+                spent_block_index=99,
+                taker_puzzle_hash=None,
+                side="sell",
+            ),
+        )
+        self.assertEqual(
+            old_coordinator.get_pending_summary()["pending_fill_count"], 1
+        )
+
+        bot = MagicMock()
+        bot.is_running.return_value = False
+        bot.risk_manager = MagicMock()
+        bot.market_toxicity_guard = MagicMock()
+        bot._sweep_protection = {"sell": 123.0}
+        bot._recent_sweep_events = [{"side": "sell", "fill_count": 4}]
+        bot._last_toxicity_live_cancel = {
+            "buy": {"at": 10.0, "signature": "old-buy"},
+            "sell": {"at": 20.0, "signature": "old-sell"},
+        }
+        bot._watchdog_violation_streaks = {"tier": 2}
+        bot.fill_tracker = types.SimpleNamespace(
+            _mass_disappearance_count=3,
+            _mass_disappearance_first_at=123.0,
+        )
+        bot.sniper = types.SimpleNamespace(
+            _snipe_lock=api_server._SNIPE_LOCK_NOOP,
+            _total_snipes=5,
+            _total_skipped=7,
+            _snipe_history=[{"id": "old"}],
+            _active_snipe_ids={"old"},
+            _last_snipe_time=456.0,
+        )
+
+        with patch.object(api_server, "bot", bot):
+            resp = self._post("/api/reset/full", {"confirm": "RESET"})
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(bot._sweep_protection, {})
+        self.assertEqual(bot._recent_sweep_events, [])
+        self.assertEqual(
+            bot._last_toxicity_live_cancel,
+            {
+                "buy": {"at": 0.0, "signature": ""},
+                "sell": {"at": 0.0, "signature": ""},
+            },
+        )
+        bot.market_toxicity_guard.reset.assert_called_once()
+        bot.risk_manager.reset_session.assert_called()
+        self.assertEqual(bot.fill_tracker._mass_disappearance_count, 0)
+        self.assertIsNone(bot.fill_tracker._mass_disappearance_first_at)
+        self.assertEqual(get_state()["sweep_count_in_window"], 0)
+        self.assertIsNot(get_coordinator(), old_coordinator)
+        self.assertEqual(get_coordinator().get_pending_summary()["pending_fill_count"], 0)
+
+
+# ---------------------------------------------------------------------------
+# 5. POST /api/fills/purge
 # ---------------------------------------------------------------------------
 
 
