@@ -4701,6 +4701,18 @@ def get_setting(key: str, default: str = None) -> str:
     return row[0] if row else default
 
 
+def get_all_settings() -> List[Dict]:
+    """Return all persistent app settings for support/debug snapshots."""
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT key, value, updated_at FROM bot_settings ORDER BY key ASC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    except Exception:
+        return []
+
+
 def set_setting(key: str, value: str) -> bool:
     """Set a setting value (insert or update).
 

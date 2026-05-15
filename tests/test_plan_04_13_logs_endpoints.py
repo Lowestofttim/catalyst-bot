@@ -193,6 +193,76 @@ class TestLogsDownload(_FlaskBase):
         self.assertEqual(snapshot["throttled_sides"], ["buy"])
         self.assertIn("market_toxicity.json", readme)
 
+    def test_bundle_includes_sanitized_settings_audit_context(self):
+        config_history = [
+            {
+                "id": 7,
+                "timestamp": "2026-05-15T07:00:00Z",
+                "key": "BASE_SPREAD_BPS",
+                "old_value": "500",
+                "new_value": "900",
+                "source": "api_settings_save",
+                "note": "tester changed spread",
+            },
+            {
+                "id": 8,
+                "timestamp": "2026-05-15T07:01:00Z",
+                "key": "SPACESCAN_API_KEY",
+                "old_value": "old-secret-value",
+                "new_value": "new-secret-value",
+                "source": "api_settings_save",
+                "note": "",
+            },
+        ]
+        bot_settings = [
+            {
+                "key": "last_selected_liquidity_mode",
+                "value": "sell_only",
+                "updated_at": "2026-05-15T07:02:00Z",
+            },
+            {
+                "key": "api_token",
+                "value": "bot-setting-secret",
+                "updated_at": "2026-05-15T07:03:00Z",
+            },
+        ]
+
+        with patch.object(api_server, "bot", None), \
+             patch("database.get_recent_events", return_value=[]), \
+             patch("database.get_open_offers", return_value=[]), \
+             patch("database.get_fills", return_value=[]), \
+             patch("database.get_live_tier_group_counts", return_value={}), \
+             patch("database.get_coin_summary", return_value={}), \
+             patch("database.get_config_history", return_value=config_history), \
+             patch("database.get_all_settings", return_value=bot_settings, create=True), \
+             patch("super_log.get_archive_summary", return_value=[]), \
+             patch("super_log.get_log_path", return_value=None), \
+             patch("super_log.get_log_stats", return_value={}):
+            resp = self.client.get("/api/logs/download",
+                                   environ_base=self._LOOPBACK)
+
+        self.assertEqual(resp.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(resp.data)) as zf:
+            self.assertIn("snapshots/config_history.json", zf.namelist())
+            self.assertIn("snapshots/bot_settings.json", zf.namelist())
+            history = json.loads(zf.read("snapshots/config_history.json"))
+            settings = json.loads(zf.read("snapshots/bot_settings.json"))
+            bundle_text = "\n".join(
+                zf.read(name).decode("utf-8", errors="replace")
+                for name in zf.namelist()
+            )
+
+        self.assertEqual(history[0]["key"], "BASE_SPREAD_BPS")
+        self.assertEqual(history[0]["new_value"], "900")
+        self.assertEqual(history[1]["old_value"], "<secret-redacted>")
+        self.assertEqual(history[1]["new_value"], "<secret-redacted>")
+        self.assertEqual(settings[0]["key"], "last_selected_liquidity_mode")
+        self.assertEqual(settings[0]["value"], "sell_only")
+        self.assertEqual(settings[1]["value"], "<secret-redacted>")
+        self.assertNotIn("old-secret-value", bundle_text)
+        self.assertNotIn("new-secret-value", bundle_text)
+        self.assertNotIn("bot-setting-secret", bundle_text)
+
     def test_bundle_redacts_wallet_identifiers_and_excludes_config_secrets(self):
         sensitive_address = "xch1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
         event = {

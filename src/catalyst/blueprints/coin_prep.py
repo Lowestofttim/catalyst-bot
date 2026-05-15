@@ -1777,6 +1777,7 @@ def api_logs_download():
         from database import (
             get_recent_events, get_open_offers, get_fills,
             get_live_tier_group_counts, get_coin_summary,
+            get_config_history, get_all_settings,
         )
         from super_log import get_archive_summary, get_log_path, get_log_stats
 
@@ -2002,6 +2003,19 @@ def api_logs_download():
                 return tuple(_redact_obj(v) for v in obj)
             return obj
 
+        def _redact_key_value_rows(rows, value_fields=("value",)):
+            """Scrub row-shaped settings where the sensitive name is in row['key']."""
+            redacted = []
+            for row in rows or []:
+                item = dict(row or {})
+                setting_key = str(item.get("key") or "")
+                if api_server._is_sensitive_key(setting_key):
+                    for field in value_fields:
+                        if field in item:
+                            item[field] = "<secret-redacted>"
+                redacted.append(_redact_obj(item))
+            return redacted
+
         def _read_text_tail(path: str, max_bytes: int = 400_000) -> str:
             if not path or not os.path.exists(path):
                 return ""
@@ -2075,6 +2089,24 @@ def api_logs_download():
             snapshots["config"] = cfg.to_dict() if hasattr(cfg, "to_dict") else {}
         except Exception as e:
             snapshots["config"] = {"error": str(e)}
+
+        # Settings audit/context. These help support tell whether a surprising
+        # bot reaction came from code behavior or from the user's setup.
+        try:
+            snapshots["config_history"] = _redact_key_value_rows(
+                get_config_history(limit=250),
+                value_fields=("old_value", "new_value"),
+            )
+        except Exception as e:
+            snapshots["config_history"] = {"error": str(e)}
+
+        try:
+            snapshots["bot_settings"] = _redact_key_value_rows(
+                get_all_settings(),
+                value_fields=("value",),
+            )
+        except Exception as e:
+            snapshots["bot_settings"] = {"error": str(e)}
 
         # API call stats — central counter + every per-service manager
         # available, so support sees rate-limit cooldowns / API budget
@@ -2233,6 +2265,8 @@ def api_logs_download():
             "  recent_events.txt       latest DB events (one line each)",
             "  snapshots/",
             "    config.json           bot configuration (secrets stripped)",
+            "    config_history.json   recent settings changes (secrets stripped)",
+            "    bot_settings.json     persistent app state/settings",
             "    system_info.json      Python / OS / platform",
             "    api_calls.json        external API call counters",
             "    coin_inventory.json   tier-group counts + topup-pool totals",
