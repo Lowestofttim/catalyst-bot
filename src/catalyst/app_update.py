@@ -510,7 +510,8 @@ def write_update_relaunch_intent(intent: Dict[str, Any]) -> None:
 def clear_update_relaunch_intent() -> None:
     try:
         _relaunch_intent_path().unlink(missing_ok=True)
-    except Exception:
+    except OSError:
+        # Best-effort cleanup; a stale intent is ignored once it expires.
         pass
 
 
