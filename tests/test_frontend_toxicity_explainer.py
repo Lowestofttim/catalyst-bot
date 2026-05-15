@@ -12,4 +12,3 @@ def test_dashboard_explains_side_aware_toxicity_guard():
     assert "order-flow toxicity" in html
     assert "VPIN-style flow imbalance" in html
     assert "Buy and sell are scored separately" in html
-
