@@ -109,3 +109,17 @@ def test_update_market_toxicity_failure_keeps_loop_alive(monkeypatch):
     )
 
     assert any(evt[1] == "toxicity_guard_error" for evt in events)
+
+
+def test_toxicity_inventory_state_logs_position_parse_failure(monkeypatch):
+    loop = _loop()
+    loop.risk_manager._net_position_cat = "not-a-decimal"
+    events = []
+    monkeypatch.setattr(bot_loop, "log_event", lambda *args, **kwargs: events.append(args))
+
+    state = loop._build_toxicity_inventory_state(Decimal("0.01"))
+
+    assert state["position_xch"] == Decimal("0")
+    assert state["position_pct"] == Decimal("0")
+    assert state["pressure_side"] == ""
+    assert any(evt[1] == "toxicity_inventory_state_failed" for evt in events)

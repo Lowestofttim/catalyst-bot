@@ -2223,8 +2223,12 @@ class BotLoop:
                 pressure_side = "buy"
             elif pos_xch < 0:
                 pressure_side = "sell"
-        except Exception:
-            pass
+        except Exception as e:
+            log_event(
+                "debug",
+                "toxicity_inventory_state_failed",
+                f"Could not derive toxicity inventory position; using neutral defaults: {e}",
+            )
 
         return {
             "xch_spendable": xch_spendable,

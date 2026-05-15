@@ -242,8 +242,10 @@ class MarketToxicityGuard:
 
     def _score_arb_gap(self, context: ToxicityContext, add_both) -> None:
         gap = abs(_dec(context.arb_gap_bps))
-        if gap >= Decimal("500"):
-            add_both("dexie_tibet_dislocation", 25, f"Dexie/Tibet gap is {gap:.0f} bps")
+        if gap >= Decimal("1000"):
+            add_both("dexie_tibet_dislocation", 55, f"Dexie/Tibet gap is {gap:.0f} bps")
+        elif gap >= Decimal("500"):
+            add_both("dexie_tibet_dislocation", 32, f"Dexie/Tibet gap is {gap:.0f} bps")
         elif gap >= Decimal("200"):
             add_both("dexie_tibet_dislocation", 12, f"Dexie/Tibet gap is {gap:.0f} bps")
 

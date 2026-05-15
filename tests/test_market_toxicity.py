@@ -69,6 +69,64 @@ def test_small_balance_exposure_can_throttle():
     assert "small_balance_exposure" in {r["key"] for r in snap.reasons}
 
 
+def test_same_side_sweep_with_fast_fills_throttles_filled_side():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            recent_sweep_events=[{"side": "sell", "fill_count": 3}],
+            recent_fills=[
+                {"side": "sell", "age_secs": 8, "size_xch": "0.04"},
+                {"side": "sell", "age_secs": 10, "size_xch": "0.05"},
+                {"side": "sell", "age_secs": 12, "size_xch": "0.06"},
+            ],
+        )
+    )
+
+    assert snap.sell_score >= 75
+    assert "sell" in snap.throttled_sides
+    assert "same_block_sweep" in {r["key"] for r in snap.reasons}
+    assert "fast_fill_cluster" in {r["key"] for r in snap.reasons}
+
+
+def test_large_dexie_tibet_gap_widens_both_sides_without_throttle():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            tibet_price=Decimal("0.0100"),
+            dexie_price=Decimal("0.0105"),
+            arb_gap_bps=Decimal("500"),
+        )
+    )
+
+    assert snap.score >= 30
+    assert snap.level == "mild"
+    assert snap.buy_spread_multiplier == Decimal("1.10")
+    assert snap.sell_spread_multiplier == Decimal("1.10")
+    assert snap.throttled_sides == []
+    assert "dexie_tibet_dislocation" in {r["key"] for r in snap.reasons}
+
+
+def test_extreme_dexie_tibet_gap_elevates_both_sides_without_throttle():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            tibet_price=Decimal("0.0100"),
+            dexie_price=Decimal("0.0110"),
+            arb_gap_bps=Decimal("1000"),
+        )
+    )
+
+    assert snap.score >= 55
+    assert snap.level == "elevated"
+    assert snap.buy_spread_multiplier == Decimal("1.35")
+    assert snap.sell_spread_multiplier == Decimal("1.35")
+    assert snap.throttled_sides == []
+    assert "dexie_tibet_dislocation" in {r["key"] for r in snap.reasons}
+
+
 def test_public_market_thin_side_scores_matching_side():
     guard = MarketToxicityGuard()
 

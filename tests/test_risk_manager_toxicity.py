@@ -59,3 +59,54 @@ def test_inventory_state_exposes_toxicity_snapshot(monkeypatch):
     assert state["market_toxicity"]["score"] == 61
     assert state["market_toxicity"]["level"] == "elevated"
     assert state["market_toxicity"]["buy_spread_multiplier"] == "1.35"
+
+
+def test_malformed_toxicity_dict_fails_open_and_logs(monkeypatch):
+    _patch_spread_cfg(monkeypatch)
+    rm = RiskManager()
+    rm.set_market_toxicity(
+        {
+            "throttled_sides": ["buy"],
+            "throttle_until": {"buy": "not-a-timestamp"},
+        }
+    )
+    events = []
+    monkeypatch.setattr("risk_manager.log_event", lambda *args, **kwargs: events.append(args))
+
+    assert rm.should_enable_side("buy", Decimal("0.01")) is True
+    assert any(evt[1] == "toxicity_throttle_parse_failed" for evt in events)
+
+
+def test_toxicity_side_check_exception_fails_open_and_logs(monkeypatch):
+    class BadSnapshot:
+        def is_side_throttled(self, side, now):
+            raise RuntimeError("bad toxicity snapshot")
+
+    _patch_spread_cfg(monkeypatch)
+    rm = RiskManager()
+    rm.set_market_toxicity(BadSnapshot())
+    events = []
+    monkeypatch.setattr("risk_manager.log_event", lambda *args, **kwargs: events.append(args))
+
+    assert rm.should_enable_side("buy", Decimal("0.01")) is True
+    assert any(evt[1] == "toxicity_side_check_failed" for evt in events)
+
+
+def test_market_health_logs_malformed_toxicity_conditions(monkeypatch):
+    _patch_spread_cfg(monkeypatch)
+    rm = RiskManager()
+    rm.set_market_toxicity(
+        {
+            "score": 80,
+            "level": "high",
+            "throttled_sides": ["sell"],
+            "reasons": ["malformed reason"],
+        }
+    )
+    events = []
+    monkeypatch.setattr("risk_manager.log_event", lambda *args, **kwargs: events.append(args))
+
+    health = rm.get_market_health()
+
+    assert health["status"] in {"green", "amber", "red"}
+    assert any(evt[1] == "toxicity_health_eval_failed" for evt in events)

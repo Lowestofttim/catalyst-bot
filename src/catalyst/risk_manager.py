@@ -1027,10 +1027,18 @@ class RiskManager:
                     until = (snap or {}).get("throttle_until") or {}
                     if side in throttled and float(until.get(side, 0) or 0) > time.time():
                         return False
-                except Exception:
-                    pass
-            except Exception:
-                pass
+                except Exception as e:
+                    log_event(
+                        "debug",
+                        "toxicity_throttle_parse_failed",
+                        f"Malformed toxicity throttle snapshot; allowing {side} side: {e}",
+                    )
+            except Exception as e:
+                log_event(
+                    "debug",
+                    "toxicity_side_check_failed",
+                    f"Toxicity side check failed; allowing {side} side: {e}",
+                )
 
         # --- 2. Inventory soft limits ---
         if not cfg.INVENTORY_ENABLED:
@@ -1247,8 +1255,12 @@ class RiskManager:
             elif tox_level in ("elevated", "high") or tox_throttled:
                 sides = ", ".join(str(s).upper() for s in tox_throttled) if tox_throttled else "none"
                 conditions.append(("amber", f"Market toxicity {tox_level} ({tox_score}/100); throttled sides: {sides}. {top_reason}"))
-        except Exception:
-            pass
+        except Exception as e:
+            log_event(
+                "debug",
+                "toxicity_health_eval_failed",
+                f"Could not evaluate toxicity health condition: {e}",
+            )
 
         # Position vs limit
         try:
