@@ -203,6 +203,30 @@ class TestAppUpdateSecurity(unittest.TestCase):
             self.assertTrue(verify_file_sha256(str(path), digest))
             self.assertFalse(verify_file_sha256(str(path), "0" * 64))
 
+    def test_launch_installer_waits_for_old_app_before_install_and_relaunch(self):
+        import app_update
+
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(app_update.sys, "platform", "win32"), \
+                patch.object(app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"), \
+                patch.object(app_update.os, "getpid", return_value=4321), \
+                patch.object(app_update.subprocess, "Popen") as popen:
+            installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
+            installer.write_bytes(b"fake installer")
+
+            app_update._launch_installer(installer)
+
+            argv = popen.call_args.args[0]
+            self.assertEqual(argv[:3], ["cmd.exe", "/d", "/c"])
+            helper_path = Path(argv[3])
+            helper_text = helper_path.read_text(encoding="utf-8")
+
+        self.assertIn("PID eq 4321", helper_text)
+        self.assertIn("start /wait", helper_text)
+        self.assertIn("Catalyst-Setup-v1.2.32.exe", helper_text)
+        self.assertIn("/CATALYST_RELAUNCH=0", helper_text)
+        self.assertIn(r"C:\Program Files\CATalyst\Catalyst.exe", helper_text)
+
 
 class TestAppUpdateApi(unittest.TestCase):
     def setUp(self):
@@ -214,22 +238,28 @@ class TestAppUpdateApi(unittest.TestCase):
         self.auth = {"X-Bot-Local-Token": self.api_server._LOCAL_API_TOKEN}
         self.loopback = {"REMOTE_ADDR": "127.0.0.1"}
 
-    def test_update_install_rejects_running_bot(self):
+    def test_update_install_allows_running_bot_and_requests_post_update_restart(self):
         class RunningBot:
             def is_running(self):
                 return True
 
-        with patch.object(self.api_server, "bot", RunningBot()):
+        running_bot = RunningBot()
+
+        with patch.object(self.api_server, "bot", running_bot), \
+                patch("app_update.start_update_install",
+                      return_value={"success": True, "started": True}) as start_install:
             resp = self.client.post(
                 "/api/update/install",
                 headers=self.auth,
                 environ_base=self.loopback,
             )
 
-        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
-        self.assertFalse(body["success"])
-        self.assertIn("Stop the bot", body["error"])
+        self.assertTrue(body["success"])
+        relaunch_intent = start_install.call_args.kwargs["relaunch_intent"]
+        self.assertTrue(relaunch_intent["auto_start_bot"])
+        self.assertTrue(relaunch_intent["resume_existing_offers"])
 
     def test_check_update_includes_release_notes_and_installer_readiness(self):
         with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
@@ -327,6 +357,14 @@ class TestAppUpdateFrontendAndReleaseWorkflow(unittest.TestCase):
         self.assertIn("function startAppUpgrade()", html)
         self.assertIn("/api/update/install", html)
         self.assertIn("/api/update/status", html)
+
+    def test_gui_auto_resumes_bot_after_in_app_update_relaunch(self):
+        html = (ROOT / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("function maybeAutoResumeAfterUpdate()", html)
+        self.assertIn("/api/update/relaunch-intent", html)
+        self.assertIn("resume_existing_offers", html)
+        self.assertIn("resumeStartNow()", html)
 
     def test_gui_polls_for_update_availability_while_open(self):
         html = (ROOT / "bot_gui.html").read_text(encoding="utf-8")

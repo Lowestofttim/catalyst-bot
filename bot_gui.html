@@ -23767,19 +23767,17 @@
 
             const running = !!(bot_state && bot_state.running);
             if (upgradeBtn) {
-                upgradeBtn.disabled = running || !info.installer_ready;
-                upgradeBtn.textContent = running
-                    ? 'Stop Bot First'
-                    : info.installer_ready
-                        ? 'Upgrade'
-                        : 'Open Release Page';
+                upgradeBtn.disabled = !info.installer_ready;
+                upgradeBtn.textContent = info.installer_ready
+                    ? (running ? 'Upgrade & Restart Bot' : 'Upgrade')
+                    : 'Open Release Page';
             }
-            if (running) {
-                setAppUpdateStatus('Stop the bot before upgrading. CATalyst will not interrupt active market making.', 'error');
-            } else if (!info.installer_ready) {
+            if (!info.installer_ready) {
                 setAppUpdateStatus('This release can be viewed manually, but automatic upgrade is blocked until the signed manifest publishes a verified Windows installer.', 'error');
+            } else if (running) {
+                setAppUpdateStatus('Ready. CATalyst will keep managing the bot while the installer downloads, then close, upgrade, reopen, and resume this session.', 'info');
             } else {
-                setAppUpdateStatus('Ready. The installer will be downloaded from the public release channel and verified against the signed manifest before it runs.', 'info');
+                setAppUpdateStatus('Ready. The installer will be downloaded from the public release channel, verified, then CATalyst will close and reopen after installation.', 'info');
             }
 
             modal.classList.add('active');
@@ -23828,7 +23826,7 @@
         async function shutdownForVerifiedUpdate() {
             if (_updateShutdownStarted) return;
             _updateShutdownStarted = true;
-            setAppUpdateStatus('Verified installer launched. Closing CATalyst so installation can finish...', 'success');
+            setAppUpdateStatus('Verified installer is queued. Closing CATalyst so installation can finish, then the updated app will reopen...', 'success');
             try {
                 await apiFetch(`${API_URL}/shutdown`, {
                     method: 'POST',
@@ -23851,10 +23849,6 @@
                 openUpdateReleasePage();
                 return;
             }
-            if (bot_state && bot_state.running) {
-                setAppUpdateStatus('Stop the bot before upgrading. Existing offers can stay live, but the app must not be actively managing them.', 'error');
-                return;
-            }
 
             const btn = document.getElementById('appUpdateUpgradeBtn');
             if (btn) {
@@ -23862,7 +23856,13 @@
                 btn.textContent = 'Preparing...';
             }
             _updateShutdownStarted = false;
-            setAppUpdateStatus('Starting secure update...', 'info');
+            const running = !!(bot_state && bot_state.running);
+            setAppUpdateStatus(
+                running
+                    ? 'Starting secure update. Existing offers will stay live and CATalyst will resume after the installer finishes.'
+                    : 'Starting secure update...',
+                'info'
+            );
             try {
                 const resp = await apiFetch('/api/update/install', {
                     method: 'POST',
@@ -29884,9 +29884,71 @@
 
         // Check if there are existing offers to resume
         let _resumeHandled = false;
+        let _updateAutoResumeAttempted = false;
         let _botStarting = false;  // Guards button text during startup
         let _botStartingAt = 0;    // Timestamp when _botStarting was set — safety timeout
         
+        async function clearUpdateRelaunchIntent() {
+            try {
+                await apiFetch('/api/update/relaunch-intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+            } catch (error) {
+                debugWarn('[UPDATE] Could not clear relaunch intent:', error);
+            }
+        }
+
+        async function maybeAutoResumeAfterUpdate() {
+            if (_updateAutoResumeAttempted || _resumeHandled) return false;
+            _updateAutoResumeAttempted = true;
+
+            let intent = null;
+            try {
+                const response = await apiFetch('/api/update/relaunch-intent');
+                const data = await response.json();
+                intent = data && data.intent ? data.intent : {};
+            } catch (error) {
+                debugWarn('[UPDATE] Could not check relaunch intent:', error);
+                return false;
+            }
+
+            if (!intent || !intent.auto_start_bot) {
+                if (intent && Object.keys(intent).length > 0) {
+                    await clearUpdateRelaunchIntent();
+                }
+                return false;
+            }
+
+            debugLog('[UPDATE] Auto-resume requested after in-app update:', intent);
+            showToast('Update complete. Resuming the previous bot session...', 'info');
+
+            try {
+                const hasOffers = await checkForResume();
+                if (!hasOffers) {
+                    showToast('Update complete, but no previous live offers were found to resume.', 'warning');
+                    return false;
+                }
+
+                const restored = await resumeSession();
+                if (!restored) {
+                    return false;
+                }
+                if (intent.resume_existing_offers !== false) {
+                    await resumeStartNow();
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                debugError('[UPDATE] Auto-resume after update failed:', error);
+                showToast('Update complete, but automatic bot restart failed. You can press Start Bot manually.', 'warning');
+                return false;
+            } finally {
+                await clearUpdateRelaunchIntent();
+            }
+        }
+
         async function checkForResume() {
             if (_resumeHandled) return false;
             
@@ -30195,6 +30257,7 @@
                         </div>
                     </div></div>
                 `;
+                return true;
 
             } catch (error) {
                 debugError('[RESUME] Start failed:', error);
@@ -30214,6 +30277,7 @@
                     if (startBtn) { startBtn.disabled = !settingsReviewed; startBtn.innerHTML = '▶ Start Bot'; }
                 };
                 modalContent.appendChild(closeBtn);
+                return false;
             }
         }
         
@@ -35112,6 +35176,16 @@ function finalDismiss() {
     setTimeout(async () => {
         if (!_resumeHandled && !hasCheckedResumeOnLoad) {
             hasCheckedResumeOnLoad = true;
+            try {
+                const autoResumed = await maybeAutoResumeAfterUpdate();
+                if (autoResumed) {
+                    debugLog('[STARTUP] Bot auto-resumed after update');
+                    return;
+                }
+            } catch (e) {
+                debugError('[STARTUP] Update auto-resume check failed:', e);
+            }
+
             debugLog('[STARTUP] Gates complete — checking for resume...');
             try {
                 const hasOffers = await checkForResume();

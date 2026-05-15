@@ -1787,32 +1787,54 @@ def api_update_status():
 def api_update_install():
     """Start verified Windows installer download and launch.
 
-    Requires the write token via before_request and refuses while the bot is
-    running so a self-update cannot interrupt active market making.
+    Requires the write token via before_request. If the bot is currently
+    running, the updater records a one-shot relaunch intent so the restarted
+    app can resume managing the existing live offers after the installer exits.
     """
     if not _is_loopback_addr(request.remote_addr):
         return jsonify({"success": False, "error": "loopback_only"}), 403
 
+    bot_was_running = False
     try:
-        if bot and bot.is_running():
-            return jsonify({
-                "success": False,
-                "error": "Stop the bot before upgrading CATalyst.",
-            }), 409
+        bot_was_running = bool(bot and bot.is_running())
     except Exception:
-        return jsonify({
-            "success": False,
-            "error": "Could not confirm the bot is stopped.",
-        }), 409
+        bot_was_running = True
 
     try:
         import app_update
         result = app_update.start_update_install(
             get_app_version(),
             str(os.environ.get("UPDATE_MANIFEST_URL", "") or ""),
+            relaunch_intent={
+                "auto_start_bot": bot_was_running,
+                "resume_existing_offers": True,
+                "cancel_offers": False,
+            },
         )
+        if result.get("success"):
+            result["restart_bot_after_update"] = bot_was_running
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
+    except Exception:
+        return _api_exception(request.path)
+
+
+@app.route("/api/update/relaunch-intent", methods=["GET", "POST", "DELETE"])
+def api_update_relaunch_intent():
+    """Return or clear the one-shot post-update relaunch intent."""
+    if not _is_loopback_addr(request.remote_addr):
+        return jsonify({"success": False, "error": "loopback_only"}), 403
+
+    try:
+        import app_update
+        if request.method == "GET":
+            return jsonify({
+                "success": True,
+                "intent": app_update.get_update_relaunch_intent(),
+            })
+
+        app_update.clear_update_relaunch_intent()
+        return jsonify({"success": True})
     except Exception:
         return _api_exception(request.path)
 
