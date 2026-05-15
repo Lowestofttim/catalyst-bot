@@ -38,6 +38,21 @@ class _CfgPatch:
     CAT_DECIMALS = 3
     CAT_TICKER_ID = "MZ"
     PRICE_LIMIT_NUDGE_ALPHA = Decimal("0.02")
+    DEXIE_API_BASE = "https://api.dexie.test"
+    PRICE_HARD_PAUSE_SECS = 120
+    TIBET_MAX_STALE_SECS = 120
+
+
+class _FakeDexieResponse:
+    def __init__(self, ticker):
+        self.status_code = 200
+        self._ticker = ticker
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"tickers": [self._ticker]}
 
 
 @unittest.skipIf(_SKIP is not None, f"price_engine unavailable: {_SKIP}")
@@ -315,6 +330,65 @@ class TestPricingStrategySelection(unittest.TestCase):
             result = eng.get_price()
         self.assertEqual(result["arb_gap_bps"], Decimal("0"))
         self.assertIsNone(result["arb_opportunity"])
+
+
+@unittest.skipIf(_SKIP is not None, f"price_engine unavailable: {_SKIP}")
+class TestDexieTickerFreshness(unittest.TestCase):
+    """Dexie ticker prices must come from live bid/ask, not stale averages."""
+
+    def setUp(self):
+        self._p = patch.object(_pe_mod, "cfg", _CfgPatch())
+        self._p.start()
+
+    def tearDown(self):
+        self._p.stop()
+
+    def _engine_with_ticker(self, ticker):
+        eng = _make_engine()
+        eng._session.get = lambda *a, **kw: _FakeDexieResponse(ticker)
+        return eng
+
+    def test_dexie_uses_live_bid_ask_midpoint(self):
+        eng = self._engine_with_ticker({
+            "ticker_id": "MZ_XCH",
+            "bid": "0.00010000",
+            "ask": "0.00012000",
+            "current_avg_price": "0.00050000",
+            "price_24h": "0.00040000",
+            "last_price": "0.00030000",
+        })
+
+        price = eng._fetch_dexie_price("MZ_XCH")
+
+        self.assertEqual(price, Decimal("0.00011000"))
+
+    def test_dexie_rejects_average_fields_when_live_bid_ask_missing(self):
+        eng = self._engine_with_ticker({
+            "ticker_id": "MZ_XCH",
+            "bid": None,
+            "ask": None,
+            "current_avg_price": "0.00050000",
+            "price_24h": "0.00040000",
+            "last_price": "0.00030000",
+        })
+
+        price = eng._fetch_dexie_price("MZ_XCH")
+
+        self.assertIsNone(price)
+
+    def test_dexie_rejects_crossed_bid_ask_instead_of_historical_fallback(self):
+        eng = self._engine_with_ticker({
+            "ticker_id": "MZ_XCH",
+            "bid": "0.00013000",
+            "ask": "0.00010000",
+            "current_avg_price": "0.00050000",
+            "price_24h": "0.00040000",
+            "last_price": "0.00030000",
+        })
+
+        price = eng._fetch_dexie_price("MZ_XCH")
+
+        self.assertIsNone(price)
 
 
 @unittest.skipIf(_SKIP is not None, f"price_engine unavailable: {_SKIP}")

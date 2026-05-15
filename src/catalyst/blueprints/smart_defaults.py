@@ -405,19 +405,14 @@ def _fetch_price_standalone(asset_id, decimals):
                         # Prefer bid/ask midpoint (real market) over last_price (can be outlier)
                         tk_bid = Decimal(str(tk.get("bid") or tk.get("best_bid") or 0))
                         tk_ask = Decimal(str(tk.get("ask") or tk.get("best_ask") or 0))
-                        if tk_bid > 0 and tk_ask > 0:
+                        if tk_bid > 0 and tk_ask > 0 and tk_bid <= tk_ask:
                             price = (tk_bid + tk_ask) / 2
                             source = "dexie_bid_ask"
                             print(f"[PRICE_STANDALONE] Dexie bid/ask mid={price:.10f} "
                                   f"(bid={tk_bid}, ask={tk_ask})")
                         else:
-                            for field in ["current_avg_price", "last_price", "price"]:
-                                val = tk.get(field)
-                                if val and str(val) != "0":
-                                    price = Decimal(str(val))
-                                    source = "dexie_ticker"
-                                    print(f"[PRICE_STANDALONE] Dexie ticker match! {field}={price}")
-                                    break
+                            print("[PRICE_STANDALONE] Dexie ticker has no sane live bid/ask; "
+                                  "ignoring historical price fields")
 
             # Method 2: Try Dexie offers endpoint for best bid/ask
             if not price:
