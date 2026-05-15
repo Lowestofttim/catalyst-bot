@@ -5379,6 +5379,67 @@
         .cc-condition-item {
             padding: 2px 0;
         }
+        .cc-toxicity-action {
+            display: none;
+            margin: 10px 0 4px;
+            padding: 10px 12px;
+            border: 1px solid rgba(251,191,36,0.38);
+            border-radius: var(--radius-md);
+            background: rgba(251,191,36,0.08);
+            text-align: left;
+            color: var(--text-primary);
+        }
+        .cc-toxicity-action.is-high {
+            border-color: rgba(239,68,68,0.45);
+            background: rgba(239,68,68,0.08);
+        }
+        .cc-toxicity-action-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            font-size: var(--text-xs);
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .cc-toxicity-action-score {
+            flex: 0 0 auto;
+            font-family: var(--font-mono);
+            color: var(--status-warning);
+        }
+        .cc-toxicity-action.is-high .cc-toxicity-action-score {
+            color: var(--status-danger);
+        }
+        .cc-toxicity-action-body,
+        .cc-toxicity-action-reason {
+            margin-top: 6px;
+            font-size: var(--text-xs);
+            line-height: 1.45;
+            color: var(--text-secondary);
+            overflow-wrap: anywhere;
+        }
+        .cc-toxicity-action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .cc-toxicity-action-btn {
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.16);
+            border-radius: var(--radius-sm);
+            background: rgba(255,255,255,0.06);
+            color: var(--text-primary);
+            font-size: var(--text-xs);
+            font-weight: 700;
+            padding: 5px 9px;
+            min-height: 28px;
+        }
+        .cc-toxicity-action-btn:hover {
+            border-color: rgba(56,189,248,0.5);
+            background: rgba(56,189,248,0.12);
+        }
         .cc-links {
             display: flex;
             gap: 8px;
@@ -9256,6 +9317,18 @@
                 <div class="cc-conditions" id="ccConditions">
                     <div class="cc-condition-item" id="ccPreStartHint" style="color: rgba(255,255,255,0.3);">Press Start Bot to begin monitoring</div>
                 </div>
+                <div class="cc-toxicity-action" id="ccToxicityAction" style="display: none;">
+                    <div class="cc-toxicity-action-head">
+                        <span>Adverse Selection Guard active</span>
+                        <span class="cc-toxicity-action-score" id="ccToxicityActionScore">0/100</span>
+                    </div>
+                    <div class="cc-toxicity-action-body" id="ccToxicityActionBody"></div>
+                    <div class="cc-toxicity-action-reason" id="ccToxicityActionReason"></div>
+                    <div class="cc-toxicity-action-buttons">
+                        <button type="button" class="cc-toxicity-action-btn" data-toxicity-action="settings">Open Guard Settings</button>
+                        <button type="button" class="cc-toxicity-action-btn" data-toxicity-action="smart-settings">Review Smart Settings</button>
+                    </div>
+                </div>
 
                 <!-- Key market metrics -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px;">
@@ -9302,6 +9375,10 @@
                     <div class="cc-metric-box">
                         <div class="cc-metric-label">CB Blocked <span class="cc-help">?<span class="cc-tooltip">Which side (buy/sell) the circuit breaker has blocked. Empty means both sides are free to trade.</span></span></div>
                         <div class="cc-metric-val" id="ccCbBlocked" style="opacity: 0.3;">pending</div>
+                    </div>
+                    <div class="cc-metric-box">
+                        <div class="cc-metric-label">Toxicity <span class="cc-help">?<span class="cc-tooltip">Adverse-selection score from fast fills, one-sided flow, public depth, small-balance exposure, and sweep risk. Higher means the bot widens or pauses the risky side.</span></span></div>
+                        <div class="cc-metric-val" id="ccToxicity" style="opacity: 0.3;">pending</div>
                     </div>
                     <div class="cc-metric-box">
                         <div class="cc-metric-label">Activity Level <span class="cc-help">?<span class="cc-tooltip">Spacescan on-chain activity for this token. High activity can signal increased risk or opportunity.</span></span></div>
@@ -11010,13 +11087,36 @@
                             </div>
                         </div>
 
-                        <!-- Inventory Management — hidden in single-sided modes.
-                             Inventory skew adjusts quotes based on how far net
-                             position has drifted from the balanced target, but
-                             in buy-only / sell-only the position deliberately
-                             drifts in one direction so the skew concept doesn't
-                             apply. Max position is still tracked implicitly via
-                             wallet balance + reserves in single-sided. -->
+                        <!-- Adverse Selection Guard -->
+                        <div style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" id="configMarketToxicityEnabled" style="width: auto; margin: 0;">
+                                    <span style="font-weight: bold; color: var(--warning-300);">Adverse Selection Guard <span class="cc-help">?<span class="cc-tooltip">Watches for predatory fills, thin public depth, one-sided pressure, sweep risk, and stale price signals. It widens spreads or pauses only the risky side.</span></span></span>
+                                </label>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Protection Level <span class="cc-help">?<span class="cc-tooltip">Smart Settings chooses this from wallet size, token health, public depth, volatility, and liquidity mode.</span></span></label>
+                                    <select id="configToxicityProtectionLevel" class="v4-settings-select" onchange="applyToxicityPresetFromUi()">
+                                        <option value="gentle">Gentle</option>
+                                        <option value="balanced" selected>Balanced</option>
+                                        <option value="defensive">Defensive</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Max Widening <span class="cc-help">?<span class="cc-tooltip">Maximum spread multiplier when adverse-selection risk is high. 2.0x means a 5% spread can widen to at most 10%.</span></span></label>
+                                    <input type="number" id="configToxicityMaxSpreadMultiplier" value="2.0" step="0.1" min="1.0" max="3.0">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 0.85em;">Pause Seconds <span class="cc-help">?<span class="cc-tooltip">How long to pause fresh offers on a risky side after the guard sees enough independent warning signals.</span></span></label>
+                                    <input type="number" id="configToxicityThrottleSecs" value="120" step="15" min="30" max="600">
+                                </div>
+                            </div>
+                            <div class="v4-settings-hint">Smart Settings keeps this gentle on deep markets and defensive for small wallets, one-sided setups, thin books, or volatile tokens.</div>
+                        </div>
+
+                        <!-- Inventory Management -->
                         <div class="mode-hide-on-buy-only mode-hide-on-sell-only" style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);">
                             <div class="form-group" style="margin-bottom: 8px;">
                                 <label style="display: flex; align-items: center; gap: 10px;">
@@ -13215,6 +13315,20 @@
                             const xs = parseFloat(g('MAX_SPREAD_BPS') || 0); if (xs > 0) document.getElementById('configMaxSpreadBps').value = (xs / 100).toFixed(1);
                             const vw = g('VOLATILITY_WINDOW_HOURS'); if (vw) document.getElementById('configVolatilityWindow').value = vw;
                         }
+
+                        // Adverse-selection guard settings are safe to load for every pair.
+                        const mt = g('MARKET_TOXICITY_ENABLED');
+                        if (mt !== null) {
+                            document.getElementById('configMarketToxicityEnabled').checked =
+                                mt === true || mt === 'true' || mt === '1' || mt === 'True';
+                        }
+                        const tl = String(g('TOXICITY_PROTECTION_LEVEL') || 'balanced').toLowerCase();
+                        const tlSelect = document.getElementById('configToxicityProtectionLevel');
+                        if (tlSelect) tlSelect.value = TOXICITY_UI_PRESETS[tl] ? tl : 'balanced';
+                        const tm = parseFloat(g('TOXICITY_MAX_SPREAD_MULTIPLIER') || 0);
+                        if (tm > 0) document.getElementById('configToxicityMaxSpreadMultiplier').value = tm;
+                        const ts = parseInt(g('TOXICITY_THROTTLE_SECS') || 0);
+                        if (ts > 0) document.getElementById('configToxicityThrottleSecs').value = ts;
 
                         // INVENTORY_ENABLED toggle is a user preference — always load
                         const ie = g('INVENTORY_ENABLED'); if (ie !== null) document.getElementById('configInventoryEnabled').checked = ie === true || ie === 'true' || ie === '1' || ie === 'True';
@@ -19025,6 +19139,20 @@
                 document.getElementById('configMinEdgeBps').value = _bps2pct(data.min_edge_bps ?? data.inner_edge_bps);
                 document.getElementById('configMinSpreadBps').value = _bps2pct(data.min_spread_bps);
                 document.getElementById('configMaxSpreadBps').value = _bps2pct(data.max_spread_bps);
+                if (data.market_toxicity_enabled !== undefined) {
+                    document.getElementById('configMarketToxicityEnabled').checked = !!data.market_toxicity_enabled;
+                }
+                if (data.toxicity_protection_level !== undefined) {
+                    const toxLevel = String(data.toxicity_protection_level || 'balanced').toLowerCase();
+                    const toxSelect = document.getElementById('configToxicityProtectionLevel');
+                    if (toxSelect) toxSelect.value = TOXICITY_UI_PRESETS[toxLevel] ? toxLevel : 'balanced';
+                }
+                if (data.toxicity_max_spread_multiplier !== undefined) {
+                    document.getElementById('configToxicityMaxSpreadMultiplier').value = data.toxicity_max_spread_multiplier;
+                }
+                if (data.toxicity_throttle_secs !== undefined) {
+                    document.getElementById('configToxicityThrottleSecs').value = data.toxicity_throttle_secs;
+                }
 
                 // Smart Pricing — Inventory Management
                 document.getElementById('configInventoryEnabled').checked = data.inventory_enabled;
@@ -19572,6 +19700,8 @@
             'configDynamicSpreadEnabled', 'configBaseSpreadBps',
             'configVolatilityWindow', 'configMinEdgeBps',
             'configMinSpreadBps', 'configMaxSpreadBps',
+            'configMarketToxicityEnabled', 'configToxicityProtectionLevel',
+            'configToxicityMaxSpreadMultiplier', 'configToxicityThrottleSecs',
             'configInventoryEnabled', 'configSkewIntensity',
             'configMaxPositionXch', 'configSpreadBps',
             'configLoopSeconds', 'configAutoRequote',
@@ -23637,19 +23767,17 @@
 
             const running = !!(bot_state && bot_state.running);
             if (upgradeBtn) {
-                upgradeBtn.disabled = running || !info.installer_ready;
-                upgradeBtn.textContent = running
-                    ? 'Stop Bot First'
-                    : info.installer_ready
-                        ? 'Upgrade'
-                        : 'Open Release Page';
+                upgradeBtn.disabled = !info.installer_ready;
+                upgradeBtn.textContent = info.installer_ready
+                    ? (running ? 'Upgrade & Restart Bot' : 'Upgrade')
+                    : 'Open Release Page';
             }
-            if (running) {
-                setAppUpdateStatus('Stop the bot before upgrading. CATalyst will not interrupt active market making.', 'error');
-            } else if (!info.installer_ready) {
+            if (!info.installer_ready) {
                 setAppUpdateStatus('This release can be viewed manually, but automatic upgrade is blocked until the signed manifest publishes a verified Windows installer.', 'error');
+            } else if (running) {
+                setAppUpdateStatus('Ready. CATalyst will keep managing the bot while the installer downloads, then close, upgrade, reopen, and resume this session.', 'info');
             } else {
-                setAppUpdateStatus('Ready. The installer will be downloaded from the public release channel and verified against the signed manifest before it runs.', 'info');
+                setAppUpdateStatus('Ready. The installer will be downloaded from the public release channel, verified, then CATalyst will close and reopen after installation.', 'info');
             }
 
             modal.classList.add('active');
@@ -23698,7 +23826,7 @@
         async function shutdownForVerifiedUpdate() {
             if (_updateShutdownStarted) return;
             _updateShutdownStarted = true;
-            setAppUpdateStatus('Verified installer launched. Closing CATalyst so installation can finish...', 'success');
+            setAppUpdateStatus('Verified installer is queued. Closing CATalyst so installation can finish, then the updated app will reopen...', 'success');
             try {
                 await apiFetch(`${API_URL}/shutdown`, {
                     method: 'POST',
@@ -23721,10 +23849,6 @@
                 openUpdateReleasePage();
                 return;
             }
-            if (bot_state && bot_state.running) {
-                setAppUpdateStatus('Stop the bot before upgrading. Existing offers can stay live, but the app must not be actively managing them.', 'error');
-                return;
-            }
 
             const btn = document.getElementById('appUpdateUpgradeBtn');
             if (btn) {
@@ -23732,7 +23856,13 @@
                 btn.textContent = 'Preparing...';
             }
             _updateShutdownStarted = false;
-            setAppUpdateStatus('Starting secure update...', 'info');
+            const running = !!(bot_state && bot_state.running);
+            setAppUpdateStatus(
+                running
+                    ? 'Starting secure update. Existing offers will stay live and CATalyst will resume after the installer finishes.'
+                    : 'Starting secure update...',
+                'info'
+            );
             try {
                 const resp = await apiFetch('/api/update/install', {
                     method: 'POST',
@@ -25771,6 +25901,136 @@
             return raw;
         }
 
+        function _toxicityNumber(value, fallback = 0) {
+            const n = parseFloat(value);
+            return Number.isFinite(n) ? n : fallback;
+        }
+
+        function _toxicityReasonText(reasons) {
+            if (!Array.isArray(reasons)) return '';
+            for (const reason of reasons) {
+                if (!reason || typeof reason !== 'object') continue;
+                const detail = String(reason.detail || reason.key || '').trim();
+                if (detail) return detail;
+            }
+            return '';
+        }
+
+        function _toxicityThrottleText(sides, throttleUntil) {
+            if (!Array.isArray(sides) || sides.length === 0) return '';
+            const until = throttleUntil && typeof throttleUntil === 'object' ? throttleUntil : {};
+            const now = Date.now() / 1000;
+            return sides.map(side => {
+                const label = String(side || '').toUpperCase();
+                const remaining = Math.max(0, Math.ceil(_toxicityNumber(until[String(side || '').toLowerCase()], 0) - now));
+                return remaining > 0 ? `${label} paused ${remaining}s` : `${label} paused`;
+            }).join('; ');
+        }
+
+        function openToxicityGuardSettings() {
+            if (typeof v4SwitchView === 'function') v4SwitchView('settings');
+            else if (typeof switchView === 'function') switchView('settings');
+            else {
+                const settingsTab = document.querySelector('[data-view="settings"]');
+                if (settingsTab) settingsTab.click();
+            }
+            if (typeof settingsSwitchSubview === 'function') settingsSwitchSubview('setup');
+            setTimeout(() => {
+                const section = document.getElementById('settings-section-smart-pricing');
+                if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                const level = document.getElementById('configToxicityProtectionLevel');
+                if (level) {
+                    level.focus({ preventScroll: true });
+                    const previousShadow = level.style.boxShadow;
+                    level.style.boxShadow = '0 0 0 2px rgba(251, 191, 36, 0.65)';
+                    setTimeout(() => { level.style.boxShadow = previousShadow; }, 2200);
+                }
+            }, 300);
+        }
+
+        function focusToxicitySmartSettings() {
+            if (typeof v4SwitchView === 'function') v4SwitchView('settings');
+            else if (typeof switchView === 'function') switchView('settings');
+            else {
+                const settingsTab = document.querySelector('[data-view="settings"]');
+                if (settingsTab) settingsTab.click();
+            }
+            if (typeof settingsSwitchSubview === 'function') settingsSwitchSubview('setup');
+            setTimeout(() => {
+                const btn = document.getElementById('smartDefaultsBtn');
+                if (btn) {
+                    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    btn.focus({ preventScroll: true });
+                    const previousShadow = btn.style.boxShadow;
+                    btn.style.boxShadow = '0 0 0 2px rgba(56, 189, 248, 0.65)';
+                    setTimeout(() => { btn.style.boxShadow = previousShadow; }, 2200);
+                }
+            }, 300);
+        }
+
+        document.addEventListener('click', event => {
+            const btn = event.target && event.target.closest
+                ? event.target.closest('[data-toxicity-action]')
+                : null;
+            if (!btn) return;
+            const action = btn.getAttribute('data-toxicity-action');
+            if (action === 'settings') {
+                openToxicityGuardSettings();
+            } else if (action === 'smart-settings') {
+                focusToxicitySmartSettings();
+            }
+        });
+
+        function updateToxicityAction(m) {
+            const box = document.getElementById('ccToxicityAction');
+            if (!box) return;
+
+            const rawEnabled = m ? m.toxicity_enabled : true;
+            const enabled = rawEnabled !== false && String(rawEnabled).toLowerCase() !== 'false';
+            const score = parseInt(m && m.toxicity_score || 0, 10);
+            const level = String(m && m.toxicity_level || 'normal').toLowerCase();
+            const buyMult = _toxicityNumber(m && m.toxicity_buy_spread_multiplier, 1);
+            const sellMult = _toxicityNumber(m && m.toxicity_sell_spread_multiplier, 1);
+            const throttled = Array.isArray(m && m.toxicity_throttled_sides)
+                ? m.toxicity_throttled_sides.map(side => String(side).toLowerCase()).filter(Boolean)
+                : [];
+            const active = enabled && (
+                level !== 'normal'
+                || buyMult > 1.001
+                || sellMult > 1.001
+                || throttled.length > 0
+            );
+
+            if (!active) {
+                box.style.display = 'none';
+                box.classList.remove('is-high');
+                return;
+            }
+
+            const scoreEl = document.getElementById('ccToxicityActionScore');
+            const bodyEl = document.getElementById('ccToxicityActionBody');
+            const reasonEl = document.getElementById('ccToxicityActionReason');
+            const highRisk = level === 'high' || level === 'extreme' || throttled.length > 0;
+
+            box.classList.toggle('is-high', highRisk);
+            box.style.display = 'block';
+            if (scoreEl) scoreEl.textContent = `${Number.isFinite(score) ? score : 0}/100 ${level}`;
+
+            const buyText = buyMult > 1.001 ? `BUY widened ${buyMult.toFixed(2)}x` : 'BUY normal';
+            const sellText = sellMult > 1.001 ? `SELL widened ${sellMult.toFixed(2)}x` : 'SELL normal';
+            const pauseText = _toxicityThrottleText(throttled, m && m.toxicity_throttle_until);
+            const action = String(m && m.toxicity_suggested_action || '').trim();
+            const summary = `Bot action: ${buyText}; ${sellText}.${pauseText ? ' New ' + pauseText + '.' : ''}`;
+            if (bodyEl) bodyEl.textContent = `${summary}${action ? ' ' + action : ''}`;
+
+            const reason = _toxicityReasonText(m && m.toxicity_reasons);
+            if (reasonEl) {
+                reasonEl.textContent = reason
+                    ? `Reason: ${reason}`
+                    : 'No manual override is shown here; use settings or stop the bot if you want to change risk posture.';
+            }
+        }
+
         function updateMarketHealth(h) {
             // Update traffic light and market metrics from health data
             if (!h) return;
@@ -25830,6 +26090,7 @@
 
             // Market metrics
             const m = h.metrics || {};
+            updateToxicityAction(m);
             const marketIntelState = String(m.market_intel_state || '').toLowerCase();
             const marketIntelSearching = marketIntelState && marketIntelState !== 'ready';
             if (m.your_spread_bps !== undefined) el('ccYourSpread').textContent = bps2pct(m.your_spread_bps);
@@ -25880,7 +26141,7 @@
 
             // --- New metrics ---
             // Clear pending opacity for new boxes
-            ['ccMhFillRate','ccVolatility','ccPosition','ccTradingPace','ccProbeState','ccCbBlocked','ccSpacescanActivity','ccSpacescanRisk','ccHolders'].forEach(id => {
+            ['ccMhFillRate','ccVolatility','ccPosition','ccTradingPace','ccProbeState','ccCbBlocked','ccToxicity','ccSpacescanActivity','ccSpacescanRisk','ccHolders'].forEach(id => {
                 const e = el(id);
                 if (e) e.style.opacity = '1';
             });
@@ -25958,6 +26219,23 @@
                     cbEl.style.color = 'var(--success-400)';
                 }
                 cbEl.style.opacity = '1';
+            }
+
+            const toxEl = el('ccToxicity');
+            if (toxEl) {
+                const score = parseInt(m.toxicity_score || 0, 10);
+                const level = String(m.toxicity_level || 'normal').toLowerCase();
+                const buyScore = parseInt(m.toxicity_buy_score || 0, 10);
+                const sellScore = parseInt(m.toxicity_sell_score || 0, 10);
+                const throttled = Array.isArray(m.toxicity_throttled_sides)
+                    ? m.toxicity_throttled_sides.map(s => String(s).toUpperCase()).join('/')
+                    : '';
+                toxEl.textContent = `${Number.isFinite(score) ? score : 0}/100 ${level}${throttled ? ' · ' + throttled : ''}`;
+                toxEl.title = `Buy ${Number.isFinite(buyScore) ? buyScore : 0}/100, sell ${Number.isFinite(sellScore) ? sellScore : 0}/100`;
+                toxEl.style.color = level === 'extreme' || level === 'high'
+                    ? 'var(--status-danger)'
+                    : (level === 'elevated' || level === 'mild' ? 'var(--status-warning)' : 'var(--success-400)');
+                toxEl.style.opacity = '1';
             }
 
             // Spacescan render priority:
@@ -29606,9 +29884,71 @@
 
         // Check if there are existing offers to resume
         let _resumeHandled = false;
+        let _updateAutoResumeAttempted = false;
         let _botStarting = false;  // Guards button text during startup
         let _botStartingAt = 0;    // Timestamp when _botStarting was set — safety timeout
         
+        async function clearUpdateRelaunchIntent() {
+            try {
+                await apiFetch('/api/update/relaunch-intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+            } catch (error) {
+                debugWarn('[UPDATE] Could not clear relaunch intent:', error);
+            }
+        }
+
+        async function maybeAutoResumeAfterUpdate() {
+            if (_updateAutoResumeAttempted || _resumeHandled) return false;
+            _updateAutoResumeAttempted = true;
+
+            let intent = null;
+            try {
+                const response = await apiFetch('/api/update/relaunch-intent');
+                const data = await response.json();
+                intent = data && data.intent ? data.intent : {};
+            } catch (error) {
+                debugWarn('[UPDATE] Could not check relaunch intent:', error);
+                return false;
+            }
+
+            if (!intent || !intent.auto_start_bot) {
+                if (intent && Object.keys(intent).length > 0) {
+                    await clearUpdateRelaunchIntent();
+                }
+                return false;
+            }
+
+            debugLog('[UPDATE] Auto-resume requested after in-app update:', intent);
+            showToast('Update complete. Resuming the previous bot session...', 'info');
+
+            try {
+                const hasOffers = await checkForResume();
+                if (!hasOffers) {
+                    showToast('Update complete, but no previous live offers were found to resume.', 'warning');
+                    return false;
+                }
+
+                const restored = await resumeSession();
+                if (!restored) {
+                    return false;
+                }
+                if (intent.resume_existing_offers !== false) {
+                    await resumeStartNow();
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                debugError('[UPDATE] Auto-resume after update failed:', error);
+                showToast('Update complete, but automatic bot restart failed. You can press Start Bot manually.', 'warning');
+                return false;
+            } finally {
+                await clearUpdateRelaunchIntent();
+            }
+        }
+
         async function checkForResume() {
             if (_resumeHandled) return false;
             
@@ -29917,6 +30257,7 @@
                         </div>
                     </div></div>
                 `;
+                return true;
 
             } catch (error) {
                 debugError('[RESUME] Start failed:', error);
@@ -29936,6 +30277,7 @@
                     if (startBtn) { startBtn.disabled = !settingsReviewed; startBtn.innerHTML = '▶ Start Bot'; }
                 };
                 modalContent.appendChild(closeBtn);
+                return false;
             }
         }
         
@@ -31651,6 +31993,8 @@
             'configMinMid','configMaxMid',
             'configDynamicSpreadEnabled','configBaseSpreadBps','configMinEdgeBps',
             'configMinSpreadBps','configMaxSpreadBps','configVolatilityWindow',
+            'configMarketToxicityEnabled','configToxicityProtectionLevel',
+            'configToxicityMaxSpreadMultiplier','configToxicityThrottleSecs',
             'configInventoryEnabled','configSkewIntensity','configMaxPositionXch',
             'configTierEnabled','configBuyLadderReversed',
             'configInnerSizeXch','configMidSizeXch','configOuterSizeXch','configExtremeSizeXch',
@@ -31808,6 +32152,7 @@
         const SMART_DIFF_LABELS = {
             'configBaseSpreadBps': 'Spread',
             'configSpreadBps':     'Spread (fallback)',
+            'configToxicityProtectionLevel': 'Adverse guard',
             'configMaxBuy':        'Buy offers',
             'configMaxSell':       'Sell offers',
             'configMinMid':        'Min price',
@@ -31844,6 +32189,58 @@
             }
             if (priceRailChanged) parts.push('Price rails updated');
             return parts;
+        }
+
+        const TOXICITY_UI_PRESETS = {
+            gentle: {
+                toxicity_widen_start: 40,
+                toxicity_elevated_start: 65,
+                toxicity_throttle_start: 85,
+                toxicity_cancel_start: 95,
+                toxicity_throttle_secs: 60,
+                toxicity_decay_per_loop: 10,
+                toxicity_max_spread_multiplier: 1.5,
+                toxicity_min_throttle_signals: 2,
+                toxicity_cancel_enabled: false,
+            },
+            balanced: {
+                toxicity_widen_start: 30,
+                toxicity_elevated_start: 55,
+                toxicity_throttle_start: 75,
+                toxicity_cancel_start: 90,
+                toxicity_throttle_secs: 120,
+                toxicity_decay_per_loop: 8,
+                toxicity_max_spread_multiplier: 2.0,
+                toxicity_min_throttle_signals: 2,
+                toxicity_cancel_enabled: false,
+            },
+            defensive: {
+                toxicity_widen_start: 20,
+                toxicity_elevated_start: 45,
+                toxicity_throttle_start: 65,
+                toxicity_cancel_start: 85,
+                toxicity_throttle_secs: 180,
+                toxicity_decay_per_loop: 6,
+                toxicity_max_spread_multiplier: 2.0,
+                toxicity_min_throttle_signals: 1,
+                toxicity_cancel_enabled: false,
+            },
+        };
+
+        function getToxicityPresetValues(level) {
+            const key = String(level || 'balanced').toLowerCase();
+            return TOXICITY_UI_PRESETS[key] || TOXICITY_UI_PRESETS.balanced;
+        }
+
+        function applyToxicityPresetFromUi() {
+            const level = document.getElementById('configToxicityProtectionLevel')?.value || 'balanced';
+            const preset = getToxicityPresetValues(level);
+            const maxEl = document.getElementById('configToxicityMaxSpreadMultiplier');
+            const secsEl = document.getElementById('configToxicityThrottleSecs');
+            if (maxEl) maxEl.value = preset.toxicity_max_spread_multiplier;
+            if (secsEl) secsEl.value = preset.toxicity_throttle_secs;
+            try { updateUnsavedBadge(); } catch (_) {}
+            try { checkSmartSettingsDirty(); } catch (_) {}
         }
 
         // ============================================================
@@ -31892,6 +32289,12 @@
                 ['MIN_EDGE_BPS', String(Math.round(parseFloat(document.getElementById('configMinEdgeBps')?.value || 0) * 100))],
                 ['MIN_SPREAD_BPS', String(Math.round(parseFloat(document.getElementById('configMinSpreadBps')?.value || 0) * 100))],
                 ['MAX_SPREAD_BPS', String(Math.round(parseFloat(document.getElementById('configMaxSpreadBps')?.value || 0) * 100))],
+                ['', null],
+                ['# Adverse Selection Guard', null],
+                ['MARKET_TOXICITY_ENABLED', document.getElementById('configMarketToxicityEnabled')?.checked ? 'true' : 'false'],
+                ['TOXICITY_PROTECTION_LEVEL', document.getElementById('configToxicityProtectionLevel')?.value || 'balanced'],
+                ['TOXICITY_MAX_SPREAD_MULTIPLIER', document.getElementById('configToxicityMaxSpreadMultiplier')?.value || '2.0'],
+                ['TOXICITY_THROTTLE_SECS', document.getElementById('configToxicityThrottleSecs')?.value || '120'],
             ];
             const lines = ['# CATalyst — exported settings (client fallback)', ''];
             for (const [k, v] of fields) {
@@ -32302,6 +32705,11 @@
             if (maxBuyEl) maxBuyEl.value = effectiveOffers.maxBuy || '';
             if (maxSellEl) maxSellEl.value = effectiveOffers.maxSell || '';
 
+            const toxicityLevel = document.getElementById('configToxicityProtectionLevel')?.value || 'balanced';
+            const toxicityPreset = getToxicityPresetValues(toxicityLevel);
+            const toxicityThrottleSecs = parseInt(document.getElementById('configToxicityThrottleSecs')?.value) || toxicityPreset.toxicity_throttle_secs;
+            const toxicityMaxMultiplier = parseFloat(document.getElementById('configToxicityMaxSpreadMultiplier')?.value) || toxicityPreset.toxicity_max_spread_multiplier;
+
             let config = {
                 loop_seconds: parseInt(document.getElementById('configLoopSeconds').value),
                 spread_bps: Math.round(parseFloat(document.getElementById('configSpreadBps').value) * 100),
@@ -32361,6 +32769,19 @@
                 min_spread_bps: Math.round(parseFloat(document.getElementById('configMinSpreadBps').value) * 100),
                 max_spread_bps: Math.round(parseFloat(document.getElementById('configMaxSpreadBps').value) * 100),
                 volatility_window_hours: parseInt(document.getElementById('configVolatilityWindow').value),
+
+                // Adverse Selection Guard
+                market_toxicity_enabled: !!document.getElementById('configMarketToxicityEnabled')?.checked,
+                toxicity_protection_level: toxicityLevel,
+                toxicity_widen_start: toxicityPreset.toxicity_widen_start,
+                toxicity_elevated_start: toxicityPreset.toxicity_elevated_start,
+                toxicity_throttle_start: toxicityPreset.toxicity_throttle_start,
+                toxicity_cancel_start: toxicityPreset.toxicity_cancel_start,
+                toxicity_throttle_secs: Math.max(30, Math.min(600, toxicityThrottleSecs)),
+                toxicity_decay_per_loop: toxicityPreset.toxicity_decay_per_loop,
+                toxicity_max_spread_multiplier: Math.max(1.0, Math.min(3.0, toxicityMaxMultiplier)),
+                toxicity_min_throttle_signals: toxicityPreset.toxicity_min_throttle_signals,
+                toxicity_cancel_enabled: false,
 
                 // V2: Inventory Management
                 inventory_enabled: document.getElementById('configInventoryEnabled').checked,
@@ -34755,6 +35176,16 @@ function finalDismiss() {
     setTimeout(async () => {
         if (!_resumeHandled && !hasCheckedResumeOnLoad) {
             hasCheckedResumeOnLoad = true;
+            try {
+                const autoResumed = await maybeAutoResumeAfterUpdate();
+                if (autoResumed) {
+                    debugLog('[STARTUP] Bot auto-resumed after update');
+                    return;
+                }
+            } catch (e) {
+                debugError('[STARTUP] Update auto-resume check failed:', e);
+            }
+
             debugLog('[STARTUP] Gates complete — checking for resume...');
             try {
                 const hasOffers = await checkForResume();

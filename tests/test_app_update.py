@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import app_update
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -55,32 +56,32 @@ class TestAppUpdateSecurity(unittest.TestCase):
         }
 
     def _signature(self, private, manifest):
-        from app_update import canonical_manifest_bytes
-
         return base64.b64encode(
-            private.sign(canonical_manifest_bytes(manifest))
+            private.sign(app_update.canonical_manifest_bytes(manifest))
         ).decode("ascii")
 
     def test_official_manifest_url_is_allowed(self):
-        from app_update import OFFICIAL_MANIFEST_URL, is_allowed_manifest_url
-
-        self.assertTrue(is_allowed_manifest_url(OFFICIAL_MANIFEST_URL))
-        self.assertFalse(is_allowed_manifest_url("https://example.invalid/latest.json"))
+        self.assertTrue(
+            app_update.is_allowed_manifest_url(app_update.OFFICIAL_MANIFEST_URL)
+        )
         self.assertFalse(
-            is_allowed_manifest_url(
+            app_update.is_allowed_manifest_url("https://example.invalid/latest.json")
+        )
+        self.assertFalse(
+            app_update.is_allowed_manifest_url(
                 "https://api.github.com/repos/catalystxch/catalyst-bot/releases/latest"
             )
         )
 
     def test_signed_manifest_builds_verified_update_info(self):
-        from app_update import build_update_info_from_manifest, verify_signed_manifest
-
         private, public_b64 = self._keypair()
         manifest = self._manifest(version="1.2.6")
         signature = self._signature(private, manifest)
 
-        verified = verify_signed_manifest(manifest, signature, public_b64=public_b64)
-        info = build_update_info_from_manifest("1.2.5", verified)
+        verified = app_update.verify_signed_manifest(
+            manifest, signature, public_b64=public_b64
+        )
+        info = app_update.build_update_info_from_manifest("1.2.5", verified)
 
         self.assertTrue(info["success"])
         self.assertTrue(info["manifest_verified"])
@@ -91,8 +92,6 @@ class TestAppUpdateSecurity(unittest.TestCase):
         self.assertEqual(info["_assets"]["installer"]["sha256"], "a" * 64)
 
     def test_fetch_signed_manifest_uses_resolved_release_for_signature(self):
-        from app_update import OFFICIAL_MANIFEST_URL, fetch_signed_manifest
-
         class FakeResponse:
             def __init__(self, *, url, payload=None, text="", history=None):
                 self.url = url
@@ -121,7 +120,7 @@ class TestAppUpdateSecurity(unittest.TestCase):
 
         def fake_get(url, **_kwargs):
             calls.append(url)
-            if url == OFFICIAL_MANIFEST_URL:
+            if url == app_update.OFFICIAL_MANIFEST_URL:
                 return FakeResponse(
                     url="https://release-assets.githubusercontent.com/signed-download",
                     payload=manifest,
@@ -132,37 +131,36 @@ class TestAppUpdateSecurity(unittest.TestCase):
             raise AssertionError(f"unexpected URL: {url}")
 
         with patch("requests.get", side_effect=fake_get):
-            verified = fetch_signed_manifest(
-                OFFICIAL_MANIFEST_URL, public_key_b64=public_b64
+            verified = app_update.fetch_signed_manifest(
+                app_update.OFFICIAL_MANIFEST_URL,
+                public_key_b64=public_b64,
             )
 
         self.assertEqual(verified["version"], "1.2.6")
-        self.assertEqual(calls, [OFFICIAL_MANIFEST_URL, expected_sig_url])
+        self.assertEqual(calls, [app_update.OFFICIAL_MANIFEST_URL, expected_sig_url])
 
     def test_signed_manifest_rejects_tampering(self):
-        from app_update import verify_signed_manifest
-
         private, public_b64 = self._keypair()
         manifest = self._manifest(version="1.2.6")
         signature = self._signature(private, manifest)
         manifest["version"] = "1.2.7"
 
         with self.assertRaises(ValueError):
-            verify_signed_manifest(manifest, signature, public_b64=public_b64)
+            app_update.verify_signed_manifest(
+                manifest, signature, public_b64=public_b64
+            )
 
     def test_signed_manifest_rejects_expired_metadata(self):
-        from app_update import verify_signed_manifest
-
         private, public_b64 = self._keypair()
         manifest = self._manifest(version="1.2.6", expires_delta_days=-1)
         signature = self._signature(private, manifest)
 
         with self.assertRaises(ValueError):
-            verify_signed_manifest(manifest, signature, public_b64=public_b64)
+            app_update.verify_signed_manifest(
+                manifest, signature, public_b64=public_b64
+            )
 
     def test_manifest_rejects_download_url_outside_release_channel(self):
-        from app_update import build_update_info_from_manifest, verify_signed_manifest
-
         private, public_b64 = self._keypair()
         manifest = self._manifest(
             version="1.2.6",
@@ -170,45 +168,69 @@ class TestAppUpdateSecurity(unittest.TestCase):
         )
         signature = self._signature(private, manifest)
 
-        verified = verify_signed_manifest(manifest, signature, public_b64=public_b64)
-        info = build_update_info_from_manifest("1.2.5", verified)
+        verified = app_update.verify_signed_manifest(
+            manifest, signature, public_b64=public_b64
+        )
+        info = app_update.build_update_info_from_manifest("1.2.5", verified)
 
         self.assertFalse(info["installer_ready"])
 
     def test_parse_checksum_accepts_matching_filename_only(self):
-        from app_update import parse_sha256_checksum_text
-
         digest = "a" * 64
         self.assertIsNone(
-            parse_sha256_checksum_text(
+            app_update.parse_sha256_checksum_text(
                 f"{digest}\n",
                 "Catalyst-Setup-v1.2.6.exe",
             )
         )
         self.assertEqual(
-            parse_sha256_checksum_text(
+            app_update.parse_sha256_checksum_text(
                 f"{digest}  Catalyst-Setup-v1.2.6.exe\n",
                 "Catalyst-Setup-v1.2.6.exe",
             ),
             digest,
         )
         self.assertIsNone(
-            parse_sha256_checksum_text(
+            app_update.parse_sha256_checksum_text(
                 f"{digest}  Other.exe\n",
                 "Catalyst-Setup-v1.2.6.exe",
             )
         )
 
     def test_verify_file_sha256_requires_exact_digest(self):
-        from app_update import verify_file_sha256
-
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "installer.exe"
             path.write_bytes(b"safe bytes")
             digest = hashlib.sha256(b"safe bytes").hexdigest()
 
-            self.assertTrue(verify_file_sha256(str(path), digest))
-            self.assertFalse(verify_file_sha256(str(path), "0" * 64))
+            self.assertTrue(app_update.verify_file_sha256(str(path), digest))
+            self.assertFalse(app_update.verify_file_sha256(str(path), "0" * 64))
+
+    def test_launch_installer_waits_for_old_app_before_install_and_relaunch(self):
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(app_update.sys, "platform", "win32"),
+            patch.object(
+                app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"
+            ),
+            patch.object(app_update.os, "getpid", return_value=4321),
+            patch.object(app_update.subprocess, "Popen") as popen,
+        ):
+            installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
+            installer.write_bytes(b"fake installer")
+
+            app_update._launch_installer(installer)
+
+            argv = popen.call_args.args[0]
+            self.assertEqual(argv[:3], ["cmd.exe", "/d", "/c"])
+            helper_path = Path(argv[3])
+            helper_text = helper_path.read_text(encoding="utf-8")
+
+        self.assertIn("PID eq 4321", helper_text)
+        self.assertIn("start /wait", helper_text)
+        self.assertIn("Catalyst-Setup-v1.2.32.exe", helper_text)
+        self.assertIn("/CATALYST_RELAUNCH=0", helper_text)
+        self.assertIn(r"C:\Program Files\CATalyst\Catalyst.exe", helper_text)
 
 
 class TestAppUpdateApi(unittest.TestCase):
@@ -221,22 +243,32 @@ class TestAppUpdateApi(unittest.TestCase):
         self.auth = {"X-Bot-Local-Token": self.api_server._LOCAL_API_TOKEN}
         self.loopback = {"REMOTE_ADDR": "127.0.0.1"}
 
-    def test_update_install_rejects_running_bot(self):
+    def test_update_install_allows_running_bot_and_requests_post_update_restart(self):
         class RunningBot:
             def is_running(self):
                 return True
 
-        with patch.object(self.api_server, "bot", RunningBot()):
+        running_bot = RunningBot()
+
+        with (
+            patch.object(self.api_server, "bot", running_bot),
+            patch(
+                "app_update.start_update_install",
+                return_value={"success": True, "started": True},
+            ) as start_install,
+        ):
             resp = self.client.post(
                 "/api/update/install",
                 headers=self.auth,
                 environ_base=self.loopback,
             )
 
-        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
-        self.assertFalse(body["success"])
-        self.assertIn("Stop the bot", body["error"])
+        self.assertTrue(body["success"])
+        relaunch_intent = start_install.call_args.kwargs["relaunch_intent"]
+        self.assertTrue(relaunch_intent["auto_start_bot"])
+        self.assertTrue(relaunch_intent["resume_existing_offers"])
 
     def test_check_update_includes_release_notes_and_installer_readiness(self):
         with (
@@ -346,6 +378,14 @@ class TestAppUpdateFrontendAndReleaseWorkflow(unittest.TestCase):
         self.assertIn("function startAppUpgrade()", html)
         self.assertIn("/api/update/install", html)
         self.assertIn("/api/update/status", html)
+
+    def test_gui_auto_resumes_bot_after_in_app_update_relaunch(self):
+        html = (ROOT / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("function maybeAutoResumeAfterUpdate()", html)
+        self.assertIn("/api/update/relaunch-intent", html)
+        self.assertIn("resume_existing_offers", html)
+        self.assertIn("resumeStartNow()", html)
 
     def test_gui_polls_for_update_availability_while_open(self):
         html = (ROOT / "bot_gui.html").read_text(encoding="utf-8")

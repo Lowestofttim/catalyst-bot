@@ -70,6 +70,7 @@ from risk_manager import RiskManager
 from sniper import Sniper
 from boost_manager import BoostManager
 from market_intel import MarketIntel
+from market_toxicity import MarketToxicityGuard, ToxicityContext
 from runtime_monitor import RuntimeMonitor
 from amm_monitor import AMMMonitor
 from splash_receive import classify_offer_for_asset
@@ -324,6 +325,7 @@ class BotLoop:
         self.splash_manager = SplashManager()
         self.splash_node = SplashNode()
         self.coinset_client = CoinsetClient()
+        self.market_toxicity_guard = MarketToxicityGuard()
         # F34 (2026-04-08): wire coinset_client into offer_manager so
         # fill_tracker can reach it for the Coinset fill verification
         # fallback when Spacescan is unavailable.
@@ -539,6 +541,7 @@ class BotLoop:
         # When active, offer creation on that side is paused for one cycle
         # to avoid immediately re-posting stale-priced offers into an arb window.
         self._sweep_protection: Dict[str, float] = {}
+        self._recent_sweep_events: list = []
 
         # ---- Health monitor state (V1 parity) ----
         self._health_thread: Optional[threading.Thread] = None
@@ -2307,6 +2310,218 @@ class BotLoop:
 
         return protected
 
+    def _toxicity_offer_exposure_xch(
+        self, offer: Dict, side: str, mid_price: Decimal
+    ) -> Decimal:
+        """Return offer notional in XCH without making wallet/API calls."""
+        for key in ("size_xch", "xch_amount"):
+            raw = offer.get(key)
+            if raw not in (None, ""):
+                try:
+                    return Decimal(str(raw))
+                except Exception:
+                    pass
+
+        summary = offer.get("summary") or {}
+        offered = summary.get("offered") or {}
+        requested = summary.get("requested") or {}
+
+        def _mojos_to_xch(value) -> Decimal:
+            try:
+                return Decimal(str(value or 0)) / Decimal("1000000000000")
+            except Exception:
+                return Decimal("0")
+
+        if side == "buy":
+            return _mojos_to_xch(offered.get("xch") or offered.get("XCH"))
+        if side == "sell":
+            xch = _mojos_to_xch(requested.get("xch") or requested.get("XCH"))
+            if xch > 0:
+                return xch
+            cat_mojos = Decimal("0")
+            try:
+                for key, val in offered.items():
+                    if str(key).lower().replace("0x", "") == str(
+                        cfg.CAT_ASSET_ID
+                    ).lower().replace("0x", ""):
+                        cat_mojos = Decimal(str(val or 0))
+                        break
+            except Exception:
+                cat_mojos = Decimal("0")
+            if cat_mojos > 0 and mid_price > 0:
+                return (
+                    cat_mojos / (Decimal(10) ** int(getattr(cfg, "CAT_DECIMALS", 3)))
+                ) * mid_price
+        return Decimal("0")
+
+    def _toxicity_coin_bucket_mojos(self, wallet: str) -> int:
+        """Sum in-memory spendable coin buckets without hitting Sage."""
+        inv = (
+            getattr(
+                self.coin_manager,
+                "_xch_inventory" if wallet == "xch" else "_cat_inventory",
+                {},
+            )
+            or {}
+        )
+        total = 0
+        for coins in inv.values():
+            if not isinstance(coins, list):
+                continue
+            for coin in coins:
+                try:
+                    if isinstance(coin, dict):
+                        total += int(
+                            coin.get("amount") or coin.get("amount_mojos") or 0
+                        )
+                    else:
+                        total += int(getattr(coin, "amount", 0) or 0)
+                except Exception:
+                    continue
+        return total
+
+    def _build_toxicity_inventory_state(self, mid_price: Decimal) -> Dict:
+        """Build the small-balance view used by MarketToxicityGuard."""
+        cat_scale = Decimal(10) ** int(getattr(cfg, "CAT_DECIMALS", 3))
+        xch_spendable = Decimal(self._toxicity_coin_bucket_mojos("xch")) / Decimal(
+            "1000000000000"
+        )
+        cat_spendable = Decimal(self._toxicity_coin_bucket_mojos("cat")) / cat_scale
+        cat_spendable_xch = cat_spendable * mid_price if mid_price > 0 else Decimal("0")
+
+        pos_xch = Decimal("0")
+        position_pct = Decimal("0")
+        pressure_side = ""
+        try:
+            pos_xch = (
+                Decimal(
+                    str(getattr(self.risk_manager, "_net_position_cat", "0") or "0")
+                )
+                * mid_price
+            )
+            max_pos = Decimal(str(getattr(cfg, "MAX_POSITION_XCH", "0") or "0"))
+            if max_pos > 0:
+                position_pct = abs(pos_xch) / max_pos * Decimal("100")
+            if pos_xch > 0:
+                pressure_side = "buy"
+            elif pos_xch < 0:
+                pressure_side = "sell"
+        except Exception as e:
+            log_event(
+                "debug",
+                "toxicity_inventory_state_failed",
+                f"Could not derive toxicity inventory position; using neutral defaults: {e}",
+            )
+
+        return {
+            "xch_spendable": xch_spendable,
+            "cat_spendable_xch": cat_spendable_xch,
+            "position_xch": pos_xch,
+            "position_pct": position_pct,
+            "pressure_side": pressure_side,
+        }
+
+    def _update_market_toxicity(
+        self,
+        price_data: Dict,
+        mid_price: Decimal,
+        arb_gap: Decimal,
+        open_buys,
+        open_sells,
+        buy_fills,
+        sell_fills,
+    ):
+        """Score adverse-selection risk and hand the snapshot to risk_manager."""
+        try:
+            now_ts = time.time()
+            recent_created = getattr(self.offer_manager, "_recently_created", {}) or {}
+
+            def _fill_payload(fill: Dict, side: str) -> Dict:
+                tid = fill.get("trade_id", "")
+                created_at = recent_created.get(tid)
+                age = fill.get("age_secs")
+                if age is None and created_at:
+                    age = max(0, int(now_ts - float(created_at)))
+                payload = dict(fill)
+                payload["side"] = side
+                if age is not None:
+                    payload["age_secs"] = age
+                return payload
+
+            recent_fills = [
+                _fill_payload(fill, "buy") for fill in (buy_fills or [])
+            ] + [_fill_payload(fill, "sell") for fill in (sell_fills or [])]
+
+            open_offers = []
+            for side, offers in (("buy", open_buys or []), ("sell", open_sells or [])):
+                for offer in offers:
+                    size_xch = self._toxicity_offer_exposure_xch(offer, side, mid_price)
+                    open_offers.append(
+                        {
+                            "side": side,
+                            "trade_id": offer.get("trade_id", ""),
+                            "size_xch": size_xch,
+                        }
+                    )
+
+            market_summary = {}
+            orderbook_snapshot = {}
+            try:
+                market_summary = self.market_intel.get_market_summary() or {}
+            except Exception:
+                market_summary = {}
+            try:
+                orderbook_snapshot = self.market_intel.get_orderbook_snapshot() or {}
+            except Exception:
+                orderbook_snapshot = {}
+
+            recent_sweeps = []
+            cutoff = now_ts - 600
+            for event in list(getattr(self, "_recent_sweep_events", []) or []):
+                if float(event.get("timestamp", 0) or 0) >= cutoff:
+                    recent_sweeps.append(event)
+            self._recent_sweep_events = recent_sweeps[-20:]
+
+            context = ToxicityContext(
+                now=now_ts,
+                loop_count=int(getattr(self, "_loop_count", 0) or 0),
+                mid_price=mid_price,
+                tibet_price=Decimal(str((price_data or {}).get("tibet_price", 0) or 0)),
+                dexie_price=Decimal(str((price_data or {}).get("dexie_price", 0) or 0)),
+                arb_gap_bps=arb_gap,
+                open_offers=open_offers,
+                recent_fills=recent_fills,
+                recent_created_offers=[
+                    {"trade_id": tid, "created_at": ts}
+                    for tid, ts in list(recent_created.items())[:50]
+                ],
+                market_intel=market_summary,
+                orderbook_snapshot=orderbook_snapshot,
+                inventory_state=self._build_toxicity_inventory_state(mid_price),
+                wallet_health=dict(getattr(self, "_chia_health", {}) or {}),
+                recent_sweep_events=recent_sweeps,
+                liquidity_mode=str(
+                    getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided"
+                ),
+            )
+            snapshot = self.market_toxicity_guard.update(context)
+            self.risk_manager.set_market_toxicity(snapshot)
+            self._set_state(market_toxicity=snapshot.to_dict())
+            if snapshot.level in ("high", "extreme") or snapshot.throttled_sides:
+                log_event(
+                    "warning",
+                    "market_toxicity_guard",
+                    f"Market toxicity {snapshot.level} ({snapshot.score}/100): "
+                    f"{snapshot.suggested_action}",
+                    data=snapshot.to_dict(),
+                )
+            return snapshot
+        except Exception as e:
+            log_event(
+                "warning", "toxicity_guard_error", f"Market toxicity guard failed: {e}"
+            )
+            return None
+
     def _clear_adaptive_target_backoff_for_confirmed_fills(
         self, buy_fills, sell_fills
     ) -> None:
@@ -3792,6 +4007,7 @@ class BotLoop:
         self._wallet_sync_was_stale = False
         self._consecutive_unhealthy = 0
         self._sweep_protection = {}
+        self._recent_sweep_events = []
         self._adaptive_target_backoff_until = {"buy": 0.0, "sell": 0.0}
         self._last_adaptive_offer_targets = {"buy": 0, "sell": 0}
         self._last_pricing_success_ts = 0
@@ -7223,6 +7439,18 @@ class BotLoop:
                                 _s, time.time() + _prot_secs_unknown
                             )
                 self._sweep_protection.update(_protected_sides)
+                _sweep_now = time.time()
+                for _side in _protected_sides.keys() or [""]:
+                    self._recent_sweep_events.append(
+                        {
+                            "side": _side,
+                            "fill_count": _sweep_evt.fill_count,
+                            "sweep_group_id": _sweep_evt.sweep_group_id,
+                            "spent_block_index": _sweep_evt.spent_block_index,
+                            "timestamp": _sweep_now,
+                        }
+                    )
+                self._recent_sweep_events = self._recent_sweep_events[-20:]
 
                 _prot_summary = {
                     s: round(e - time.time()) for s, e in _protected_sides.items()
@@ -7960,6 +8188,16 @@ class BotLoop:
                 buy_fills, sell_fills
             )
             self._apply_immediate_sweep_protection(buy_fills, sell_fills)
+
+        self._update_market_toxicity(
+            price_data=price_data,
+            mid_price=mid_price,
+            arb_gap=arb_gap,
+            open_buys=open_buys,
+            open_sells=open_sells,
+            buy_fills=buy_fills,
+            sell_fills=sell_fills,
+        )
 
         if not buy_fills and not sell_fills:
             print(" none", flush=True)
@@ -14949,6 +15187,7 @@ class BotLoop:
         # Add module states
         state["coins"] = self.coin_manager.get_status()
         state["risk"] = self.risk_manager.get_inventory_state()
+        state["market_toxicity"] = state["risk"].get("market_toxicity", {})
         state["dexie"] = self.dexie_manager.get_stats()
         try:
             from database import get_fills

@@ -731,29 +731,37 @@ def api_status():
                             if resp.status_code == 200:
                                 tickers = resp.json().get("tickers", [])
                                 if tickers:
-                                    for field in [
-                                        "current_avg_price",
-                                        "last_price",
-                                        "price",
-                                    ]:
-                                        val = tickers[0].get(field)
-                                        if val and str(val) != "0":
-                                            mid = Decimal(str(val))
-                                            pricing = {
-                                                "bid": mid,
-                                                "mid": mid,
-                                                "ask": mid,
-                                                "dexie_price": mid,
-                                                "tibet_enabled": False,
-                                                "source": "dexie",
-                                            }
-                                            print(f"[STATUS] Dexie ticker price: {mid}")
-                                            log_event(
-                                                "success",
-                                                "price_found",
-                                                f"Dexie ticker price: {mid:.8f} XCH",
-                                            )
-                                            break
+                                    tk = tickers[0]
+                                    tk_bid = Decimal(
+                                        str(tk.get("bid") or tk.get("best_bid") or 0)
+                                    )
+                                    tk_ask = Decimal(
+                                        str(tk.get("ask") or tk.get("best_ask") or 0)
+                                    )
+                                    if tk_bid > 0 and tk_ask > 0 and tk_bid <= tk_ask:
+                                        mid = (tk_bid + tk_ask) / 2
+                                        pricing = {
+                                            "bid": tk_bid,
+                                            "mid": mid,
+                                            "ask": tk_ask,
+                                            "dexie_price": mid,
+                                            "tibet_enabled": False,
+                                            "source": "dexie_bid_ask",
+                                        }
+                                        print(
+                                            f"[STATUS] Dexie live bid/ask price: {mid}"
+                                        )
+                                        log_event(
+                                            "success",
+                                            "price_found",
+                                            f"Dexie live bid/ask price: {mid:.8f} XCH",
+                                        )
+                                    else:
+                                        log_event(
+                                            "info",
+                                            "dexie_ticker_unusable",
+                                            "Dexie ticker had no sane live bid/ask; ignoring historical price fields",
+                                        )
                         # If no ticker_id or no result, try orderbook
                         if mid == 0:
                             _record_api_call("dexie", "/v1/offers")

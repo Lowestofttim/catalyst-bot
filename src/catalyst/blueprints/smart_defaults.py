@@ -171,6 +171,130 @@ def _smart_sniper_prep_plan(
     }
 
 
+_TOXICITY_PRESETS = {
+    "gentle": {
+        "toxicity_widen_start": 40,
+        "toxicity_elevated_start": 65,
+        "toxicity_throttle_start": 85,
+        "toxicity_cancel_start": 95,
+        "toxicity_throttle_secs": 60,
+        "toxicity_decay_per_loop": 10,
+        "toxicity_max_spread_multiplier": 1.5,
+        "toxicity_min_throttle_signals": 2,
+        "toxicity_cancel_enabled": False,
+    },
+    "balanced": {
+        "toxicity_widen_start": 30,
+        "toxicity_elevated_start": 55,
+        "toxicity_throttle_start": 75,
+        "toxicity_cancel_start": 90,
+        "toxicity_throttle_secs": 120,
+        "toxicity_decay_per_loop": 8,
+        "toxicity_max_spread_multiplier": 2.0,
+        "toxicity_min_throttle_signals": 2,
+        "toxicity_cancel_enabled": False,
+    },
+    "defensive": {
+        "toxicity_widen_start": 20,
+        "toxicity_elevated_start": 45,
+        "toxicity_throttle_start": 65,
+        "toxicity_cancel_start": 85,
+        "toxicity_throttle_secs": 180,
+        "toxicity_decay_per_loop": 6,
+        "toxicity_max_spread_multiplier": 2.0,
+        "toxicity_min_throttle_signals": 1,
+        "toxicity_cancel_enabled": False,
+    },
+}
+
+
+def _smart_toxicity_defaults(
+    avail_xch: float,
+    avail_cat: float,
+    liquidity_mode: str,
+    risk_level: str,
+    activity_level: str,
+    fills_per_day: float,
+    daily_volume: float,
+    regime: str,
+    arb_gap_bps: float,
+    orderbook: dict,
+) -> dict:
+    """Recommend adverse-selection guard settings from wallet + market context."""
+    avail_xch = max(0.0, _smart_float(avail_xch))
+    avail_cat = max(0.0, _smart_float(avail_cat))
+    fills_per_day = max(0.0, _smart_float(fills_per_day))
+    daily_volume = max(0.0, _smart_float(daily_volume))
+    arb_gap_bps = max(0.0, _smart_float(arb_gap_bps))
+    liquidity_mode = str(liquidity_mode or "two_sided").lower().strip()
+    risk_level = str(risk_level or "unknown").lower().strip()
+    activity_level = str(activity_level or "unknown").lower().strip()
+    regime = str(regime or "normal").lower().strip()
+    orderbook = orderbook if isinstance(orderbook, dict) else {}
+
+    risk_score = 0
+    if avail_xch < 3:
+        risk_score += 2
+    elif avail_xch < 10:
+        risk_score += 1
+    elif avail_xch >= 25:
+        risk_score -= 1
+
+    if avail_cat <= 0 and liquidity_mode != "buy_only":
+        risk_score += 1
+    if liquidity_mode in ("buy_only", "sell_only"):
+        risk_score += 1
+
+    if risk_level == "risky":
+        risk_score += 2
+    elif risk_level == "thin":
+        risk_score += 1
+    elif risk_level == "healthy":
+        risk_score -= 1
+
+    if activity_level in ("dormant", "quiet"):
+        risk_score += 1
+    elif activity_level == "active":
+        risk_score -= 1
+
+    if regime == "extreme":
+        risk_score += 2
+    elif regime == "volatile":
+        risk_score += 1
+    elif regime == "quiet":
+        risk_score -= 1
+
+    if arb_gap_bps >= 500:
+        risk_score += 2
+    elif arb_gap_bps >= 200:
+        risk_score += 1
+    elif arb_gap_bps <= 50:
+        risk_score -= 1
+
+    if orderbook.get("api_ok", True):
+        buy_offers = _nonnegative_int_or_none(orderbook.get("num_buy_offers")) or 0
+        sell_offers = _nonnegative_int_or_none(orderbook.get("num_sell_offers")) or 0
+        if orderbook.get("has_data") and min(buy_offers, sell_offers) <= 2:
+            risk_score += 1
+        elif buy_offers >= 15 and sell_offers >= 15:
+            risk_score -= 1
+
+    if fills_per_day >= 10 and daily_volume >= 5 and risk_score <= 0:
+        risk_score -= 1
+
+    if risk_score >= 3:
+        level = "defensive"
+    elif risk_score <= -3:
+        level = "gentle"
+    else:
+        level = "balanced"
+
+    preset = dict(_TOXICITY_PRESETS[level])
+    preset["market_toxicity_enabled"] = True
+    preset["toxicity_protection_level"] = level
+    return preset
+
+
 def _smart_position_floor(xch_total: float, trade_size_xch: float) -> float:
     """Small-wallet-aware minimum for MAX_POSITION_XCH."""
     xch_total = max(0.0, _smart_float(xch_total))
@@ -437,7 +561,7 @@ def _fetch_price_standalone(asset_id, decimals):
                         # Prefer bid/ask midpoint (real market) over last_price (can be outlier)
                         tk_bid = Decimal(str(tk.get("bid") or tk.get("best_bid") or 0))
                         tk_ask = Decimal(str(tk.get("ask") or tk.get("best_ask") or 0))
-                        if tk_bid > 0 and tk_ask > 0:
+                        if tk_bid > 0 and tk_ask > 0 and tk_bid <= tk_ask:
                             price = (tk_bid + tk_ask) / 2
                             source = "dexie_bid_ask"
                             print(
@@ -445,15 +569,10 @@ def _fetch_price_standalone(asset_id, decimals):
                                 f"(bid={tk_bid}, ask={tk_ask})"
                             )
                         else:
-                            for field in ["current_avg_price", "last_price", "price"]:
-                                val = tk.get(field)
-                                if val and str(val) != "0":
-                                    price = Decimal(str(val))
-                                    source = "dexie_ticker"
-                                    print(
-                                        f"[PRICE_STANDALONE] Dexie ticker match! {field}={price}"
-                                    )
-                                    break
+                            print(
+                                "[PRICE_STANDALONE] Dexie ticker has no sane live bid/ask; "
+                                "ignoring historical price fields"
+                            )
 
             # Method 2: Try Dexie offers endpoint for best bid/ask
             if not price:
@@ -3636,6 +3755,23 @@ def _calculate_smart_defaults(
                 f"(from {_orig_base / 100:.1f}%) so all tiers stay reward-eligible"
             )
 
+    _toxicity_defaults = _smart_toxicity_defaults(
+        avail_xch=_avail_xch,
+        avail_cat=_avail_cat,
+        liquidity_mode=liquidity_mode,
+        risk_level=risk_level,
+        activity_level=activity_level,
+        fills_per_day=fills_per_day,
+        daily_volume=daily_volume,
+        regime=regime,
+        arb_gap_bps=arb_gap_bps,
+        orderbook=orderbook,
+    )
+    messages.append(
+        "Adverse-selection guard: "
+        f"{_toxicity_defaults['toxicity_protection_level']} protection"
+    )
+
     result = {
         # Smart Pricing
         "dynamic_spread_enabled": has_both_prices,
@@ -3644,6 +3780,21 @@ def _calculate_smart_defaults(
         "min_edge_bps": int(round(inner_edge_bps)),  # env key is MIN_EDGE_BPS
         "min_spread_bps": int(round(min_spread_bps)),
         "max_spread_bps": int(round(max_spread_bps)),
+        "market_toxicity_enabled": _toxicity_defaults["market_toxicity_enabled"],
+        "toxicity_protection_level": _toxicity_defaults["toxicity_protection_level"],
+        "toxicity_widen_start": _toxicity_defaults["toxicity_widen_start"],
+        "toxicity_elevated_start": _toxicity_defaults["toxicity_elevated_start"],
+        "toxicity_throttle_start": _toxicity_defaults["toxicity_throttle_start"],
+        "toxicity_cancel_start": _toxicity_defaults["toxicity_cancel_start"],
+        "toxicity_throttle_secs": _toxicity_defaults["toxicity_throttle_secs"],
+        "toxicity_decay_per_loop": _toxicity_defaults["toxicity_decay_per_loop"],
+        "toxicity_max_spread_multiplier": _toxicity_defaults[
+            "toxicity_max_spread_multiplier"
+        ],
+        "toxicity_min_throttle_signals": _toxicity_defaults[
+            "toxicity_min_throttle_signals"
+        ],
+        "toxicity_cancel_enabled": _toxicity_defaults["toxicity_cancel_enabled"],
         "inventory_enabled": True,
         "skew_intensity": skew_intensity,
         "max_position_xch": max_position,

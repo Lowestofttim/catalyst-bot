@@ -50,6 +50,8 @@ _UPDATE_STATUS: Dict[str, Any] = {
     "latest": None,
     "installer_name": None,
 }
+_RELAUNCH_INTENT_FILE = "update_relaunch_intent.json"
+_RELAUNCH_INTENT_MAX_AGE_SECONDS = 6 * 3600
 
 
 def _ensure_v_tag(tag: str) -> str:
@@ -498,6 +500,87 @@ def _updates_dir(tag: str) -> Path:
     return root
 
 
+def _relaunch_intent_path() -> Path:
+    from user_paths import data_dir
+
+    root = Path(data_dir()) / "updates"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / _RELAUNCH_INTENT_FILE
+
+
+def write_update_relaunch_intent(intent: Dict[str, Any]) -> None:
+    clean = {
+        "source": "in_app_update",
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "created_at_ts": time.time(),
+        "auto_start_bot": bool((intent or {}).get("auto_start_bot")),
+        "resume_existing_offers": bool(
+            (intent or {}).get("resume_existing_offers", True)
+        ),
+        "cancel_offers": bool((intent or {}).get("cancel_offers", False)),
+        "source_version": normalise_version(
+            str((intent or {}).get("source_version") or "")
+        ),
+        "target_version": normalise_version(
+            str((intent or {}).get("target_version") or "")
+        ),
+        "latest_tag": _ensure_v_tag(str((intent or {}).get("latest_tag") or "")),
+    }
+    path = _relaunch_intent_path()
+    temp_path = path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(clean, sort_keys=True), encoding="utf-8")
+    os.replace(temp_path, path)
+
+
+def clear_update_relaunch_intent() -> None:
+    try:
+        _relaunch_intent_path().unlink(missing_ok=True)
+    except OSError:
+        # Best-effort cleanup; a stale intent is ignored once it expires.
+        pass
+
+
+def get_update_relaunch_intent(
+    *,
+    max_age_seconds: int = _RELAUNCH_INTENT_MAX_AGE_SECONDS,
+) -> Dict[str, Any]:
+    try:
+        path = _relaunch_intent_path()
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(raw, dict):
+        clear_update_relaunch_intent()
+        return {}
+
+    created_at_ts = float(raw.get("created_at_ts") or 0)
+    if created_at_ts and (time.time() - created_at_ts) > max_age_seconds:
+        clear_update_relaunch_intent()
+        return {}
+
+    return {
+        "source": str(raw.get("source") or "in_app_update"),
+        "created_at": str(raw.get("created_at") or ""),
+        "auto_start_bot": bool(raw.get("auto_start_bot")),
+        "resume_existing_offers": bool(raw.get("resume_existing_offers", True)),
+        "cancel_offers": bool(raw.get("cancel_offers", False)),
+        "source_version": normalise_version(str(raw.get("source_version") or "")),
+        "target_version": normalise_version(str(raw.get("target_version") or "")),
+        "latest_tag": _ensure_v_tag(str(raw.get("latest_tag") or "")),
+    }
+
+
+def _safe_cmd_value(value: Any) -> str:
+    return (
+        str(value or "")
+        .replace('"', "")
+        .replace("\r", "")
+        .replace("\n", "")
+        .replace("%", "%%")
+    )
+
+
 def _launch_installer(installer_path: Path) -> None:
     if sys.platform != "win32":
         raise RuntimeError(
@@ -510,17 +593,40 @@ def _launch_installer(installer_path: Path) -> None:
     if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
         creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
 
-    # Schedule the installer from a detached helper so the GUI can trigger the
-    # normal /api/shutdown path first. This avoids Windows Restart Manager
-    # closing Catalyst.exe before the app has backed up and checkpointed SQLite.
-    installer = str(installer_path)
-    safe_installer = installer.replace('"', "")
-    args = (
-        "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /CATALYST_RELAUNCH=1"
-    )
-    command = f'timeout /t 3 /nobreak >NUL & start "" "{safe_installer}" {args}'
+    # The helper waits until the old process has fully exited before running
+    # the installer, then relaunches the updated exe after Inno Setup returns.
+    # This avoids the new app immediately exiting on the single-instance lock.
+    app_pid = int(os.getpid())
+    helper_path = installer_path.parent / f"catalyst-update-{app_pid}.cmd"
+    safe_installer = _safe_cmd_value(installer_path)
+    safe_app_exe = _safe_cmd_value(sys.executable)
+    helper_script = f"""@echo off
+setlocal
+set "INSTALLER={safe_installer}"
+set "APP_EXE={safe_app_exe}"
+for /l %%I in (1,1,120) do (
+    tasklist /FI "PID eq {app_pid}" 2>NUL | findstr /C:"{app_pid}" >NUL
+    if errorlevel 1 goto app_gone
+    timeout /t 1 /nobreak >NUL
+)
+set "INSTALL_EXIT=1"
+goto finish
+:app_gone
+start /wait "" "%INSTALLER%" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /CATALYST_RELAUNCH=0
+set "INSTALL_EXIT=%ERRORLEVEL%"
+if "%INSTALL_EXIT%"=="0" goto relaunch
+if "%INSTALL_EXIT%"=="3010" goto relaunch
+goto finish
+:relaunch
+timeout /t 2 /nobreak >NUL
+start "" "%APP_EXE%"
+:finish
+del "%~f0" >NUL 2>NUL
+exit /b %INSTALL_EXIT%
+"""
+    helper_path.write_text(helper_script, encoding="utf-8")
     subprocess.Popen(
-        ["cmd.exe", "/d", "/c", command],
+        ["cmd.exe", "/d", "/c", str(helper_path)],
         cwd=str(installer_path.parent),
         close_fds=True,
         creationflags=creationflags,
@@ -585,6 +691,7 @@ def _run_update_worker(
             error="",
         )
     except Exception as exc:
+        clear_update_relaunch_intent()
         _set_status(
             in_progress=False,
             phase="error",
@@ -599,6 +706,7 @@ def start_update_install(
     manifest_url: str = "",
     *,
     launcher: Optional[Callable[[Path], None]] = None,
+    relaunch_intent: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     with _STATUS_LOCK:
         if _UPDATE_STATUS.get("in_progress"):
@@ -622,6 +730,16 @@ def start_update_install(
             "success": False,
             "error": "Automatic upgrade is only available on Windows.",
         }
+
+    if relaunch_intent is not None:
+        write_update_relaunch_intent(
+            {
+                **dict(relaunch_intent or {}),
+                "source_version": current_version,
+                "target_version": info.get("latest"),
+                "latest_tag": info.get("latest_tag"),
+            }
+        )
 
     _set_status(
         in_progress=True,
