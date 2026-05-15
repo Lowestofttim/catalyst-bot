@@ -83,6 +83,27 @@ class TestHealthyReverseLadder:
         assert "ladder_size_taper_violated" not in codes
         assert result.summary["tier_source"] == "offer"
 
+    def test_db_tier_labels_prevent_partial_ladder_false_positive(self):
+        offers = []
+        # After a sweep, the near-mid offers can be gone while correctly sized
+        # mid-tier leftovers remain. Tier labels should prevent those survivors
+        # from being judged as misfit inner slots.
+        for i in range(3):
+            offers.append(_offer(0.000127 + i * 0.00000001, 0.9288, "mid"))
+
+        result = audit_ladder_shape(
+            side="sell",
+            offers=offers,
+            tier_sizes_xch=REVERSE_TIER_SIZES,
+            tier_counts=REVERSE_TIER_COUNTS,
+            reversed_ladder=True,
+        )
+        codes = [i.code for i in result.issues]
+        assert result.ok is True
+        assert "ladder_count_mismatch" in codes
+        assert "ladder_size_taper_violated" not in codes
+        assert result.summary["tier_source"] == "offer"
+
 
 class TestReverseLadderInversion:
     """The 2026-04-17 regression: misfit 3.04 XCH offers at outer price

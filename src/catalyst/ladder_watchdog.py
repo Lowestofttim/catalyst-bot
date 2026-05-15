@@ -176,11 +176,14 @@ def audit_ladder_shape(
         if tier:
             tier_label_counts[tier] += 1
     expected_label_counts = {t: int(tier_counts.get(t, 0) or 0) for t in tier_order}
-    use_offer_tiers = (
-        sum(tier_label_counts.values()) == len(sorted_offers)
-        and tier_label_counts == expected_label_counts
+    labelled_offer_count = sum(tier_label_counts.values())
+    all_offers_have_valid_tiers = labelled_offer_count == len(sorted_offers)
+    labels_within_config = all(
+        tier_label_counts[t] <= expected_label_counts[t] for t in tier_order
     )
+    use_offer_tiers = all_offers_have_valid_tiers and labels_within_config
     result.summary["tier_source"] = "offer" if use_offer_tiers else "slot"
+    result.summary["tier_label_counts"] = dict(tier_label_counts)
 
     # Track size violations
     size_violations: List[Dict[str, Any]] = []
