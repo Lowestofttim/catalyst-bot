@@ -5412,12 +5412,16 @@
             color: var(--status-danger);
         }
         .cc-toxicity-action-body,
+        .cc-toxicity-action-explain,
         .cc-toxicity-action-reason {
             margin-top: 6px;
             font-size: var(--text-xs);
             line-height: 1.45;
             color: var(--text-secondary);
             overflow-wrap: anywhere;
+        }
+        .cc-toxicity-action-explain {
+            color: var(--text-tertiary);
         }
         .cc-toxicity-action-buttons {
             display: flex;
@@ -9323,6 +9327,7 @@
                         <span class="cc-toxicity-action-score" id="ccToxicityActionScore">0/100</span>
                     </div>
                     <div class="cc-toxicity-action-body" id="ccToxicityActionBody"></div>
+                    <div class="cc-toxicity-action-explain" id="ccToxicityActionExplain"></div>
                     <div class="cc-toxicity-action-reason" id="ccToxicityActionReason"></div>
                     <div class="cc-toxicity-action-buttons">
                         <button type="button" class="cc-toxicity-action-btn" data-toxicity-action="settings">Open Guard Settings</button>
@@ -12374,7 +12379,7 @@
                     <h3 style="color: var(--accent-primary-hover);">Command Centre metrics</h3>
                     <ul style="padding-left: 20px;">
                         <li><strong>Active Settings</strong> (left) — Read-only view of your current trading, spread, inventory, tier, and safety settings.</li>
-                        <li><strong>Market Health</strong> (centre) — Traffic light + five metrics: your spread, market spread, competitors, arb gap, pool depth.</li>
+                        <li><strong>Market Health</strong> (centre) — Traffic light + market metrics including spreads, competitors, arb gap, pool depth, and the side-aware adverse-selection guard.</li>
                         <li><strong>Wallet &amp; Performance</strong> (right) — Sage balances, coin breakdown, reserves, and session uptime / fills / PnL / errors.</li>
                     </ul>
                     <h3 style="color: var(--accent-primary-hover);">Where did Live Controls go?</h3>
@@ -12658,7 +12663,7 @@
                     <p>Restart the app if a panel looks stale after an update. On startup or resume, Market Health and Advisor can take a short time to warm up while wallet and market data settle.</p>
 
                     <h4 style="color: var(--status-warning); margin-bottom: 4px;">Market Health shows amber/red</h4>
-                    <p>Check the conditions listed below the traffic light. Common causes: position near circuit breaker limit, large arb gap, spread hitting the max clamp, or too many competitors. The bot adjusts automatically in most cases.</p>
+                    <p>Check the conditions listed below the traffic light. Common causes: position near circuit breaker limit, large arb gap, spread hitting the max clamp, too many competitors, or the Adverse Selection Guard reacting to sweep-like flow. The guard is closest to order-flow toxicity / VPIN-style flow imbalance: it scores buy and sell separately, then widens or pauses only the risky side where possible.</p>
 
                     <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 24px 0 16px 0;">
                     <h3 style="color: var(--accent-primary-hover); margin-top: 0;">Diagnostics &amp; support</h3>
@@ -26009,6 +26014,7 @@
 
             const scoreEl = document.getElementById('ccToxicityActionScore');
             const bodyEl = document.getElementById('ccToxicityActionBody');
+            const explainEl = document.getElementById('ccToxicityActionExplain');
             const reasonEl = document.getElementById('ccToxicityActionReason');
             const highRisk = level === 'high' || level === 'extreme' || throttled.length > 0;
 
@@ -26016,12 +26022,20 @@
             box.style.display = 'block';
             if (scoreEl) scoreEl.textContent = `${Number.isFinite(score) ? score : 0}/100 ${level}`;
 
+            const buyScore = parseInt(m && m.toxicity_buy_score || 0, 10);
+            const sellScore = parseInt(m && m.toxicity_sell_score || 0, 10);
+            const scoreText = Number.isFinite(buyScore) && Number.isFinite(sellScore)
+                ? `BUY ${buyScore}/100; SELL ${sellScore}/100`
+                : 'BUY/SELL scores unavailable';
             const buyText = buyMult > 1.001 ? `BUY widened ${buyMult.toFixed(2)}x` : 'BUY normal';
             const sellText = sellMult > 1.001 ? `SELL widened ${sellMult.toFixed(2)}x` : 'SELL normal';
             const pauseText = _toxicityThrottleText(throttled, m && m.toxicity_throttle_until);
             const action = String(m && m.toxicity_suggested_action || '').trim();
-            const summary = `Bot action: ${buyText}; ${sellText}.${pauseText ? ' New ' + pauseText + '.' : ''}`;
+            const summary = `Bot action: ${scoreText}. ${buyText}; ${sellText}.${pauseText ? ' New ' + pauseText + '.' : ''}`;
             if (bodyEl) bodyEl.textContent = `${summary}${action ? ' ' + action : ''}`;
+            if (explainEl) {
+                explainEl.textContent = "This is CATalyst's side-aware adverse-selection score, close to order-flow toxicity or VPIN-style flow imbalance. Buy and sell are scored separately, so one side can pause or widen while the correcting side stays live.";
+            }
 
             const reason = _toxicityReasonText(m && m.toxicity_reasons);
             if (reasonEl) {
