@@ -989,10 +989,13 @@ def api_status():
             cat_name = api_server._active_cat.get("name") or (
                 cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else ""
             )
+            prebot_pricing_safe = api_server._client_safe_payload(
+                api_server._decimal_safe(pricing)
+            )
             # Pre-bot status contains sanitized offer summaries and local
             # cached pricing data, not exception text.
             return jsonify(
-                api_server._client_safe_payload(
+                api_server._serialize_dict(
                     {
                         "running": False,
                         "stats": {
@@ -1003,7 +1006,7 @@ def api_status():
                             "errors": 0,
                         },
                         "balances": {"xch": xch_bal, "cat": cat_bal},
-                        "pricing": api_server._decimal_safe(pricing),
+                        "pricing": prebot_pricing_safe,
                         "offers": {
                             "buy": offers_buy_pre,
                             "sell": offers_sell_pre,

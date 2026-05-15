@@ -1019,29 +1019,27 @@ def api_coin_prep_verify():
             # Response fields are derived from numeric wallet balances and
             # deterministic coin-size counts.
             return jsonify(
-                api_server._client_safe_payload(
-                    {
-                        "success": True,
-                        "tier_enabled": False,
-                        "liquidity_mode": liquidity_mode,
-                        "xch_coins_right_size": xch_right_size,
-                        "cat_coins_right_size": cat_right_size,
-                        "xch_needed": max_buy,
-                        "cat_needed": max_sell,
-                        "all_sufficient": (
-                            xch_right_size >= max_buy and cat_right_size >= max_sell
-                        ),
-                        "xch_total": len(xch_coins),
-                        "cat_total": len(cat_coins),
-                        "xch_balance_mojos": xch_balance_mojos,
-                        "cat_balance_mojos": cat_balance_mojos,
-                        "xch_needed_mojos": total_xch_needed_mojos,
-                        "cat_needed_mojos": total_cat_needed_mojos,
-                        "balance_sufficient": xch_balance_sufficient
-                        and cat_balance_sufficient,
-                        "balance_warnings": balance_warnings,
-                    }
-                )
+                {
+                    "success": True,
+                    "tier_enabled": False,
+                    "liquidity_mode": liquidity_mode,
+                    "xch_coins_right_size": xch_right_size,
+                    "cat_coins_right_size": cat_right_size,
+                    "xch_needed": max_buy,
+                    "cat_needed": max_sell,
+                    "all_sufficient": (
+                        xch_right_size >= max_buy and cat_right_size >= max_sell
+                    ),
+                    "xch_total": len(xch_coins),
+                    "cat_total": len(cat_coins),
+                    "xch_balance_mojos": xch_balance_mojos,
+                    "cat_balance_mojos": cat_balance_mojos,
+                    "xch_needed_mojos": total_xch_needed_mojos,
+                    "cat_needed_mojos": total_cat_needed_mojos,
+                    "balance_sufficient": xch_balance_sufficient
+                    and cat_balance_sufficient,
+                    "balance_warnings": balance_warnings,
+                }
             )
 
     except Exception:

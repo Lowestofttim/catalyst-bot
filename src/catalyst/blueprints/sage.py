@@ -191,12 +191,10 @@ def api_fingerprint():
 
         fp = _safe_digit_text(fp)
         return jsonify(
-            api_server._client_safe_payload(
-                {
-                    "success": bool(fp),
-                    "fingerprint": fp or "Not detected",
-                }
-            )
+            {
+                "success": bool(fp),
+                "fingerprint": fp or "Not detected",
+            }
         )
     except Exception:
         return api_server._api_exception(request.path)
