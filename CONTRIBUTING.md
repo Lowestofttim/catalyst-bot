@@ -46,9 +46,10 @@ Maintainers will convert accepted Ideas into tracked Issues.
 2. Use Python 3.12, which is what CI and the release builds use.
 3. Follow the project conventions below.
 4. Install developer dependencies: `python -m pip install -r requirements-dev.txt`.
-5. Run the tests: `python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py`.
-6. Run the static checks: `python -m ruff check . --select E9,F821`, `python -m bandit -r src --ini .bandit -ll`, `python scripts/check_env_example.py`, and `python scripts/check_tracked_secrets.py`.
-7. Open a PR with a clear description of **why** the change is needed.
+5. Install the pre-commit hooks: `pre-commit install`. This auto-runs `ruff` lint and format on every commit.
+6. Run the tests: `python -m pytest tests -q --ignore=tests/test_coin_prep.py --ignore=tests/test_coin_prep_v2.py --ignore=tests/test_offer_create.py`.
+7. Run the static checks: `python -m ruff check .`, `python -m ruff format --check .`, `python -m bandit -r src --ini .bandit -ll`, `python scripts/check_env_example.py`, and `python scripts/check_tracked_secrets.py`.
+8. Open a PR with a clear description of **why** the change is needed.
 
 Core conventions:
 
