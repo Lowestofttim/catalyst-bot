@@ -777,6 +777,50 @@ class TestCoinTopupPriority(_PatchedCfg):
 
         self.assertEqual(calls, [(4, 3, None)])
 
+    def test_spare_topup_defers_when_toxicity_sets_targets_to_zero(self):
+        loop = _make_loop()
+        loop._loop_count = 11
+        loop._current_mid_price = Decimal("1")
+        loop._startup_coin_recheck_done = True
+        calls = []
+
+        class ToxicityTopupCoinManager:
+            _topup_is_drip = False
+            _topup_needed_wallet_types = {"xch", "cat"}
+            _reconcile_counter = 0
+
+            def is_busy(self):
+                return False
+
+            def check_coin_prep_status(self):
+                return {}
+
+            def update_coin_counts(self):
+                return None
+
+            def needs_coin_prep(self, active_buy, active_sell):
+                return False
+
+            def needs_topup(self, active_buy, active_sell):
+                return True
+
+            def start_topup(self, active_buy, active_sell, is_drip=None):
+                calls.append((active_buy, active_sell, is_drip))
+
+            def check_runtime_health(self, active_buy, active_sell):
+                return False
+
+        loop.coin_manager = ToxicityTopupCoinManager()
+        loop._reclaim_oversized_locked_offers = lambda: False
+        loop._get_expected_offer_targets = lambda mid_price: {"buy": 0, "sell": 0}
+
+        with patch.object(bot_loop, "log_event") as log_event:
+            loop._handle_coins(active_buy_count=15, active_sell_count=0)
+
+        events = [call.args[1] for call in log_event.call_args_list]
+        self.assertEqual(calls, [])
+        self.assertIn("topup_deferred_zero_offer_targets", events)
+
 
 class TestGetLiveOfferEdges(_PatchedCfg):
     """BotLoop._get_live_offer_edges — static method, extracts best bid/ask."""

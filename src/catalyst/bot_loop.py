@@ -753,6 +753,7 @@ class BotLoop:
             "buy": 0,
             "sell": 0,
         }
+        self._last_zero_target_topup_defer_log_at: float = 0.0
         self._last_toxicity_live_cancel: Dict[str, Dict] = {
             "buy": {"at": 0.0, "signature": ""},
             "sell": {"at": 0.0, "signature": ""},
@@ -1343,6 +1344,47 @@ class BotLoop:
             "book is full and there is no reserve, top-up pool, or useful "
             "small coin source to split yet.",
             data={"wallet_types": waiting},
+        )
+        return True
+
+    def _defer_topup_for_zero_offer_targets(
+        self,
+        active_buy_count: int,
+        active_sell_count: int,
+    ) -> bool:
+        """Avoid splitting coins while risk logic intentionally disables quoting."""
+        try:
+            mid_price = Decimal(str(self._current_mid_price or "0"))
+            targets = self._get_expected_offer_targets(mid_price)
+        except Exception:
+            return False
+
+        buy_target = max(0, int((targets or {}).get("buy", 0) or 0))
+        sell_target = max(0, int((targets or {}).get("sell", 0) or 0))
+        if buy_target > 0 or sell_target > 0:
+            return False
+
+        try:
+            now = time.time()
+            cooldown = float(
+                getattr(cfg, "TOPUP_ZERO_TARGET_LOG_COOLDOWN_SECS", 120) or 120
+            )
+            if now - float(self._last_zero_target_topup_defer_log_at or 0.0) < cooldown:
+                return True
+            self._last_zero_target_topup_defer_log_at = now
+        except Exception:
+            pass
+        log_event(
+            "info",
+            "topup_deferred_zero_offer_targets",
+            "Skipping coin top-up because risk controls have reduced both "
+            "offer targets to zero; coin shaping will resume when quoting resumes.",
+            data={
+                "active_buy": int(active_buy_count or 0),
+                "active_sell": int(active_sell_count or 0),
+                "buy_target": buy_target,
+                "sell_target": sell_target,
+            },
         )
         return True
 
@@ -12004,6 +12046,11 @@ class BotLoop:
         # path, True for drip path); start_topup with no is_drip arg preserves
         # that, so the worker uses the matching action threshold.
         if self.coin_manager.needs_topup(active_buy_count, active_sell_count):
+            if self._defer_topup_for_zero_offer_targets(
+                active_buy_count,
+                active_sell_count,
+            ):
+                return
             if bool(
                 getattr(self.coin_manager, "_topup_is_drip", False)
             ) and self._defer_drip_topup_for_offer_rebuild(
