@@ -241,3 +241,17 @@ def test_logs_tab_has_run_doctor_button_wired_to_existing_modal():
     assert "async function runDoctorFromLogs" in html
     assert "await showDoctorReport();" in html
     assert "const resp = await apiFetch('/api/doctor?force=true');" in html
+
+
+def test_dashboard_has_active_toxicity_guard_notice():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert 'id="ccToxicityAction"' in html
+    assert 'id="ccToxicityActionScore"' in html
+    assert "function updateToxicityAction" in html
+    assert "toxicity_buy_spread_multiplier" in html
+    assert "toxicity_throttle_until" in html
+    assert "openToxicityGuardSettings" in html
+    assert 'data-toxicity-action="settings"' in html
+    assert 'data-toxicity-action="smart-settings"' in html
+    assert "Adverse Selection Guard active" in html

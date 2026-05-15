@@ -1165,9 +1165,17 @@ class RiskManager:
         metrics["toxicity_level"] = toxicity.get("level", "normal")
         metrics["toxicity_buy_score"] = toxicity.get("buy_score", 0)
         metrics["toxicity_sell_score"] = toxicity.get("sell_score", 0)
+        metrics["toxicity_buy_spread_multiplier"] = toxicity.get(
+            "buy_spread_multiplier", "1.0"
+        )
+        metrics["toxicity_sell_spread_multiplier"] = toxicity.get(
+            "sell_spread_multiplier", "1.0"
+        )
         metrics["toxicity_throttled_sides"] = toxicity.get("throttled_sides", [])
+        metrics["toxicity_throttle_until"] = toxicity.get("throttle_until", {})
         metrics["toxicity_reasons"] = toxicity.get("reasons", [])
         metrics["toxicity_suggested_action"] = toxicity.get("suggested_action", "")
+        metrics["toxicity_enabled"] = toxicity.get("enabled", True)
 
         # F44 (2026-04-08): wire Dexie v3 historical-trades market metrics
         # so the dashboard / Smart Settings / Advisor can compare the

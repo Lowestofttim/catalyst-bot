@@ -61,6 +61,40 @@ def test_inventory_state_exposes_toxicity_snapshot(monkeypatch):
     assert state["market_toxicity"]["buy_spread_multiplier"] == "1.35"
 
 
+def test_market_health_exposes_toxicity_operator_details(monkeypatch):
+    _patch_spread_cfg(monkeypatch)
+    rm = RiskManager()
+    rm.set_market_toxicity(
+        ToxicitySnapshot(
+            score=82,
+            buy_score=82,
+            sell_score=12,
+            level="high",
+            buy_spread_multiplier=Decimal("1.75"),
+            sell_spread_multiplier=Decimal("1.20"),
+            throttled_sides=["buy"],
+            throttle_until={"buy": 9999999999.0},
+            reasons=[
+                {
+                    "key": "fast_fills",
+                    "side": "buy",
+                    "score": 35,
+                    "detail": "buy fills landed close together",
+                }
+            ],
+            suggested_action="Throttle new buy offers until toxicity cools.",
+        )
+    )
+
+    health = rm.get_market_health()
+    metrics = health["metrics"]
+
+    assert metrics["toxicity_buy_spread_multiplier"] == "1.75"
+    assert metrics["toxicity_sell_spread_multiplier"] == "1.20"
+    assert metrics["toxicity_throttle_until"] == {"buy": 9999999999.0}
+    assert metrics["toxicity_enabled"] is True
+
+
 def test_malformed_toxicity_dict_fails_open_and_logs(monkeypatch):
     _patch_spread_cfg(monkeypatch)
     rm = RiskManager()
