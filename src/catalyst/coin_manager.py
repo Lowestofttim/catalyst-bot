@@ -61,6 +61,7 @@ from database import log_event
 _fast_reconcile_flag: bool = False
 _fast_reconcile_lock: threading.Lock = threading.Lock()
 _TOPUP_PENDING = "pending"
+_TOPUP_STALE_SOURCE = "stale_source"
 
 
 def _topup_event_log_level(event_type: str) -> str:
@@ -1517,6 +1518,8 @@ class CoinManager:
         self._topup_budget_backoff_probe: Optional[Dict[str, int | bool | str]] = None
         self._recent_absorb_submissions: Dict[str, float] = {}
         self._recent_topup_split_submissions: Dict[str, float] = {}
+        self._topup_split_chain_waits: Dict[str, float] = {}
+        self._topup_spent_source_backoff_until: Dict[str, float] = {}
         self._recent_consolidate_submissions: Dict[str, float] = {}
         self._last_consolidate_not_submitted: bool = False
         self._last_drip_source_unavailable_log: Dict[str, float] = {}
@@ -7113,6 +7116,13 @@ class CoinManager:
                 # still no worse than refusing every topup on a DB blip.
                 pass
 
+            fresh_inv["reserve"] = self._filter_backed_off_topup_sources(
+                fresh_inv["reserve"],
+                wallet_id=wallet_id,
+                is_cat=is_cat,
+                name=name,
+            )
+
             if not fresh_inv["reserve"]:
                 # INFO not WARNING: this is a benign race when the pool
                 # coin was just consumed by another concurrent split, or
@@ -7122,6 +7132,12 @@ class CoinManager:
                 for _reserve_rec in reserve_coins:
                     _reserve_id = _coin_id_from_record(_reserve_rec)
                     if not _reserve_id:
+                        continue
+                    if self._is_topup_source_backed_off(
+                        wallet_id,
+                        _reserve_id,
+                        is_cat,
+                    ):
                         continue
                     _fresh_reserve = fresh_records_by_id.get(str(_reserve_id).lower())
                     if _fresh_reserve is not None:
@@ -7463,6 +7479,8 @@ class CoinManager:
             }
             for _extra_rec in pool_rebuild_extra_records:
                 _extra_id = _coin_id_from_record(_extra_rec)
+                if self._is_topup_source_backed_off(wallet_id, _extra_id, is_cat):
+                    continue
                 _extra_key = str(_extra_id or "").lower()
                 if _extra_key and _extra_key not in _seen_candidate_ids:
                     _pool_candidates.append(_extra_rec)
@@ -8382,6 +8400,71 @@ class CoinManager:
             "confirmed": len(output_ids) >= num_to_create,
         }
 
+    def _topup_split_source_key(
+        self,
+        wallet_id: int,
+        source_coin_id: str,
+        is_cat: bool,
+    ) -> str:
+        return (
+            f"{'cat' if is_cat else 'xch'}:{wallet_id}:"
+            f"{str(source_coin_id or '').lower()}"
+        )
+
+    def _topup_wait_seconds(self, setting_name: str, default: int) -> float:
+        try:
+            value = float(getattr(cfg, setting_name, default) or default)
+        except Exception:
+            value = float(default)
+        return max(60.0, value)
+
+    def _is_topup_source_backed_off(
+        self,
+        wallet_id: int,
+        source_coin_id: str,
+        is_cat: bool,
+    ) -> bool:
+        if not hasattr(self, "_topup_spent_source_backoff_until"):
+            self._topup_spent_source_backoff_until = {}
+
+        key = self._topup_split_source_key(wallet_id, source_coin_id, is_cat)
+        backoff_until = self._topup_spent_source_backoff_until.get(key)
+        if not backoff_until:
+            return False
+        if time.time() < backoff_until:
+            return True
+        self._topup_spent_source_backoff_until.pop(key, None)
+        return False
+
+    def _filter_backed_off_topup_sources(
+        self,
+        records: List[dict],
+        wallet_id: int,
+        is_cat: bool,
+        name: str,
+    ) -> List[dict]:
+        """Skip source coins that Coinset already proved stale/spent."""
+        if not hasattr(self, "_topup_spent_source_backoff_until"):
+            self._topup_spent_source_backoff_until = {}
+
+        kept = []
+        skipped = 0
+        for record in records or []:
+            coin_id = _coin_id_from_record(record)
+            if self._is_topup_source_backed_off(wallet_id, coin_id, is_cat):
+                skipped += 1
+                continue
+            kept.append(record)
+
+        if skipped:
+            log_event(
+                "info",
+                f"topup_{name.lower()}_stale_source_skipped",
+                f"Skipped {skipped} stale top-up source coin(s) while Sage "
+                "catches up with chain state; checking the next refill path.",
+            )
+        return kept
+
     def _sage_one_step_split(
         self,
         name: str,
@@ -8419,10 +8502,11 @@ class CoinManager:
 
         if not hasattr(self, "_recent_topup_split_submissions"):
             self._recent_topup_split_submissions = {}
-        split_key = (
-            f"{'cat' if is_cat else 'xch'}:{wallet_id}:"
-            f"{str(source_coin_id or '').lower()}"
-        )
+        if not hasattr(self, "_topup_split_chain_waits"):
+            self._topup_split_chain_waits = {}
+        if not hasattr(self, "_topup_spent_source_backoff_until"):
+            self._topup_spent_source_backoff_until = {}
+        split_key = self._topup_split_source_key(wallet_id, source_coin_id, is_cat)
         debounce_secs = int(getattr(cfg, "TOPUP_SPLIT_DEBOUNCE_SECS", 600) or 600)
         if debounce_secs > 0:
             now = time.time()
@@ -8488,7 +8572,7 @@ class CoinManager:
             }
             return bool(source_key and source_key in selectable_keys)
 
-        def _handle_coinset_spent_source(result_snapshot=None) -> bool:
+        def _handle_coinset_spent_source(result_snapshot=None) -> Optional[str]:
             state = self._coinset_topup_split_state(
                 source_coin_id=source_coin_id,
                 num_to_create=num_to_create,
@@ -8496,7 +8580,7 @@ class CoinManager:
                 result=result_snapshot,
             )
             if not state or not state.get("source_spent"):
-                return False
+                return None
 
             output_coin_ids = state.get("output_coin_ids") or []
             owned_amounts = state.get("owned_amounts") or {}
@@ -8508,6 +8592,47 @@ class CoinManager:
                     owned_amounts=owned_amounts,
                     is_cat=is_cat,
                 )
+
+            now = time.time()
+            outputs_confirmed = bool(state.get("confirmed"))
+            if outputs_confirmed:
+                self._topup_split_chain_waits.pop(split_key, None)
+                self._topup_spent_source_backoff_until.pop(split_key, None)
+            else:
+                first_seen = self._topup_split_chain_waits.setdefault(split_key, now)
+                waited_secs = max(0, int(now - first_seen))
+                wait_limit_secs = self._topup_wait_seconds(
+                    "TOPUP_CHAIN_WAIT_MAX_SECS",
+                    900,
+                )
+                if waited_secs >= wait_limit_secs:
+                    _clear_split_debounce()
+                    self._topup_split_chain_waits.pop(split_key, None)
+                    backoff_secs = self._topup_wait_seconds(
+                        "TOPUP_STALE_SOURCE_BACKOFF_SECS",
+                        1800,
+                    )
+                    self._topup_spent_source_backoff_until[split_key] = (
+                        now + backoff_secs
+                    )
+                    log_event(
+                        "warning",
+                        f"{tag}_osstep_chain_wait_stale",
+                        "Coinset still shows the top-up source coin spent, "
+                        "but the expected split outputs were not found after "
+                        "the chain-wait window; skipping this stale source "
+                        "so another refill path can run.",
+                        data={
+                            "source_coin_id": str(source_coin_id or "")[:18],
+                            "spent_block_index": state.get("spent_block_index"),
+                            "outputs_found": len(output_coin_ids),
+                            "outputs_needed": num_to_create,
+                            "waited_secs": waited_secs,
+                            "wait_limit_secs": int(wait_limit_secs),
+                            "backoff_secs": int(backoff_secs),
+                        },
+                    )
+                    return _TOPUP_STALE_SOURCE
 
             _set_split_debounce()
             log_event(
@@ -8521,10 +8646,18 @@ class CoinManager:
                     "spent_block_index": state.get("spent_block_index"),
                     "outputs_found": len(output_coin_ids),
                     "outputs_needed": num_to_create,
-                    "outputs_confirmed": bool(state.get("confirmed")),
+                    "outputs_confirmed": outputs_confirmed,
                 },
             )
-            return True
+            return _TOPUP_PENDING
+
+        def _maybe_return_coinset_spent_source(result_snapshot=None):
+            action = _handle_coinset_spent_source(result_snapshot)
+            if action == _TOPUP_PENDING:
+                return _TOPUP_PENDING
+            if action == _TOPUP_STALE_SOURCE:
+                return False
+            return None
 
         # --- Snapshot before ---
         pre_owned_map = (
@@ -8532,8 +8665,9 @@ class CoinManager:
         )
         pre_owned_ids = set(pre_owned_map.keys())
 
-        if _handle_coinset_spent_source():
-            return _TOPUP_PENDING
+        chain_action = _maybe_return_coinset_spent_source()
+        if chain_action is not None:
+            return chain_action
 
         fee_mojos = self._tx_fee_mojos()
         fee_coin_id = None
@@ -8604,9 +8738,10 @@ class CoinManager:
                     self._abort_topup_for_wallet_degradation(
                         f"{name} topup paused: /create_transaction degraded ({err})."
                     )
-                elif _handle_coinset_spent_source(result):
-                    return _TOPUP_PENDING
                 else:
+                    chain_action = _maybe_return_coinset_spent_source(result)
+                    if chain_action is not None:
+                        return chain_action
                     log_event(
                         "warning",
                         f"{tag}_osstep_fail",
@@ -8657,8 +8792,9 @@ class CoinManager:
                 or set()
             )
             if pending_count == 0 and _source_still_selectable(selectable_now):
-                if _handle_coinset_spent_source(result):
-                    return _TOPUP_PENDING
+                chain_action = _maybe_return_coinset_spent_source(result)
+                if chain_action is not None:
+                    return chain_action
                 log_event(
                     "info",
                     f"{tag}_osstep_not_submitted",
@@ -8748,8 +8884,9 @@ class CoinManager:
                 pending_count = _sage_pending_count()
                 source_selectable = _source_still_selectable(selectable_ids)
                 if pending_count == 0 and source_selectable:
-                    if _handle_coinset_spent_source(result):
-                        return _TOPUP_PENDING
+                    chain_action = _maybe_return_coinset_spent_source(result)
+                    if chain_action is not None:
+                        return chain_action
                     _clear_split_debounce()
                     log_event(
                         "info",
@@ -8852,8 +8989,9 @@ class CoinManager:
             pending_count = _sage_pending_count()
             source_selectable = _source_still_selectable(selectable_ids)
             if source_selectable and pending_count in (0, None):
-                if _handle_coinset_spent_source(result):
-                    return _TOPUP_PENDING
+                chain_action = _maybe_return_coinset_spent_source(result)
+                if chain_action is not None:
+                    return chain_action
                 _clear_split_debounce()
                 log_event(
                     "info",

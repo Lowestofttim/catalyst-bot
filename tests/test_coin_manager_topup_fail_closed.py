@@ -878,6 +878,75 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertEqual(state["output_coin_ids"], output_ids)
         self.assertEqual(state["owned_amounts"], {cid: 100 for cid in output_ids})
 
+    def test_one_step_split_releases_stale_spent_source_without_outputs(self):
+        manager = self._make_manager()
+        source = "0x" + "01" * 32
+        split_key = f"cat:2:{source.lower()}"
+        manager._topup_split_chain_waits = {split_key: 1000}
+
+        class FakeCoinset:
+            def get_coin_by_name(self, coin_name):
+                if coin_name == source:
+                    return {
+                        "coin": {"amount": 600},
+                        "confirmed_block_index": 12,
+                        "spent_block_index": 123,
+                    }
+                return None
+
+            def get_coin_records_by_parent_ids(self, *_args, **_kwargs):
+                return []
+
+        manager._coinset_client = FakeCoinset()
+
+        with (
+            patch("wallet_sage.sage_topup_split") as split_mock,
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1test"},
+            ),
+            patch.object(coin_manager.cfg, "COINSET_ENABLED", True),
+            patch.object(
+                coin_manager.cfg,
+                "TOPUP_CHAIN_WAIT_MAX_SECS",
+                600,
+                create=True,
+            ),
+            patch.object(
+                coin_manager.cfg,
+                "TOPUP_STALE_SOURCE_BACKOFF_SECS",
+                1200,
+                create=True,
+            ),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                return_value={source: 600},
+            ),
+            patch.object(coin_manager, "log_event") as log_event,
+            patch.object(coin_manager.time, "time", return_value=1700),
+        ):
+            result = manager._sage_one_step_split(
+                name="CAT-mid",
+                wallet_id=2,
+                source_coin_id=source,
+                num_to_create=3,
+                trading_size_mojos=100,
+                is_cat=True,
+            )
+
+        self.assertFalse(result)
+        split_mock.assert_not_called()
+        self.assertNotIn(split_key, manager._recent_topup_split_submissions)
+        self.assertGreater(
+            manager._topup_spent_source_backoff_until[split_key],
+            1700,
+        )
+        event_types = [call.args[1] for call in log_event.call_args_list]
+        self.assertIn("topup_cat-mid_osstep_chain_wait_stale", event_types)
+        self.assertNotIn("topup_cat-mid_osstep_debounce", event_types)
+
     def test_one_step_split_without_txid_clears_debounce_after_grace(self):
         manager = self._make_manager()
 
