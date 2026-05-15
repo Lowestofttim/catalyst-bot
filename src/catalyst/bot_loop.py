@@ -1372,8 +1372,14 @@ class BotLoop:
             if now - float(self._last_zero_target_topup_defer_log_at or 0.0) < cooldown:
                 return True
             self._last_zero_target_topup_defer_log_at = now
-        except Exception:
-            pass
+        except Exception as e:
+            log_event(
+                "debug",
+                "topup_zero_target_log_cooldown_error",
+                "Could not update zero-target top-up deferral log cooldown; "
+                "continuing with the deferral log.",
+                data={"error": str(e)},
+            )
         log_event(
             "info",
             "topup_deferred_zero_offer_targets",
