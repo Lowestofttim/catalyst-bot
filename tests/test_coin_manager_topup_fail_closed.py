@@ -439,6 +439,7 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             )
 
         rpc_mock.assert_called_once()
+        self.assertFalse(rpc_mock.call_args.args[1]["auto_submit"])
         self.assertTrue(result["success"])
         self.assertTrue(result["submitted"])
         self.assertEqual(result["transaction_id"], "0xtx")
@@ -473,6 +474,7 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             )
 
         rpc_mock.assert_called_once()
+        self.assertFalse(rpc_mock.call_args.args[1]["auto_submit"])
         self.assertTrue(result["success"])
         self.assertTrue(result["submitted"])
         self.assertEqual(result["transaction_id"], "0xcombine")
@@ -510,6 +512,45 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertIn("no transaction id", result["error"])
+
+    def test_create_transaction_rpc_rejects_submit_when_pending_check_fails(self):
+        import wallet_sage
+
+        with (
+            patch.object(wallet_sage, "_require_signing_capability", return_value=True),
+            patch.object(
+                wallet_sage,
+                "rpc",
+                return_value={
+                    "summary": {},
+                    "coin_spends": [{"coin": "spend"}],
+                },
+            ),
+            patch.object(
+                wallet_sage,
+                "_sage_post",
+                side_effect=[
+                    {"spend_bundle": {"aggregated_signature": "0xsig"}},
+                    {"success": True, "status": "success"},
+                ],
+            ),
+            patch.object(
+                wallet_sage,
+                "get_pending_transactions",
+                side_effect=RuntimeError("pending unavailable"),
+            ),
+        ):
+            result = wallet_sage.create_transaction_rpc(
+                selected_coin_ids=["0xsource"],
+                actions=[{"type": "send", "amount": "1"}],
+                auto_submit=True,
+            )
+
+        self.assertFalse(result["success"])
+        self.assertIn("no transaction id", result["error"])
+        self.assertIn(
+            "pending transaction state could not be verified", result["error"]
+        )
 
     def test_cat_one_step_topup_reserves_fee_pool_coin(self):
         manager = self._make_manager()

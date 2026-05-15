@@ -1731,10 +1731,13 @@ def create_transaction_rpc(
     # Strip 0x prefixes from coin IDs
     bare_ids = [cid.replace("0x", "") for cid in (selected_coin_ids or [])]
 
+    # Always ask Sage to build unsigned spends, then submit through the same
+    # explicit sign+submit path used by bulk offer cancels. Sage's auto-submit
+    # shortcuts can report success without a tx id or durable pending tx.
     payload = {
         "selected_coin_ids": bare_ids,
         "actions": actions,
-        "auto_submit": auto_submit,
+        "auto_submit": False,
     }
 
     print(
@@ -1859,6 +1862,15 @@ def _submit_coin_spends_if_needed(
             pending_count = len(get_pending_transactions() or [])
         except Exception:
             pending_count = None
+        if pending_count is None:
+            return {
+                "success": False,
+                "error": (
+                    f"{context} submit_transaction returned no transaction id "
+                    "and pending transaction state could not be verified"
+                ),
+                "submit_response": submit_resp,
+            }
         if pending_count == 0:
             return {
                 "success": False,
@@ -1962,7 +1974,7 @@ def combine_coins(coin_ids: list, fee_mojos: int = 0) -> Optional[Dict]:
     payload = {
         "coin_ids": bare_ids,
         "fee": str(int(fee_mojos)),
-        "auto_submit": True,
+        "auto_submit": False,
     }
 
     print(f"   [Sage] Combining {len(bare_ids)} coins via /combine")
