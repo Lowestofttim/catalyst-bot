@@ -926,18 +926,9 @@ def api_coin_prep_verify():
 
             balance_warnings = []
             if not xch_balance_sufficient and total_xch_needed_mojos > 0:
-                xch_need = total_xch_needed_mojos / 1e12
-                xch_have = xch_balance_mojos / 1e12
-                balance_warnings.append(
-                    f"XCH balance too low: need {xch_need:.3f} XCH but only have {xch_have:.3f} XCH"
-                )
+                balance_warnings.append("xch_balance_too_low")
             if not cat_balance_sufficient and total_cat_needed_mojos > 0:
-                cat_unit = 10**cat_decimals
-                cat_need = total_cat_needed_mojos / cat_unit
-                cat_have = cat_balance_mojos / cat_unit
-                balance_warnings.append(
-                    f"CAT balance too low: need {cat_need:,.0f} CAT but only have {cat_have:,.0f} CAT"
-                )
+                balance_warnings.append("cat_balance_too_low")
 
             tier_drift = []
             try:
@@ -1003,18 +994,9 @@ def api_coin_prep_verify():
 
             balance_warnings = []
             if not xch_balance_sufficient and total_xch_needed_mojos > 0:
-                xch_need = total_xch_needed_mojos / 1e12
-                xch_have = xch_balance_mojos / 1e12
-                balance_warnings.append(
-                    f"XCH balance too low: need {xch_need:.3f} XCH but only have {xch_have:.3f} XCH"
-                )
+                balance_warnings.append("xch_balance_too_low")
             if not cat_balance_sufficient and total_cat_needed_mojos > 0:
-                cat_unit = 10**cat_decimals
-                cat_need = total_cat_needed_mojos / cat_unit
-                cat_have = cat_balance_mojos / cat_unit
-                balance_warnings.append(
-                    f"CAT balance too low: need {cat_need:,.0f} CAT but only have {cat_have:,.0f} CAT"
-                )
+                balance_warnings.append("cat_balance_too_low")
 
             # Response fields are derived from numeric wallet balances and
             # deterministic coin-size counts.

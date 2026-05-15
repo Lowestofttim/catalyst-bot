@@ -86,8 +86,11 @@ def _safe_wallet_type(status):
 
 
 def _safe_digit_text(value):
-    text = str(value or "").strip()
-    return text if text.isdigit() else ""
+    try:
+        number = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return ""
+    return str(number) if number > 0 else ""
 
 
 def _safe_int(value, default=0):
