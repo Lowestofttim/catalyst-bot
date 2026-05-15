@@ -58,14 +58,12 @@ class FillTrackerVerificationTests(unittest.TestCase):
             **self.db_offer,
             "trade_id": trade_id,
         }
-        fake_database.get_offer_coin_usage_summary = (
-            lambda coin_id, cat_asset_id=None: {
-                "coin_id": coin_id,
-                "offer_count": 1,
-                "verified_fill_count": 0,
-                "verified_trade_ids": [],
-            }
-        )
+        fake_database.get_offer_coin_usage_summary = lambda coin_id, cat_asset_id=None: {
+            "coin_id": coin_id,
+            "offer_count": 1,
+            "verified_fill_count": 0,
+            "verified_trade_ids": [],
+        }
         fake_database.update_offer_status = self._update_offer_status
         fake_database.update_offer_lifecycle_state = self._update_lifecycle_state
         fake_database.transition_offer = lambda *args, **kwargs: None
