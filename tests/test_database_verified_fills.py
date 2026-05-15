@@ -187,6 +187,36 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
         self.assertEqual(stats["sell_fills"], 1)
         self.assertEqual(stats["volume_xch"], "0.1")
 
+    def test_unmatched_fills_deduplicate_verified_fills_for_reused_source_coin(self):
+        asset_id = "asset-requote-unmatched"
+        coin_id = "0xcoin-reused-unmatched"
+
+        for trade_id in ("trade-old", "trade-new"):
+            database.add_offer(
+                trade_id=trade_id,
+                side="sell",
+                price_xch=Decimal("0.001"),
+                size_xch=Decimal("0.1"),
+                size_cat=Decimal("100"),
+                cat_asset_id=asset_id,
+                tier="inner",
+                coin_id=coin_id,
+            )
+            database.record_fill(
+                trade_id=trade_id,
+                side="sell",
+                price_xch=Decimal("0.001"),
+                size_xch=Decimal("0.1"),
+                size_cat=Decimal("100"),
+                cat_asset_id=asset_id,
+                tier="inner",
+            )
+
+        unmatched = database.get_unmatched_fills(asset_id, "sell")
+
+        self.assertEqual(len(unmatched), 1)
+        self.assertEqual(unmatched[0]["trade_id"], "trade-new")
+
     def test_fill_and_expiry_update_all_locked_coins_for_trade(self):
         conn = database.get_connection()
         asset_id = "asset-test"

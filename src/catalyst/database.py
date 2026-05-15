@@ -4283,13 +4283,13 @@ def get_unmatched_fills(cat_asset_id: str, side: str, since: str = None) -> List
     Used by the PnL engine to pair buys with sells (FIFO matching).
     """
     conn = get_connection()
+    economic_fill_ids = _get_economic_verified_fill_ids(conn, cat_asset_id, since)
+    fill_scope_sql, fill_scope_params = _fill_id_scope(economic_fill_ids)
     params = [cat_asset_id, side]
     query = """SELECT * FROM fills
-           WHERE cat_asset_id=? AND side=? AND round_trip_id IS NULL
-             AND COALESCE(verification_status, 'legacy') = 'verified'"""
-    if since:
-        query += " AND filled_at>=?"
-        params.append(_sqlite_ts(since))
+           WHERE cat_asset_id=? AND side=? AND round_trip_id IS NULL"""
+    query += fill_scope_sql
+    params.extend(fill_scope_params)
     query += " ORDER BY filled_at ASC"
     rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
