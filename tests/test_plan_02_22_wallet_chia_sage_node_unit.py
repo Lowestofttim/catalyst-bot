@@ -462,7 +462,8 @@ class TestSageRpcStartupProbes(unittest.TestCase):
             helper = getattr(sage_node, "_set_sage_cert_env_and_reload", None)
             self.assertIsNotNone(helper, "startup must reload wallet_sage after auto-detecting certs")
 
-            with patch.dict(os.environ, {}, clear=False), \
+            env = {"SAGE_ALLOWED_CERT_ROOTS": sage_data_dir}
+            with patch.dict(os.environ, env, clear=False), \
                  patch("wallet_sage.reload_connection_settings") as reload_settings:
                 helper(cert_path, key_path)
 

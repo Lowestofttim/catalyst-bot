@@ -121,6 +121,27 @@ class PublicReadinessSmokeTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), unavailable)
 
+    def test_public_beta_copy_uses_current_repo_and_build_wording(self):
+        html = (REPO_ROOT / "bot_gui.html").read_text(encoding="utf-8")
+        contact_config = (
+            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml"
+        ).read_text(encoding="utf-8")
+        bug_template = (
+            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml"
+        ).read_text(encoding="utf-8")
+        feedback_template = (
+            REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "feedback.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("May 2026 public beta", html)
+        self.assertIn("Dashboard layout (May 2026 beta refresh)", html)
+        self.assertIn("plants tighter real inner-tier offers", html)
+        self.assertNotIn("April 2026", html)
+        self.assertNotIn("github.com/Lowestofttim/catalyst-bot", contact_config)
+        self.assertIn("github.com/catalystxch/catalyst-bot", contact_config)
+        self.assertIn('placeholder: "v1.2.30"', bug_template)
+        self.assertIn('placeholder: "v1.2.30"', feedback_template)
+
     def test_token_exempt_routes_remain_loopback_only(self):
         self.assertEqual(api_server._TOKEN_EXEMPT_WRITE_ROUTES, {"/api/splash/incoming"})
 

@@ -161,6 +161,15 @@ class MockSageServer(ThreadingHTTPServer):
     saw_client_cert: bool
 
 
+def _mock_sage_server_context(server_cert: Path, server_key: Path, ca_path: Path) -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(str(server_cert), str(server_key))
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.load_verify_locations(cafile=str(ca_path))
+    return context
+
+
 def _start_mock_sage(temp_dir: Path) -> tuple[MockSageServer, threading.Thread, Path, Path]:
     ca_path, ca_key, ca_cert = _create_ca(temp_dir)
     server_cert, server_key = _create_signed_cert(
@@ -174,10 +183,7 @@ def _start_mock_sage(temp_dir: Path) -> tuple[MockSageServer, threading.Thread, 
     httpd.request_paths = []
     httpd.saw_client_cert = False
 
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(str(server_cert), str(server_key))
-    context.verify_mode = ssl.CERT_REQUIRED
-    context.load_verify_locations(cafile=str(ca_path))
+    context = _mock_sage_server_context(server_cert, server_key, ca_path)
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
     thread = threading.Thread(target=httpd.serve_forever, name="mock-sage-rpc", daemon=True)

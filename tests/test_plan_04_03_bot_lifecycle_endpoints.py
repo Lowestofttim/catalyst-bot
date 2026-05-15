@@ -193,7 +193,11 @@ class TestBotStart(_FlaskBase):
         body = resp.get_json()
         self.assertTrue(body.get("needs_coin_prep"))
         self.assertEqual(body.get("reason"), "coin_prep_failed")
-        self.assertIn("Sage tier pool creation", body.get("message", ""))
+        self.assertEqual(
+            body.get("message"),
+            "Coin Prep failed - rerun Coin Prep before starting the bot",
+        )
+        self.assertNotIn("Sage tier pool creation", resp.get_data(as_text=True))
         bot.start.assert_not_called()
 
     def test_signing_block_reason_prevents_start(self):

@@ -230,6 +230,7 @@ _LOCAL_API_TOKEN_HEADER = "X-Bot-Local-Token"
 _LOCAL_API_COOKIE = "catalyst_local_session"
 _LOCAL_API_TOKEN = os.environ.get("BOT_LOCAL_WRITE_TOKEN") or secrets.token_urlsafe(32)
 os.environ["BOT_LOCAL_WRITE_TOKEN"] = _LOCAL_API_TOKEN
+_LOCAL_API_COOKIE_VALUE = secrets.token_urlsafe(32)
 
 # ---------------------------------------------------------------------------
 # Security helpers
@@ -283,16 +284,123 @@ def _decimal_safe(obj):
 def _api_error(e: Exception, endpoint: str = "", status: int = 500):
     """Return a safe JSON error response that does NOT expose internal details.
 
-    The real exception is written to the database event log so it is still
-    visible in the debug log download, but clients only see a generic message.
+    The real exception is written to the local superlog so it is still visible
+    in the debug bundle, while the UI-visible event log gets generic text.
     """
+    endpoint_name = endpoint or "unknown"
     try:
-        log_event("error", "api_error",
-                  f"Unhandled exception on {endpoint or 'unknown'}: {e}",
-                  {"endpoint": endpoint})
-    except Exception:
-        pass
+        slog("API_ERROR", f"Unhandled exception on {endpoint_name}: {e!r}", level="error")
+    except Exception as log_exc:
+        from contextlib import suppress
+        # Last-resort diagnostics only; API error handling must never raise.
+        with suppress(Exception):
+            import sys
+            sys.stderr.write(
+                f"CATalyst API error logging failed for {endpoint_name}: {log_exc!r}\n"
+            )
+    try:
+        log_event(
+            "error",
+            "api_error",
+            f"Unhandled exception on {endpoint_name}; see debug bundle for details.",
+            {"endpoint": endpoint},
+        )
+    except Exception as log_exc:
+        from contextlib import suppress
+        with suppress(Exception):
+            slog(
+                "API_ERROR",
+                f"Failed to record API error for {endpoint_name}: {log_exc}",
+                level="warning",
+            )
     return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
+
+
+def _api_exception(endpoint: str = "", status: int = 500):
+    """Return a safe JSON response for the exception currently being handled."""
+    endpoint_name = endpoint or "unknown"
+    from contextlib import suppress
+    with suppress(Exception):
+        import traceback
+        slog(
+            "API_ERROR",
+            f"Unhandled exception on {endpoint_name}:\n{traceback.format_exc()}",
+            level="error",
+        )
+    try:
+        log_event(
+            "error",
+            "api_error",
+            f"Unhandled exception on {endpoint_name}; see debug bundle for details.",
+            {"endpoint": endpoint},
+        )
+    except Exception as log_exc:
+        from contextlib import suppress
+        with suppress(Exception):
+            slog(
+                "API_ERROR",
+                f"Failed to record API exception for {endpoint_name}: {log_exc}",
+                level="warning",
+            )
+    return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
+
+
+def _client_safe_result(payload: object, *, error_message: str = "Operation failed") -> object:
+    """Return an API-safe copy of a helper result without exception-derived text."""
+    if not isinstance(payload, dict):
+        return payload
+
+    safe = _sanitize_config_dict(dict(payload))
+    failed = (
+        safe.get("success") is False
+        or bool(safe.get("error"))
+        or str(safe.get("phase") or "").lower() == "error"
+    )
+    if not failed:
+        return safe
+
+    for key in ("error", "message", "detail", "details", "traceback"):
+        if key in safe:
+            safe[key] = error_message
+    if "output" in safe:
+        safe["output"] = ""
+    for key in ("errors", "warnings"):
+        value = safe.get(key)
+        if isinstance(value, list) and value:
+            safe[key] = [error_message]
+        elif isinstance(value, str) and value:
+            safe[key] = error_message
+    return safe
+
+
+_TRACEBACK_TEXT_MARKERS = (
+    "traceback (most recent call last)",
+    "\n  file ",
+    "runtimeerror:",
+    "valueerror:",
+    "exception:",
+)
+
+
+def _looks_like_traceback_text(value: str) -> bool:
+    text = str(value or "").lower()
+    return any(marker in text for marker in _TRACEBACK_TEXT_MARKERS)
+
+
+def _client_safe_payload(payload: object, *, error_message: str = "Details unavailable") -> object:
+    """Strip exception and traceback-shaped values from client JSON payloads."""
+    if isinstance(payload, BaseException):
+        return error_message
+    if isinstance(payload, dict):
+        return {
+            key: "***" if _is_sensitive_key(str(key)) else _client_safe_payload(value, error_message=error_message)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, (list, tuple)):
+        return [_client_safe_payload(value, error_message=error_message) for value in payload]
+    if isinstance(payload, str) and _looks_like_traceback_text(payload):
+        return error_message
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -570,7 +678,8 @@ def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
             msg += f", explorer gap {context['price_gap_bps'] / 100:.1f}%"
         context["message"] = msg
     except Exception as e:
-        context["message"] = f"Spacescan context unavailable: {e}"
+        slog("API_STATUS", f"Spacescan context unavailable: {e!r}", level="debug")
+        context["message"] = "Spacescan context unavailable right now."
 
     return context
 
@@ -615,12 +724,15 @@ def _is_loopback_addr(addr: str) -> bool:
 
 
 def _has_valid_local_token() -> bool:
-    supplied = (
-        request.headers.get(_LOCAL_API_TOKEN_HEADER, "")
-        or request.cookies.get(_LOCAL_API_COOKIE, "")
+    supplied_header = str(request.headers.get(_LOCAL_API_TOKEN_HEADER, "") or "")
+    if supplied_header and secrets.compare_digest(supplied_header, _LOCAL_API_TOKEN):
+        return True
+
+    supplied_cookie = str(request.cookies.get(_LOCAL_API_COOKIE, "") or "")
+    return bool(supplied_cookie) and secrets.compare_digest(
+        supplied_cookie,
+        _LOCAL_API_COOKIE_VALUE,
     )
-    supplied = str(supplied or "")
-    return bool(supplied) and secrets.compare_digest(supplied, _LOCAL_API_TOKEN)
 
 
 def _request_origin_matches_app() -> bool:
@@ -673,7 +785,9 @@ def _serve_bootstrapped_html(filename: str):
     response = Response(html_doc, mimetype="text/html")
     response.set_cookie(
         _LOCAL_API_COOKIE,
-        _LOCAL_API_TOKEN,
+        # Per-process loopback browser session nonce. The worker/header token
+        # stays out of browser storage.
+        _LOCAL_API_COOKIE_VALUE,
         httponly=True,
         samesite="Strict",
         secure=False,
@@ -1166,23 +1280,24 @@ def serve_brand_asset(filename: str):
     gui_dir = _APP_ROOT
     assets_dir = os.path.join(gui_dir, "assets")
     allowed = {
-        "bot_icon_new.png",
-        "favicon.ico",
-        "sage_logo_official.png",
-        "dexie_logo_official.png",
-        "dexie_logo_official.ico",
-        "tibetswap_logo_official.png",
-        "MonkeyZoo_Logo.png",
-        "monkeyzoo-logo-1.gif",
-        "spacescan-logo-192.webp",
-        "sage_rpc_advanced.png",
+        "bot_icon_new.png": "bot_icon_new.png",
+        "favicon.ico": "favicon.ico",
+        "sage_logo_official.png": "sage_logo_official.png",
+        "dexie_logo_official.png": "dexie_logo_official.png",
+        "dexie_logo_official.ico": "dexie_logo_official.ico",
+        "tibetswap_logo_official.png": "tibetswap_logo_official.png",
+        "MonkeyZoo_Logo.png": "MonkeyZoo_Logo.png",
+        "monkeyzoo-logo-1.gif": "monkeyzoo-logo-1.gif",
+        "spacescan-logo-192.webp": "spacescan-logo-192.webp",
+        "sage_rpc_advanced.png": "sage_rpc_advanced.png",
     }
-    if filename not in allowed:
+    safe_name = allowed.get(filename)
+    if safe_name is None:
         return Response("Not Found", status=404, mimetype="text/plain")
     # Try assets/ folder first, fall back to app root for backward compat
-    if os.path.isfile(os.path.join(assets_dir, filename)):
-        return send_from_directory(assets_dir, filename)
-    return send_from_directory(gui_dir, filename)
+    if os.path.isfile(os.path.join(assets_dir, safe_name)):
+        return send_from_directory(assets_dir, safe_name)
+    return send_from_directory(gui_dir, safe_name)
 
 
 def _get_session_pending_verification_count() -> int:
@@ -1513,7 +1628,8 @@ def api_open_data_folder():
         from user_paths import data_dir as _dd
         folder = _dd()
     except Exception as e:
-        return jsonify({"success": False, "error": f"data dir unavailable: {e}"}), 500
+        log_event("error", "open_data_folder_data_dir_unavailable", str(e))
+        return jsonify({"success": False, "error": "data_dir_unavailable"}), 500
 
     if not os.path.isdir(folder):
         return jsonify({"success": False, "error": f"data dir does not exist: {folder}"}), 500
@@ -1528,7 +1644,8 @@ def api_open_data_folder():
             import subprocess as _sp
             _sp.Popen(["xdg-open", folder])
     except Exception as e:
-        return jsonify({"success": False, "error": f"could not open folder: {e}"}), 500
+        log_event("error", "open_data_folder_failed", str(e))
+        return jsonify({"success": False, "error": "open_folder_failed"}), 500
 
     return jsonify({"success": True, "folder": folder})
 
@@ -1550,7 +1667,8 @@ def api_crash_log():
         path = crash_log_file()
         data_folder = _dd()
     except Exception as e:
-        return jsonify({"success": False, "error": f"data dir unavailable: {e}"}), 500
+        log_event("error", "crash_log_data_dir_unavailable", str(e))
+        return jsonify({"success": False, "error": "data_dir_unavailable"}), 500
 
     if not os.path.isfile(path):
         return jsonify({
@@ -1565,7 +1683,8 @@ def api_crash_log():
     try:
         st = os.stat(path)
     except OSError as e:
-        return jsonify({"success": False, "error": f"stat failed: {e}"}), 500
+        log_event("error", "crash_log_stat_failed", str(e))
+        return jsonify({"success": False, "error": "crash_log_stat_failed"}), 500
 
     MAX_BYTES = 256 * 1024  # 256 KiB cap — plenty for a traceback
     try:
@@ -1576,7 +1695,8 @@ def api_crash_log():
             else:
                 content = fh.read()
     except OSError as e:
-        return jsonify({"success": False, "error": f"read failed: {e}"}), 500
+        log_event("error", "crash_log_read_failed", str(e))
+        return jsonify({"success": False, "error": "crash_log_read_failed"}), 500
 
     return jsonify({
         "success": True,
@@ -1659,8 +1779,8 @@ def api_update_status():
         status = app_update.get_update_status()
         status["success"] = True
         return jsonify(status)
-    except Exception as e:
-        return _api_error(e, request.path)
+    except Exception:
+        return _api_exception(request.path)
 
 
 @app.route("/api/update/install", methods=["POST"])
@@ -1693,8 +1813,8 @@ def api_update_install():
         )
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
-    except Exception as e:
-        return _api_error(e, request.path)
+    except Exception:
+        return _api_exception(request.path)
 
 
 # ---------------------------------------------------------------------------
@@ -1759,7 +1879,8 @@ def api_sage_latest_release():
                 result = {"success": True, "tag": tag, "url": url}
     except Exception as e:
         # Network error, timeout, DNS, etc. — non-fatal
-        result = {"success": False, "error": f"fetch_failed: {e}"}
+        log_event("warning", "sage_latest_release_fetch_failed", str(e))
+        result = {"success": False, "error": "fetch_failed"}
 
     _SAGE_RELEASE_CACHE["at"] = now
     _SAGE_RELEASE_CACHE["data"] = result

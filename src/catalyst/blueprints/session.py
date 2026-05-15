@@ -40,7 +40,7 @@ def api_session_fresh_start():
     except Exception as e:
         log_event("warning", "session_fresh_start_failed",
                   f"Failed to reset fresh run session: {e}")
-        return api_server._api_error(e, request.path)
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/session/resume-chosen", methods=["POST"])

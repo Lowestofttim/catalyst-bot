@@ -105,7 +105,8 @@ def api_spacescan_setup():
             # 200 or 400 both mean the key passed authentication (400 = key accepted
             # but the null-address probe returned "not found" — that is fine).
         except Exception as e:
-            return jsonify({"success": False, "error": f"Could not reach Spacescan: {e}"}), 502
+            log_event("warning", "spacescan_key_validation_unreachable", str(e))
+            return jsonify({"success": False, "error": "Could not reach Spacescan. Try again shortly."}), 502
 
         # Key is valid — persist in user-local secrets (NOT .env) and apply in-memory.
         import user_secrets as _user_secrets
@@ -136,5 +137,5 @@ def api_reservations():
             "totals": rm.get_reserved_totals(),
             "active": rm.list_active(),
         })
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

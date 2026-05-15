@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import ssl
 from pathlib import Path
 
 
@@ -98,3 +99,14 @@ def test_validate_payload_rejects_nested_required_keys():
         assert "dexie.available" in str(exc)
     else:
         raise AssertionError("missing nested keys should fail the smoke contract")
+
+
+def test_mock_sage_server_context_requires_tls_1_2_or_newer(tmp_path):
+    ca_path, ca_key, ca_cert = packaged_api_smoke._create_ca(tmp_path)
+    server_cert, server_key = packaged_api_smoke._create_signed_cert(
+        tmp_path, "server", "mock-sage-server", ca_key, ca_cert, is_server=True
+    )
+
+    context = packaged_api_smoke._mock_sage_server_context(server_cert, server_key, ca_path)
+
+    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2

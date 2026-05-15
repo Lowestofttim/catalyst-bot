@@ -550,8 +550,8 @@ def api_dashboard():
             "current_cat": api_server._active_cat,
             "wallet_type": "sage",
         }))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/stats")
 def api_stats():
@@ -560,8 +560,8 @@ def api_stats():
     try:
         stats = get_stats(cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff())
         return jsonify(stats)
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/inventory")
 def api_inventory():

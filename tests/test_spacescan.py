@@ -111,7 +111,7 @@ headers = get_headers()
 api_key = get_api_key()
 
 print(f"  Base URL:    {base_url}")
-print(f"  API Key:     {'***' + api_key[-6:] if len(api_key) > 6 else ('(none)' if not api_key else '***')}")
+print(f"  API Key:     {'configured' if api_key else '(none)'}")
 print(f"  Tier:        {'PRO' if api_key else 'FREE'}")
 print()
 

@@ -139,6 +139,71 @@ class CoinPrepRpcUnavailable(Exception):
     """Raised when coin prep cannot trust wallet RPC preflight data."""
 
 
+_SAFE_CHIA_CLI_ARG_RE = re.compile(r"^[A-Za-z0-9_./:@+=,%-]+$")
+_CHIA_ADDRESS_RE = re.compile(r"^(?:xch|txch)1[023456789acdefghjklmnpqrstuvwxyz]+$")
+_CHIA_COIN_ID_RE = re.compile(r"^(?:0x)?[0-9a-fA-F]{64}$")
+_CHIA_DECIMAL_ARG_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
+
+
+def _safe_chia_uint_arg(value, label: str, *, max_value: int = 10**18) -> str:
+    text = str(value).strip()
+    if not text.isdecimal():
+        raise ValueError(f"unsafe {label}: expected digits")
+    number = int(text)
+    if number < 0 or number > max_value:
+        raise ValueError(f"unsafe {label}: out of range")
+    return str(number)
+
+
+def _safe_chia_decimal_arg(value, label: str) -> str:
+    try:
+        dec = Decimal(str(value).strip())
+    except Exception as exc:
+        raise ValueError(f"unsafe {label}: expected decimal") from exc
+    if not dec.is_finite() or dec < 0:
+        raise ValueError(f"unsafe {label}: invalid decimal")
+    text = format(dec, "f")
+    if not _CHIA_DECIMAL_ARG_RE.fullmatch(text):
+        raise ValueError(f"unsafe {label}: invalid decimal characters")
+    return text
+
+
+def _safe_chia_address_arg(value, label: str = "address") -> str:
+    text = str(value).strip().lower()
+    if not _CHIA_ADDRESS_RE.fullmatch(text):
+        raise ValueError(f"unsafe {label}: invalid Chia address")
+    return text
+
+
+def _safe_chia_coin_id_arg(value, label: str = "coin_id") -> str:
+    text = str(value).strip().lower()
+    if not _CHIA_COIN_ID_RE.fullmatch(text):
+        raise ValueError(f"unsafe {label}: invalid coin id")
+    return text[2:] if text.startswith("0x") else text
+
+
+def _validate_chia_cli_command(cmd: List[str]) -> List[str]:
+    """Return a safe Chia CLI argv list or raise ValueError.
+
+    The worker never invokes a shell, but CodeQL is right that these values
+    ultimately originate from wallet/API state. Keep the allowed surface tiny:
+    this helper is only for `chia ...` commands made from flags, digits,
+    decimals, bech32 addresses, and coin ids.
+    """
+    if not cmd or cmd[0] != "chia":
+        raise ValueError("unsafe command executable")
+    safe: List[str] = []
+    for arg in cmd:
+        if not isinstance(arg, str):
+            raise ValueError("unsafe non-string command argument")
+        if not arg or any(ord(ch) < 32 for ch in arg):
+            raise ValueError("unsafe blank/control command argument")
+        if not _SAFE_CHIA_CLI_ARG_RE.fullmatch(arg):
+            raise ValueError("unsafe command argument characters")
+        safe.append(arg)
+    return safe
+
+
 def _wallet_total_mojos_from_balance_response(response, label: str) -> int:
     if not isinstance(response, dict):
         raise CoinPrepRpcUnavailable(f"{label} balance query returned no response")
@@ -1627,21 +1692,72 @@ class CoinPrepWorker:
         except Exception:
             return True  # Don't block on check errors
     
-    def run_command(self, cmd: List[str], timeout: int = 30) -> Tuple[bool, str]:
-        """Run CLI command and return (success, output)"""
+    def _run_chia_wallet_coins_list(self, wallet_id: int) -> Tuple[bool, str]:
+        """Run the fixed Chia coin-list command for a validated wallet id."""
         try:
+            cmd = [
+                "chia", "wallet", "coins", "list",
+                "-f", _safe_chia_uint_arg(self.fingerprint, "fingerprint"),
+                "-i", _safe_chia_uint_arg(wallet_id, "wallet_id"),
+                "--no-paginate",
+            ]
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=timeout,
+                timeout=30,
                 **hidden_subprocess_kwargs(),
             )
-            output = result.stdout + result.stderr
-            success = result.returncode == 0
-            return success, output
+            return result.returncode == 0, result.stdout + result.stderr
         except subprocess.TimeoutExpired:
             return False, "Command timed out"
+        except ValueError as e:
+            return False, f"Unsafe command rejected: {e}"
+        except Exception as e:
+            return False, str(e)
+
+    def _run_chia_wallet_show(self) -> Tuple[bool, str]:
+        """Run the fixed Chia wallet-show command for the active fingerprint."""
+        try:
+            cmd = [
+                "chia", "wallet", "show",
+                "-f", _safe_chia_uint_arg(self.fingerprint, "fingerprint"),
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                **hidden_subprocess_kwargs(),
+            )
+            return result.returncode == 0, result.stdout + result.stderr
+        except subprocess.TimeoutExpired:
+            return False, "Command timed out"
+        except ValueError as e:
+            return False, f"Unsafe command rejected: {e}"
+        except Exception as e:
+            return False, str(e)
+
+    def _run_chia_wallet_get_address(self, wallet_id: int) -> Tuple[bool, str]:
+        """Run the fixed Chia get-address command for a validated wallet id."""
+        try:
+            cmd = [
+                "chia", "wallet", "get_address",
+                "-f", _safe_chia_uint_arg(self.fingerprint, "fingerprint"),
+                "-i", _safe_chia_uint_arg(wallet_id, "wallet_id"),
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                **hidden_subprocess_kwargs(),
+            )
+            return result.returncode == 0, result.stdout + result.stderr
+        except subprocess.TimeoutExpired:
+            return False, "Command timed out"
+        except ValueError as e:
+            return False, f"Unsafe command rejected: {e}"
         except Exception as e:
             return False, str(e)
     
@@ -1683,14 +1799,7 @@ class CoinPrepWorker:
             pass
 
         # --- Strategy 2: CLI fallback ---
-        cmd = [
-            "chia", "wallet", "coins", "list",
-            "-f", self.fingerprint,
-            "-i", str(wallet_id),
-            "--no-paginate"
-        ]
-
-        success, output = self.run_command(cmd)
+        success, output = self._run_chia_wallet_coins_list(wallet_id)
         if not success:
             return 0
 
@@ -1767,12 +1876,7 @@ class CoinPrepWorker:
             return Decimal("0")
 
         # Chia: parse CLI output
-        cmd = [
-            "chia", "wallet", "show",
-            "-f", self.fingerprint
-        ]
-
-        success, output = self.run_command(cmd)
+        success, output = self._run_chia_wallet_show()
         if not success:
             return Decimal("0")
 
@@ -2122,13 +2226,7 @@ class CoinPrepWorker:
 
         # --- Chia CLI path ---
         # Get current address
-        cmd = [
-            "chia", "wallet", "get_address",
-            "-f", self.fingerprint,
-            "-i", str(wallet_id)
-        ]
-
-        success, output = self.run_command(cmd)
+        success, output = self._run_chia_wallet_get_address(wallet_id)
         if not success:
             self.log("❌ Could not get address")
             return False
@@ -2159,10 +2257,10 @@ class CoinPrepWorker:
         # Send entire balance to self (consolidates coins)
         cmd = [
             "chia", "wallet", "send",
-            "-f", self.fingerprint,
-            "-i", str(wallet_id),
-            "-a", str(balance),  # Keep full Decimal precision
-            "-t", address,
+            "-f", _safe_chia_uint_arg(self.fingerprint, "fingerprint"),
+            "-i", _safe_chia_uint_arg(wallet_id, "wallet_id"),
+            "-a", _safe_chia_decimal_arg(balance, "balance"),
+            "-t", _safe_chia_address_arg(address),
             "-m", "0"  # No fee
         ]
 
@@ -2558,13 +2656,7 @@ class CoinPrepWorker:
 
         # --- Chia CLI path ---
         # Get address
-        cmd = [
-            "chia", "wallet", "get_address",
-            "-f", self.fingerprint,
-            "-i", str(wallet_id)
-        ]
-
-        success, output = self.run_command(cmd)
+        success, output = self._run_chia_wallet_get_address(wallet_id)
         if not success:
             self.log("❌ Could not get address")
             return False
@@ -2584,10 +2676,10 @@ class CoinPrepWorker:
         # Send exact amount to self
         cmd = [
             "chia", "wallet", "send",
-            "-f", self.fingerprint,
-            "-i", str(wallet_id),
-            "-a", str(float(amount)),
-            "-t", address,
+            "-f", _safe_chia_uint_arg(self.fingerprint, "fingerprint"),
+            "-i", _safe_chia_uint_arg(wallet_id, "wallet_id"),
+            "-a", _safe_chia_decimal_arg(amount, "amount"),
+            "-t", _safe_chia_address_arg(address),
             "-m", "0"
         ]
 
@@ -5107,15 +5199,15 @@ class CoinPrepWorker:
                 return False
         else:
             # --- Chia CLI split (reliable — broadcasts to network every time) ---
-            bare_coin_id = coin_id.replace("0x", "")
+            bare_coin_id = _safe_chia_coin_id_arg(coin_id)
 
             cmd = [
                 "chia", "wallet", "coins", "split",
-                "-f", self.fingerprint,
-                "-i", str(wallet_id),
-                "-n", str(num_coins),
+                "-f", _safe_chia_uint_arg(self.fingerprint, "fingerprint"),
+                "-i", _safe_chia_uint_arg(wallet_id, "wallet_id"),
+                "-n", _safe_chia_uint_arg(num_coins, "num_coins", max_value=10000),
                 "-m", "0",
-                "-a", str(coin_size),
+                "-a", _safe_chia_decimal_arg(coin_size, "coin_size"),
                 "-t", bare_coin_id,
             ]
 

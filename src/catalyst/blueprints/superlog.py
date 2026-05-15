@@ -23,8 +23,8 @@ def api_superlog_stats():
     try:
         from super_log import get_log_stats
         return jsonify(get_log_stats())
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/superlog/level", methods=["POST"])
@@ -42,8 +42,8 @@ def api_superlog_level():
         if "terminal_level" in data:
             set_terminal_level(data["terminal_level"])
         return jsonify({"ok": True, **get_log_stats()})
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/superlog/archive")
@@ -58,8 +58,8 @@ def api_superlog_archive():
         from super_log import get_archive_summary
         last_n = request.args.get("last", 10, type=int)
         return jsonify(get_archive_summary(last_n=min(last_n, 100)))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 
 @bp.route("/api/superlog/download")
@@ -73,5 +73,5 @@ def api_superlog_download():
                              as_attachment=True,
                              download_name=os.path.basename(log_path))
         return jsonify({"error": "No superlog file found"}), 404
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)

@@ -135,7 +135,9 @@ def api_bot_start():
         else:
             warnings.append("Could not reach wallet RPC — check if Sage/Chia is running")
     except Exception as e:
-        warnings.append(f"Wallet check failed: {str(e)[:100]}")
+        log_event("warning", "wallet_check_failed",
+                  f"Pre-start wallet sync check failed: {e}")
+        warnings.append("Wallet check failed - check if Sage/Chia is running")
 
     signing_block_reason = server._get_sage_signing_block_reason()
     if signing_block_reason:
@@ -195,7 +197,9 @@ def api_bot_start():
             )
             coin_prep_error = errors[-1]
     except Exception as _drift_err:
-        warnings.append(f"Tier-drift gate skipped: {_drift_err}")
+        log_event("warning", "tier_drift_gate_failed",
+                  f"Tier-drift gate skipped: {_drift_err}")
+        warnings.append("Tier-drift gate skipped - check logs before trading")
 
     if getattr(cfg, "ENABLE_COIN_PREP", False):
         try:
@@ -214,13 +218,15 @@ def api_bot_start():
             elif _prep_error or _prep_phase == "error":
                 needs_coin_prep = True
                 coin_prep_reason = "coin_prep_failed"
-                detail = f": {_prep_error}" if _prep_error else ""
-                coin_prep_error = (
-                    "Coin Prep failed - rerun Coin Prep before starting the bot" + detail
-                )
+                if _prep_error:
+                    log_event("warning", "coin_prep_gate_failed",
+                              f"Coin Prep failure blocked bot start: {_prep_error}")
+                coin_prep_error = "Coin Prep failed - rerun Coin Prep before starting the bot"
                 errors.append(coin_prep_error)
         except Exception as _prep_gate_err:
-            warnings.append(f"Coin-prep gate skipped: {_prep_gate_err}")
+            log_event("warning", "coin_prep_gate_check_failed",
+                      f"Coin-prep gate check failed: {_prep_gate_err}")
+            warnings.append("Coin-prep gate skipped - check logs before trading")
 
     # Block start on critical errors
     if errors:
@@ -560,7 +566,8 @@ def api_status():
                                 break
                 except Exception as e:
                     print(f"[STATUS] TibetSwap failed: {e}")
-                    log_event("warning", "price_lookup", f"TibetSwap failed: {e}")
+                    slog("API_STATUS", f"TibetSwap price lookup failed: {e!r}", level="debug")
+                    log_event("warning", "price_lookup", "TibetSwap price lookup failed")
 
                 # --- Fallback to Dexie if TibetSwap had no match ---
                 if mid == 0:
@@ -609,7 +616,8 @@ def api_status():
                                         log_event("success", "price_found", f"Dexie orderbook price: {mid:.8f} XCH")
                     except Exception as e:
                         print(f"[STATUS] Dexie fallback failed: {e}")
-                        log_event("warning", "price_lookup", f"Dexie fallback failed: {e}")
+                        slog("API_STATUS", f"Dexie fallback price lookup failed: {e!r}", level="debug")
+                        log_event("warning", "price_lookup", "Dexie fallback price lookup failed")
 
                 if mid == 0:
                     print("[STATUS] No price from any source")
@@ -619,11 +627,17 @@ def api_status():
                 log_event("warning", "price_lookup", "No asset_id configured — cannot fetch price")
 
             # Compute actual bid/ask from mid using configured spread
-            if pricing.get("mid", 0) > 0 and pricing.get("bid") == pricing.get("mid"):
+            try:
+                _mid_for_spread = Decimal(str(pricing.get("mid", 0)))
+                _bid_for_spread = Decimal(str(pricing.get("bid", 0)))
+            except Exception:
+                _mid_for_spread = Decimal(0)
+                _bid_for_spread = Decimal(0)
+            if _mid_for_spread > 0 and _bid_for_spread == _mid_for_spread:
                 _spread_bps = Decimal(str(getattr(cfg, "BASE_SPREAD_BPS", 0) or getattr(cfg, "SPREAD_BPS", 200) or 200))
                 _spread_frac = _spread_bps / Decimal("10000")
-                pricing["bid"] = pricing["mid"] * (1 - _spread_frac / 2)
-                pricing["ask"] = pricing["mid"] * (1 + _spread_frac / 2)
+                pricing["bid"] = _mid_for_spread * (1 - _spread_frac / 2)
+                pricing["ask"] = _mid_for_spread * (1 + _spread_frac / 2)
 
             # Cache the freshly-fetched result so the next ~60 s of polls
             # serves this response without refetching. We stash the
@@ -716,9 +730,7 @@ def api_status():
                     print(f"[STATUS] Pre-bot offers: {len(offers_buy_pre)} buys, "
                           f"{len(offers_sell_pre)} sells", flush=True)
             except Exception as e:
-                import traceback
-                print(f"[STATUS] Pre-bot offer fetch error: {e}", flush=True)
-                traceback.print_exc()
+                slog("API_STATUS", f"Pre-bot offer fetch error: {e}", level="warning")
 
             # Build coin tracking for pre-bot display (matches running format)
             xch_free = 0
@@ -747,7 +759,9 @@ def api_status():
             }
 
             cat_name = api_server._active_cat.get("name") or (cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else "")
-            return jsonify({
+            # Pre-bot status contains sanitized offer summaries and local
+            # cached pricing data, not exception text.
+            return jsonify(api_server._client_safe_payload({
                 "running": False,
                 "stats": {"loop_count": 0, "uptime_seconds": 0, "last_loop_time": 0,
                            "total_fills": 0, "errors": 0},
@@ -769,7 +783,7 @@ def api_status():
                     "decimals": api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3),
                     "ticker_id": api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", None),
                 },
-            })
+            }))
 
         # Get raw state from bot
         raw = bot.get_state()
@@ -977,9 +991,7 @@ def api_status():
                         offers_sell.append(_extract_offer_data(tr, "sell"))
 
             except Exception as e:
-                import traceback
-                print(f"[STATUS] Wallet offer fetch (bot stopped): {e}", flush=True)
-                traceback.print_exc()
+                slog("API_STATUS", f"Wallet offer fetch (bot stopped): {e}", level="warning")
 
         # Enrich wallet-sourced offers with Dexie links from bot's dexie_manager
         # and/or database records (prices, sizes, tier, expiry)
@@ -1315,9 +1327,7 @@ def api_status():
                           f"({len(offers_sell)} sell offers)", flush=True)
 
             except Exception as e:
-                import traceback
-                print(f"[STATUS] Coin tracking RPC failed: {e}", flush=True)
-                traceback.print_exc()
+                slog("API_STATUS", f"Coin tracking RPC failed: {e}", level="warning")
 
         # --- Spread BPS for Close the Gap modal ---
         spread_bps_val = "0"
@@ -1397,8 +1407,8 @@ def api_status():
         }
 
         return jsonify(api_server._serialize_dict(result))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/diagnostics/runtime")
 def api_runtime_diagnostics():
@@ -1409,8 +1419,8 @@ def api_runtime_diagnostics():
     try:
         raw = bot.get_state() or {}
         return jsonify(api_server._serialize_dict(raw.get("diagnostics") or {}))
-    except Exception as e:
-        return api_server._api_error(e, request.path)
+    except Exception:
+        return api_server._api_exception(request.path)
 
 @bp.route("/api/diagnostics/api-stats")
 def api_diagnostics_api_stats():
