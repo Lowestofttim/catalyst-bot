@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     _db = None
@@ -123,14 +124,21 @@ class _TempDB(unittest.TestCase):
 
     def _switch(self, asset_id=_ASSET_B, name="TokenB", bot=None):
         """POST /api/cat/select with all background side-effects mocked."""
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server.cfg.update"), \
-             patch("wallet_sage.notify_cat_asset_id_changed", create=True), \
-             patch("api_server.threading") as mock_threading:
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server.cfg.update"),
+            patch("wallet_sage.notify_cat_asset_id_changed", create=True),
+            patch("api_server.threading") as mock_threading,
+        ):
             mock_threading.Thread.return_value = MagicMock()
             resp = self.client.post(
                 "/api/cat/select",
-                json={"asset_id": asset_id, "name": name, "wallet_id": 2, "decimals": 3},
+                json={
+                    "asset_id": asset_id,
+                    "name": name,
+                    "wallet_id": 2,
+                    "decimals": 3,
+                },
                 headers={"X-Bot-Local-Token": self.token},
                 environ_base=_LOOPBACK,
             )
@@ -140,6 +148,7 @@ class _TempDB(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Validation guards
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestPairSwitchValidation(_TempDB):
@@ -175,10 +184,12 @@ class TestPairSwitchValidation(_TempDB):
 
     def test_invalid_asset_id_returns_400(self):
         """Non-hex asset_id must be rejected with 400."""
-        with patch.object(api_server, "bot", None), \
-             patch("api_server.cfg.update"), \
-             patch("wallet_sage.notify_cat_asset_id_changed", create=True), \
-             patch("api_server.threading"):
+        with (
+            patch.object(api_server, "bot", None),
+            patch("api_server.cfg.update"),
+            patch("wallet_sage.notify_cat_asset_id_changed", create=True),
+            patch("api_server.threading"),
+        ):
             resp = self.client.post(
                 "/api/cat/select",
                 json={"asset_id": "not-valid", "name": "Bad"},
@@ -189,10 +200,12 @@ class TestPairSwitchValidation(_TempDB):
 
     def test_short_asset_id_returns_400(self):
         """asset_id shorter than 64 chars is rejected."""
-        with patch.object(api_server, "bot", None), \
-             patch("api_server.cfg.update"), \
-             patch("wallet_sage.notify_cat_asset_id_changed", create=True), \
-             patch("api_server.threading"):
+        with (
+            patch.object(api_server, "bot", None),
+            patch("api_server.cfg.update"),
+            patch("wallet_sage.notify_cat_asset_id_changed", create=True),
+            patch("api_server.threading"),
+        ):
             resp = self.client.post(
                 "/api/cat/select",
                 json={"asset_id": "a" * 32, "name": "Short"},
@@ -205,6 +218,7 @@ class TestPairSwitchValidation(_TempDB):
 # ---------------------------------------------------------------------------
 # In-memory state update
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestPairSwitchStateUpdate(_TempDB):
@@ -235,6 +249,7 @@ class TestPairSwitchStateUpdate(_TempDB):
 # ---------------------------------------------------------------------------
 # Risk manager reset
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestPairSwitchRiskManagerReset(_TempDB):
@@ -267,6 +282,7 @@ class TestPairSwitchRiskManagerReset(_TempDB):
 # ---------------------------------------------------------------------------
 # DB preservation after pair switch
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestPairSwitchDBPreservation(_TempDB):

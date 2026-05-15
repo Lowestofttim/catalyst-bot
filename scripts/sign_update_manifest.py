@@ -106,18 +106,30 @@ def build_manifest(args: argparse.Namespace) -> dict:
 
 def sign_manifest(manifest: dict, private_key_b64: str) -> str:
     try:
-        private_key = Ed25519PrivateKey.from_private_bytes(base64.b64decode(private_key_b64))
+        private_key = Ed25519PrivateKey.from_private_bytes(
+            base64.b64decode(private_key_b64)
+        )
     except Exception as exc:
-        raise ValueError("CATALYST_UPDATE_SIGNING_KEY_B64 is not a raw base64 Ed25519 key") from exc
-    return base64.b64encode(private_key.sign(_canonical_manifest_bytes(manifest))).decode("ascii")
+        raise ValueError(
+            "CATALYST_UPDATE_SIGNING_KEY_B64 is not a raw base64 Ed25519 key"
+        ) from exc
+    return base64.b64encode(
+        private_key.sign(_canonical_manifest_bytes(manifest))
+    ).decode("ascii")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True, help="Release tag or version, e.g. v1.2.7")
-    parser.add_argument("--installer", required=True, help="Path to Catalyst-Setup-vX.Y.Z.exe")
+    parser.add_argument(
+        "--version", required=True, help="Release tag or version, e.g. v1.2.7"
+    )
+    parser.add_argument(
+        "--installer", required=True, help="Path to Catalyst-Setup-vX.Y.Z.exe"
+    )
     parser.add_argument("--sha256-file", help="Path to installer .sha256 sidecar")
-    parser.add_argument("--download-base-url", required=True, help="Public release asset base URL")
+    parser.add_argument(
+        "--download-base-url", required=True, help="Public release asset base URL"
+    )
     parser.add_argument("--release-url", required=True, help="Public release page URL")
     parser.add_argument("--release-notes-file", help="Markdown release notes file")
     parser.add_argument("--out-manifest", default="latest.json")

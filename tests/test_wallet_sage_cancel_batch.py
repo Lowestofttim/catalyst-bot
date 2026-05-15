@@ -9,14 +9,20 @@ if "requests" not in sys.modules:
 
     class _StubSession:
         """Minimal Session stub with headers so amm_monitor.__init__ doesn't crash."""
+
         def __init__(self):
             self.headers = {}
 
         def get(self, *args, **kwargs):
             class _R:
                 status_code = 200
-                def json(self): return {}
-                def raise_for_status(self): pass
+
+                def json(self):
+                    return {}
+
+                def raise_for_status(self):
+                    pass
+
             return _R()
 
         def mount(self, *args, **kwargs):
@@ -63,14 +69,16 @@ class WalletSageCancelBatchTests(unittest.TestCase):
     def test_cancel_batch_confirms_by_unlock_when_offer_not_active_or_locked(self):
         ticks = itertools.count(start=0, step=1)
 
-        with patch.object(wallet_sage, "cancel_offer", return_value={"success": True}), \
-             patch.object(wallet_sage, "get_spendable_coin_count", return_value=100), \
-             patch.object(wallet_sage, "get_pending_transactions", return_value=[]), \
-             patch.object(wallet_sage, "get_all_offers", return_value=[]), \
-             patch.object(wallet_sage, "get_owned_coins_detailed", return_value={}), \
-             patch("builtins.print"), \
-             patch.object(wallet_sage.time, "sleep", return_value=None), \
-             patch.object(wallet_sage.time, "time", side_effect=lambda: next(ticks)):
+        with (
+            patch.object(wallet_sage, "cancel_offer", return_value={"success": True}),
+            patch.object(wallet_sage, "get_spendable_coin_count", return_value=100),
+            patch.object(wallet_sage, "get_pending_transactions", return_value=[]),
+            patch.object(wallet_sage, "get_all_offers", return_value=[]),
+            patch.object(wallet_sage, "get_owned_coins_detailed", return_value={}),
+            patch("builtins.print"),
+            patch.object(wallet_sage.time, "sleep", return_value=None),
+            patch.object(wallet_sage.time, "time", side_effect=lambda: next(ticks)),
+        ):
             results = wallet_sage.cancel_offers_batch(["0xabc123"], secure=False)
 
         self.assertTrue(results["0xabc123"]["success"])
@@ -79,15 +87,20 @@ class WalletSageCancelBatchTests(unittest.TestCase):
     def test_cancel_batch_does_not_confirm_when_offer_disappears_but_tx_pending(self):
         ticks = itertools.count(start=0, step=31)
 
-        with patch.object(wallet_sage, "cancel_offer", return_value={"success": True}), \
-             patch.object(wallet_sage, "get_spendable_coin_count", return_value=100), \
-             patch.object(wallet_sage, "get_pending_transactions",
-                          return_value=[{"transaction_id": "pending"}]), \
-             patch.object(wallet_sage, "get_all_offers", return_value=[]), \
-             patch.object(wallet_sage, "get_owned_coins_detailed", return_value={}), \
-             patch("builtins.print"), \
-             patch.object(wallet_sage.time, "sleep", return_value=None), \
-             patch.object(wallet_sage.time, "time", side_effect=lambda: next(ticks)):
+        with (
+            patch.object(wallet_sage, "cancel_offer", return_value={"success": True}),
+            patch.object(wallet_sage, "get_spendable_coin_count", return_value=100),
+            patch.object(
+                wallet_sage,
+                "get_pending_transactions",
+                return_value=[{"transaction_id": "pending"}],
+            ),
+            patch.object(wallet_sage, "get_all_offers", return_value=[]),
+            patch.object(wallet_sage, "get_owned_coins_detailed", return_value={}),
+            patch("builtins.print"),
+            patch.object(wallet_sage.time, "sleep", return_value=None),
+            patch.object(wallet_sage.time, "time", side_effect=lambda: next(ticks)),
+        ):
             results = wallet_sage.cancel_offers_batch(["0xabc123"], secure=False)
 
         self.assertTrue(results["0xabc123"]["success"])
@@ -99,15 +112,20 @@ class WalletSageCancelBatchTests(unittest.TestCase):
     def test_cancel_batch_does_not_confirm_when_offer_lock_still_visible(self):
         ticks = itertools.count(start=0, step=31)
 
-        with patch.object(wallet_sage, "cancel_offer", return_value={"success": True}), \
-             patch.object(wallet_sage, "get_spendable_coin_count", return_value=100), \
-             patch.object(wallet_sage, "get_pending_transactions", return_value=[]), \
-             patch.object(wallet_sage, "get_all_offers", return_value=[]), \
-             patch.object(wallet_sage, "get_owned_coins_detailed",
-                          return_value={"0xcoin": {"offer_id": "0xabc123"}}), \
-             patch("builtins.print"), \
-             patch.object(wallet_sage.time, "sleep", return_value=None), \
-             patch.object(wallet_sage.time, "time", side_effect=lambda: next(ticks)):
+        with (
+            patch.object(wallet_sage, "cancel_offer", return_value={"success": True}),
+            patch.object(wallet_sage, "get_spendable_coin_count", return_value=100),
+            patch.object(wallet_sage, "get_pending_transactions", return_value=[]),
+            patch.object(wallet_sage, "get_all_offers", return_value=[]),
+            patch.object(
+                wallet_sage,
+                "get_owned_coins_detailed",
+                return_value={"0xcoin": {"offer_id": "0xabc123"}},
+            ),
+            patch("builtins.print"),
+            patch.object(wallet_sage.time, "sleep", return_value=None),
+            patch.object(wallet_sage.time, "time", side_effect=lambda: next(ticks)),
+        ):
             results = wallet_sage.cancel_offers_batch(["0xabc123"], secure=False)
 
         self.assertTrue(results["0xabc123"]["success"])
@@ -123,11 +141,16 @@ class WalletSageCancelBatchTests(unittest.TestCase):
         }
         accepted_without_fee = {"success": True}
 
-        with patch.object(wallet_sage, "cancel_offer",
-                          side_effect=[no_fee_coin, accepted_without_fee]) as cancel, \
-             patch.object(wallet_sage, "get_spendable_coin_count", return_value=100), \
-             patch("builtins.print"), \
-             patch.object(wallet_sage.time, "sleep", return_value=None):
+        with (
+            patch.object(
+                wallet_sage,
+                "cancel_offer",
+                side_effect=[no_fee_coin, accepted_without_fee],
+            ) as cancel,
+            patch.object(wallet_sage, "get_spendable_coin_count", return_value=100),
+            patch("builtins.print"),
+            patch.object(wallet_sage.time, "sleep", return_value=None),
+        ):
             results = wallet_sage.cancel_offers_batch(
                 ["0xabc123"],
                 secure=True,
@@ -140,10 +163,15 @@ class WalletSageCancelBatchTests(unittest.TestCase):
         self.assertEqual(cancel.call_args_list[1].kwargs["fee_mojos"], 0)
 
     def test_cancel_offer_treats_mempool_conflict_as_pending_cancel(self):
-        with patch.object(wallet_sage, "_require_signing_capability", return_value=True), \
-             patch.object(wallet_sage, "_sage_post",
-                          side_effect=wallet_sage.SageMempoolConflict("MEMPOOL_CONFLICT")), \
-             patch("builtins.print"):
+        with (
+            patch.object(wallet_sage, "_require_signing_capability", return_value=True),
+            patch.object(
+                wallet_sage,
+                "_sage_post",
+                side_effect=wallet_sage.SageMempoolConflict("MEMPOOL_CONFLICT"),
+            ),
+            patch("builtins.print"),
+        ):
             result = wallet_sage.cancel_offer("0xabc123", secure=False)
 
         self.assertTrue(result["success"])

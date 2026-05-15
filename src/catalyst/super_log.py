@@ -31,25 +31,30 @@ from datetime import datetime, timezone
 # Log levels (lower number = more verbose)
 # ---------------------------------------------------------------------------
 LEVELS = {"trace": 0, "debug": 1, "info": 2, "warn": 3, "error": 4}
-LEVEL_TAGS = {"trace": "TRACE", "debug": "DEBUG", "INFO": "INFO",
-              "warn": " WARN", "error": "ERROR"}
+LEVEL_TAGS = {
+    "trace": "TRACE",
+    "debug": "DEBUG",
+    "INFO": "INFO",
+    "warn": " WARN",
+    "error": "ERROR",
+}
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-MAX_LOG_FILES = 5           # Keep only this many recent log files
-MAX_LOG_SIZE_MB = 10        # Rotate when file exceeds this (was 50, now 10)
+MAX_LOG_FILES = 5  # Keep only this many recent log files
+MAX_LOG_SIZE_MB = 10  # Rotate when file exceeds this (was 50, now 10)
 _MAX_LOG_BYTES = MAX_LOG_SIZE_MB * 1024 * 1024
 
 # Ring buffer for error context — keeps last N verbose lines in memory
-RING_BUFFER_SIZE = 500      # Lines of context to dump on error
+RING_BUFFER_SIZE = 500  # Lines of context to dump on error
 # How many error context dumps per session (prevent runaway dumps)
 MAX_ERROR_DUMPS = 10
 
 # Archive: compact digest of each rotated log (errors, stats, timeline)
 # Stored as JSONL (one JSON line per rotated log) — stays tiny forever
 ARCHIVE_FILENAME = "superlog_archive.jsonl"
-MAX_ARCHIVE_ENTRIES = 500   # ~1-2 years of daily rotations
+MAX_ARCHIVE_ENTRIES = 500  # ~1-2 years of daily rotations
 MAX_ARCHIVE_BYTES = 1024 * 1024  # 1MB hard cap
 
 # File output level — only this level and above gets written to disk
@@ -90,8 +95,10 @@ _cycle_stats = threading.local()
 # Log file setup
 # ---------------------------------------------------------------------------
 
-def init_super_log(log_dir: str = None, file_level: str = "info",
-                   terminal_level: str = "info"):
+
+def init_super_log(
+    log_dir: str = None, file_level: str = "info", terminal_level: str = "info"
+):
     """Initialize super logging — call once at startup.
 
     Args:
@@ -114,6 +121,7 @@ def init_super_log(log_dir: str = None, file_level: str = "info",
         # writable regardless of install location.
         try:
             from user_paths import log_dir as _user_log_dir
+
             log_dir = _user_log_dir()
         except Exception:
             log_dir = os.path.dirname(os.path.abspath(__file__))
@@ -137,8 +145,14 @@ def init_super_log(log_dir: str = None, file_level: str = "info",
     slog("SUPER_LOG", f"Logging to {_log_path}")
     slog("SUPER_LOG", f"Python {sys.version}")
     slog("SUPER_LOG", f"PID: {os.getpid()}, Threads: {threading.active_count()}")
-    slog("SUPER_LOG", f"File level: {file_level.upper()}, Terminal level: {terminal_level.upper()}")
-    slog("SUPER_LOG", f"Rotation: max {MAX_LOG_SIZE_MB}MB/file, keep {MAX_LOG_FILES} files")
+    slog(
+        "SUPER_LOG",
+        f"File level: {file_level.upper()}, Terminal level: {terminal_level.upper()}",
+    )
+    slog(
+        "SUPER_LOG",
+        f"Rotation: max {MAX_LOG_SIZE_MB}MB/file, keep {MAX_LOG_FILES} files",
+    )
     slog("SUPER_LOG", f"Error context buffer: {RING_BUFFER_SIZE} lines")
 
     return _log_path
@@ -168,12 +182,14 @@ def _cleanup_old_logs(log_dir: str):
         pattern = os.path.join(log_dir, "bot_superlog_*.log")
         log_files = sorted(glob.glob(pattern))
         if len(log_files) > MAX_LOG_FILES:
-            to_delete = log_files[:len(log_files) - MAX_LOG_FILES]
+            to_delete = log_files[: len(log_files) - MAX_LOG_FILES]
             for f in to_delete:
                 try:
                     os.remove(f)
                     if sys.__stdout__ is not None:
-                        sys.__stdout__.write(f"[SUPER_LOG] Cleaned up old log: {os.path.basename(f)}\n")
+                        sys.__stdout__.write(
+                            f"[SUPER_LOG] Cleaned up old log: {os.path.basename(f)}\n"
+                        )
                 except OSError:
                     pass
     except Exception:
@@ -206,7 +222,10 @@ def _rotate_if_needed():
         # Archive the old log before cleanup might delete it
         _archive_log_digest(old_path)
 
-        slog("SUPER_LOG", f"Rotated log: {os.path.basename(old_path)} -> {os.path.basename(_log_path)}")
+        slog(
+            "SUPER_LOG",
+            f"Rotated log: {os.path.basename(old_path)} -> {os.path.basename(_log_path)}",
+        )
         _cleanup_old_logs(_log_dir)
     except Exception as e:
         if sys.__stderr__ is not None:
@@ -216,6 +235,7 @@ def _rotate_if_needed():
 # ---------------------------------------------------------------------------
 # Archive digest — compact summary of each rotated log file
 # ---------------------------------------------------------------------------
+
 
 def _archive_log_digest(log_path: str):
     """Extract a compact digest from a rotated log file and append to archive.
@@ -275,7 +295,7 @@ def _archive_log_digest(log_path: str):
                         # Extract fill count from cycle summary
                         idx = line.index("fills=")
                         num_str = ""
-                        for c in line[idx + 6:idx + 10]:
+                        for c in line[idx + 6 : idx + 10]:
                             if c.isdigit():
                                 num_str += c
                             else:
@@ -334,14 +354,16 @@ def _prune_archive(archive_path: str):
             return
 
         # Keep the most recent entries
-        keep = lines[-MAX_ARCHIVE_ENTRIES:] if len(lines) > MAX_ARCHIVE_ENTRIES else lines
+        keep = (
+            lines[-MAX_ARCHIVE_ENTRIES:] if len(lines) > MAX_ARCHIVE_ENTRIES else lines
+        )
 
         # If still over size limit, keep fewer
         while len(keep) > 10:
             total = sum(len(line) for line in keep)
             if total <= MAX_ARCHIVE_BYTES:
                 break
-            keep = keep[len(keep) // 4:]  # Drop oldest quarter
+            keep = keep[len(keep) // 4 :]  # Drop oldest quarter
 
         with open(archive_path, "w", encoding="utf-8") as f:
             f.writelines(keep)
@@ -418,7 +440,9 @@ class _TeeWriter:
         except UnicodeEncodeError:
             encoding = getattr(self._original, "encoding", None) or "utf-8"
             try:
-                safe_text = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+                safe_text = text.encode(encoding, errors="replace").decode(
+                    encoding, errors="replace"
+                )
             except Exception:
                 safe_text = text.encode("ascii", errors="replace").decode("ascii")
             try:
@@ -464,6 +488,7 @@ class _TeeWriter:
 # ---------------------------------------------------------------------------
 # Main logging function
 # ---------------------------------------------------------------------------
+
 
 def slog(category: str, message: str, data: dict = None, level: str = "info"):
     """Log a structured event with level-based filtering.
@@ -524,9 +549,12 @@ def slog(category: str, message: str, data: dict = None, level: str = "info"):
     # This prevents a single repeated failure (e.g. no_unique_coin_preselected
     # during a coin-prep shortage) from burning through all MAX_ERROR_DUMPS slots
     # and leaving no budget for genuinely unexpected errors later in the session.
-    if (lvl >= LEVELS["error"] and _initialized
-            and _error_dump_count < MAX_ERROR_DUMPS
-            and category not in _error_dump_seen_categories):
+    if (
+        lvl >= LEVELS["error"]
+        and _initialized
+        and _error_dump_count < MAX_ERROR_DUMPS
+        and category not in _error_dump_seen_categories
+    ):
         _error_dump_seen_categories.add(category)
         _error_dump_count += 1
         _dump_error_context(category, message)
@@ -549,11 +577,13 @@ def _dump_error_context(error_category: str, error_message: str):
                 return
             global _bytes_written
             separator = "=" * 80
-            header = (f"\n{separator}\n"
-                      f"ERROR CONTEXT DUMP #{_error_dump_count} — "
-                      f"{error_category}: {error_message}\n"
-                      f"Last {len(_ring_buffer)} verbose log lines before this error:\n"
-                      f"{separator}\n")
+            header = (
+                f"\n{separator}\n"
+                f"ERROR CONTEXT DUMP #{_error_dump_count} — "
+                f"{error_category}: {error_message}\n"
+                f"Last {len(_ring_buffer)} verbose log lines before this error:\n"
+                f"{separator}\n"
+            )
             _log_file.write(header)
             _bytes_written += len(header)
 
@@ -581,6 +611,7 @@ def _dump_error_context(error_category: str, error_message: str):
 # Only flag genuinely stuck queries (5+ seconds).
 SLOW_QUERY_MS = 5000
 
+
 def make_sql_trace_callback(conn_id: str):
     """Create a SQL trace callback that's much quieter than v1.
 
@@ -593,8 +624,12 @@ def make_sql_trace_callback(conn_id: str):
 
     def _flush_bulk_summary():
         if _bulk_state["suppressed"] > 0:
-            slog("SQL", f"[bulk] {_bulk_state['suppressed']} ops on '{_bulk_state['last_table']}' (suppressed)",
-                 {"conn": conn_id}, level="debug")
+            slog(
+                "SQL",
+                f"[bulk] {_bulk_state['suppressed']} ops on '{_bulk_state['last_table']}' (suppressed)",
+                {"conn": conn_id},
+                level="debug",
+            )
             _bulk_state["suppressed"] = 0
             _bulk_state["last_table"] = ""
 
@@ -639,8 +674,12 @@ def make_sql_trace_callback(conn_id: str):
         # Keep long gaps as debug context only. They often just mean the
         # connection was idle between queries, not that the SQL itself was slow.
         if gap_ms > SLOW_QUERY_MS:
-            slog("SQL_GAP", display, {"conn": conn_id, "gap_ms": f"{gap_ms:.0f}"},
-                 level="debug")
+            slog(
+                "SQL_GAP",
+                display,
+                {"conn": conn_id, "gap_ms": f"{gap_ms:.0f}"},
+                level="debug",
+            )
         else:
             # Normal query → TRACE only (ring buffer, not file)
             slog("SQL", display, {"conn": conn_id}, level="trace")
@@ -666,6 +705,7 @@ def trace_connection(conn: sqlite3.Connection, label: str = None):
 # Function timing decorator
 # ---------------------------------------------------------------------------
 
+
 def timed(category: str = "TIMING", slow_ms: float = 500):
     """Decorator to log function timing.
 
@@ -674,6 +714,7 @@ def timed(category: str = "TIMING", slow_ms: float = 500):
     - Very slow execution (>max(slow_ms * 10, 5000ms)) → WARN level
     - Errors → ERROR level (triggers context dump)
     """
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             fname = func.__qualname__
@@ -688,22 +729,34 @@ def timed(category: str = "TIMING", slow_ms: float = 500):
                     lvl = "info"
                 else:
                     lvl = "debug"
-                slog(category, f"<<< {fname}", {"time_ms": f"{elapsed_ms:.1f}"}, level=lvl)
+                slog(
+                    category,
+                    f"<<< {fname}",
+                    {"time_ms": f"{elapsed_ms:.1f}"},
+                    level=lvl,
+                )
                 return result
             except Exception as e:
                 elapsed_ms = (time.time() - start) * 1000
-                slog(category, f"!!! {fname} ERROR: {e}",
-                     {"time_ms": f"{elapsed_ms:.1f}"}, level="error")
+                slog(
+                    category,
+                    f"!!! {fname} ERROR: {e}",
+                    {"time_ms": f"{elapsed_ms:.1f}"},
+                    level="error",
+                )
                 raise
+
         wrapper.__name__ = func.__name__
         wrapper.__qualname__ = func.__qualname__
         return wrapper
+
     return decorator
 
 
 # ---------------------------------------------------------------------------
 # Cycle summary — replaces 50+ per-cycle lines with one compact line
 # ---------------------------------------------------------------------------
+
 
 def start_cycle(cycle_num: int):
     """Call at start of each bot loop cycle."""
@@ -727,23 +780,27 @@ def cycle_count(key: str, value: int = 1):
 
 def cycle_note(note: str):
     """Add a short note to the cycle summary."""
-    notes = getattr(_cycle_stats, 'notes', [])
+    notes = getattr(_cycle_stats, "notes", [])
     notes.append(note)
     _cycle_stats.notes = notes
 
 
-def end_cycle(mid_price: float = 0, spread_bps: float = 0,
-              inventory: float = 0, open_offers: int = 0):
+def end_cycle(
+    mid_price: float = 0,
+    spread_bps: float = 0,
+    inventory: float = 0,
+    open_offers: int = 0,
+):
     """Call at end of each bot loop cycle — logs one compact summary line."""
-    elapsed_ms = (time.time() - getattr(_cycle_stats, 'start_time', time.time())) * 1000
-    cycle_num = getattr(_cycle_stats, 'cycle_num', '?')
-    fills = getattr(_cycle_stats, 'fills', 0)
-    created = getattr(_cycle_stats, 'offers_created', 0)
-    cancelled = getattr(_cycle_stats, 'offers_cancelled', 0)
-    snipes = getattr(_cycle_stats, 'snipes', 0)
-    requotes = getattr(_cycle_stats, 'requotes', 0)
-    errors = getattr(_cycle_stats, 'errors', 0)
-    notes = getattr(_cycle_stats, 'notes', [])
+    elapsed_ms = (time.time() - getattr(_cycle_stats, "start_time", time.time())) * 1000
+    cycle_num = getattr(_cycle_stats, "cycle_num", "?")
+    fills = getattr(_cycle_stats, "fills", 0)
+    created = getattr(_cycle_stats, "offers_created", 0)
+    cancelled = getattr(_cycle_stats, "offers_cancelled", 0)
+    snipes = getattr(_cycle_stats, "snipes", 0)
+    requotes = getattr(_cycle_stats, "requotes", 0)
+    errors = getattr(_cycle_stats, "errors", 0)
+    notes = getattr(_cycle_stats, "notes", [])
 
     data = {
         "cycle": cycle_num,
@@ -774,12 +831,17 @@ def end_cycle(mid_price: float = 0, spread_bps: float = 0,
 # Thread tracker
 # ---------------------------------------------------------------------------
 
+
 def log_thread_start(name: str = None):
     """Call at the start of a background thread to log it."""
     t = threading.current_thread()
     thread_name = name or t.name
-    slog("THREAD", f"Thread started: {thread_name}",
-         {"total_threads": threading.active_count()}, level="info")
+    slog(
+        "THREAD",
+        f"Thread started: {thread_name}",
+        {"total_threads": threading.active_count()},
+        level="info",
+    )
 
 
 def log_thread_stop(name: str = None):
@@ -795,11 +857,13 @@ def log_thread_stop(name: str = None):
 
 _original_log_event = None
 
+
 def intercept_log_event():
     """Monkey-patch database.log_event() to also write to super_log."""
     global _original_log_event
     try:
         import database
+
         current_log_event = database.log_event
         original_log_event = current_log_event
 
@@ -830,8 +894,12 @@ def intercept_log_event():
 
         def _patched_log_event(severity, event_type, message, data=None):
             lvl = _severity_map.get(severity.lower(), "info")
-            slog("EVENT", f"[{severity.upper():7s}] [{event_type}] {message}",
-                 data if data else None, level=lvl)
+            slog(
+                "EVENT",
+                f"[{severity.upper():7s}] [{event_type}] {message}",
+                data if data else None,
+                level=lvl,
+            )
             return original_log_event(severity, event_type, message, data)
 
         _patched_log_event._super_log_interceptor = True
@@ -842,11 +910,22 @@ def intercept_log_event():
         # Also patch modules that imported log_event directly (from database import log_event)
         # These hold stale references and bypass the database.log_event monkey-patch.
         import sys
+
         _direct_import_modules = [
-            "coin_manager", "bot_loop", "offer_manager", "fill_tracker",
-            "risk_manager", "price_engine", "market_intel", "sniper",
-            "boost_manager", "splash_manager", "dexie_manager",
-            "coin_prep_worker", "wallet_sage", "wallet_chia",
+            "coin_manager",
+            "bot_loop",
+            "offer_manager",
+            "fill_tracker",
+            "risk_manager",
+            "price_engine",
+            "market_intel",
+            "sniper",
+            "boost_manager",
+            "splash_manager",
+            "dexie_manager",
+            "coin_prep_worker",
+            "wallet_sage",
+            "wallet_chia",
         ]
         for _mod_name in _direct_import_modules:
             _mod = sys.modules.get(_mod_name)
@@ -865,26 +944,36 @@ def intercept_log_event():
 # DB operation wrappers
 # ---------------------------------------------------------------------------
 
+
 def log_db_write(operation: str, detail: str = ""):
     """Log a database write operation."""
     thread = threading.current_thread().name
-    slog("DB_WRITE", f"{operation}",
-         {"thread": thread, "detail": detail} if detail else {"thread": thread},
-         level="debug")
+    slog(
+        "DB_WRITE",
+        f"{operation}",
+        {"thread": thread, "detail": detail} if detail else {"thread": thread},
+        level="debug",
+    )
 
 
 def log_db_lock(operation: str, wait_ms: float = 0):
     """Log a database lock event."""
     thread = threading.current_thread().name
     lvl = "warn" if wait_ms > 100 else "debug"
-    slog("DB_LOCK", f"{operation}",
-         {"thread": thread, "wait_ms": f"{wait_ms:.1f}"} if wait_ms else {"thread": thread},
-         level=lvl)
+    slog(
+        "DB_LOCK",
+        f"{operation}",
+        {"thread": thread, "wait_ms": f"{wait_ms:.1f}"}
+        if wait_ms
+        else {"thread": thread},
+        level=lvl,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Diagnostic: get logging stats
 # ---------------------------------------------------------------------------
+
 
 def get_log_stats() -> dict:
     """Return current logging statistics for the GUI/API."""
@@ -932,6 +1021,7 @@ def get_log_stats() -> dict:
 # Cleanup
 # ---------------------------------------------------------------------------
 
+
 def close_super_log():
     """Close the log file cleanly."""
     global _log_file, _initialized
@@ -953,4 +1043,3 @@ def close_super_log():
 def get_log_path() -> str:
     """Return the path to the current log file."""
     return _log_path
-

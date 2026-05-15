@@ -6,22 +6,26 @@ import unittest
 from decimal import Decimal
 
 
-_MODS_TO_RESTORE = ("coin_manager", "tx_fees", "wallet", "wallet_sage",
-                    "database", "config")
+_MODS_TO_RESTORE = (
+    "coin_manager",
+    "tx_fees",
+    "wallet",
+    "wallet_sage",
+    "database",
+    "config",
+)
 
 
 class CoinManagerFeePoolTests(unittest.TestCase):
     def setUp(self):
         self._saved_wallet_type = os.environ.get("WALLET_TYPE")
         os.environ["WALLET_TYPE"] = "chia"
-        self._saved_modules = {
-            name: sys.modules.get(name) for name in _MODS_TO_RESTORE
-        }
+        self._saved_modules = {name: sys.modules.get(name) for name in _MODS_TO_RESTORE}
 
         _TIER_SIZES = {
-            "inner":   Decimal("1.0"),
-            "mid":     Decimal("0.5"),
-            "outer":   Decimal("0.25"),
+            "inner": Decimal("1.0"),
+            "mid": Decimal("0.5"),
+            "outer": Decimal("0.25"),
             "extreme": Decimal("0.1"),
         }
 
@@ -73,10 +77,18 @@ class CoinManagerFeePoolTests(unittest.TestCase):
         sys.modules["database"] = fake_database
 
         fake_wallet = types.ModuleType("wallet")
-        fake_wallet.get_exact_spendable_coins_rpc = lambda wallet_id: {"success": True, "records": []}
+        fake_wallet.get_exact_spendable_coins_rpc = lambda wallet_id: {
+            "success": True,
+            "records": [],
+        }
         fake_wallet.get_all_coins_for_wallet = lambda *args, **kwargs: []
-        fake_wallet.get_wallet_balance = lambda *args, **kwargs: {"wallet_balance": {"spendable_balance": 0}}
-        fake_wallet.get_next_address = lambda *args, **kwargs: {"success": True, "address": "xch1test"}
+        fake_wallet.get_wallet_balance = lambda *args, **kwargs: {
+            "wallet_balance": {"spendable_balance": 0}
+        }
+        fake_wallet.get_next_address = lambda *args, **kwargs: {
+            "success": True,
+            "address": "xch1test",
+        }
         fake_wallet.send_transaction = lambda *args, **kwargs: {"success": True}
         fake_wallet.split_coins_rpc = lambda *args, **kwargs: {"success": True}
         fake_wallet.get_wallet_type = lambda: "chia"

@@ -47,15 +47,17 @@ _coin_prep_trigger_lock = threading.Lock()
 
 def _coin_prep_already_running_response(reason: str):
     """Return a successful idempotent response for duplicate prep starts."""
-    return jsonify({
-        "success": True,
-        "status": "already_running",
-        "message": (
-            "Coin prep is already starting."
-            if reason == "starting"
-            else "Coin prep is already running."
-        ),
-    })
+    return jsonify(
+        {
+            "success": True,
+            "status": "already_running",
+            "message": (
+                "Coin prep is already starting."
+                if reason == "starting"
+                else "Coin prep is already running."
+            ),
+        }
+    )
 
 
 def _coin_prep_is_active(bot) -> bool:
@@ -93,9 +95,10 @@ def _tier_size_drift_findings() -> list[dict]:
 
     from coin_manager import check_tier_size_drift_standalone
 
-    return check_tier_size_drift_standalone(
-        low_ratio=0.50, high_ratio=2.00, min_sample=2
-    ) or []
+    return (
+        check_tier_size_drift_standalone(low_ratio=0.50, high_ratio=2.00, min_sample=2)
+        or []
+    )
 
 
 def _format_tier_size_drift(findings: list[dict]) -> str:
@@ -116,7 +119,9 @@ def _tier_size_drift_message(findings: list[dict]) -> str:
     return f"{base} Drift: {summary}" if summary else base
 
 
-def _mark_payload_needs_coin_prep_for_drift(payload: dict, findings: list[dict]) -> None:
+def _mark_payload_needs_coin_prep_for_drift(
+    payload: dict, findings: list[dict]
+) -> None:
     """Make an otherwise-ready coin-prep payload fail readiness on drift."""
     if not findings:
         return
@@ -170,10 +175,14 @@ def api_coins():
     except Exception as _refresh_err:
         # Don't fail the endpoint if the refresh glitches; the cached
         # status is still better than a 500.
-        log_event("debug", "api_coins_refresh_failed",
-                  f"On-demand coin refresh failed: {_refresh_err}")
+        log_event(
+            "debug",
+            "api_coins_refresh_failed",
+            f"On-demand coin refresh failed: {_refresh_err}",
+        )
 
     return jsonify(bot.coin_manager.get_status())
+
 
 @bp.route("/api/coins/topup", methods=["POST"])
 def api_coin_topup():
@@ -184,17 +193,20 @@ def api_coin_topup():
 
     # Block if bot is live — topup splits coins and races with offer creation
     if bot.is_running():
-        return jsonify({
-            "error": "Stop the bot before manual top-up. "
-                     "The bot handles top-up automatically while running.",
-            "requires_stop": True,
-        }), 409
+        return jsonify(
+            {
+                "error": "Stop the bot before manual top-up. "
+                "The bot handles top-up automatically while running.",
+                "requires_stop": True,
+            }
+        ), 409
 
     open_buys = bot.offer_manager.get_open_offer_count("buy")
     open_sells = bot.offer_manager.get_open_offer_count("sell")
 
     started = bot.coin_manager.start_topup(open_buys, open_sells)
     return jsonify({"status": "started" if started else "already_running"})
+
 
 @bp.route("/api/coins/prep", methods=["POST"])
 def api_coin_prep():
@@ -205,15 +217,18 @@ def api_coin_prep():
 
     # Block if bot is live — coin prep splits/combines and races with offer creation
     if bot.is_running():
-        return jsonify({
-            "error": "Stop the bot before manual coin prep. "
-                     "Runtime top-up can refill prepared spares while running; "
-                     "full coin prep cancels and rebuilds the wallet layout.",
-            "requires_stop": True,
-        }), 409
+        return jsonify(
+            {
+                "error": "Stop the bot before manual coin prep. "
+                "Runtime top-up can refill prepared spares while running; "
+                "full coin prep cancels and rebuilds the wallet layout.",
+                "requires_stop": True,
+            }
+        ), 409
 
     started = bot.coin_manager.start_coin_prep()
     return jsonify({"status": "started" if started else "already_running"})
+
 
 @bp.route("/api/db/backup", methods=["POST"])
 def api_db_backup():
@@ -228,6 +243,7 @@ def api_db_backup():
     except Exception:
         return api_server._api_exception(request.path)
 
+
 @bp.route("/api/logs")
 def api_logs():
     """Get recent log events — only from current session.
@@ -240,9 +256,12 @@ def api_logs():
     category = request.args.get("category") or None  # e.g. offer/pricing/risk
     try:
         from database import get_events_since, get_recent_events
+
         # Pick the most recent cutoff — session start vs user clear
         cutoff = api_server._session_start_time
-        if api_server._logs_cleared_at and (not cutoff or api_server._logs_cleared_at > cutoff):
+        if api_server._logs_cleared_at and (
+            not cutoff or api_server._logs_cleared_at > cutoff
+        ):
             cutoff = api_server._logs_cleared_at
         if cutoff:
             events_list = get_events_since(cutoff, limit=limit, category=category)
@@ -251,6 +270,7 @@ def api_logs():
         return jsonify({"logs": api_server._serialize_list(events_list)})
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/log", methods=["POST"])
 def api_log_event():
@@ -283,22 +303,35 @@ def api_log_event():
 
         # Write to DB + push to SSE (log_event does both now)
         from database import log_event
+
         log_event(severity, event_type, message)
 
         # Emit a coin_change SSE event when coin prep hits key milestones
         # so the Chia dashboard can auto-refresh Coins/Balances/Wallet Status
         if event_type == "coin_prep":
-            coin_keywords = ["confirmed", "split", "consolidat", "pool",
-                             "coins)", "coin)", "COMPLETE", "verified"]
+            coin_keywords = [
+                "confirmed",
+                "split",
+                "consolidat",
+                "pool",
+                "coins)",
+                "coin)",
+                "COMPLETE",
+                "verified",
+            ]
             if any(kw.lower() in message.lower() for kw in coin_keywords):
-                api_server.events.emit("coin_change", {
-                    "source": "coin_prep",
-                    "message": message[:200],
-                })
+                api_server.events.emit(
+                    "coin_change",
+                    {
+                        "source": "coin_prep",
+                        "message": message[:200],
+                    },
+                )
 
         return jsonify({"success": True})
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/coin-prep/status")
 def api_coin_prep_status():
@@ -322,7 +355,10 @@ def api_coin_prep_status():
             if payload.get("running"):
                 return
 
-            is_complete = bool(payload.get("complete")) or str(payload.get("phase") or "") == "complete"
+            is_complete = (
+                bool(payload.get("complete"))
+                or str(payload.get("phase") or "") == "complete"
+            )
 
             try:
                 from database import get_coin_summary
@@ -360,9 +396,13 @@ def api_coin_prep_status():
 
                 payload["xch_coins"] = int(get_spendable_coin_count(WALLET_ID_XCH) or 0)
                 payload["xch_free_coins"] = payload["xch_coins"]
-                cat_wallet_id = getattr(cfg, "CAT_WALLET_ID", None) or getattr(bot, "cat_wallet_id", None)
+                cat_wallet_id = getattr(cfg, "CAT_WALLET_ID", None) or getattr(
+                    bot, "cat_wallet_id", None
+                )
                 if cat_wallet_id:
-                    payload["cat_coins"] = int(get_spendable_coin_count(int(cat_wallet_id)) or 0)
+                    payload["cat_coins"] = int(
+                        get_spendable_coin_count(int(cat_wallet_id)) or 0
+                    )
                     payload["cat_free_coins"] = payload["cat_coins"]
             except Exception:
                 pass
@@ -390,7 +430,9 @@ def api_coin_prep_status():
                 # Only overlay the worker status when it belongs to the
                 # current run, or when there is no active/newer run in memory.
                 if is_current_run:
-                    result["phase"] = worker_status.get("phase", result.get("phase", "idle"))
+                    result["phase"] = worker_status.get(
+                        "phase", result.get("phase", "idle")
+                    )
                     result["progress"] = worker_status.get("progress", 0)
                     result["message"] = worker_status.get("message", "")
                     result["xch_coins"] = worker_status.get("xch_coins_current", 0)
@@ -435,13 +477,17 @@ def api_coin_prep_status():
                         _target_cat = 0
                         try:
                             _prep_path = os.path.join(
-                                _PACKAGE_DIR, "coin_prep_last.json",
+                                _PACKAGE_DIR,
+                                "coin_prep_last.json",
                             )
                             if os.path.exists(_prep_path):
                                 with open(_prep_path, "r") as _pf:
                                     _last = json.load(_pf)
 
-                                from wallet import get_spendable_coins_rpc, WALLET_ID_XCH
+                                from wallet import (
+                                    get_spendable_coins_rpc,
+                                    WALLET_ID_XCH,
+                                )
                                 from config import cfg as _cfg
 
                                 _cat_wid = int(
@@ -458,16 +504,24 @@ def api_coin_prep_status():
                                 # Fetch spendable coins from wallet
                                 _xr = get_spendable_coins_rpc(WALLET_ID_XCH)
                                 _cr = get_spendable_coins_rpc(_cat_wid)
-                                _xch_coins = [
-                                    r.get("coin", {}).get("amount", 0)
-                                    for r in (_xr or {}).get("records", [])
-                                    if r.get("coin", {}).get("amount", 0) > 0
-                                ] if _xr and _xr.get("success") else []
-                                _cat_coins = [
-                                    r.get("coin", {}).get("amount", 0)
-                                    for r in (_cr or {}).get("records", [])
-                                    if r.get("coin", {}).get("amount", 0) > 0
-                                ] if _cr and _cr.get("success") else []
+                                _xch_coins = (
+                                    [
+                                        r.get("coin", {}).get("amount", 0)
+                                        for r in (_xr or {}).get("records", [])
+                                        if r.get("coin", {}).get("amount", 0) > 0
+                                    ]
+                                    if _xr and _xr.get("success")
+                                    else []
+                                )
+                                _cat_coins = (
+                                    [
+                                        r.get("coin", {}).get("amount", 0)
+                                        for r in (_cr or {}).get("records", [])
+                                        if r.get("coin", {}).get("amount", 0) > 0
+                                    ]
+                                    if _cr and _cr.get("success")
+                                    else []
+                                )
 
                                 def _alloc_match(coins_list, requests, tol):
                                     """Allocate coins disjointly to tiers."""
@@ -481,7 +535,11 @@ def api_coin_prep_status():
                                             continue
                                         lo = int(target_m * (1 - tol))
                                         hi = int(target_m * (1 + tol))
-                                        hits = [i for i, a in enumerate(remaining) if lo <= a <= hi]
+                                        hits = [
+                                            i
+                                            for i, a in enumerate(remaining)
+                                            if lo <= a <= hi
+                                        ]
                                         take = min(needed, len(hits))
                                         allocated[tier] = take
                                         for i in reversed(hits[:take]):
@@ -505,7 +563,9 @@ def api_coin_prep_status():
                                         if _xsz > 0 and _cnt > 0:
                                             _xreqs.append((_t, int(_xsz * 1e12), _cnt))
                                         if _csz > 0 and _cnt > 0:
-                                            _creqs.append((_t, int(_csz * (10 ** _cat_dec)), _cnt))
+                                            _creqs.append(
+                                                (_t, int(_csz * (10**_cat_dec)), _cnt)
+                                            )
                                     _xa = _alloc_match(_xch_coins, _xreqs, _tol)
                                     _ca = _alloc_match(_cat_coins, _creqs, _tol)
                                     for _t, _cnt in _tc.items():
@@ -522,7 +582,11 @@ def api_coin_prep_status():
                                     _matched_cat = sum(_ca.values())
                                 else:
                                     # Flat mode
-                                    _xsz = float(_last.get("xch_coin_size") or _last.get("prepared_trade_size_xch") or 0)
+                                    _xsz = float(
+                                        _last.get("xch_coin_size")
+                                        or _last.get("prepared_trade_size_xch")
+                                        or 0
+                                    )
                                     _csz = float(_last.get("cat_coin_size") or 0)
                                     _xt = int(_last.get("xch_target") or 0)
                                     _ct = int(_last.get("cat_target") or 0)
@@ -532,18 +596,24 @@ def api_coin_prep_status():
                                         _xm = int(_xsz * 1e12)
                                         _lo = int(_xm * (1 - _tol))
                                         _hi = int(_xm * (1 + _tol))
-                                        _matched_xch = sum(1 for c in _xch_coins if _lo <= c <= _hi)
+                                        _matched_xch = sum(
+                                            1 for c in _xch_coins if _lo <= c <= _hi
+                                        )
                                         if _matched_xch < _xt:
                                             _all_ok = False
                                     if _csz > 0 and _ct > 0:
-                                        _cm = int(_csz * (10 ** _cat_dec))
+                                        _cm = int(_csz * (10**_cat_dec))
                                         _lo = int(_cm * (1 - _tol))
                                         _hi = int(_cm * (1 + _tol))
-                                        _matched_cat = sum(1 for c in _cat_coins if _lo <= c <= _hi)
+                                        _matched_cat = sum(
+                                            1 for c in _cat_coins if _lo <= c <= _hi
+                                        )
                                         if _matched_cat < _ct:
                                             _all_ok = False
 
-                                _prev_ok = _all_ok and (_target_xch > 0 or _target_cat > 0)
+                                _prev_ok = _all_ok and (
+                                    _target_xch > 0 or _target_cat > 0
+                                )
                         except Exception:
                             _prev_ok = False
 
@@ -623,7 +693,8 @@ def api_coin_prep_status():
                 recent_events = get_recent_events(limit=600)
 
             prep_events = [
-                evt for evt in reversed(recent_events)
+                evt
+                for evt in reversed(recent_events)
                 if str(evt.get("event_type", "")).startswith("coin_prep")
             ]
 
@@ -639,6 +710,7 @@ def api_coin_prep_status():
         return jsonify(result)
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/coin-prep/verify")
 def api_coin_prep_verify():
@@ -662,11 +734,17 @@ def api_coin_prep_verify():
         from wallet import get_spendable_coins_rpc, get_wallet_balance, WALLET_ID_XCH
         from config import cfg
 
-        cat_wallet_id = int(api_server._active_cat.get("wallet_id") or getattr(cfg, "CAT_WALLET_ID", 2) or 2)
+        cat_wallet_id = int(
+            api_server._active_cat.get("wallet_id")
+            or getattr(cfg, "CAT_WALLET_ID", 2)
+            or 2
+        )
         tier_enabled = request.args.get("tier_enabled", "false").lower() == "true"
-        liquidity_mode = (request.args.get("liquidity_mode")
-                          or getattr(cfg, "LIQUIDITY_MODE", "two_sided")
-                          or "two_sided").lower()
+        liquidity_mode = (
+            request.args.get("liquidity_mode")
+            or getattr(cfg, "LIQUIDITY_MODE", "two_sided")
+            or "two_sided"
+        ).lower()
         if liquidity_mode not in ("two_sided", "buy_only", "sell_only"):
             liquidity_mode = "two_sided"
         tolerance = 0.05  # 5% tolerance for matching coin sizes
@@ -681,12 +759,16 @@ def api_coin_prep_verify():
         cat_balance_mojos = 0
         if xch_bal_result and isinstance(xch_bal_result, dict):
             wb = xch_bal_result.get("wallet_balance") or xch_bal_result
-            xch_balance_mojos = wb.get("confirmed_wallet_balance", 0) or wb.get("spendable_balance", 0)
+            xch_balance_mojos = wb.get("confirmed_wallet_balance", 0) or wb.get(
+                "spendable_balance", 0
+            )
             if isinstance(xch_balance_mojos, str):
                 xch_balance_mojos = int(xch_balance_mojos)
         if cat_bal_result and isinstance(cat_bal_result, dict):
             wb = cat_bal_result.get("wallet_balance") or cat_bal_result
-            cat_balance_mojos = wb.get("confirmed_wallet_balance", 0) or wb.get("spendable_balance", 0)
+            cat_balance_mojos = wb.get("confirmed_wallet_balance", 0) or wb.get(
+                "spendable_balance", 0
+            )
             if isinstance(cat_balance_mojos, str):
                 cat_balance_mojos = int(cat_balance_mojos)
 
@@ -708,7 +790,9 @@ def api_coin_prep_verify():
                 if amt > 0:
                     cat_coins.append(amt)
 
-        cat_decimals = int(api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3))
+        cat_decimals = int(
+            api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+        )
 
         def count_matching(coins_list, target_mojos, tol):
             """Count coins within tolerance of target size."""
@@ -734,7 +818,9 @@ def api_coin_prep_verify():
                     continue
                 low = int(target_mojos * (1 - tol))
                 high = int(target_mojos * (1 + tol))
-                matched_positions = [idx for idx, amt in enumerate(remaining) if low <= amt <= high]
+                matched_positions = [
+                    idx for idx, amt in enumerate(remaining) if low <= amt <= high
+                ]
                 consume = min(needed, len(matched_positions))
                 allocated[tier] = consume
                 for idx in reversed(matched_positions[:consume]):
@@ -744,8 +830,12 @@ def api_coin_prep_verify():
 
         if tier_enabled:
             tiers = [
-                tier for tier in ["inner", "mid", "outer", "extreme", "sniper", "fees"]
-                if any(request.args.get(f"{tier}_{suffix}") is not None for suffix in ("xch", "cat", "count"))
+                tier
+                for tier in ["inner", "mid", "outer", "extreme", "sniper", "fees"]
+                if any(
+                    request.args.get(f"{tier}_{suffix}") is not None
+                    for suffix in ("xch", "cat", "count")
+                )
             ]
             if not tiers:
                 tiers = ["inner", "mid", "outer", "extreme"]
@@ -762,7 +852,7 @@ def api_coin_prep_verify():
                 is_xch_only_tier = tier == "fees" or cat_size <= 0
 
                 xch_mojos = int(xch_size * 1e12)
-                cat_mojos = int(cat_size * (10 ** cat_decimals))
+                cat_mojos = int(cat_size * (10**cat_decimals))
                 tier_specs[tier] = {
                     "xch_size": xch_size,
                     "cat_size": cat_size,
@@ -796,9 +886,13 @@ def api_coin_prep_verify():
                     and liquidity_mode != "buy_only"
                 )
                 sufficient = (
-                    ((not needs_xch) or xch_have >= needed)
-                    and ((not needs_cat) or cat_have >= needed)
-                ) if needed > 0 else True
+                    (
+                        ((not needs_xch) or xch_have >= needed)
+                        and ((not needs_cat) or cat_have >= needed)
+                    )
+                    if needed > 0
+                    else True
+                )
                 if not sufficient:
                     all_sufficient = False
 
@@ -823,7 +917,9 @@ def api_coin_prep_verify():
                 if liquidity_mode != "sell_only" or tier == "fees":
                     total_xch_needed_mojos += int(xch_size * 1e12) * needed
                 if liquidity_mode != "buy_only" and tier != "fees" and cat_size > 0:
-                    total_cat_needed_mojos += int(cat_size * (10 ** cat_decimals)) * needed
+                    total_cat_needed_mojos += (
+                        int(cat_size * (10**cat_decimals)) * needed
+                    )
 
             xch_balance_sufficient = xch_balance_mojos >= total_xch_needed_mojos
             cat_balance_sufficient = cat_balance_mojos >= total_cat_needed_mojos
@@ -836,7 +932,7 @@ def api_coin_prep_verify():
                     f"XCH balance too low: need {xch_need:.3f} XCH but only have {xch_have:.3f} XCH"
                 )
             if not cat_balance_sufficient and total_cat_needed_mojos > 0:
-                cat_unit = 10 ** cat_decimals
+                cat_unit = 10**cat_decimals
                 cat_need = total_cat_needed_mojos / cat_unit
                 cat_have = cat_balance_mojos / cat_unit
                 balance_warnings.append(
@@ -858,9 +954,9 @@ def api_coin_prep_verify():
                 "tiers": result_tiers,
                 "all_sufficient": all_sufficient,
                 "needs_coin_prep": not all_sufficient,
-                "reason": "tier_size_drift" if tier_drift else (
-                    "ready" if all_sufficient else "must_resize"
-                ),
+                "reason": "tier_size_drift"
+                if tier_drift
+                else ("ready" if all_sufficient else "must_resize"),
                 "xch_total": len(xch_coins),
                 "cat_total": len(cat_coins),
                 "xch_balance_mojos": xch_balance_mojos,
@@ -879,7 +975,9 @@ def api_coin_prep_verify():
         else:
             # Flat mode
             trade_size = float(request.args.get("trade_size", "0"))
-            prepared_xch_size = float(request.args.get("prepared_xch_size", str(trade_size or 0)))
+            prepared_xch_size = float(
+                request.args.get("prepared_xch_size", str(trade_size or 0))
+            )
             prepared_cat_size = float(request.args.get("prepared_cat_size", "0"))
             max_buy = int(request.args.get("max_buy", "0"))
             max_sell = int(request.args.get("max_sell", "0"))
@@ -891,7 +989,7 @@ def api_coin_prep_verify():
                 prepared_cat_size = trade_size
 
             xch_mojos = int(prepared_xch_size * 1e12)
-            cat_mojos = int(prepared_cat_size * (10 ** cat_decimals))
+            cat_mojos = int(prepared_cat_size * (10**cat_decimals))
 
             xch_right_size = count_matching(xch_coins, xch_mojos, tolerance)
             cat_right_size = count_matching(cat_coins, cat_mojos, tolerance)
@@ -911,7 +1009,7 @@ def api_coin_prep_verify():
                     f"XCH balance too low: need {xch_need:.3f} XCH but only have {xch_have:.3f} XCH"
                 )
             if not cat_balance_sufficient and total_cat_needed_mojos > 0:
-                cat_unit = 10 ** cat_decimals
+                cat_unit = 10**cat_decimals
                 cat_need = total_cat_needed_mojos / cat_unit
                 cat_have = cat_balance_mojos / cat_unit
                 balance_warnings.append(
@@ -920,27 +1018,35 @@ def api_coin_prep_verify():
 
             # Response fields are derived from numeric wallet balances and
             # deterministic coin-size counts.
-            return jsonify(api_server._client_safe_payload({
-                "success": True,
-                "tier_enabled": False,
-                "liquidity_mode": liquidity_mode,
-                "xch_coins_right_size": xch_right_size,
-                "cat_coins_right_size": cat_right_size,
-                "xch_needed": max_buy,
-                "cat_needed": max_sell,
-                "all_sufficient": (xch_right_size >= max_buy and cat_right_size >= max_sell),
-                "xch_total": len(xch_coins),
-                "cat_total": len(cat_coins),
-                "xch_balance_mojos": xch_balance_mojos,
-                "cat_balance_mojos": cat_balance_mojos,
-                "xch_needed_mojos": total_xch_needed_mojos,
-                "cat_needed_mojos": total_cat_needed_mojos,
-                "balance_sufficient": xch_balance_sufficient and cat_balance_sufficient,
-                "balance_warnings": balance_warnings,
-            }))
+            return jsonify(
+                api_server._client_safe_payload(
+                    {
+                        "success": True,
+                        "tier_enabled": False,
+                        "liquidity_mode": liquidity_mode,
+                        "xch_coins_right_size": xch_right_size,
+                        "cat_coins_right_size": cat_right_size,
+                        "xch_needed": max_buy,
+                        "cat_needed": max_sell,
+                        "all_sufficient": (
+                            xch_right_size >= max_buy and cat_right_size >= max_sell
+                        ),
+                        "xch_total": len(xch_coins),
+                        "cat_total": len(cat_coins),
+                        "xch_balance_mojos": xch_balance_mojos,
+                        "cat_balance_mojos": cat_balance_mojos,
+                        "xch_needed_mojos": total_xch_needed_mojos,
+                        "cat_needed_mojos": total_cat_needed_mojos,
+                        "balance_sufficient": xch_balance_sufficient
+                        and cat_balance_sufficient,
+                        "balance_warnings": balance_warnings,
+                    }
+                )
+            )
 
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/coin-prep/trigger", methods=["POST"])
 def api_coin_prep_trigger():
@@ -967,7 +1073,6 @@ def _api_coin_prep_trigger_locked():
     """
     bot = api_server.bot
     try:
-
         # Read coin_multiplier and full_reset flag from request body NOW,
         # while we're still inside the Flask request context. The do_prep()
         # thread runs AFTER the HTTP response is sent, so request.get_json()
@@ -990,19 +1095,28 @@ def _api_coin_prep_trigger_locked():
         _prep_reset_pnl = bool(_prep_req_data.get("reset_pnl", _prep_full_reset))
         _prep_reset_offers = bool(_prep_req_data.get("reset_offer_history", False))
         _prep_reset_counters = bool(_prep_req_data.get("reset_counters", False))
-        log_event("info", "coin_prep_multiplier",
-                  f"Coin prep multiplier from GUI: {_prep_coin_multiplier}× "
-                  f"(reset_pnl={_prep_reset_pnl}, "
-                  f"reset_offers={_prep_reset_offers}, "
-                  f"reset_counters={_prep_reset_counters})")
+        log_event(
+            "info",
+            "coin_prep_multiplier",
+            f"Coin prep multiplier from GUI: {_prep_coin_multiplier}× "
+            f"(reset_pnl={_prep_reset_pnl}, "
+            f"reset_offers={_prep_reset_offers}, "
+            f"reset_counters={_prep_reset_counters})",
+        )
 
         # If a previous worker is still running, kill it first.
         # Two workers operating on the same wallet simultaneously causes
         # coin conflicts, failed splits, and wallet sync chaos.
-        if api_server._coin_prep_proc is not None and api_server._coin_prep_proc.poll() is None:
+        if (
+            api_server._coin_prep_proc is not None
+            and api_server._coin_prep_proc.poll() is None
+        ):
             old_pid = api_server._coin_prep_proc.pid
-            log_event("info", "coin_prep_kill",
-                      f"Killing previous coin prep worker (PID: {old_pid}) before starting new run")
+            log_event(
+                "info",
+                "coin_prep_kill",
+                f"Killing previous coin prep worker (PID: {old_pid}) before starting new run",
+            )
             try:
                 api_server._coin_prep_proc.terminate()
                 # Give it 3 seconds to exit gracefully, then force kill
@@ -1011,20 +1125,29 @@ def _api_coin_prep_trigger_locked():
                 except Exception:
                     api_server._coin_prep_proc.kill()
                     api_server._coin_prep_proc.wait(timeout=2)
-                log_event("info", "coin_prep_killed",
-                          f"Previous worker (PID: {old_pid}) terminated")
+                log_event(
+                    "info",
+                    "coin_prep_killed",
+                    f"Previous worker (PID: {old_pid}) terminated",
+                )
             except Exception as kill_err:
-                log_event("warning", "coin_prep_kill_failed",
-                          f"Could not kill PID {old_pid}: {kill_err}")
+                log_event(
+                    "warning",
+                    "coin_prep_kill_failed",
+                    f"Could not kill PID {old_pid}: {kill_err}",
+                )
             api_server._coin_prep_proc = None
 
         # Also kill any worker launched via coin_manager (bot loop path)
-        if bot and hasattr(bot, 'coin_manager') and bot.coin_manager._prep_process:
+        if bot and hasattr(bot, "coin_manager") and bot.coin_manager._prep_process:
             cm_proc = bot.coin_manager._prep_process
             if cm_proc.poll() is None:
                 cm_pid = cm_proc.pid
-                log_event("info", "coin_prep_kill",
-                          f"Killing coin_manager worker (PID: {cm_pid}) before starting new run")
+                log_event(
+                    "info",
+                    "coin_prep_kill",
+                    f"Killing coin_manager worker (PID: {cm_pid}) before starting new run",
+                )
                 try:
                     cm_proc.terminate()
                     try:
@@ -1055,12 +1178,18 @@ def _api_coin_prep_trigger_locked():
                 clear_inventory=True,
                 cancel_open_offers=True,
                 preserve_history=(not _prep_reset_pnl),
-                reason=("fresh_start_cleanup" if _prep_reset_pnl
-                        else "coin_prep_reprep_cleanup"),
+                reason=(
+                    "fresh_start_cleanup"
+                    if _prep_reset_pnl
+                    else "coin_prep_reprep_cleanup"
+                ),
             )
         except Exception as _clean_err:
-            log_event("warning", "fresh_start_cleanup_failed",
-                      f"DB cleanup before coin prep failed: {_clean_err}")
+            log_event(
+                "warning",
+                "fresh_start_cleanup_failed",
+                f"DB cleanup before coin prep failed: {_clean_err}",
+            )
 
         # Optional: delete terminal-state offer rows. Same SQL as the
         # standalone /api/reset/offer-history endpoint — live offers are
@@ -1078,15 +1207,21 @@ def _api_coin_prep_trigger_locked():
                 )
                 deleted = int(cur.rowcount or 0)
                 conn.commit()
-                log_event("info", "coin_prep_offer_history_cleared",
-                          f"Pre-prep: cleared {deleted} terminal-state offer rows")
+                log_event(
+                    "info",
+                    "coin_prep_offer_history_cleared",
+                    f"Pre-prep: cleared {deleted} terminal-state offer rows",
+                )
             except Exception as _hist_err:
                 try:
                     conn.rollback()
                 except Exception:
                     pass
-                log_event("warning", "coin_prep_offer_history_failed",
-                          f"Pre-prep offer-history clear failed: {_hist_err}")
+                log_event(
+                    "warning",
+                    "coin_prep_offer_history_failed",
+                    f"Pre-prep offer-history clear failed: {_hist_err}",
+                )
 
         # Optional: reset in-memory runtime counters (sniper / fill-tracker /
         # watchdog streaks / risk-manager position). Mirrors the counters
@@ -1102,7 +1237,9 @@ def _api_coin_prep_trigger_locked():
                     _sn = getattr(bot, "sniper", None)
                     if _sn is not None:
                         try:
-                            with getattr(_sn, "_snipe_lock", api_server._SNIPE_LOCK_NOOP):
+                            with getattr(
+                                _sn, "_snipe_lock", api_server._SNIPE_LOCK_NOOP
+                            ):
                                 _sn._total_snipes = 0
                                 _sn._total_skipped = 0
                                 if hasattr(_sn, "_snipe_history"):
@@ -1129,12 +1266,17 @@ def _api_coin_prep_trigger_locked():
                             _counters_reset.append("watchdog.streaks")
                     except Exception:
                         pass
-                log_event("info", "coin_prep_counters_reset",
-                          f"Pre-prep counter resets: "
-                          f"{','.join(_counters_reset) or 'none'}")
+                log_event(
+                    "info",
+                    "coin_prep_counters_reset",
+                    f"Pre-prep counter resets: {','.join(_counters_reset) or 'none'}",
+                )
             except Exception as _c_err:
-                log_event("warning", "coin_prep_counters_failed",
-                          f"Pre-prep counter reset partial: {_c_err}")
+                log_event(
+                    "warning",
+                    "coin_prep_counters_failed",
+                    f"Pre-prep counter reset partial: {_c_err}",
+                )
 
         # Balance gate removed — the /api/coin-prep/verify endpoint already checks
         # balance accurately before the confirm button is shown, and uses the same
@@ -1143,6 +1285,7 @@ def _api_coin_prep_trigger_locked():
 
         # Generate a unique run ID so we can distinguish old completions from new runs
         import uuid as _uuid
+
         run_id = str(_uuid.uuid4())[:8]
 
         api_server._coin_prep_state["running"] = True
@@ -1150,7 +1293,9 @@ def _api_coin_prep_trigger_locked():
         api_server._coin_prep_state["error"] = None
         api_server._coin_prep_state["phase"] = "idle"
         api_server._coin_prep_state["run_id"] = run_id
-        api_server._coin_prep_state["started_at"] = datetime.now(timezone.utc).isoformat()
+        api_server._coin_prep_state["started_at"] = datetime.now(
+            timezone.utc
+        ).isoformat()
 
         # CRITICAL: Stop the bot loop entirely during coin prep.
         # Just setting _prep_running is NOT enough — the bot loop's
@@ -1160,16 +1305,21 @@ def _api_coin_prep_trigger_locked():
         # coin prep completes.
         if bot and bot.is_running():
             bot.stop()
-            log_event("info", "coin_prep_bot_stopped",
-                      "Bot loop STOPPED for coin prep — press Start Bot after prep completes")
-            api_server.events.emit("bot_control", {"action": "stopped",
-                                        "reason": "coin_prep"})
+            log_event(
+                "info",
+                "coin_prep_bot_stopped",
+                "Bot loop STOPPED for coin prep — press Start Bot after prep completes",
+            )
+            api_server.events.emit(
+                "bot_control", {"action": "stopped", "reason": "coin_prep"}
+            )
 
         # Also set the flag as a safety belt
-        if bot and hasattr(bot, 'coin_manager'):
+        if bot and hasattr(bot, "coin_manager"):
             bot.coin_manager._prep_running = True
-            log_event("info", "coin_prep_gate",
-                      "Coin manager marked busy for coin prep")
+            log_event(
+                "info", "coin_prep_gate", "Coin manager marked busy for coin prep"
+            )
 
         # Write a fresh "starting" status file immediately.
         # This prevents the GUI from reading stale COMPLETE status
@@ -1186,7 +1336,7 @@ def _api_coin_prep_trigger_locked():
                 "cat_coins_target": 0,
                 "error": None,
                 "timestamp": time.time(),
-                "run_id": run_id
+                "run_id": run_id,
             }
             with open(status_file, "w") as f:
                 json.dump(fresh_status, f, indent=2)
@@ -1215,7 +1365,9 @@ def _api_coin_prep_trigger_locked():
                 worker_cmd = _coin_prep_worker_command(worker_path)
 
                 if not os.path.exists(worker_path):
-                    api_server._coin_prep_state["error"] = "coin_prep_worker.py not found"
+                    api_server._coin_prep_state["error"] = (
+                        "coin_prep_worker.py not found"
+                    )
                     api_server._coin_prep_state["running"] = False
                     return
 
@@ -1249,69 +1401,119 @@ def _api_coin_prep_trigger_locked():
                     # blows up the pool by 2x. Apply the reverse-buy flip to
                     # the size dict so it's consistent with the counts.
                     from config import get_buy_tier_size_xch, get_sell_tier_size_xch
+
                     # Launcher is in a separate function from Smart Settings,
                     # so `_buy_ladder_reversed` isn't in scope — read directly
                     # from config here.
-                    _buy_ladder_reversed = bool(getattr(cfg, "BUY_LADDER_REVERSED", False))
+                    _buy_ladder_reversed = bool(
+                        getattr(cfg, "BUY_LADDER_REVERSED", False)
+                    )
                     # Position-semantic buy sizes (from per-side helpers):
-                    _buy_inner_pos = Decimal(str(get_buy_tier_size_xch("inner")   or getattr(cfg, "INNER_SIZE_XCH", Decimal("1.0"))))
-                    _buy_mid_pos   = Decimal(str(get_buy_tier_size_xch("mid")     or getattr(cfg, "MID_SIZE_XCH", Decimal("0.5"))))
-                    _buy_outer_pos = Decimal(str(get_buy_tier_size_xch("outer")   or getattr(cfg, "OUTER_SIZE_XCH", Decimal("0.25"))))
-                    _buy_extr_pos  = Decimal(str(get_buy_tier_size_xch("extreme") or getattr(cfg, "EXTREME_SIZE_XCH", Decimal("0.1"))))
+                    _buy_inner_pos = Decimal(
+                        str(
+                            get_buy_tier_size_xch("inner")
+                            or getattr(cfg, "INNER_SIZE_XCH", Decimal("1.0"))
+                        )
+                    )
+                    _buy_mid_pos = Decimal(
+                        str(
+                            get_buy_tier_size_xch("mid")
+                            or getattr(cfg, "MID_SIZE_XCH", Decimal("0.5"))
+                        )
+                    )
+                    _buy_outer_pos = Decimal(
+                        str(
+                            get_buy_tier_size_xch("outer")
+                            or getattr(cfg, "OUTER_SIZE_XCH", Decimal("0.25"))
+                        )
+                    )
+                    _buy_extr_pos = Decimal(
+                        str(
+                            get_buy_tier_size_xch("extreme")
+                            or getattr(cfg, "EXTREME_SIZE_XCH", Decimal("0.1"))
+                        )
+                    )
                     if _buy_ladder_reversed:
                         # Under reverse-buy, SIZE inner (biggest XCH coin) is
                         # used by POSITION extreme, and SIZE extreme (smallest)
                         # is used by POSITION inner. Flip to match the
                         # size-indexed counts.
                         _buy_tier_sizes = {
-                            "inner":   _buy_extr_pos,  # size inner slot = pos extreme size (biggest)
-                            "mid":     _buy_outer_pos,
-                            "outer":   _buy_mid_pos,
-                            "extreme": _buy_inner_pos, # size extreme slot = pos inner size (smallest)
+                            "inner": _buy_extr_pos,  # size inner slot = pos extreme size (biggest)
+                            "mid": _buy_outer_pos,
+                            "outer": _buy_mid_pos,
+                            "extreme": _buy_inner_pos,  # size extreme slot = pos inner size (smallest)
                         }
                     else:
                         _buy_tier_sizes = {
-                            "inner":   _buy_inner_pos,
-                            "mid":     _buy_mid_pos,
-                            "outer":   _buy_outer_pos,
+                            "inner": _buy_inner_pos,
+                            "mid": _buy_mid_pos,
+                            "outer": _buy_outer_pos,
                             "extreme": _buy_extr_pos,
                         }
                     # Sell side is never flipped — sell positions always map
                     # to their same-named size tier.
                     _sell_tier_sizes = {
-                        "inner":   Decimal(str(get_sell_tier_size_xch("inner")   or getattr(cfg, "INNER_SIZE_XCH", Decimal("1.0")))),
-                        "mid":     Decimal(str(get_sell_tier_size_xch("mid")     or getattr(cfg, "MID_SIZE_XCH", Decimal("0.5")))),
-                        "outer":   Decimal(str(get_sell_tier_size_xch("outer")   or getattr(cfg, "OUTER_SIZE_XCH", Decimal("0.25")))),
-                        "extreme": Decimal(str(get_sell_tier_size_xch("extreme") or getattr(cfg, "EXTREME_SIZE_XCH", Decimal("0.1")))),
+                        "inner": Decimal(
+                            str(
+                                get_sell_tier_size_xch("inner")
+                                or getattr(cfg, "INNER_SIZE_XCH", Decimal("1.0"))
+                            )
+                        ),
+                        "mid": Decimal(
+                            str(
+                                get_sell_tier_size_xch("mid")
+                                or getattr(cfg, "MID_SIZE_XCH", Decimal("0.5"))
+                            )
+                        ),
+                        "outer": Decimal(
+                            str(
+                                get_sell_tier_size_xch("outer")
+                                or getattr(cfg, "OUTER_SIZE_XCH", Decimal("0.25"))
+                            )
+                        ),
+                        "extreme": Decimal(
+                            str(
+                                get_sell_tier_size_xch("extreme")
+                                or getattr(cfg, "EXTREME_SIZE_XCH", Decimal("0.1"))
+                            )
+                        ),
                     }
                     # Kept for backward compat with code below that reads
                     # `tier_sizes` as a single dict (it'll be the max of both
                     # sides, used only for the worker's legacy --tier-sizes
                     # arg). The per-side values also flow via new CLI args.
                     tier_sizes = {
-                        k: max(_buy_tier_sizes.get(k, Decimal("0")),
-                               _sell_tier_sizes.get(k, Decimal("0")))
+                        k: max(
+                            _buy_tier_sizes.get(k, Decimal("0")),
+                            _sell_tier_sizes.get(k, Decimal("0")),
+                        )
                         for k in ("inner", "mid", "outer", "extreme")
                     }
 
                     def _tier_count(prefix, tier):
-                        live = int(getattr(cfg, f"{prefix}_{tier.upper()}_TIER_COUNT", 0) or 0)
-                        spare = int(getattr(cfg, f"{prefix}_{tier.upper()}_TIER_SPARE_COUNT", 0) or 0)
+                        live = int(
+                            getattr(cfg, f"{prefix}_{tier.upper()}_TIER_COUNT", 0) or 0
+                        )
+                        spare = int(
+                            getattr(cfg, f"{prefix}_{tier.upper()}_TIER_SPARE_COUNT", 0)
+                            or 0
+                        )
                         return max(0, live + spare)
 
                     # ── Slot-position counts as configured by the user ──────
                     # These describe how many BUY/SELL offers sit at each
                     # ladder POSITION (inner=closest to mid, extreme=furthest).
                     buy_position_counts = {
-                        "inner":   _tier_count("BUY", "inner"),
-                        "mid":     _tier_count("BUY", "mid"),
-                        "outer":   _tier_count("BUY", "outer"),
+                        "inner": _tier_count("BUY", "inner"),
+                        "mid": _tier_count("BUY", "mid"),
+                        "outer": _tier_count("BUY", "outer"),
                         "extreme": _tier_count("BUY", "extreme"),
                     }
                     sell_position_counts = {
-                        "inner":   _tier_count("SELL", "inner"),
-                        "mid":     _tier_count("SELL", "mid"),
-                        "outer":   _tier_count("SELL", "outer"),
+                        "inner": _tier_count("SELL", "inner"),
+                        "mid": _tier_count("SELL", "mid"),
+                        "outer": _tier_count("SELL", "outer"),
                         "extreme": _tier_count("SELL", "extreme"),
                     }
 
@@ -1323,10 +1525,15 @@ def _api_coin_prep_trigger_locked():
                     # is off, and always a no-op for the sell side). This
                     # makes the live ladder settings the SINGLE SOURCE OF
                     # TRUTH for both prep and offer creation.
-                    from coin_manager import flip_position_tiers_to_coin_size_tiers as _flip_tiers
+                    from coin_manager import (
+                        flip_position_tiers_to_coin_size_tiers as _flip_tiers,
+                    )
+
                     xch_tier_counts = _flip_tiers(buy_position_counts, side="buy")
                     cat_tier_counts = _flip_tiers(sell_position_counts, side="sell")
-                    _liquidity_mode = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
+                    _liquidity_mode = (
+                        getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided"
+                    ).lower()
                     if _liquidity_mode == "buy_only":
                         cat_tier_counts = {}
                     elif _liquidity_mode == "sell_only":
@@ -1337,7 +1544,9 @@ def _api_coin_prep_trigger_locked():
                     # missing CAT sniper pool silently kills sell-side probes and leaves
                     # the ladder anchored to one-sided probe data only. Fees are XCH-only.
                     sniper_count = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
-                    sniper_size = Decimal(str(getattr(cfg, "SNIPER_SIZE_XCH", "0") or "0"))
+                    sniper_size = Decimal(
+                        str(getattr(cfg, "SNIPER_SIZE_XCH", "0") or "0")
+                    )
                     if (
                         _liquidity_mode == "two_sided"
                         and getattr(cfg, "SNIPER_ENABLED", False)
@@ -1350,22 +1559,38 @@ def _api_coin_prep_trigger_locked():
 
                     fee_status = api_server.get_fee_settings_snapshot()
                     fee_count = int(fee_status.get("fee_prep_count", 0) or 0)
-                    fee_size = Decimal(str(fee_status.get("fee_coin_size_xch", "0") or "0"))
-                    if fee_status.get("fee_pool_enabled") and fee_count > 0 and fee_size > 0:
+                    fee_size = Decimal(
+                        str(fee_status.get("fee_coin_size_xch", "0") or "0")
+                    )
+                    if (
+                        fee_status.get("fee_pool_enabled")
+                        and fee_count > 0
+                        and fee_size > 0
+                    ):
                         xch_tier_counts["fees"] = fee_count
                         tier_sizes["fees"] = fee_size
 
                     # Drop zero entries so the worker log stays clean
-                    xch_tier_counts = {k: v for k, v in xch_tier_counts.items() if v > 0}
-                    cat_tier_counts = {k: v for k, v in cat_tier_counts.items() if v > 0}
+                    xch_tier_counts = {
+                        k: v for k, v in xch_tier_counts.items() if v > 0
+                    }
+                    cat_tier_counts = {
+                        k: v for k, v in cat_tier_counts.items() if v > 0
+                    }
 
                     xch_total_coins = sum(xch_tier_counts.values())
                     cat_total_coins = sum(cat_tier_counts.values())
                     total_coins = xch_total_coins + cat_total_coins
 
-                    tier_sizes_str = ",".join(f"{tier}={size}" for tier, size in tier_sizes.items())
-                    xch_counts_str = ",".join(f"{k}={v}" for k, v in xch_tier_counts.items())
-                    cat_counts_str = ",".join(f"{k}={v}" for k, v in cat_tier_counts.items())
+                    tier_sizes_str = ",".join(
+                        f"{tier}={size}" for tier, size in tier_sizes.items()
+                    )
+                    xch_counts_str = ",".join(
+                        f"{k}={v}" for k, v in xch_tier_counts.items()
+                    )
+                    cat_counts_str = ",".join(
+                        f"{k}={v}" for k, v in cat_tier_counts.items()
+                    )
                     # F62 (2026-04-09): also build per-side size strings.
                     # Sniper/fees stay in the combined `tier_sizes` dict;
                     # only the four trading tiers differ between buy and sell.
@@ -1378,8 +1603,12 @@ def _api_coin_prep_trigger_locked():
                     if "fees" in tier_sizes:
                         _buy_sizes_for_cli["fees"] = tier_sizes["fees"]
                         # fees is XCH-only, don't add to sell
-                    buy_sizes_str  = ",".join(f"{t}={s}" for t, s in _buy_sizes_for_cli.items())
-                    sell_sizes_str = ",".join(f"{t}={s}" for t, s in _sell_sizes_for_cli.items())
+                    buy_sizes_str = ",".join(
+                        f"{t}={s}" for t, s in _buy_sizes_for_cli.items()
+                    )
+                    sell_sizes_str = ",".join(
+                        f"{t}={s}" for t, s in _sell_sizes_for_cli.items()
+                    )
 
                     # Pass the live weighted mid (Tibet+Dexie) so prep sizes
                     # CAT coins against the same price the bot uses for live
@@ -1389,24 +1618,36 @@ def _api_coin_prep_trigger_locked():
                     _live_price_arg = api_server._get_live_mid_price_str()
                     cmd = [
                         *worker_cmd,
-                        "--xch-target", str(xch_total_coins),
-                        "--cat-target", str(cat_total_coins),
-                        "--tier-sizes", tier_sizes_str,       # legacy shared (kept for back-compat)
-                        "--buy-tier-sizes", buy_sizes_str,    # F62: XCH coin sizes (for buy offers)
-                        "--sell-tier-sizes", sell_sizes_str,  # F62: CAT coin sizes (for sell offers, in XCH equiv)
-                        "--tier-counts-xch", xch_counts_str,
-                        "--tier-counts-cat", cat_counts_str,
-                        "--prep-headroom-pct", str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))),
-                        "--run-id", run_id,
+                        "--xch-target",
+                        str(xch_total_coins),
+                        "--cat-target",
+                        str(cat_total_coins),
+                        "--tier-sizes",
+                        tier_sizes_str,  # legacy shared (kept for back-compat)
+                        "--buy-tier-sizes",
+                        buy_sizes_str,  # F62: XCH coin sizes (for buy offers)
+                        "--sell-tier-sizes",
+                        sell_sizes_str,  # F62: CAT coin sizes (for sell offers, in XCH equiv)
+                        "--tier-counts-xch",
+                        xch_counts_str,
+                        "--tier-counts-cat",
+                        cat_counts_str,
+                        "--prep-headroom-pct",
+                        str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))),
+                        "--run-id",
+                        run_id,
                     ]
                     if _live_price_arg:
                         cmd += ["--live-price", _live_price_arg]
-                    log_event("info", "coin_prep_config",
-                              f"GUI tier coin prep (per-side): "
-                              f"XCH={xch_total_coins} {xch_counts_str} | "
-                              f"CAT={cat_total_coins} {cat_counts_str} "
-                              f"(+{getattr(cfg, 'COIN_PREP_HEADROOM_PCT', Decimal('10'))}% headroom) "
-                              f"live_price={_live_price_arg or 'unavailable→Dexie fallback'}")
+                    log_event(
+                        "info",
+                        "coin_prep_config",
+                        f"GUI tier coin prep (per-side): "
+                        f"XCH={xch_total_coins} {xch_counts_str} | "
+                        f"CAT={cat_total_coins} {cat_counts_str} "
+                        f"(+{getattr(cfg, 'COIN_PREP_HEADROOM_PCT', Decimal('10'))}% headroom) "
+                        f"live_price={_live_price_arg or 'unavailable→Dexie fallback'}",
+                    )
                 else:
                     # Uniform coin prep — uses _prep_coin_multiplier from request context
                     coin_multiplier = _prep_coin_multiplier
@@ -1414,18 +1655,26 @@ def _api_coin_prep_trigger_locked():
                     _live_price_arg = api_server._get_live_mid_price_str()
                     cmd = [
                         *worker_cmd,
-                        "--xch-target", str(total_coins),
-                        "--xch-size", trade_xch,
-                        "--cat-target", str(total_coins),
-                        "--prep-headroom-pct", str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))),
-                        "--run-id", run_id,
+                        "--xch-target",
+                        str(total_coins),
+                        "--xch-size",
+                        trade_xch,
+                        "--cat-target",
+                        str(total_coins),
+                        "--prep-headroom-pct",
+                        str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))),
+                        "--run-id",
+                        run_id,
                     ]
                     if _live_price_arg:
                         cmd += ["--live-price", _live_price_arg]
-                    log_event("info", "coin_prep_config",
-                              f"GUI coin prep: {total_coins} coins "
-                              f"({max_buy}+{max_sell} × {coin_multiplier}), "
-                              f"XCH size {trade_xch} (+{getattr(cfg, 'COIN_PREP_HEADROOM_PCT', Decimal('10'))}% headroom)")
+                    log_event(
+                        "info",
+                        "coin_prep_config",
+                        f"GUI coin prep: {total_coins} coins "
+                        f"({max_buy}+{max_sell} × {coin_multiplier}), "
+                        f"XCH size {trade_xch} (+{getattr(cfg, 'COIN_PREP_HEADROOM_PCT', Decimal('10'))}% headroom)",
+                    )
 
                 log_path = os.path.join(worker_dir, "coin_prep_output.log")
                 log_file = open(log_path, "w", encoding="utf-8")
@@ -1445,8 +1694,11 @@ def _api_coin_prep_trigger_locked():
                 api_server._coin_prep_proc = proc
                 api_server._coin_prep_state["pid"] = proc.pid
 
-                log_event("info", "coin_prep_started",
-                          f"Coin prep worker started (PID: {proc.pid})")
+                log_event(
+                    "info",
+                    "coin_prep_started",
+                    f"Coin prep worker started (PID: {proc.pid})",
+                )
 
                 # Monitor until it finishes
                 while proc.poll() is None:
@@ -1459,7 +1711,9 @@ def _api_coin_prep_trigger_locked():
                     api_server._coin_prep_state["error"] = None
                     api_server._coin_prep_state["phase"] = "complete"
                     prep_succeeded = True
-                    log_event("info", "coin_prep_complete", "Coin prep finished successfully")
+                    log_event(
+                        "info", "coin_prep_complete", "Coin prep finished successfully"
+                    )
                     # F82 (2026-04-20): push a coin_update SSE event so the
                     # Command Centre tier-group card renders the fresh coin
                     # inventory immediately. Without this the GUI only
@@ -1473,13 +1727,18 @@ def _api_coin_prep_trigger_locked():
                             get_coin_summary as _gcs,
                             get_live_tier_group_counts as _gltgc,
                         )
+
                         _summary = _gcs() or {}
                         _tier_counts = _gltgc()
                         _tier_counts["enabled"] = bool(
                             getattr(cfg, "TIER_ENABLED", False)
                         )
-                        _xch_locked_mojos = int(_summary.get("xch_locked_mojos", 0) or 0)
-                        _cat_locked_mojos = int(_summary.get("cat_locked_mojos", 0) or 0)
+                        _xch_locked_mojos = int(
+                            _summary.get("xch_locked_mojos", 0) or 0
+                        )
+                        _cat_locked_mojos = int(
+                            _summary.get("cat_locked_mojos", 0) or 0
+                        )
                         _cat_dec = int(
                             api_server._active_cat.get("decimals")
                             or getattr(cfg, "CAT_DECIMALS", 3)
@@ -1499,29 +1758,41 @@ def _api_coin_prep_trigger_locked():
                                 _cat_pool_amt = str(_inv.get("cat_reserve_total", "0"))
                             except Exception:
                                 pass
-                        api_server.events.emit("coin_update", {
-                            "reason": "coin_prep_complete",
-                            "xch_free": int(_summary.get("xch_free_count", 0) or 0),
-                            "xch_locked": int(_summary.get("xch_locked_count", 0) or 0),
-                            "xch_total": int(_summary.get("xch_total", 0) or 0),
-                            "cat_free": int(_summary.get("cat_free_count", 0) or 0),
-                            "cat_locked": int(_summary.get("cat_locked_count", 0) or 0),
-                            "cat_total": int(_summary.get("cat_total", 0) or 0),
-                            "xch_locked_amount": (
-                                f"{_xch_locked_mojos / 1e12:.4f}"
-                                if _xch_locked_mojos > 0 else "0"
-                            ),
-                            "cat_locked_amount": (
-                                f"{_cat_locked_mojos / (10 ** _cat_dec):.{_cat_dec}f}"
-                                if _cat_locked_mojos > 0 else "0"
-                            ),
-                            "xch_topup_pool_amount": _xch_pool_amt,
-                            "cat_topup_pool_amount": _cat_pool_amt,
-                            "tier_counts": _tier_counts,
-                        })
+                        api_server.events.emit(
+                            "coin_update",
+                            {
+                                "reason": "coin_prep_complete",
+                                "xch_free": int(_summary.get("xch_free_count", 0) or 0),
+                                "xch_locked": int(
+                                    _summary.get("xch_locked_count", 0) or 0
+                                ),
+                                "xch_total": int(_summary.get("xch_total", 0) or 0),
+                                "cat_free": int(_summary.get("cat_free_count", 0) or 0),
+                                "cat_locked": int(
+                                    _summary.get("cat_locked_count", 0) or 0
+                                ),
+                                "cat_total": int(_summary.get("cat_total", 0) or 0),
+                                "xch_locked_amount": (
+                                    f"{_xch_locked_mojos / 1e12:.4f}"
+                                    if _xch_locked_mojos > 0
+                                    else "0"
+                                ),
+                                "cat_locked_amount": (
+                                    f"{_cat_locked_mojos / (10**_cat_dec):.{_cat_dec}f}"
+                                    if _cat_locked_mojos > 0
+                                    else "0"
+                                ),
+                                "xch_topup_pool_amount": _xch_pool_amt,
+                                "cat_topup_pool_amount": _cat_pool_amt,
+                                "tier_counts": _tier_counts,
+                            },
+                        )
                     except Exception as _e:
-                        log_event("debug", "coin_prep_emit_failed",
-                                  f"Post-prep coin_update emit failed (non-critical): {_e}")
+                        log_event(
+                            "debug",
+                            "coin_prep_emit_failed",
+                            f"Post-prep coin_update emit failed (non-critical): {_e}",
+                        )
                 else:
                     api_server._coin_prep_state["complete"] = False
                     api_server._coin_prep_state["phase"] = "error"
@@ -1549,7 +1820,7 @@ def _api_coin_prep_trigger_locked():
                 # Without this, an exception in the monitor loop (e.g. log_event
                 # or state update throws) can orphan the child process.
                 try:
-                    if 'proc' in locals() and proc and proc.poll() is None:
+                    if "proc" in locals() and proc and proc.poll() is None:
                         proc.terminate()
                         try:
                             proc.wait(timeout=5)
@@ -1558,34 +1829,41 @@ def _api_coin_prep_trigger_locked():
                 except Exception:
                     pass
                 try:
-                    if 'log_file' in locals() and log_file:
+                    if "log_file" in locals() and log_file:
                         log_file.close()
                 except Exception:
                     pass
                 api_server._coin_prep_state["running"] = False
                 api_server._coin_prep_proc = None  # Clear global ref — worker is done
                 # CRITICAL: Ungate the bot loop so it can resume offer creation
-                if bot and hasattr(bot, 'coin_manager'):
+                if bot and hasattr(bot, "coin_manager"):
                     bot.coin_manager._prep_running = False
                     if prep_succeeded:
-                        log_event("info", "coin_prep_ungate",
-                                  "Coin prep complete — press Start Bot to begin trading")
+                        log_event(
+                            "info",
+                            "coin_prep_ungate",
+                            "Coin prep complete — press Start Bot to begin trading",
+                        )
                     else:
-                        log_event("warning", "coin_prep_ungate_error",
-                                  "Coin prep ended with an error — review details before retrying")
+                        log_event(
+                            "warning",
+                            "coin_prep_ungate_error",
+                            "Coin prep ended with an error — review details before retrying",
+                        )
 
         threading.Thread(target=do_prep, daemon=True).start()
         return jsonify({"success": True, "message": "Coin prep started"})
     except Exception as e:
         api_server._coin_prep_state["running"] = False
         # Also ungate on early failure
-        if bot and hasattr(bot, 'coin_manager'):
+        if bot and hasattr(bot, "coin_manager"):
             bot.coin_manager._prep_running = False
         try:
             log_event("error", "coin_prep_trigger_failed", str(e))
         except Exception:
             pass
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/coin-prep/reset", methods=["POST"])
 def api_coin_prep_reset():
@@ -1595,7 +1873,7 @@ def api_coin_prep_reset():
     api_server._coin_prep_state["complete"] = False
     api_server._coin_prep_state["started_at"] = None
     # Ungate bot loop if it was gated
-    if bot and hasattr(bot, 'coin_manager'):
+    if bot and hasattr(bot, "coin_manager"):
         bot.coin_manager._prep_running = False
     api_server._coin_prep_state["error"] = None
     return jsonify({"success": True})
@@ -1621,8 +1899,11 @@ def api_coin_prep_cancel():
     proc = api_server._coin_prep_proc
     if proc is not None and proc.poll() is None:
         pid = proc.pid
-        log_event("info", "coin_prep_cancel",
-                  f"User cancelled coin prep — killing worker PID: {pid}")
+        log_event(
+            "info",
+            "coin_prep_cancel",
+            f"User cancelled coin prep — killing worker PID: {pid}",
+        )
         try:
             proc.terminate()
             try:
@@ -1632,8 +1913,11 @@ def api_coin_prep_cancel():
                 proc.wait(timeout=2)
             killed.append(pid)
         except Exception as e:
-            log_event("warning", "coin_prep_cancel_kill_failed",
-                      f"Could not kill worker PID {pid}: {e}")
+            log_event(
+                "warning",
+                "coin_prep_cancel_kill_failed",
+                f"Could not kill worker PID {pid}: {e}",
+            )
         api_server._coin_prep_proc = None
 
     # coin_manager-launched worker (bot loop path)
@@ -1642,8 +1926,11 @@ def api_coin_prep_cancel():
         cm_proc = getattr(cm, "_prep_process", None)
         if cm_proc is not None and cm_proc.poll() is None:
             pid = cm_proc.pid
-            log_event("info", "coin_prep_cancel",
-                      f"User cancelled coin prep — killing coin_manager worker PID: {pid}")
+            log_event(
+                "info",
+                "coin_prep_cancel",
+                f"User cancelled coin prep — killing coin_manager worker PID: {pid}",
+            )
             try:
                 cm_proc.terminate()
                 try:
@@ -1653,8 +1940,11 @@ def api_coin_prep_cancel():
                     cm_proc.wait(timeout=2)
                 killed.append(pid)
             except Exception as e:
-                log_event("warning", "coin_prep_cancel_kill_failed",
-                          f"Could not kill cm worker PID {pid}: {e}")
+                log_event(
+                    "warning",
+                    "coin_prep_cancel_kill_failed",
+                    f"Could not kill cm worker PID {pid}: {e}",
+                )
             cm._prep_process = None
         # Always release the gate flag so /api/coins/prep can run again
         try:
@@ -1669,23 +1959,33 @@ def api_coin_prep_cancel():
     api_server._coin_prep_state["started_at"] = None
     api_server._coin_prep_state["error"] = "cancelled_by_user" if killed else None
 
-    log_event("warning" if killed else "info",
-              "coin_prep_cancelled",
-              f"Coin prep cancellation completed — killed: {killed or 'no worker running'}")
+    log_event(
+        "warning" if killed else "info",
+        "coin_prep_cancelled",
+        f"Coin prep cancellation completed — killed: {killed or 'no worker running'}",
+    )
 
-    return jsonify({
-        "success": True,
-        "killed_pids": killed,
-        "message": (f"Cancelled — killed worker(s): {killed}"
-                    if killed else "No coin prep was running"),
-    })
+    return jsonify(
+        {
+            "success": True,
+            "killed_pids": killed,
+            "message": (
+                f"Cancelled — killed worker(s): {killed}"
+                if killed
+                else "No coin prep was running"
+            ),
+        }
+    )
+
 
 @bp.route("/api/fills/export")
 def api_fills_export():
     """Export fill history as CSV."""
     bot = api_server.bot
     try:
-        asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+        asset_id = api_server._active_cat.get("asset_id") or getattr(
+            cfg, "CAT_ASSET_ID", ""
+        )
         if not asset_id:
             return jsonify({"success": False, "error": "No active CAT selected"}), 400
 
@@ -1695,48 +1995,60 @@ def api_fills_export():
 
         import csv
         import io
+
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow([
-            "filled_at",
-            "side",
-            "price_xch",
-            "size_xch",
-            "size_cat",
-            "tier",
-            "trade_id",
-            "coin_id",
-        ])
+        writer.writerow(
+            [
+                "filled_at",
+                "side",
+                "price_xch",
+                "size_xch",
+                "size_cat",
+                "tier",
+                "trade_id",
+                "coin_id",
+            ]
+        )
         for f in history:
-            writer.writerow([
-                f.get("filled_at", ""),
-                f.get("side", ""),
-                str(f.get("price", "")),
-                str(f.get("size_xch", "")),
-                str(f.get("size_cat", "")),
-                str(f.get("tier", "")),
-                f.get("trade_id", ""),
-                f.get("coin_id", ""),
-            ])
+            writer.writerow(
+                [
+                    f.get("filled_at", ""),
+                    f.get("side", ""),
+                    str(f.get("price", "")),
+                    str(f.get("size_xch", "")),
+                    str(f.get("size_cat", "")),
+                    str(f.get("tier", "")),
+                    f.get("trade_id", ""),
+                    f.get("coin_id", ""),
+                ]
+            )
         csv_data = output.getvalue()
-        return Response(csv_data, mimetype="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=fills_export.csv"})
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=fills_export.csv"},
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/logs/clear", methods=["POST"])
 def api_logs_clear():
     """Clear the GUI log panel (hides older events, keeps them in DB for debug download)."""
     bot = api_server.bot
     from datetime import datetime, timezone
+
     api_server._logs_cleared_at = datetime.now(timezone.utc).isoformat()
     # Persist to database so it survives restarts
     try:
         from database import set_setting
+
         set_setting("logs_cleared_at", api_server._logs_cleared_at)
     except Exception:
         pass
     return jsonify({"success": True, "message": "Log panel cleared"})
+
 
 @bp.route("/api/logs/download")
 def api_logs_download():
@@ -1775,8 +2087,11 @@ def api_logs_download():
         import zipfile
         from pathlib import Path
         from database import (
-            get_recent_events, get_open_offers, get_fills,
-            get_live_tier_group_counts, get_coin_summary,
+            get_recent_events,
+            get_open_offers,
+            get_fills,
+            get_live_tier_group_counts,
+            get_coin_summary,
         )
         from super_log import get_archive_summary, get_log_path, get_log_stats
 
@@ -1792,9 +2107,12 @@ def api_logs_download():
         # are NOT redacted to keep the log readable.
         _RE_FP = re.compile(r"(?i)(fingerprint[\"'\s:=\-]+)(\d{8,12})")
         _TLS_PATH_KEYS = (
-            "CHIA_WALLET_CERT", "CHIA_WALLET_KEY",
-            "SAGE_CERT_PATH", "SAGE_KEY_PATH",
-            "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH",
+            "CHIA_WALLET_CERT",
+            "CHIA_WALLET_KEY",
+            "SAGE_CERT_PATH",
+            "SAGE_KEY_PATH",
+            "FULL_NODE_CERT_PATH",
+            "FULL_NODE_KEY_PATH",
         )
         _TLS_FILENAME_RE = (
             r"(?:wallet|client|private_wallet|private_full_node|private_ca)"
@@ -1833,31 +2151,61 @@ def api_logs_download():
         _RE_WINDOWS_USER_PATH = re.compile(
             r"(?i)\b([A-Z]:[\\/]+Users[\\/]+)[^\\/:\r\n]+"
         )
-        _RE_POSIX_USER_PATH = re.compile(
-            r"(?i)(/[Uu]sers|/home)/[^/\s\"'<>]+"
-        )
+        _RE_POSIX_USER_PATH = re.compile(r"(?i)(/[Uu]sers|/home)/[^/\s\"'<>]+")
         _SENSITIVE_VALUE_KEYS = (
-            "CHIA_WALLET_CERT", "CHIA_WALLET_KEY",
-            "SAGE_CERT_PATH", "SAGE_KEY_PATH",
-            "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH",
-            "SPACESCAN_API_KEY", "BOT_LOCAL_WRITE_TOKEN",
+            "CHIA_WALLET_CERT",
+            "CHIA_WALLET_KEY",
+            "SAGE_CERT_PATH",
+            "SAGE_KEY_PATH",
+            "FULL_NODE_CERT_PATH",
+            "FULL_NODE_KEY_PATH",
+            "SPACESCAN_API_KEY",
+            "BOT_LOCAL_WRITE_TOKEN",
         )
         _SENSITIVE_KEY_EXACT = {
-            "chia_wallet_cert", "chia_wallet_key",
-            "sage_cert_path", "sage_key_path", "sage_fingerprint",
-            "full_node_cert_path", "full_node_key_path",
-            "wallet_fingerprint", "spacescan_api_key",
-            "bot_local_write_token", "x_bot_local_token",
-            "api_key", "x_api_key", "auth_token", "authorization_token",
-            "authorization", "proxy_authorization", "access_token",
-            "refresh_token", "cookie", "set_cookie", "password", "secret",
-            "mnemonic", "seed", "seed_phrase", "private_key",
+            "chia_wallet_cert",
+            "chia_wallet_key",
+            "sage_cert_path",
+            "sage_key_path",
+            "sage_fingerprint",
+            "full_node_cert_path",
+            "full_node_key_path",
+            "wallet_fingerprint",
+            "spacescan_api_key",
+            "bot_local_write_token",
+            "x_bot_local_token",
+            "api_key",
+            "x_api_key",
+            "auth_token",
+            "authorization_token",
+            "authorization",
+            "proxy_authorization",
+            "access_token",
+            "refresh_token",
+            "cookie",
+            "set_cookie",
+            "password",
+            "secret",
+            "mnemonic",
+            "seed",
+            "seed_phrase",
+            "private_key",
         }
         _SENSITIVE_KEY_FRAGMENTS = (
-            "api_key", "auth_token", "access_token", "refresh_token",
-            "authorization", "cookie", "bot_local_write_token",
-            "password", "secret", "mnemonic", "seed_phrase",
-            "private_key", "cert_path", "key_path",
+            "api_key",
+            "auth_token",
+            "access_token",
+            "refresh_token",
+            "authorization",
+            "cookie",
+            "bot_local_write_token",
+            "password",
+            "secret",
+            "mnemonic",
+            "seed_phrase",
+            "private_key",
+            "cert_path",
+            "key_path",
             "fingerprint",
         )
 
@@ -1911,6 +2259,7 @@ def api_logs_download():
                     prefixes.add(value)
             try:
                 from user_paths import data_dir as _data_dir, log_dir as _log_dir
+
                 for value in (_data_dir(), _log_dir()):
                     value = str(value or "").strip()
                     if len(value) >= 8:
@@ -1932,9 +2281,8 @@ def api_logs_download():
 
         def _is_sensitive_bundle_key(key):
             normalised = _normalise_key(key)
-            return (
-                normalised in _SENSITIVE_KEY_EXACT
-                or any(fragment in normalised for fragment in _SENSITIVE_KEY_FRAGMENTS)
+            return normalised in _SENSITIVE_KEY_EXACT or any(
+                fragment in normalised for fragment in _SENSITIVE_KEY_FRAGMENTS
             )
 
         def _redact_text(text):
@@ -1993,7 +2341,9 @@ def api_logs_download():
                 return _redact_text(obj)
             if isinstance(obj, dict):
                 return {
-                    k: "<secret-redacted>" if _is_sensitive_bundle_key(k) else _redact_obj(v)
+                    k: "<secret-redacted>"
+                    if _is_sensitive_bundle_key(k)
+                    else _redact_obj(v)
                     for k, v in obj.items()
                 }
             if isinstance(obj, list):
@@ -2081,6 +2431,7 @@ def api_logs_download():
         # remaining at the moment the user hit the button.
         try:
             from api_call_tracker import get_all_stats as _api_stats_all
+
             snapshots["api_calls"] = _api_stats_all() or {}
         except Exception as e:
             snapshots["api_calls"] = {"error": str(e)}
@@ -2113,12 +2464,14 @@ def api_logs_download():
             _cat_id = getattr(cfg, "CAT_ASSET_ID", "") or None
             buys = get_open_offers(side="buy", cat_asset_id=_cat_id) or []
             sells = get_open_offers(side="sell", cat_asset_id=_cat_id) or []
-            snapshots["open_offers"] = api_server._serialize_dict({
-                "buy_count": len(buys),
-                "sell_count": len(sells),
-                "buys": buys,
-                "sells": sells,
-            })
+            snapshots["open_offers"] = api_server._serialize_dict(
+                {
+                    "buy_count": len(buys),
+                    "sell_count": len(sells),
+                    "buys": buys,
+                    "sells": sells,
+                }
+            )
         except Exception as e:
             snapshots["open_offers"] = {"error": str(e)}
 
@@ -2136,7 +2489,8 @@ def api_logs_download():
                 "running": bool(bot.is_running()),
                 "loop_count": int(getattr(bot, "_loop_count", 0) or 0),
                 "uptime_secs": int(time.time() - getattr(bot, "_start_time", 0))
-                if getattr(bot, "_start_time", 0) else 0,
+                if getattr(bot, "_start_time", 0)
+                else 0,
                 "recovery": dict(getattr(bot, "_recovery_state", {}) or {}),
                 "probe_state": dict(getattr(bot, "_probe_state", {}) or {}),
             }
@@ -2147,36 +2501,52 @@ def api_logs_download():
             snapshots["runtime"] = api_server._serialize_dict(runtime_snapshot)
 
             try:
-                stats = get_stats(cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff())
-                snapshots["pnl"] = api_server._serialize_dict({
-                    **stats,
-                    "pending_verification_count": api_server._get_session_pending_verification_count(),
-                    "sniper": bot.sniper.get_stats() if getattr(bot, "sniper", None) else {},
-                })
+                stats = get_stats(
+                    cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff()
+                )
+                snapshots["pnl"] = api_server._serialize_dict(
+                    {
+                        **stats,
+                        "pending_verification_count": api_server._get_session_pending_verification_count(),
+                        "sniper": bot.sniper.get_stats()
+                        if getattr(bot, "sniper", None)
+                        else {},
+                    }
+                )
             except Exception as e:
                 snapshots["pnl"] = {"error": str(e)}
 
             try:
-                snapshots["market_intel"] = api_server._serialize_dict(bot.market_intel.get_market_summary() or {})
+                snapshots["market_intel"] = api_server._serialize_dict(
+                    bot.market_intel.get_market_summary() or {}
+                )
             except Exception as e:
                 snapshots["market_intel"] = {"error": str(e)}
 
             try:
-                snapshots["runtime_monitor"] = api_server._serialize_dict(bot.runtime_monitor.get_state() or {})
+                snapshots["runtime_monitor"] = api_server._serialize_dict(
+                    bot.runtime_monitor.get_state() or {}
+                )
             except Exception as e:
                 snapshots["runtime_monitor"] = {"error": str(e)}
 
             splash_snapshot = {}
             try:
-                splash_snapshot["broadcast"] = api_server._serialize_dict(bot.splash_manager.get_stats() or {})
+                splash_snapshot["broadcast"] = api_server._serialize_dict(
+                    bot.splash_manager.get_stats() or {}
+                )
             except Exception as e:
                 splash_snapshot["broadcast"] = {"error": str(e)}
             try:
-                splash_snapshot["node"] = api_server._serialize_dict(bot.splash_node.get_status() or {})
+                splash_snapshot["node"] = api_server._serialize_dict(
+                    bot.splash_node.get_status() or {}
+                )
             except Exception as e:
                 splash_snapshot["node"] = {"error": str(e)}
             try:
-                splash_snapshot["receive"] = api_server._serialize_dict(bot.get_splash_receive_stats() or {})
+                splash_snapshot["receive"] = api_server._serialize_dict(
+                    bot.get_splash_receive_stats() or {}
+                )
             except Exception as e:
                 splash_snapshot["receive"] = {"error": str(e)}
             snapshots["splash"] = splash_snapshot
@@ -2188,13 +2558,16 @@ def api_logs_download():
 
         tauri_stdout = os.path.join(api_server._APP_ROOT, "tauri_backend_stdout.log")
         if os.path.exists(tauri_stdout):
-            log_texts["logs/tauri_backend_stdout_tail.log"] = _read_text_tail(tauri_stdout)
+            log_texts["logs/tauri_backend_stdout_tail.log"] = _read_text_tail(
+                tauri_stdout
+            )
 
         # Look for superlog files in the user data dir first (the
         # canonical location), then fall back to the install dir for
         # pre-migration dev installs.
         try:
             from user_paths import log_dir as _user_log_dir
+
             _log_dirs = [_user_log_dir(), api_server._APP_ROOT]
         except Exception:
             _log_dirs = [api_server._APP_ROOT]
@@ -2203,64 +2576,72 @@ def api_logs_download():
             run_logs.extend(glob.glob(os.path.join(_ld, "bot_superlog_*.log")))
         if run_logs:
             latest_run_log = max(run_logs, key=os.path.getmtime)
-            log_texts["logs/latest_run_superlog_tail.log"] = _read_text_tail(latest_run_log)
+            log_texts["logs/latest_run_superlog_tail.log"] = _read_text_tail(
+                latest_run_log
+            )
             manifest["latest_run_log"] = os.path.basename(latest_run_log)
 
-        bundle_name = "bot_debug_bundle_" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + ".zip"
-        readme = "\n".join([
-            "CATalyst debug bundle",
-            "=====================",
-            "",
-            "Generated: " + manifest["generated_at"],
-            "App version: " + str(manifest.get("app_version", "?")),
-            "",
-            "Contents",
-            "--------",
-            "  README.txt              this file",
-            "  manifest.json           bundle metadata + active CAT pair",
-            "  recent_events.json      latest DB events (structured)",
-            "  recent_events.txt       latest DB events (one line each)",
-            "  snapshots/",
-            "    config.json           bot configuration (secrets stripped)",
-            "    system_info.json      Python / OS / platform",
-            "    api_calls.json        external API call counters",
-            "    coin_inventory.json   tier-group counts + topup-pool totals",
-            "    open_offers.json      live open offers (with trade_ids)",
-            "    recent_fills.json     last 100 verified fills",
-            "    health.json           wallet/node reachability",
-            "    runtime.json          loop count, uptime, recovery state",
-            "    pnl.json              session PnL + sniper stats",
-            "    market_intel.json     orderbook summary",
-            "    runtime_monitor.json  runtime monitor state",
-            "    splash.json           splash broadcast/node/receive",
-            "    superlog_stats.json   superlog rotation stats",
-            "    superlog_archive.json recent superlog file list",
-            "    event_type_counts.json frequency of each event_type",
-            "  logs/",
-            "    current_superlog_tail.log    last ~400KB of running superlog",
-            "    latest_run_superlog_tail.log last ~400KB of most-recent run",
-            "",
-            "Privacy",
-            "-------",
-            "* Wallet bech32 addresses (xch1...) and Sage fingerprints are",
-            "  redacted from log text and event messages before bundling.",
-            "* RPC TLS path values are redacted from log text before",
-            "  bundling.",
-            "* Sensitive labelled fields such as API keys, auth tokens,",
-            "  passwords, seed phrases, and private keys are redacted",
-            "  recursively.",
-            "* User-home path prefixes are redacted from log text.",
-            "* Configuration excludes SPACESCAN_API_KEY, RPC TLS paths, and",
-            "  wallet fingerprints (filtered by cfg.to_dict()).",
-            "* The DB file, .env, user_secrets.json, and TLS keys are NOT",
-            "  included.",
-            "* Trade IDs, coin IDs, and asset IDs ARE preserved — they are",
-            "  public on-chain data and are required for any meaningful",
-            "  trade-history debugging.",
-            "",
-            "This bundle is designed to give support enough context to",
-            "triage a run without requiring direct DB or wallet access.",
-        ])
+        bundle_name = (
+            "bot_debug_bundle_"
+            + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            + ".zip"
+        )
+        readme = "\n".join(
+            [
+                "CATalyst debug bundle",
+                "=====================",
+                "",
+                "Generated: " + manifest["generated_at"],
+                "App version: " + str(manifest.get("app_version", "?")),
+                "",
+                "Contents",
+                "--------",
+                "  README.txt              this file",
+                "  manifest.json           bundle metadata + active CAT pair",
+                "  recent_events.json      latest DB events (structured)",
+                "  recent_events.txt       latest DB events (one line each)",
+                "  snapshots/",
+                "    config.json           bot configuration (secrets stripped)",
+                "    system_info.json      Python / OS / platform",
+                "    api_calls.json        external API call counters",
+                "    coin_inventory.json   tier-group counts + topup-pool totals",
+                "    open_offers.json      live open offers (with trade_ids)",
+                "    recent_fills.json     last 100 verified fills",
+                "    health.json           wallet/node reachability",
+                "    runtime.json          loop count, uptime, recovery state",
+                "    pnl.json              session PnL + sniper stats",
+                "    market_intel.json     orderbook summary",
+                "    runtime_monitor.json  runtime monitor state",
+                "    splash.json           splash broadcast/node/receive",
+                "    superlog_stats.json   superlog rotation stats",
+                "    superlog_archive.json recent superlog file list",
+                "    event_type_counts.json frequency of each event_type",
+                "  logs/",
+                "    current_superlog_tail.log    last ~400KB of running superlog",
+                "    latest_run_superlog_tail.log last ~400KB of most-recent run",
+                "",
+                "Privacy",
+                "-------",
+                "* Wallet bech32 addresses (xch1...) and Sage fingerprints are",
+                "  redacted from log text and event messages before bundling.",
+                "* RPC TLS path values are redacted from log text before",
+                "  bundling.",
+                "* Sensitive labelled fields such as API keys, auth tokens,",
+                "  passwords, seed phrases, and private keys are redacted",
+                "  recursively.",
+                "* User-home path prefixes are redacted from log text.",
+                "* Configuration excludes SPACESCAN_API_KEY, RPC TLS paths, and",
+                "  wallet fingerprints (filtered by cfg.to_dict()).",
+                "* The DB file, .env, user_secrets.json, and TLS keys are NOT",
+                "  included.",
+                "* Trade IDs, coin IDs, and asset IDs ARE preserved — they are",
+                "  public on-chain data and are required for any meaningful",
+                "  trade-history debugging.",
+                "",
+                "This bundle is designed to give support enough context to",
+                "triage a run without requiring direct DB or wallet access.",
+            ]
+        )
 
         # Redact event content before serialising. Asset IDs and trade
         # IDs in event data fields stay (they're public on-chain and
@@ -2275,8 +2656,10 @@ def api_logs_download():
             # manifest is hand-curated and only contains current_cat (which
             # has no wallet identifiers) so we don't redact it.
             zf.writestr("manifest.json", json.dumps(_json_safe(manifest), indent=2))
-            zf.writestr("recent_events.json",
-                        json.dumps(_json_safe(events_list_redacted), indent=2))
+            zf.writestr(
+                "recent_events.json",
+                json.dumps(_json_safe(events_list_redacted), indent=2),
+            )
             zf.writestr("recent_events.txt", "\n".join(lines_redacted))
             for name, payload in snapshots.items():
                 # config is already secret-filtered by cfg.to_dict() and
@@ -2284,8 +2667,9 @@ def api_logs_download():
                 # strings (e.g. Sage data dir paths if a future change
                 # surfaces them), so we redact every snapshot uniformly.
                 safe_payload = _redact_obj(_json_safe(payload))
-                zf.writestr(f"snapshots/{name}.json",
-                            json.dumps(safe_payload, indent=2))
+                zf.writestr(
+                    f"snapshots/{name}.json", json.dumps(safe_payload, indent=2)
+                )
             for path, text in log_texts.items():
                 if text:
                     zf.writestr(path, _redact_text(text))

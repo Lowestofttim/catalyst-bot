@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     from database import add_offer, get_open_offers, init_database
+
     _SKIP_DB = None
 except ModuleNotFoundError as exc:
     _db = None
@@ -27,6 +28,7 @@ except ModuleNotFoundError as exc:
 try:
     import offer_manager as _om_mod
     from offer_manager import OfferManager
+
     _SKIP_OM = None
 except ModuleNotFoundError as exc:
     OfferManager = None
@@ -52,6 +54,7 @@ def _fake_cfg(**overrides):
 # ---------------------------------------------------------------------------
 # Temp-DB base class
 # ---------------------------------------------------------------------------
+
 
 class _TempDB(unittest.TestCase):
     def setUp(self):
@@ -104,20 +107,21 @@ class _TempDB(unittest.TestCase):
 # 1. cancel_all() — confirmed cancel path
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_OM is not None,
-    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}"
+    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}",
 )
 class TestCancelAllConfirmed(_TempDB):
-
     def _run_cancel(self, trade_ids, bulk_response):
         """Patch cancel_offers_batch and run cancel_all()."""
         om = OfferManager()
         fake_cfg = _fake_cfg()
-        with patch.object(_om_mod, "cfg", fake_cfg), \
-             patch.object(_om_mod, "cancel_offers_batch",
-                          return_value=bulk_response), \
-             patch.object(_om_mod, "get_all_offers", return_value=[]):
+        with (
+            patch.object(_om_mod, "cfg", fake_cfg),
+            patch.object(_om_mod, "cancel_offers_batch", return_value=bulk_response),
+            patch.object(_om_mod, "get_all_offers", return_value=[]),
+        ):
             return om.cancel_all(cat_asset_id=_ASSET)
 
     def test_no_open_offers_returns_empty_dict(self):
@@ -151,11 +155,11 @@ class TestCancelAllConfirmed(_TempDB):
         _add_offer("tid-ok")
         _add_offer("tid-nok")
         bulk = {
-            "tid-ok":  {"success": True,  "method": "bulk"},
+            "tid-ok": {"success": True, "method": "bulk"},
             "tid-nok": {"success": False, "error": "timeout"},
         }
         self._run_cancel(["tid-ok", "tid-nok"], bulk)
-        self.assertEqual(self._offer_status("tid-ok"),  "cancelled")
+        self.assertEqual(self._offer_status("tid-ok"), "cancelled")
         self.assertNotEqual(self._offer_status("tid-nok"), "cancelled")
 
     def test_return_dict_contains_all_trade_ids(self):
@@ -171,22 +175,23 @@ class TestCancelAllConfirmed(_TempDB):
 # 2. cancel_all() — pending-cancel path (submitted but not confirmed)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_OM is not None,
-    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}"
+    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}",
 )
 class TestCancelAllPending(_TempDB):
-
     def test_pending_cancel_leaves_offer_open_in_db(self):
         _add_offer("tid-pending")
         om = OfferManager()
         fake_cfg = _fake_cfg()
         # "submitted_pending_confirm" is in CANCEL_PENDING_METHODS
-        bulk = {"tid-pending": {"success": True,
-                                "method": "submitted_pending_confirm"}}
-        with patch.object(_om_mod, "cfg", fake_cfg), \
-             patch.object(_om_mod, "cancel_offers_batch", return_value=bulk), \
-             patch.object(_om_mod, "get_all_offers", return_value=[]):
+        bulk = {"tid-pending": {"success": True, "method": "submitted_pending_confirm"}}
+        with (
+            patch.object(_om_mod, "cfg", fake_cfg),
+            patch.object(_om_mod, "cancel_offers_batch", return_value=bulk),
+            patch.object(_om_mod, "get_all_offers", return_value=[]),
+        ):
             om.cancel_all(cat_asset_id=_ASSET)
         # Pending cancel — DB status unchanged (still "open")
         self.assertEqual(self._offer_status("tid-pending"), "open")
@@ -196,19 +201,20 @@ class TestCancelAllPending(_TempDB):
 # 3. cancel_all() — side filter
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_OM is not None,
-    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}"
+    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}",
 )
 class TestCancelAllSideFilter(_TempDB):
-
     def _cancel_side(self, side_filter, bulk_response):
         om = OfferManager()
         fake_cfg = _fake_cfg()
-        with patch.object(_om_mod, "cfg", fake_cfg), \
-             patch.object(_om_mod, "cancel_offers_batch",
-                          return_value=bulk_response), \
-             patch.object(_om_mod, "get_all_offers", return_value=[]):
+        with (
+            patch.object(_om_mod, "cfg", fake_cfg),
+            patch.object(_om_mod, "cancel_offers_batch", return_value=bulk_response),
+            patch.object(_om_mod, "get_all_offers", return_value=[]),
+        ):
             return om.cancel_all(cat_asset_id=_ASSET, side_filter=side_filter)
 
     def test_buy_filter_cancels_only_buy_offers(self):
@@ -216,7 +222,7 @@ class TestCancelAllSideFilter(_TempDB):
         _add_offer("sell-1", "sell")
         bulk = {"buy-1": {"success": True, "method": "bulk"}}
         self._cancel_side("buy", bulk)
-        self.assertEqual(self._offer_status("buy-1"),  "cancelled")
+        self.assertEqual(self._offer_status("buy-1"), "cancelled")
         self.assertEqual(self._offer_status("sell-1"), "open")
 
     def test_sell_filter_cancels_only_sell_offers(self):
@@ -224,18 +230,18 @@ class TestCancelAllSideFilter(_TempDB):
         _add_offer("sell-2", "sell")
         bulk = {"sell-2": {"success": True, "method": "bulk"}}
         self._cancel_side("sell", bulk)
-        self.assertEqual(self._offer_status("buy-2"),  "open")
+        self.assertEqual(self._offer_status("buy-2"), "open")
         self.assertEqual(self._offer_status("sell-2"), "cancelled")
 
     def test_no_filter_cancels_all_sides(self):
         _add_offer("buy-3", "buy")
         _add_offer("sell-3", "sell")
         bulk = {
-            "buy-3":  {"success": True, "method": "bulk"},
+            "buy-3": {"success": True, "method": "bulk"},
             "sell-3": {"success": True, "method": "bulk"},
         }
         self._cancel_side("", bulk)
-        self.assertEqual(self._offer_status("buy-3"),  "cancelled")
+        self.assertEqual(self._offer_status("buy-3"), "cancelled")
         self.assertEqual(self._offer_status("sell-3"), "cancelled")
 
 
@@ -243,20 +249,25 @@ class TestCancelAllSideFilter(_TempDB):
 # 4. cancel_all() — exception during bulk cancel
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_OM is not None,
-    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}"
+    f"dependencies unavailable: db={_SKIP_DB} om={_SKIP_OM}",
 )
 class TestCancelAllExceptionHandling(_TempDB):
-
     def test_exception_in_bulk_cancel_does_not_crash_caller(self):
         _add_offer("tid-exc")
         om = OfferManager()
         fake_cfg = _fake_cfg()
-        with patch.object(_om_mod, "cfg", fake_cfg), \
-             patch.object(_om_mod, "cancel_offers_batch",
-                          side_effect=RuntimeError("wallet offline")), \
-             patch.object(_om_mod, "get_all_offers", return_value=[]):
+        with (
+            patch.object(_om_mod, "cfg", fake_cfg),
+            patch.object(
+                _om_mod,
+                "cancel_offers_batch",
+                side_effect=RuntimeError("wallet offline"),
+            ),
+            patch.object(_om_mod, "get_all_offers", return_value=[]),
+        ):
             # Should not raise
             result = om.cancel_all(cat_asset_id=_ASSET)
         # Still returns a result dict (may be empty or with the tid)

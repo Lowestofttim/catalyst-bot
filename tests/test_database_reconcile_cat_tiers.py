@@ -87,7 +87,9 @@ class DatabaseReconcileCatTierTests(unittest.TestCase):
         # test_coin_manager_exact_selectable) popped sys.modules["config"].
         sys.modules["config"] = config
 
-        handle, temp_path = tempfile.mkstemp(dir=Path.cwd(), prefix="tmp_db_reconcile_", suffix=".sqlite")
+        handle, temp_path = tempfile.mkstemp(
+            dir=Path.cwd(), prefix="tmp_db_reconcile_", suffix=".sqlite"
+        )
         os.close(handle)
         self.db_path = Path(temp_path)
         self.db_path.unlink(missing_ok=True)

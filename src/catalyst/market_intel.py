@@ -53,8 +53,8 @@ class MarketIntel:
 
         # ---- Orderbook state ----
         self._orderbook: Dict = {
-            "buy_offers": [],     # Sorted best (highest) to worst
-            "sell_offers": [],    # Sorted best (lowest) to worst
+            "buy_offers": [],  # Sorted best (highest) to worst
+            "sell_offers": [],  # Sorted best (lowest) to worst
             "last_refresh": 0,
             "refresh_count": 0,
             "errors": 0,
@@ -62,28 +62,30 @@ class MarketIntel:
 
         # ---- Competitor analysis ----
         self._competitors: Dict = {
-            "best_bid": Decimal("0"),         # Highest competing buy price
-            "best_ask": Decimal("0"),         # Lowest competing sell price
+            "best_bid": Decimal("0"),  # Highest competing buy price
+            "best_ask": Decimal("0"),  # Lowest competing sell price
             "competitor_spread_bps": Decimal("0"),  # Their spread in BPS
-            "our_spread_bps": Decimal("0"),   # Our spread for comparison
-            "overall_best_bid": Decimal("0"),       # Highest buy price (anyone)
-            "overall_best_ask": Decimal("0"),       # Lowest sell price (anyone)
-            "overall_spread_bps": Decimal("0"),     # Full orderbook spread
-            "buy_depth_xch": Decimal("0"),    # Total XCH depth on buy side
-            "sell_depth_xch": Decimal("0"),   # Total XCH depth on sell side
-            "num_buy_offers": 0,              # Total offers (including ours)
-            "num_sell_offers": 0,             # Total offers (including ours)
-            "num_competitor_buys": 0,         # Non-bot buy offers only
-            "num_competitor_sells": 0,        # Non-bot sell offers only
-            "whale_orders": [],               # Orders > 1 XCH
-            "thin_side": "",                  # "buy", "sell", or "" (balanced)
+            "our_spread_bps": Decimal("0"),  # Our spread for comparison
+            "overall_best_bid": Decimal("0"),  # Highest buy price (anyone)
+            "overall_best_ask": Decimal("0"),  # Lowest sell price (anyone)
+            "overall_spread_bps": Decimal("0"),  # Full orderbook spread
+            "buy_depth_xch": Decimal("0"),  # Total XCH depth on buy side
+            "sell_depth_xch": Decimal("0"),  # Total XCH depth on sell side
+            "num_buy_offers": 0,  # Total offers (including ours)
+            "num_sell_offers": 0,  # Total offers (including ours)
+            "num_competitor_buys": 0,  # Non-bot buy offers only
+            "num_competitor_sells": 0,  # Non-bot sell offers only
+            "whale_orders": [],  # Orders > 1 XCH
+            "thin_side": "",  # "buy", "sell", or "" (balanced)
         }
 
         # ---- DBX Rewards tracking ----
         self._dbx: Dict = {
-            "eligible_offers": 0,       # How many of our offers qualify
-            "max_eligible_spread": Decimal(str(getattr(cfg, "DBX_MAX_SPREAD_BPS", "500"))),
-            "estimated_dbx_rate": Decimal("0"),   # Estimated DBX per hour
+            "eligible_offers": 0,  # How many of our offers qualify
+            "max_eligible_spread": Decimal(
+                str(getattr(cfg, "DBX_MAX_SPREAD_BPS", "500"))
+            ),
+            "estimated_dbx_rate": Decimal("0"),  # Estimated DBX per hour
             "last_check": 0,
         }
 
@@ -92,14 +94,16 @@ class MarketIntel:
 
         # ---- Session for HTTP requests ----
         self._session = requests.Session()
-        self._session.headers.update({
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        })
+        self._session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
 
         # ---- Timing ----
         self._orderbook_refresh_interval = 30  # seconds between orderbook fetches
-        self._dbx_check_interval = 300         # 5 min between DBX eligibility checks
+        self._dbx_check_interval = 300  # 5 min between DBX eligibility checks
         self._orderbook_page_size = max(
             50,
             int(getattr(cfg, "DEXIE_ORDERBOOK_PAGE_SIZE", 200) or 200),
@@ -118,7 +122,11 @@ class MarketIntel:
         Returns summary of what was found.
         """
         now = time.time()
-        if not force and (now - self._orderbook["last_refresh"]) < self._orderbook_refresh_interval:
+        if (
+            not force
+            and (now - self._orderbook["last_refresh"])
+            < self._orderbook_refresh_interval
+        ):
             return self._competitors  # Use cached data
 
         if not cfg.CAT_ASSET_ID:
@@ -152,8 +160,11 @@ class MarketIntel:
 
             # Bail early on 429 — don't burn through the buy request too
             if resp.status_code == 429:
-                log_event("warning", "dexie_rate_limited",
-                          "Dexie orderbook API returned 429 — skipping refresh")
+                log_event(
+                    "warning",
+                    "dexie_rate_limited",
+                    "Dexie orderbook API returned 429 — skipping refresh",
+                )
                 self._orderbook["errors"] = self._orderbook.get("errors", 0) + 1
                 return self._competitors
 
@@ -170,8 +181,11 @@ class MarketIntel:
 
             # Check buy side for 429 too
             if buy_resp.status_code == 429:
-                log_event("warning", "dexie_rate_limited",
-                          "Dexie orderbook buy API returned 429 — skipping refresh")
+                log_event(
+                    "warning",
+                    "dexie_rate_limited",
+                    "Dexie orderbook buy API returned 429 — skipping refresh",
+                )
                 self._orderbook["errors"] = self._orderbook.get("errors", 0) + 1
                 return self._competitors
 
@@ -211,18 +225,23 @@ class MarketIntel:
             self._analyse_orderbook(buy_offers, sell_offers)
 
             if self._orderbook["refresh_count"] % 10 == 1:  # Log periodically
-                log_event("info", "orderbook_refresh",
-                          f"Dexie orderbook: {len(buy_offers)} bids, {len(sell_offers)} asks | "
-                          f"Best bid: {self._competitors['best_bid']:.8f}, "
-                          f"Best ask: {self._competitors['best_ask']:.8f}, "
-                          f"Competitor spread: {_bps_to_pct(self._competitors['competitor_spread_bps'])}")
+                log_event(
+                    "info",
+                    "orderbook_refresh",
+                    f"Dexie orderbook: {len(buy_offers)} bids, {len(sell_offers)} asks | "
+                    f"Best bid: {self._competitors['best_bid']:.8f}, "
+                    f"Best ask: {self._competitors['best_ask']:.8f}, "
+                    f"Competitor spread: {_bps_to_pct(self._competitors['competitor_spread_bps'])}",
+                )
 
             return self._competitors
 
         except requests.RequestException as e:
             self._orderbook["errors"] += 1
             if self._orderbook["errors"] % 5 == 1:
-                log_event("debug", "orderbook_error", f"Dexie orderbook fetch failed: {e}")
+                log_event(
+                    "debug", "orderbook_error", f"Dexie orderbook fetch failed: {e}"
+                )
             return self._competitors
 
     def _parse_dexie_offer(self, offer: Dict, expected_side: str) -> Optional[Dict]:
@@ -305,16 +324,22 @@ class MarketIntel:
         # is available on either side, we leave the lists alone so we
         # don't blank the orderbook on healthy thin markets.
         _raw_best_buy = competitor_buys[0]["price"] if competitor_buys else Decimal("0")
-        _raw_best_sell = competitor_sells[0]["price"] if competitor_sells else Decimal("0")
+        _raw_best_sell = (
+            competitor_sells[0]["price"] if competitor_sells else Decimal("0")
+        )
         if _raw_best_sell > 0:
             _buy_floor = _raw_best_sell * Decimal("0.5")
             competitor_buys = [o for o in competitor_buys if o["price"] >= _buy_floor]
         if _raw_best_buy > 0:
             _sell_ceiling = _raw_best_buy * Decimal("2")
-            competitor_sells = [o for o in competitor_sells if o["price"] <= _sell_ceiling]
+            competitor_sells = [
+                o for o in competitor_sells if o["price"] <= _sell_ceiling
+            ]
 
         def _is_sane_depth_buy(offer: Dict) -> bool:
-            return _raw_best_sell <= 0 or offer["price"] >= _raw_best_sell * Decimal("0.5")
+            return _raw_best_sell <= 0 or offer["price"] >= _raw_best_sell * Decimal(
+                "0.5"
+            )
 
         def _is_sane_depth_sell(offer: Dict) -> bool:
             return _raw_best_buy <= 0 or offer["price"] <= _raw_best_buy * Decimal("2")
@@ -349,12 +374,14 @@ class MarketIntel:
         whales = []
         for o in depth_buys + depth_sells:
             if o["xch_amount"] >= whale_threshold:
-                whales.append({
-                    "side": o["side"],
-                    "price": str(o["price"]),
-                    "xch_amount": str(o["xch_amount"]),
-                    "is_ours": o["is_ours"],
-                })
+                whales.append(
+                    {
+                        "side": o["side"],
+                        "price": str(o["price"]),
+                        "xch_amount": str(o["xch_amount"]),
+                        "is_ours": o["is_ours"],
+                    }
+                )
 
         # Thin side detection
         thin_side = ""
@@ -363,16 +390,24 @@ class MarketIntel:
             if ratio > Decimal("3"):
                 thin_side = "sell"  # Sell side is thin relative to buy
             elif ratio < Decimal("0.33"):
-                thin_side = "buy"   # Buy side is thin relative to sell
+                thin_side = "buy"  # Buy side is thin relative to sell
 
         # Overall orderbook spread (including our own offers)
         overall_best_bid = buy_offers[0]["price"] if buy_offers else Decimal("0")
         overall_best_ask = sell_offers[0]["price"] if sell_offers else Decimal("0")
         overall_spread_bps = Decimal("0")
-        if overall_best_bid > 0 and overall_best_ask > 0 and overall_best_bid < overall_best_ask:
+        if (
+            overall_best_bid > 0
+            and overall_best_ask > 0
+            and overall_best_bid < overall_best_ask
+        ):
             overall_mid = (overall_best_bid + overall_best_ask) / 2
             if overall_mid > 0:
-                overall_spread_bps = (overall_best_ask - overall_best_bid) / overall_mid * Decimal("10000")
+                overall_spread_bps = (
+                    (overall_best_ask - overall_best_bid)
+                    / overall_mid
+                    * Decimal("10000")
+                )
         elif overall_best_bid > 0 and overall_best_ask > 0:
             overall_spread_bps = Decimal("0")
 
@@ -385,7 +420,9 @@ class MarketIntel:
         if our_best_bid > 0 and our_best_ask > 0 and our_best_bid < our_best_ask:
             our_mid = (our_best_bid + our_best_ask) / 2
             if our_mid > 0:
-                our_spread_bps = (our_best_ask - our_best_bid) / our_mid * Decimal("10000")
+                our_spread_bps = (
+                    (our_best_ask - our_best_bid) / our_mid * Decimal("10000")
+                )
 
         with self._lock:
             self._competitors["best_bid"] = best_bid
@@ -426,8 +463,9 @@ class MarketIntel:
         """
         return self.get_competitor_spread()
 
-    def get_spread_recommendation(self, side: str, our_spread_bps: Decimal,
-                                   mid_price: Decimal) -> Decimal:
+    def get_spread_recommendation(
+        self, side: str, our_spread_bps: Decimal, mid_price: Decimal
+    ) -> Decimal:
         """Get a spread recommendation based on competitor analysis.
 
         Strategy:
@@ -489,13 +527,17 @@ class MarketIntel:
         # Price undercutting: if a competitor is very close to us, be slightly better
         if side == "buy" and best_bid > 0 and mid_price > 0:
             our_bid = mid_price * (Decimal("1") - our_spread_bps / Decimal("10000"))
-            if best_bid > 0 and abs(our_bid - best_bid) / mid_price * Decimal("10000") < Decimal("20"):
+            if best_bid > 0 and abs(our_bid - best_bid) / mid_price * Decimal(
+                "10000"
+            ) < Decimal("20"):
                 # We're within 20 BPS of a competitor — nudge tighter
                 adjustment -= Decimal("15")
 
         elif side == "sell" and best_ask > 0 and mid_price > 0:
             our_ask = mid_price * (Decimal("1") + our_spread_bps / Decimal("10000"))
-            if best_ask > 0 and abs(our_ask - best_ask) / mid_price * Decimal("10000") < Decimal("20"):
+            if best_ask > 0 and abs(our_ask - best_ask) / mid_price * Decimal(
+                "10000"
+            ) < Decimal("20"):
                 adjustment -= Decimal("15")
 
         return adjustment
@@ -504,8 +546,9 @@ class MarketIntel:
     # DBX Rewards Tracking
     # -------------------------------------------------------------------
 
-    def check_dbx_eligibility(self, our_spread_bps: Decimal,
-                                mid_price: Decimal) -> Dict:
+    def check_dbx_eligibility(
+        self, our_spread_bps: Decimal, mid_price: Decimal
+    ) -> Dict:
         """Check whether our offers qualify for Dexie's DBX liquidity rewards.
 
         Pulls per-direction parameters from /v1/incentives (cached) so the
@@ -529,6 +572,7 @@ class MarketIntel:
         sell_inc = None
         try:
             from dexie_incentives import get_pair_incentives
+
             pair = get_pair_incentives(asset_id)
             buy_inc = pair.get("buy")
             sell_inc = pair.get("sell")
@@ -546,8 +590,9 @@ class MarketIntel:
         eligible_count = int(eligible_buy) + int(eligible_sell)
 
         # Tightest applicable spread cap (used by GUI fallback indicator).
-        live_caps = [Decimal(str(s.get("max_spread_bps")))
-                     for s in (buy_inc, sell_inc) if s]
+        live_caps = [
+            Decimal(str(s.get("max_spread_bps"))) for s in (buy_inc, sell_inc) if s
+        ]
         if live_caps:
             max_eligible = min(live_caps)
         else:
@@ -556,13 +601,16 @@ class MarketIntel:
         # APR is per-side — surface the higher of the two so the user sees
         # the upside. Dexie's own API does the heavy lifting here, so we
         # don't need a synthetic formula any more.
-        apr_candidates = [Decimal(str(s.get("estimated_apr") or 0))
-                          for s in (buy_inc, sell_inc) if s]
+        apr_candidates = [
+            Decimal(str(s.get("estimated_apr") or 0)) for s in (buy_inc, sell_inc) if s
+        ]
         best_apr = max(apr_candidates) if apr_candidates else Decimal("0")
 
         self._dbx["max_eligible_spread"] = max_eligible
         self._dbx["eligible_offers"] = eligible_count
-        self._dbx["estimated_dbx_rate"] = best_apr  # now an APR fraction, not a synthetic rate
+        self._dbx["estimated_dbx_rate"] = (
+            best_apr  # now an APR fraction, not a synthetic rate
+        )
         self._dbx["pair_incentivized"] = bool(pair.get("incentivized"))
         self._dbx["buy_incentive"] = buy_inc
         self._dbx["sell_incentive"] = sell_inc
@@ -624,7 +672,9 @@ class MarketIntel:
         our_sells = [offer for offer in sell_offers if offer.get("is_ours")]
 
         our_best_bid = max((offer["price"] for offer in our_buys), default=Decimal("0"))
-        our_best_ask = min((offer["price"] for offer in our_sells), default=Decimal("0"))
+        our_best_ask = min(
+            (offer["price"] for offer in our_sells), default=Decimal("0")
+        )
 
         return {
             "buy_count": len(buy_offers),
@@ -641,7 +691,9 @@ class MarketIntel:
     def get_stats(self) -> Dict:
         """Get stats for the bot state endpoint."""
         return {
-            "competitor_spread_bps": str(self._competitors.get("competitor_spread_bps", "0")),
+            "competitor_spread_bps": str(
+                self._competitors.get("competitor_spread_bps", "0")
+            ),
             "best_bid": str(self._competitors.get("best_bid", "0")),
             "best_ask": str(self._competitors.get("best_ask", "0")),
             "buy_depth_xch": str(self._competitors.get("buy_depth_xch", "0")),
@@ -658,4 +710,3 @@ class MarketIntel:
             self._dbx["eligible_offers"] = 0
             self._dbx["estimated_dbx_rate"] = Decimal("0")
             self._dbx["last_check"] = 0
-

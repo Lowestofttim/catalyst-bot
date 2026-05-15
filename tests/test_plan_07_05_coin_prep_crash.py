@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import api_server
     import coin_manager as cm_module
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -55,6 +56,7 @@ def _make_coin_manager():
 # CoinManager.check_coin_prep_status() — unit tests
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCheckCoinPrepStatus(unittest.TestCase):
     """check_coin_prep_status() must report worker state correctly."""
@@ -69,7 +71,7 @@ class TestCheckCoinPrepStatus(unittest.TestCase):
         """Running subprocess returns running=True and pid."""
         mgr = _make_coin_manager()
         proc = MagicMock()
-        proc.poll.return_value = None   # still running
+        proc.poll.return_value = None  # still running
         proc.pid = 12345
         mgr._prep_process = proc
         result = mgr.check_coin_prep_status()
@@ -80,12 +82,14 @@ class TestCheckCoinPrepStatus(unittest.TestCase):
         """Crashed worker (exit code != 0) → running=False, exit_code set."""
         mgr = _make_coin_manager()
         proc = MagicMock()
-        proc.poll.return_value = -1     # crash / SIGTERM
+        proc.poll.return_value = -1  # crash / SIGTERM
         proc.stdout = None
         proc.stderr = None
         mgr._prep_process = proc
-        with patch("coin_manager.log_event"), \
-             patch("os.path.exists", return_value=False):
+        with (
+            patch("coin_manager.log_event"),
+            patch("os.path.exists", return_value=False),
+        ):
             result = mgr.check_coin_prep_status()
         self.assertFalse(result.get("running"))
         self.assertEqual(result.get("exit_code"), -1)
@@ -98,8 +102,10 @@ class TestCheckCoinPrepStatus(unittest.TestCase):
         proc.stdout = None
         proc.stderr = None
         mgr._prep_process = proc
-        with patch("coin_manager.log_event"), \
-             patch("os.path.exists", return_value=False):
+        with (
+            patch("coin_manager.log_event"),
+            patch("os.path.exists", return_value=False),
+        ):
             result = mgr.check_coin_prep_status()
         self.assertFalse(result.get("running"))
         self.assertEqual(result.get("exit_code"), 0)
@@ -113,8 +119,10 @@ class TestCheckCoinPrepStatus(unittest.TestCase):
         proc.stdout = None
         proc.stderr = None
         mgr._prep_process = proc
-        with patch("coin_manager.log_event"), \
-             patch("os.path.exists", return_value=False):
+        with (
+            patch("coin_manager.log_event"),
+            patch("os.path.exists", return_value=False),
+        ):
             mgr.check_coin_prep_status()
         self.assertFalse(mgr._prep_running)
 
@@ -126,8 +134,10 @@ class TestCheckCoinPrepStatus(unittest.TestCase):
         proc.stdout.read.side_effect = IOError("pipe closed")
         proc.stderr.read.side_effect = IOError("pipe closed")
         mgr._prep_process = proc
-        with patch("coin_manager.log_event"), \
-             patch("os.path.exists", return_value=False):
+        with (
+            patch("coin_manager.log_event"),
+            patch("os.path.exists", return_value=False),
+        ):
             try:
                 result = mgr.check_coin_prep_status()
             except Exception as exc:
@@ -138,6 +148,7 @@ class TestCheckCoinPrepStatus(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # /api/coin-prep/status — crash detection in the endpoint
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCoinPrepStatusEndpointCrashDetection(unittest.TestCase):
@@ -181,7 +192,8 @@ class TestCoinPrepStatusEndpointCrashDetection(unittest.TestCase):
 
         bot = MagicMock()
         bot.coin_manager.check_coin_prep_status.return_value = {
-            "running": False, "exit_code": -1,
+            "running": False,
+            "exit_code": -1,
         }
         resp = self._get_status(bot=bot)
         body = resp.get_json()
@@ -195,7 +207,8 @@ class TestCoinPrepStatusEndpointCrashDetection(unittest.TestCase):
 
         bot = MagicMock()
         bot.coin_manager.check_coin_prep_status.return_value = {
-            "running": False, "exit_code": 0,
+            "running": False,
+            "exit_code": 0,
         }
         resp = self._get_status(bot=bot)
         body = resp.get_json()
@@ -207,7 +220,8 @@ class TestCoinPrepStatusEndpointCrashDetection(unittest.TestCase):
 
         bot = MagicMock()
         bot.coin_manager.check_coin_prep_status.return_value = {
-            "running": False, "exit_code": 2,
+            "running": False,
+            "exit_code": 2,
         }
         resp = self._get_status(bot=bot)
         body = resp.get_json()
@@ -220,7 +234,8 @@ class TestCoinPrepStatusEndpointCrashDetection(unittest.TestCase):
 
         bot = MagicMock()
         bot.coin_manager.check_coin_prep_status.return_value = {
-            "running": False, "exit_code": -1,
+            "running": False,
+            "exit_code": -1,
         }
         resp = self._get_status(bot=bot)
         body = resp.get_json()
@@ -231,6 +246,7 @@ class TestCoinPrepStatusEndpointCrashDetection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # /api/coin-prep/trigger — state reset after crash
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCoinPrepTriggerAfterCrash(unittest.TestCase):
@@ -255,11 +271,13 @@ class TestCoinPrepTriggerAfterCrash(unittest.TestCase):
         # Route lives in blueprints.coin_prep since the api_server split;
         # patch threading/log_event there so the blueprint sees the mock.
         mock_thread = MagicMock()
-        with patch.object(api_server, "bot", bot_mock), \
-             patch("blueprints.coin_prep.threading") as mock_threading, \
-             patch("blueprints.coin_prep.log_event"), \
-             patch("os.path.exists", return_value=True), \
-             patch("builtins.open", unittest.mock.mock_open()):
+        with (
+            patch.object(api_server, "bot", bot_mock),
+            patch("blueprints.coin_prep.threading") as mock_threading,
+            patch("blueprints.coin_prep.log_event"),
+            patch("os.path.exists", return_value=True),
+            patch("builtins.open", unittest.mock.mock_open()),
+        ):
             mock_threading.Thread.return_value = mock_thread
             resp = self.client.post(
                 "/api/coin-prep/trigger",

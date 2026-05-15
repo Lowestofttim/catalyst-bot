@@ -24,9 +24,7 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
             "CAT_DECIMALS": os.environ.get("CAT_DECIMALS"),
             "MZ_DECIMALS": os.environ.get("MZ_DECIMALS"),
         }
-        self._saved_modules = {
-            name: sys.modules.get(name) for name in _MODS_TO_RESTORE
-        }
+        self._saved_modules = {name: sys.modules.get(name) for name in _MODS_TO_RESTORE}
         os.environ["WALLET_TYPE"] = "sage"
         os.environ["WALLET_FINGERPRINT"] = "123"
         os.environ["DEFAULT_TRADE_XCH"] = ""
@@ -73,7 +71,9 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
 
         fake_wallet_sage = types.ModuleType("wallet_sage")
         fake_wallet_sage.get_current_key = lambda: {"fingerprint": "123"}
-        fake_wallet_sage.get_spendable_coin_count = lambda wallet_id: 17 if wallet_id == 1 else 19
+        fake_wallet_sage.get_spendable_coin_count = lambda wallet_id: (
+            17 if wallet_id == 1 else 19
+        )
         fake_wallet_sage.get_selectable_coins_only = lambda wallet_id: {
             "success": True,
             "records": [
@@ -123,7 +123,9 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         self.assertEqual(self.worker.get_coin_count(2), 19)
 
     def test_get_coins_via_rpc_can_use_strict_selectable_view(self):
-        strict_coins = self.worker._get_coins_via_rpc(1, "strict-test", selectable_only=True)
+        strict_coins = self.worker._get_coins_via_rpc(
+            1, "strict-test", selectable_only=True
+        )
         default_coins = self.worker._get_coins_via_rpc(1, "default-test")
 
         self.assertEqual(len(strict_coins), 1)
@@ -136,7 +138,9 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
 
     def test_confirmation_order_lag_is_logged_as_info(self):
         logged = []
-        self.worker.log = lambda message, severity=None: logged.append((message, severity))
+        self.worker.log = lambda message, severity=None: logged.append(
+            (message, severity)
+        )
 
         self.worker._log_confirmation_order_lag(
             "XCH",
@@ -168,10 +172,18 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         )
 
     def test_status_targets_track_prepared_coins_not_reserve_bonus(self):
-        self.assertEqual(self.worker.status.xch_coins_target, self.worker.xch_target_coins)
-        self.assertEqual(self.worker.status.cat_coins_target, self.worker.cat_target_coins)
-        self.assertEqual(self.worker.xch_expected_total_coins, self.worker.xch_target_coins + 1)
-        self.assertEqual(self.worker.cat_expected_total_coins, self.worker.cat_target_coins + 1)
+        self.assertEqual(
+            self.worker.status.xch_coins_target, self.worker.xch_target_coins
+        )
+        self.assertEqual(
+            self.worker.status.cat_coins_target, self.worker.cat_target_coins
+        )
+        self.assertEqual(
+            self.worker.xch_expected_total_coins, self.worker.xch_target_coins + 1
+        )
+        self.assertEqual(
+            self.worker.cat_expected_total_coins, self.worker.cat_target_coins + 1
+        )
 
     def test_blank_template_env_values_use_worker_defaults(self):
         self.assertEqual(self.worker.xch_wallet_id, 1)
@@ -180,7 +192,9 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         self.assertEqual(self.worker.cat_target_coins, 50)
         self.assertEqual(self.worker.cat_decimals, 3)
 
-    def test_preselected_pool_helper_falls_back_to_same_amount_coin_when_exact_id_not_found(self):
+    def test_preselected_pool_helper_falls_back_to_same_amount_coin_when_exact_id_not_found(
+        self,
+    ):
         # When the exact coin ID is not selectable AND a selectable coin with the
         # same amount exists, the worker should fall back to that coin.
         # This handles stale wallet data where the pool coin map was built before
@@ -195,6 +209,7 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         original_get = self.worker._get_coins_via_rpc
         original_selectable = self.worker._are_coin_ids_selectable
         try:
+
             def fake_get(wallet_id, name, selectable_only=False):
                 if selectable_only:
                     return [fallback_coin]
@@ -205,7 +220,11 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
 
             resolved = self.worker._wait_for_preselected_pool_coin(
                 wallet_id=1,
-                pool_coin={"coin_id": "0x" + "33" * 32, "amount": 220, "amount_mojos": 220},
+                pool_coin={
+                    "coin_id": "0x" + "33" * 32,
+                    "amount": 220,
+                    "amount_mojos": 220,
+                },
                 side_label="XCH",
                 tier_name="fees",
                 timeout_s=1,
@@ -235,7 +254,11 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
 
             resolved = self.worker._wait_for_preselected_pool_coin(
                 wallet_id=1,
-                pool_coin={"coin_id": expected_coin_id, "amount": 220, "amount_mojos": 220},
+                pool_coin={
+                    "coin_id": expected_coin_id,
+                    "amount": 220,
+                    "amount_mojos": 220,
+                },
                 side_label="XCH",
                 tier_name="fees",
                 timeout_s=1,
@@ -250,17 +273,22 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         self.assertEqual(resolved["amount"], 220)
 
     def test_extract_sage_transaction_ids_handles_both_plural_and_single_fields(self):
-        tx_ids = self.coin_prep_worker.CoinPrepWorker._extract_sage_transaction_ids({
-            "transaction_ids": ["aa" * 32],
-            "transaction_id": "0x" + "bb" * 32,
-            "transaction": {"transaction_id": "cc" * 32},
-        })
+        tx_ids = self.coin_prep_worker.CoinPrepWorker._extract_sage_transaction_ids(
+            {
+                "transaction_ids": ["aa" * 32],
+                "transaction_id": "0x" + "bb" * 32,
+                "transaction": {"transaction_id": "cc" * 32},
+            }
+        )
 
-        self.assertEqual(tx_ids, [
-            "0x" + "aa" * 32,
-            "0x" + "bb" * 32,
-            "0x" + "cc" * 32,
-        ])
+        self.assertEqual(
+            tx_ids,
+            [
+                "0x" + "aa" * 32,
+                "0x" + "bb" * 32,
+                "0x" + "cc" * 32,
+            ],
+        )
 
     def test_transaction_confirmation_state_marks_single_tx_confirmed(self):
         original_get_transaction = self.coin_prep_worker.get_transaction

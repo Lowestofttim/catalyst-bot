@@ -6,6 +6,7 @@ No existing tests. Covers:
   _check_position_limit, _check_price_limits, check_circuit_breakers (hysteresis),
   _get_base_spread, _apply_inventory_skew.
 """
+
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
@@ -13,6 +14,7 @@ from unittest.mock import patch
 try:
     import risk_manager as _rm_mod
     from risk_manager import RiskManager
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _rm_mod = None
@@ -94,7 +96,9 @@ class TestCircuitBreakerTrip(unittest.TestCase):
 
     def test_position_cb_sets_blocked_side(self):
         rm = self._rm()
-        rm._trip_circuit_breaker("position overshoot", cb_type="position", blocked_side="buy")
+        rm._trip_circuit_breaker(
+            "position overshoot", cb_type="position", blocked_side="buy"
+        )
         self.assertEqual(rm.get_circuit_breaker_blocked_side(), "buy")
 
     def test_price_cb_is_full_halt(self):
@@ -131,8 +135,12 @@ class TestUpdateInventory(unittest.TestCase):
         cfg_patch.CAT_ASSET_ID = "asset-test"
         cfg_patch.RUN_HISTORY_CUTOFF = "2026-03-28T22:07:28+00:00"
 
-        with patch.object(_rm_mod, "cfg", cfg_patch), \
-             patch.object(_rm_mod, "get_net_position", return_value=Decimal("42")) as get_net_position:
+        with (
+            patch.object(_rm_mod, "cfg", cfg_patch),
+            patch.object(
+                _rm_mod, "get_net_position", return_value=Decimal("42")
+            ) as get_net_position,
+        ):
             rm = _make_rm()
             state = rm.update_inventory()
 
@@ -241,7 +249,9 @@ class TestCheckPositionLimit(unittest.TestCase):
 
     def test_above_hard_limit_trips_cb(self):
         rm = _make_rm()
-        rm._startup_position_xch = Decimal("0")  # baseline=0 so effective_limit=100, hard=150
+        rm._startup_position_xch = Decimal(
+            "0"
+        )  # baseline=0 so effective_limit=100, hard=150
         rm._net_position_cat = Decimal("160")  # 160 > 150
         result = rm._check_position_limit(Decimal("1.00"))
         self.assertTrue(result)
@@ -389,7 +399,8 @@ class TestApplyInventorySkew(unittest.TestCase):
         self._p.stop()
 
     class _FakeEngine:
-        def get_last_price(self): return Decimal("1.00")
+        def get_last_price(self):
+            return Decimal("1.00")
 
     def test_neutral_position_no_skew(self):
         rm = _make_rm(price_engine=self._FakeEngine())
@@ -440,13 +451,17 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
 
     def test_uses_live_bot_bid_ask_gap_when_available(self):
         rm = _make_rm()
-        rm._bot_ref = type("Bot", (), {
-            "_last_live_offer_edges": {
-                "our_best_bid": "0.99",
-                "our_best_ask": "1.02",
+        rm._bot_ref = type(
+            "Bot",
+            (),
+            {
+                "_last_live_offer_edges": {
+                    "our_best_bid": "0.99",
+                    "our_best_ask": "1.02",
+                },
+                "_bot_state": {"mid_price": "1.00"},
             },
-            "_bot_state": {"mid_price": "1.00"},
-        })()
+        )()
 
         health = rm.get_market_health()
 
@@ -457,17 +472,23 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
 
     def test_uses_live_bot_bid_ask_midpoint_when_mid_price_missing(self):
         rm = _make_rm()
-        rm._bot_ref = type("Bot", (), {
-            "_last_live_offer_edges": {
-                "our_best_bid": "0.99",
-                "our_best_ask": "1.02",
+        rm._bot_ref = type(
+            "Bot",
+            (),
+            {
+                "_last_live_offer_edges": {
+                    "our_best_bid": "0.99",
+                    "our_best_ask": "1.02",
+                },
+                "_bot_state": {"mid_price": "0"},
             },
-            "_bot_state": {"mid_price": "0"},
-        })()
+        )()
 
         health = rm.get_market_health()
 
-        expected_bps = (Decimal("1.02") - Decimal("0.99")) / Decimal("1.005") * Decimal("10000")
+        expected_bps = (
+            (Decimal("1.02") - Decimal("0.99")) / Decimal("1.005") * Decimal("10000")
+        )
         self.assertAlmostEqual(
             Decimal(health["metrics"]["your_spread_bps"]),
             expected_bps,
@@ -475,13 +496,17 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
 
     def test_crossed_live_bot_edges_fall_back_to_configured_spread(self):
         rm = _make_rm()
-        rm._bot_ref = type("Bot", (), {
-            "_last_live_offer_edges": {
-                "our_best_bid": "1.02",
-                "our_best_ask": "1.01",
+        rm._bot_ref = type(
+            "Bot",
+            (),
+            {
+                "_last_live_offer_edges": {
+                    "our_best_bid": "1.02",
+                    "our_best_ask": "1.01",
+                },
+                "_bot_state": {"mid_price": "1.00"},
             },
-            "_bot_state": {"mid_price": "1.00"},
-        })()
+        )()
 
         health = rm.get_market_health()
 
@@ -495,16 +520,20 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
         rm = _make_rm()
         max_spread = _fake_cfg.MAX_SPREAD_BPS / Decimal("10000")
         rm.get_adjusted_spread = lambda _side: max_spread
-        rm._market_intel = type("MarketIntel", (), {
-            "get_market_summary": lambda self: {
-                "orderbook_refreshes": 1,
-                "orderbook_age_secs": 1,
-                "num_competitor_buys": 1,
-                "num_competitor_sells": 1,
-                "competitor_spread_bps": "600",
-                "overall_spread_bps": "500",
-            }
-        })()
+        rm._market_intel = type(
+            "MarketIntel",
+            (),
+            {
+                "get_market_summary": lambda self: {
+                    "orderbook_refreshes": 1,
+                    "orderbook_age_secs": 1,
+                    "num_competitor_buys": 1,
+                    "num_competitor_sells": 1,
+                    "competitor_spread_bps": "600",
+                    "overall_spread_bps": "500",
+                }
+            },
+        )()
 
         health = rm.get_market_health(loop_count=3)
 
@@ -512,8 +541,12 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
         self.assertEqual(health["status"], "green")
         self.assertEqual(health["message"], "Market healthy — bot operating normally")
         self.assertNotIn("MAX_SPREAD_BPS", condition_text)
-        self.assertEqual(Decimal(health["metrics"]["buy_spread_bps"]), _fake_cfg.MAX_SPREAD_BPS)
-        self.assertEqual(Decimal(health["metrics"]["sell_spread_bps"]), _fake_cfg.MAX_SPREAD_BPS)
+        self.assertEqual(
+            Decimal(health["metrics"]["buy_spread_bps"]), _fake_cfg.MAX_SPREAD_BPS
+        )
+        self.assertEqual(
+            Decimal(health["metrics"]["sell_spread_bps"]), _fake_cfg.MAX_SPREAD_BPS
+        )
 
     def test_min_spread_clamp_is_quiet_when_base_equals_minimum(self):
         cfg_patch = _FakeCfg()
@@ -524,7 +557,9 @@ class TestMarketHealthInnerSpread(unittest.TestCase):
             rm = _make_rm()
             min_spread = cfg_patch.MIN_SPREAD_BPS / Decimal("10000")
             rm.get_adjusted_spread = lambda side: (
-                min_spread if side == "buy" else Decimal("0.03654888908347046890499652273")
+                min_spread
+                if side == "buy"
+                else Decimal("0.03654888908347046890499652273")
             )
 
             health = rm.get_market_health(loop_count=8)

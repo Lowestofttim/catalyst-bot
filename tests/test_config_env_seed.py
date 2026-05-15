@@ -12,7 +12,9 @@ class TestEnvExampleDiscovery(unittest.TestCase):
             install_dir = root / "src" / "catalyst"
             install_dir.mkdir(parents=True)
             expected = root / ".env.example"
-            expected.write_text("SAGE_RPC_URL=https://127.0.0.1:9257\n", encoding="utf-8")
+            expected.write_text(
+                "SAGE_RPC_URL=https://127.0.0.1:9257\n", encoding="utf-8"
+            )
 
             self.assertEqual(
                 config._find_env_example_path(str(install_dir)),
@@ -25,7 +27,9 @@ class TestEnvExampleDiscovery(unittest.TestCase):
             install_dir = app_dir / "_internal"
             install_dir.mkdir(parents=True)
             expected = app_dir / ".env.example"
-            expected.write_text("SAGE_RPC_URL=https://127.0.0.1:9257\n", encoding="utf-8")
+            expected.write_text(
+                "SAGE_RPC_URL=https://127.0.0.1:9257\n", encoding="utf-8"
+            )
 
             self.assertEqual(
                 config._find_env_example_path(str(install_dir)),

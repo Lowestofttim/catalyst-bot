@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -28,6 +29,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
+
 
 class _FlaskBase(unittest.TestCase):
     _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
@@ -58,7 +60,8 @@ def _make_bot(running=False, start_returns=True):
     bot.start.return_value = start_returns
     bot.stop.return_value = None
     bot.get_state.return_value = {
-        "running": running, "status": "running" if running else "idle",
+        "running": running,
+        "status": "running" if running else "idle",
         "loop_count": 0,
     }
     return bot
@@ -77,9 +80,9 @@ def _fake_cfg(cat_asset_id="abc123", spread_bps=200):
 # 1. POST /api/bot/start
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestBotStart(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/bot/start", auth=False)
         self.assertEqual(resp.status_code, 401)
@@ -99,8 +102,10 @@ class TestBotStart(_FlaskBase):
 
     def test_no_cat_asset_id_returns_400_with_errors(self):
         fake_cfg = _fake_cfg(cat_asset_id="")
-        with patch.object(api_server, "bot", _make_bot(running=False)), \
-             patch.object(api_server, "cfg", fake_cfg):
+        with (
+            patch.object(api_server, "bot", _make_bot(running=False)),
+            patch.object(api_server, "cfg", fake_cfg),
+        ):
             resp = self._post("/api/bot/start")
         self.assertEqual(resp.status_code, 400)
         body = resp.get_json()
@@ -113,8 +118,10 @@ class TestBotStart(_FlaskBase):
 
     def test_zero_spread_returns_400_with_errors(self):
         fake_cfg = _fake_cfg(spread_bps=0)
-        with patch.object(api_server, "bot", _make_bot(running=False)), \
-             patch.object(api_server, "cfg", fake_cfg):
+        with (
+            patch.object(api_server, "bot", _make_bot(running=False)),
+            patch.object(api_server, "cfg", fake_cfg),
+        ):
             resp = self._post("/api/bot/start")
         self.assertEqual(resp.status_code, 400)
         body = resp.get_json()
@@ -123,10 +130,17 @@ class TestBotStart(_FlaskBase):
     def test_successful_start_returns_200_started_status(self):
         fake_cfg = _fake_cfg()
         bot = _make_bot(running=False, start_returns=True)
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "_get_sage_signing_block_reason", return_value=None), \
-             patch("wallet.get_wallet_sync_status", return_value={"reachable": True, "sync_state": "synced"}):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(
+                api_server, "_get_sage_signing_block_reason", return_value=None
+            ),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": True, "sync_state": "synced"},
+            ),
+        ):
             resp = self._post("/api/bot/start")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
@@ -135,10 +149,17 @@ class TestBotStart(_FlaskBase):
     def test_start_blocked_by_bot_returns_400(self):
         fake_cfg = _fake_cfg()
         bot = _make_bot(running=False, start_returns=False)
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "_get_sage_signing_block_reason", return_value=None), \
-             patch("wallet.get_wallet_sync_status", return_value={"reachable": True, "sync_state": "synced"}):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(
+                api_server, "_get_sage_signing_block_reason", return_value=None
+            ),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": True, "sync_state": "synced"},
+            ),
+        ):
             resp = self._post("/api/bot/start")
         self.assertEqual(resp.status_code, 400)
         body = resp.get_json()
@@ -147,19 +168,26 @@ class TestBotStart(_FlaskBase):
     def test_tier_size_drift_returns_coin_prep_response(self):
         fake_cfg = _fake_cfg()
         bot = _make_bot(running=False)
-        drift = [{
-            "side": "xch",
-            "tier": "inner",
-            "ratio": 0.457,
-            "coin_count": 11,
-        }]
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "_get_sage_signing_block_reason", return_value=None), \
-             patch("wallet.get_wallet_sync_status",
-                   return_value={"reachable": True, "sync_state": "synced"}), \
-             patch("coin_manager.check_tier_size_drift_standalone",
-                   return_value=drift):
+        drift = [
+            {
+                "side": "xch",
+                "tier": "inner",
+                "ratio": 0.457,
+                "coin_count": 11,
+            }
+        ]
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(
+                api_server, "_get_sage_signing_block_reason", return_value=None
+            ),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": True, "sync_state": "synced"},
+            ),
+            patch("coin_manager.check_tier_size_drift_standalone", return_value=drift),
+        ):
             resp = self._post("/api/bot/start")
 
         self.assertEqual(resp.status_code, 400)
@@ -179,14 +207,19 @@ class TestBotStart(_FlaskBase):
             "phase": "error",
             "error": "Sage tier pool creation + splitting failed",
         }
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server, "cfg", fake_cfg), \
-             patch.dict(api_server._coin_prep_state, failed_state, clear=True), \
-             patch.object(api_server, "_get_sage_signing_block_reason", return_value=None), \
-             patch("wallet.get_wallet_sync_status",
-                   return_value={"reachable": True, "sync_state": "synced"}), \
-             patch("coin_manager.check_tier_size_drift_standalone",
-                   return_value=[]):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.dict(api_server._coin_prep_state, failed_state, clear=True),
+            patch.object(
+                api_server, "_get_sage_signing_block_reason", return_value=None
+            ),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": True, "sync_state": "synced"},
+            ),
+            patch("coin_manager.check_tier_size_drift_standalone", return_value=[]),
+        ):
             resp = self._post("/api/bot/start")
 
         self.assertEqual(resp.status_code, 400)
@@ -204,10 +237,15 @@ class TestBotStart(_FlaskBase):
         """If _get_sage_signing_block_reason returns a string, start is blocked."""
         fake_cfg = _fake_cfg()
         bot = _make_bot(running=False)
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "_get_sage_signing_block_reason",
-                          return_value="Sage cannot sign"):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(
+                api_server,
+                "_get_sage_signing_block_reason",
+                return_value="Sage cannot sign",
+            ),
+        ):
             resp = self._post("/api/bot/start")
         self.assertEqual(resp.status_code, 400)
         body = resp.get_json()
@@ -218,9 +256,9 @@ class TestBotStart(_FlaskBase):
 # 2. POST /api/bot/stop
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestBotStop(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/bot/stop", auth=False)
         self.assertEqual(resp.status_code, 401)
@@ -255,30 +293,30 @@ class TestBotStop(_FlaskBase):
 # 3. POST /api/shutdown
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestShutdown(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/shutdown", auth=False)
         self.assertEqual(resp.status_code, 401)
 
     def test_returns_200(self):
-        with patch.object(api_server, "bot", None), \
-             patch("threading.Thread"):
+        with patch.object(api_server, "bot", None), patch("threading.Thread"):
             resp = self._post("/api/shutdown")
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_success_key(self):
-        with patch.object(api_server, "bot", None), \
-             patch("threading.Thread"):
+        with patch.object(api_server, "bot", None), patch("threading.Thread"):
             resp = self._post("/api/shutdown")
         body = resp.get_json()
         self.assertIsInstance(body, dict)
 
     def test_cancel_offers_false_by_default(self):
         """Default request body has cancel_offers=False."""
-        with patch.object(api_server, "bot", None), \
-             patch("threading.Thread") as mock_thread:
+        with (
+            patch.object(api_server, "bot", None),
+            patch("threading.Thread") as mock_thread,
+        ):
             self._post("/api/shutdown")
         # Thread should have been started for the background shutdown
         mock_thread.assert_called()

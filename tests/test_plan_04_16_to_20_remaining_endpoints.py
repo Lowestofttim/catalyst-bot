@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -37,7 +38,8 @@ def _make_bot():
     bot.market_intel.check_dbx_eligibility.return_value = {}
     bot.risk_manager.get_adjusted_spread.return_value = Decimal("0.003")
     bot.risk_manager.get_inventory_state.return_value = {
-        "net_position_cat": "0", "circuit_breaker_active": False,
+        "net_position_cat": "0",
+        "circuit_breaker_active": False,
     }
     bot.price_engine.get_last_price.return_value = Decimal("0.001")
     bot.sniper.get_stats.return_value = {}
@@ -76,19 +78,23 @@ class _FlaskBase(unittest.TestCase):
 # 04-16: GET /api/market/intel
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestMarketIntel(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
-            resp = self.client.get("/api/market/intel",
-                                   environ_base=self._LOOPBACK)
+            resp = self.client.get("/api/market/intel", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 500)
 
     def _get_intel(self):
         empty_sc = {"enabled": False, "has_data": False}
-        fake_local = {"our_best_bid": Decimal("0"), "our_best_ask": Decimal("0"),
-                      "our_open_buys": 0, "our_open_sells": 0, "source": "db"}
+        fake_local = {
+            "our_best_bid": Decimal("0"),
+            "our_best_ask": Decimal("0"),
+            "our_open_buys": 0,
+            "our_open_sells": 0,
+            "source": "db",
+        }
         return self.client.get(
             "/api/market/intel",
             environ_base=self._LOOPBACK,
@@ -96,26 +102,38 @@ class TestMarketIntel(_FlaskBase):
 
     def test_returns_200_with_bot(self):
         empty_sc = {"enabled": False, "has_data": False}
-        fake_local = {"our_best_bid": Decimal("0"), "our_best_ask": Decimal("0"),
-                      "our_open_buys": 0, "our_open_sells": 0, "source": "db"}
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server._get_live_local_offer_edges", return_value=fake_local), \
-             patch("api_server._get_spacescan_market_context", return_value=empty_sc), \
-             patch("api_server._fetch_dbx_pair_status", return_value={}):
-            resp = self.client.get("/api/market/intel",
-                                   environ_base=self._LOOPBACK)
+        fake_local = {
+            "our_best_bid": Decimal("0"),
+            "our_best_ask": Decimal("0"),
+            "our_open_buys": 0,
+            "our_open_sells": 0,
+            "source": "db",
+        }
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server._get_live_local_offer_edges", return_value=fake_local),
+            patch("api_server._get_spacescan_market_context", return_value=empty_sc),
+            patch("api_server._fetch_dbx_pair_status", return_value={}),
+        ):
+            resp = self.client.get("/api/market/intel", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_response_is_dict(self):
         empty_sc = {"enabled": False, "has_data": False}
-        fake_local = {"our_best_bid": Decimal("0"), "our_best_ask": Decimal("0"),
-                      "our_open_buys": 0, "our_open_sells": 0, "source": "db"}
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server._get_live_local_offer_edges", return_value=fake_local), \
-             patch("api_server._get_spacescan_market_context", return_value=empty_sc), \
-             patch("api_server._fetch_dbx_pair_status", return_value={}):
-            resp = self.client.get("/api/market/intel",
-                                   environ_base=self._LOOPBACK)
+        fake_local = {
+            "our_best_bid": Decimal("0"),
+            "our_best_ask": Decimal("0"),
+            "our_open_buys": 0,
+            "our_open_sells": 0,
+            "source": "db",
+        }
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server._get_live_local_offer_edges", return_value=fake_local),
+            patch("api_server._get_spacescan_market_context", return_value=empty_sc),
+            patch("api_server._fetch_dbx_pair_status", return_value={}),
+        ):
+            resp = self.client.get("/api/market/intel", environ_base=self._LOOPBACK)
         self.assertIsInstance(resp.get_json(), dict)
 
 
@@ -123,19 +141,17 @@ class TestMarketIntel(_FlaskBase):
 # 04-17: GET /api/spacescan/status + POST /api/spacescan/setup
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSpacescanStatus(_FlaskBase):
-
     def test_returns_200(self):
         with patch("spacescan.get_api_stats", return_value={}):
-            resp = self.client.get("/api/spacescan/status",
-                                   environ_base=self._LOOPBACK)
+            resp = self.client.get("/api/spacescan/status", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_configured_key(self):
         with patch("spacescan.get_api_stats", return_value={}):
-            resp = self.client.get("/api/spacescan/status",
-                                   environ_base=self._LOOPBACK)
+            resp = self.client.get("/api/spacescan/status", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertIn("configured", body)
         self.assertIn("tier", body)
@@ -143,10 +159,8 @@ class TestSpacescanStatus(_FlaskBase):
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSpacescanSetup(_FlaskBase):
-
     def test_requires_token(self):
-        resp = self._post("/api/spacescan/setup",
-                          {"api_key": ""}, auth=False)
+        resp = self._post("/api/spacescan/setup", {"api_key": ""}, auth=False)
         self.assertEqual(resp.status_code, 401)
 
     def test_skip_returns_free_tier(self):
@@ -176,26 +190,23 @@ class TestSpacescanSetup(_FlaskBase):
 # 04-18: GET /api/fees/status
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestFeesStatus(_FlaskBase):
-
     def test_returns_200(self):
         with patch("api_server.get_fee_settings_snapshot", return_value={}):
-            resp = self.client.get("/api/fees/status",
-                                   environ_base=self._LOOPBACK)
+            resp = self.client.get("/api/fees/status", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_success_key_true(self):
         with patch("api_server.get_fee_settings_snapshot", return_value={}):
-            resp = self.client.get("/api/fees/status",
-                                   environ_base=self._LOOPBACK)
+            resp = self.client.get("/api/fees/status", environ_base=self._LOOPBACK)
         self.assertTrue(resp.get_json().get("success"))
 
     def test_no_auth_required(self):
         # GET endpoint — no token needed
         with patch("api_server.get_fee_settings_snapshot", return_value={}):
-            resp = self.client.get("/api/fees/status",
-                                   environ_base=self._LOOPBACK)
+            resp = self.client.get("/api/fees/status", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
 
@@ -203,28 +214,42 @@ class TestFeesStatus(_FlaskBase):
 # 04-19: Sniper stats embedded in /api/pnl (verified via sniper key)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSniperViaPlnl(_FlaskBase):
     """Sniper stats are not a dedicated endpoint — they're in /api/pnl."""
 
     def _fake_stats(self):
         return {
-            "realised_pnl_xch": "0", "total_fills": 0, "buy_fills": 0,
-            "sell_fills": 0, "round_trips": 0, "win_rate": 0,
-            "fill_rate_per_hour": 0, "avg_spread_capture": "0",
-            "unmatched_buy_fills": 0, "unmatched_sell_fills": 0,
-            "volume_xch": "0", "volume_cat": "0",
-            "buy_volume_xch": "0", "buy_volume_cat": "0",
-            "sell_volume_xch": "0", "sell_volume_cat": "0",
-            "net_xch_flow": "0", "net_cat_flow": "0",
-            "avg_fill_size_xch": "0", "avg_round_trip_secs": 0,
+            "realised_pnl_xch": "0",
+            "total_fills": 0,
+            "buy_fills": 0,
+            "sell_fills": 0,
+            "round_trips": 0,
+            "win_rate": 0,
+            "fill_rate_per_hour": 0,
+            "avg_spread_capture": "0",
+            "unmatched_buy_fills": 0,
+            "unmatched_sell_fills": 0,
+            "volume_xch": "0",
+            "volume_cat": "0",
+            "buy_volume_xch": "0",
+            "buy_volume_cat": "0",
+            "sell_volume_xch": "0",
+            "sell_volume_cat": "0",
+            "net_xch_flow": "0",
+            "net_cat_flow": "0",
+            "avg_fill_size_xch": "0",
+            "avg_round_trip_secs": 0,
             "avg_pnl_per_trip_xch": "0",
         }
 
     def test_pnl_has_sniper_key(self):
         bot = _make_bot()
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server.get_stats", return_value=self._fake_stats()):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server.get_stats", return_value=self._fake_stats()),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertIn("sniper", body)
@@ -233,8 +258,10 @@ class TestSniperViaPlnl(_FlaskBase):
     def test_sniper_stats_from_bot(self):
         bot = _make_bot()
         bot.sniper.get_stats.return_value = {"total_snipes": 5}
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server.get_stats", return_value=self._fake_stats()):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server.get_stats", return_value=self._fake_stats()),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertEqual(body["sniper"].get("total_snipes"), 5)
@@ -243,6 +270,7 @@ class TestSniperViaPlnl(_FlaskBase):
 # ---------------------------------------------------------------------------
 # 04-20: Circuit-breaker state (no dedicated CB endpoint; via /api/inventory)
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCircuitBreakerViaInventory(_FlaskBase):

@@ -30,12 +30,18 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import wallet_sage as ws
 from wallet_sage import (
-    rpc, get_all_offers, split_coins_rpc, cancel_offer, create_offer,
-    get_selectable_coins_only, get_pending_transactions,
+    rpc,
+    get_all_offers,
+    split_coins_rpc,
+    cancel_offer,
+    create_offer,
+    get_selectable_coins_only,
+    get_pending_transactions,
 )
 
 
@@ -53,14 +59,18 @@ CAT_ASSET_ID = os.getenv("CAT_ASSET_ID", "")
 XCH_WALLET_ID = ws.WALLET_ID_XCH
 CAT_WALLET_ID = _env_int("CAT_WALLET_ID") or _env_int("CHIA_WALLET_ID_MZ") or 5
 
-POLL_INTERVAL = 5     # seconds between polls
-POLL_TIMEOUT = 180    # max wait for on-chain confirm (splits can take 60-90s after pending clears)
+POLL_INTERVAL = 5  # seconds between polls
+POLL_TIMEOUT = (
+    180  # max wait for on-chain confirm (splits can take 60-90s after pending clears)
+)
 
 
 # ── TEST FRAMEWORK ────────────────────────────────────────────
 
+
 class T:
     """Simple test tracker with timestamps."""
+
     passed = 0
     failed = 0
     start = time.time()
@@ -84,6 +94,7 @@ class T:
 
 # ── TRANSACTION CONFIRMATION ──────────────────────────────────
 
+
 def wait_for_pending_clear(label, timeout=POLL_TIMEOUT):
     """Wait until get_pending_transactions returns empty (= all confirmed).
 
@@ -93,9 +104,13 @@ def wait_for_pending_clear(label, timeout=POLL_TIMEOUT):
     while time.time() - start < timeout:
         pending = get_pending_transactions()
         if not pending or len(pending) == 0:
-            T.log(f"    {label}: all pending transactions confirmed ({time.time()-start:.0f}s)")
+            T.log(
+                f"    {label}: all pending transactions confirmed ({time.time() - start:.0f}s)"
+            )
             return True
-        T.log(f"    {label}: {len(pending)} pending tx(s)... ({time.time()-start:.0f}s)")
+        T.log(
+            f"    {label}: {len(pending)} pending tx(s)... ({time.time() - start:.0f}s)"
+        )
         time.sleep(POLL_INTERVAL)
     T.log(f"    ⏰ {label}: timeout after {timeout}s — still pending")
     return False
@@ -116,15 +131,21 @@ def wait_for_selectable_count(wallet_id, expected_count, label, timeout=POLL_TIM
             records = result.get("records") or []
             last_count = len(records)
             if last_count >= expected_count:
-                T.log(f"    {label}: confirmed {last_count} selectable coins ({time.time()-start:.0f}s)")
+                T.log(
+                    f"    {label}: confirmed {last_count} selectable coins ({time.time() - start:.0f}s)"
+                )
                 return True
-        T.log(f"    {label}: {last_count}/{expected_count} selectable ({time.time()-start:.0f}s)")
+        T.log(
+            f"    {label}: {last_count}/{expected_count} selectable ({time.time() - start:.0f}s)"
+        )
         time.sleep(POLL_INTERVAL)
     T.log(f"    ⏰ {label}: timeout — got {last_count}, needed {expected_count}")
     return False
 
 
-def confirm_transaction(label, wallet_id=None, expected_count=None, timeout=POLL_TIMEOUT):
+def confirm_transaction(
+    label, wallet_id=None, expected_count=None, timeout=POLL_TIMEOUT
+):
     """Full transaction confirmation: pending clear + coin count verification.
 
     Step 1: Wait for pending transactions to clear (fast — usually 2-5s)
@@ -147,7 +168,9 @@ def confirm_transaction(label, wallet_id=None, expected_count=None, timeout=POLL
     # Coins need to be included in a block (~52s) before they appear
     # as selectable. Pending clearing just means the tx was broadcast.
     if wallet_id is not None and expected_count is not None:
-        count_ok = wait_for_selectable_count(wallet_id, expected_count, label, timeout=timeout)
+        count_ok = wait_for_selectable_count(
+            wallet_id, expected_count, label, timeout=timeout
+        )
         if not count_ok:
             T.fail(f"{label} coin count", f"Expected {expected_count} selectable coins")
             return False
@@ -169,18 +192,25 @@ def wait_for_owned_equals_selectable(asset_id, label, timeout=POLL_TIMEOUT):
         owned = raw_get_coins(asset_id, "owned")
         selectable = raw_get_coins(asset_id, "selectable")
         if len(owned) == len(selectable):
-            T.log(f"    {label} {asset_label}: owned == selectable "
-                  f"({len(owned)} coins, {time.time()-start:.0f}s)")
+            T.log(
+                f"    {label} {asset_label}: owned == selectable "
+                f"({len(owned)} coins, {time.time() - start:.0f}s)"
+            )
             return True
-        T.log(f"    {label} {asset_label}: owned={len(owned)} sel={len(selectable)} "
-              f"({time.time()-start:.0f}s)")
+        T.log(
+            f"    {label} {asset_label}: owned={len(owned)} sel={len(selectable)} "
+            f"({time.time() - start:.0f}s)"
+        )
         time.sleep(POLL_INTERVAL)
-    T.log(f"    ⏰ {label} {asset_label}: timeout — owned={len(owned)} "
-          f"sel={len(selectable)}")
+    T.log(
+        f"    ⏰ {label} {asset_label}: timeout — owned={len(owned)} "
+        f"sel={len(selectable)}"
+    )
     return False
 
 
 # ── COIN HELPERS ──────────────────────────────────────────────
+
 
 def raw_get_coins(asset_id, filter_mode):
     """Direct RPC call to get_coins with a specific filter mode.
@@ -210,8 +240,13 @@ def raw_get_coins(asset_id, filter_mode):
 
 def get_coin_id(coin):
     """Extract coin ID from a raw Sage coin."""
-    return (coin.get("coin_id") or coin.get("id") or
-            coin.get("coinId") or coin.get("name") or "unknown")
+    return (
+        coin.get("coin_id")
+        or coin.get("id")
+        or coin.get("coinId")
+        or coin.get("name")
+        or "unknown"
+    )
 
 
 def get_coin_amount(coin):
@@ -223,7 +258,7 @@ def fmt(mojos, is_cat=False):
     """Format mojos to readable string."""
     if is_cat:
         return f"{int(mojos):,} CAT mojos"
-    return f"{int(mojos)/1e12:.6f} XCH"
+    return f"{int(mojos) / 1e12:.6f} XCH"
 
 
 def get_spendable_records(wallet_id):
@@ -263,8 +298,10 @@ def compare_owned_vs_selectable(stage, asset_label, asset_id, expect_hidden=0):
     hidden_ids = set(owned_map.keys()) - set(selectable_map.keys())
     extra_ids = set(selectable_map.keys()) - set(owned_map.keys())
 
-    T.log(f"  {asset_label}: owned={len(owned)}, selectable={len(selectable)}, "
-          f"diff={len(hidden_ids)}")
+    T.log(
+        f"  {asset_label}: owned={len(owned)}, selectable={len(selectable)}, "
+        f"diff={len(hidden_ids)}"
+    )
 
     # Show all coins with status
     for cid in sorted(owned_map.keys(), key=lambda x: owned_map[x], reverse=True):
@@ -276,26 +313,33 @@ def compare_owned_vs_selectable(stage, asset_label, asset_id, expect_hidden=0):
 
     if extra_ids:
         for cid in extra_ids:
-            T.log(f"    [?? EXTRA]  {cid[:16]}...  {fmt(selectable_map[cid], is_cat)}  "
-                  f"(in selectable but NOT in owned — unexpected)")
+            T.log(
+                f"    [?? EXTRA]  {cid[:16]}...  {fmt(selectable_map[cid], is_cat)}  "
+                f"(in selectable but NOT in owned — unexpected)"
+            )
 
     # Verdict for this comparison
     if len(hidden_ids) == expect_hidden:
-        T.ok(f"{stage} {asset_label}",
-             f"{len(hidden_ids)} hidden (expected {expect_hidden})")
+        T.ok(
+            f"{stage} {asset_label}",
+            f"{len(hidden_ids)} hidden (expected {expect_hidden})",
+        )
     else:
-        T.fail(f"{stage} {asset_label}",
-               f"{len(hidden_ids)} hidden but expected {expect_hidden}")
+        T.fail(
+            f"{stage} {asset_label}",
+            f"{len(hidden_ids)} hidden but expected {expect_hidden}",
+        )
 
     return len(hidden_ids), hidden_ids
 
 
 # ── MAIN ──────────────────────────────────────────────────────
 
+
 def main():
-    T.log(f"\n{'='*60}")
+    T.log(f"\n{'=' * 60}")
     T.log("  SAGE HIDDEN COIN TEST — DEFINITIVE")
-    T.log(f"{'='*60}")
+    T.log(f"{'=' * 60}")
 
     if not CAT_ASSET_ID:
         T.log("  ❌ CAT_ASSET_ID not set in .env")
@@ -319,8 +363,14 @@ def main():
     offers = get_all_offers(include_completed=True, start=0, end=500)
     open_count = 0
     if offers:
-        OPEN_SET = {"PENDING_ACCEPT", "PENDING_CONFIRM", "PENDING",
-                     "IN_PROGRESS", "OPEN", "ACTIVE"}
+        OPEN_SET = {
+            "PENDING_ACCEPT",
+            "PENDING_CONFIRM",
+            "PENDING",
+            "IN_PROGRESS",
+            "OPEN",
+            "ACTIVE",
+        }
         for o in offers:
             s = o.get("status", "")
             if isinstance(s, int) and s <= 1:
@@ -338,19 +388,21 @@ def main():
     # ══════════════════════════════════════════════════════════
     # STAGE 1: BASELINE
     # ══════════════════════════════════════════════════════════
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
     T.log("  STAGE 1: BASELINE (no splits, no offers)")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     xch_h1, _ = compare_owned_vs_selectable("Stage 1:", "XCH", None, expect_hidden=0)
-    cat_h1, _ = compare_owned_vs_selectable("Stage 1:", "CAT", CAT_ASSET_ID, expect_hidden=0)
+    cat_h1, _ = compare_owned_vs_selectable(
+        "Stage 1:", "CAT", CAT_ASSET_ID, expect_hidden=0
+    )
 
     # ══════════════════════════════════════════════════════════
     # STAGE 2: SPLIT XCH 1 → 3
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'─'*60}")
+    T.log(f"\n{'─' * 60}")
     T.log("  STAGE 2: SPLIT XCH (1 coin → 3 coins)")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     xch_count_before, xch_records = get_spendable_records(XCH_WALLET_ID)
     T.log(f"  Current selectable XCH coins: {xch_count_before}")
@@ -370,7 +422,7 @@ def main():
             num_coins=3,
             amount_per_coin=0,
             fee_mojos=0,
-            is_cat=False
+            is_cat=False,
         )
 
         if result and not result.get("error"):
@@ -379,9 +431,7 @@ def main():
             # FULL CONFIRMATION: pending clear + coin count
             expected_xch = xch_count_before - 1 + 3
             confirmed = confirm_transaction(
-                "XCH split",
-                wallet_id=XCH_WALLET_ID,
-                expected_count=expected_xch
+                "XCH split", wallet_id=XCH_WALLET_ID, expected_count=expected_xch
             )
 
             if confirmed:
@@ -389,7 +439,9 @@ def main():
                 T.log("  Verifying XCH owned == selectable (fully settled)...")
                 wait_for_owned_equals_selectable(None, "Stage 2")
                 T.log("  Comparing owned vs selectable after XCH split:")
-                xch_h2, _ = compare_owned_vs_selectable("Stage 2:", "XCH", None, expect_hidden=0)
+                xch_h2, _ = compare_owned_vs_selectable(
+                    "Stage 2:", "XCH", None, expect_hidden=0
+                )
             else:
                 T.log("  ⚠️  Split not confirmed — waiting for owned == selectable...")
                 wait_for_owned_equals_selectable(None, "Stage 2")
@@ -401,9 +453,9 @@ def main():
     # ══════════════════════════════════════════════════════════
     # STAGE 3: SPLIT CAT 1 → 3
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'─'*60}")
+    T.log(f"\n{'─' * 60}")
     T.log("  STAGE 3: SPLIT CAT (1 coin → 3 coins)")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     cat_count_before, cat_records = get_spendable_records(CAT_WALLET_ID)
     T.log(f"  Current selectable CAT coins: {cat_count_before}")
@@ -414,7 +466,9 @@ def main():
         biggest = max(cat_records, key=lambda r: r.get("coin", {}).get("amount", 0))
         big_id = biggest.get("coin_id", "")
         big_amt = biggest.get("coin", {}).get("amount", 0)
-        T.log(f"  Splitting {big_id[:16]}... ({fmt(big_amt, is_cat=True)}) into 3 coins")
+        T.log(
+            f"  Splitting {big_id[:16]}... ({fmt(big_amt, is_cat=True)}) into 3 coins"
+        )
 
         result = split_coins_rpc(
             wallet_id=CAT_WALLET_ID,
@@ -422,7 +476,7 @@ def main():
             num_coins=3,
             amount_per_coin=0,
             fee_mojos=0,
-            is_cat=True
+            is_cat=True,
         )
 
         if result and not result.get("error"):
@@ -430,31 +484,33 @@ def main():
 
             expected_cat = cat_count_before - 1 + 3
             confirmed = confirm_transaction(
-                "CAT split",
-                wallet_id=CAT_WALLET_ID,
-                expected_count=expected_cat
+                "CAT split", wallet_id=CAT_WALLET_ID, expected_count=expected_cat
             )
 
             if confirmed:
                 T.log("  Verifying CAT owned == selectable (fully settled)...")
                 wait_for_owned_equals_selectable(CAT_ASSET_ID, "Stage 3")
                 T.log("  Comparing owned vs selectable after CAT split:")
-                cat_h3, _ = compare_owned_vs_selectable("Stage 3:", "CAT", CAT_ASSET_ID, expect_hidden=0)
+                cat_h3, _ = compare_owned_vs_selectable(
+                    "Stage 3:", "CAT", CAT_ASSET_ID, expect_hidden=0
+                )
             else:
                 T.log("  ⚠️  Split not confirmed — waiting for owned == selectable...")
                 wait_for_owned_equals_selectable(CAT_ASSET_ID, "Stage 3")
                 T.log("  Comparing after wait:")
-                compare_owned_vs_selectable("Stage 3:", "CAT", CAT_ASSET_ID, expect_hidden=0)
+                compare_owned_vs_selectable(
+                    "Stage 3:", "CAT", CAT_ASSET_ID, expect_hidden=0
+                )
         else:
             T.fail("CAT split", f"Failed: {result}")
 
     # ══════════════════════════════════════════════════════════
     # PRE-STAGE-4: ENSURE EVERYTHING IS FULLY SETTLED
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'─'*60}")
+    T.log(f"\n{'─' * 60}")
     T.log("  PRE-STAGE 4: SETTLING CHECK")
     T.log("  Making sure ALL prior splits are fully confirmed")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     # Wait for both XCH and CAT to have owned == selectable
     # This catches any lingering unconfirmed coins from Stages 2+3
@@ -466,15 +522,18 @@ def main():
     if xch_settled and cat_settled:
         T.ok("All coins fully settled before Stage 4")
     else:
-        T.fail("Pre-Stage 4 settling", "Coins still not equal after timeout — results may be unreliable")
+        T.fail(
+            "Pre-Stage 4 settling",
+            "Coins still not equal after timeout — results may be unreliable",
+        )
 
     # ══════════════════════════════════════════════════════════
     # STAGE 4: CREATE BUY + SELL OFFERS
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'─'*60}")
+    T.log(f"\n{'─' * 60}")
     T.log("  STAGE 4: CREATE OFFERS (BUY + SELL)")
     T.log("  Then check: does the OTHER side also lose coins?")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     # Get current selectable coins (NO workaround)
     xch_pre, xch_recs_pre = get_spendable_records(XCH_WALLET_ID)
@@ -492,11 +551,16 @@ def main():
         CAT_WALLET_ID: 999_999_999,  # absurd — never fills
     }
     T.log("  Creating BUY offer...")
-    buy_result = create_offer(buy_dict, validate_only=False, max_time=0, coin_ids=[sm_xch_id])
+    buy_result = create_offer(
+        buy_dict, validate_only=False, max_time=0, coin_ids=[sm_xch_id]
+    )
     buy_trade_id = None
     if buy_result and isinstance(buy_result, dict) and not buy_result.get("error"):
         buy_trade_id = buy_result.get("trade_id", "")
-        T.ok("BUY offer created", f"trade_id={buy_trade_id[:16]}..." if buy_trade_id else "")
+        T.ok(
+            "BUY offer created",
+            f"trade_id={buy_trade_id[:16]}..." if buy_trade_id else "",
+        )
     else:
         T.fail("BUY offer creation", str(buy_result))
 
@@ -519,11 +583,16 @@ def main():
         XCH_WALLET_ID: 999_000_000_000_000,  # 999 XCH — absurd
     }
     T.log("  Creating SELL offer...")
-    sell_result = create_offer(sell_dict, validate_only=False, max_time=0, coin_ids=[sm_cat_id])
+    sell_result = create_offer(
+        sell_dict, validate_only=False, max_time=0, coin_ids=[sm_cat_id]
+    )
     sell_trade_id = None
     if sell_result and isinstance(sell_result, dict) and not sell_result.get("error"):
         sell_trade_id = sell_result.get("trade_id", "")
-        T.ok("SELL offer created", f"trade_id={sell_trade_id[:16]}..." if sell_trade_id else "")
+        T.ok(
+            "SELL offer created",
+            f"trade_id={sell_trade_id[:16]}..." if sell_trade_id else "",
+        )
     else:
         T.fail("SELL offer creation", str(sell_result))
 
@@ -539,31 +608,39 @@ def main():
     T.log("  ═════════════════")
 
     xch_h4, xch_hidden_ids = compare_owned_vs_selectable(
-        "Stage 4:", "XCH", None, expect_hidden=1)
+        "Stage 4:", "XCH", None, expect_hidden=1
+    )
     cat_h4, cat_hidden_ids = compare_owned_vs_selectable(
-        "Stage 4:", "CAT", CAT_ASSET_ID, expect_hidden=1)
+        "Stage 4:", "CAT", CAT_ASSET_ID, expect_hidden=1
+    )
 
     if xch_h4 > 1:
-        T.log(f"  🔍 XCH: {xch_h4} hidden instead of 1 — "
-              f"SELL offer's requested side IS hiding XCH coins!")
+        T.log(
+            f"  🔍 XCH: {xch_h4} hidden instead of 1 — "
+            f"SELL offer's requested side IS hiding XCH coins!"
+        )
     if cat_h4 > 1:
-        T.log(f"  🔍 CAT: {cat_h4} hidden instead of 1 — "
-              f"BUY offer's requested side IS hiding CAT coins!")
+        T.log(
+            f"  🔍 CAT: {cat_h4} hidden instead of 1 — "
+            f"BUY offer's requested side IS hiding CAT coins!"
+        )
 
     # ══════════════════════════════════════════════════════════
     # STAGE 5: SPLIT MORE COINS WHILE OFFERS ARE OPEN
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'─'*60}")
+    T.log(f"\n{'─' * 60}")
     T.log("  STAGE 5: SPLIT WHILE OFFERS OPEN")
     T.log("  Tests if new coins from splits also get hidden")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     # ── Split one more XCH coin ──────────────────────────────
     xch_now, xch_recs_now = get_spendable_records(XCH_WALLET_ID)
     T.log(f"  Current selectable XCH: {xch_now}")
 
     if xch_now >= 2:
-        biggest_free = max(xch_recs_now, key=lambda r: r.get("coin", {}).get("amount", 0))
+        biggest_free = max(
+            xch_recs_now, key=lambda r: r.get("coin", {}).get("amount", 0)
+        )
         bf_id = biggest_free.get("coin_id", "")
         bf_amt = biggest_free.get("coin", {}).get("amount", 0)
         T.log(f"  Splitting XCH {bf_id[:16]}... ({fmt(bf_amt)}) into 2 coins")
@@ -574,7 +651,7 @@ def main():
             num_coins=2,
             amount_per_coin=0,
             fee_mojos=0,
-            is_cat=False
+            is_cat=False,
         )
 
         if result and not result.get("error"):
@@ -583,7 +660,7 @@ def main():
             confirmed = confirm_transaction(
                 "XCH split (offers open)",
                 wallet_id=XCH_WALLET_ID,
-                expected_count=expected
+                expected_count=expected,
             )
         else:
             T.fail("XCH split (with offers open)", f"Failed: {result}")
@@ -595,10 +672,14 @@ def main():
     T.log(f"  Current selectable CAT: {cat_now}")
 
     if cat_now >= 2:
-        biggest_free = max(cat_recs_now, key=lambda r: r.get("coin", {}).get("amount", 0))
+        biggest_free = max(
+            cat_recs_now, key=lambda r: r.get("coin", {}).get("amount", 0)
+        )
         bf_id = biggest_free.get("coin_id", "")
         bf_amt = biggest_free.get("coin", {}).get("amount", 0)
-        T.log(f"  Splitting CAT {bf_id[:16]}... ({fmt(bf_amt, is_cat=True)}) into 2 coins")
+        T.log(
+            f"  Splitting CAT {bf_id[:16]}... ({fmt(bf_amt, is_cat=True)}) into 2 coins"
+        )
 
         result = split_coins_rpc(
             wallet_id=CAT_WALLET_ID,
@@ -606,7 +687,7 @@ def main():
             num_coins=2,
             amount_per_coin=0,
             fee_mojos=0,
-            is_cat=True
+            is_cat=True,
         )
 
         if result and not result.get("error"):
@@ -615,7 +696,7 @@ def main():
             confirmed = confirm_transaction(
                 "CAT split (offers open)",
                 wallet_id=CAT_WALLET_ID,
-                expected_count=expected
+                expected_count=expected,
             )
         else:
             T.fail("CAT split (with offers open)", f"Failed: {result}")
@@ -630,20 +711,26 @@ def main():
     xch_expected_free, _ = get_spendable_records(XCH_WALLET_ID)
     cat_expected_free, _ = get_spendable_records(CAT_WALLET_ID)
     # Give extra time for any pending coins to land
-    wait_for_selectable_count(XCH_WALLET_ID, xch_expected_free, "Stage 5 XCH settle", timeout=POLL_TIMEOUT)
-    wait_for_selectable_count(CAT_WALLET_ID, cat_expected_free, "Stage 5 CAT settle", timeout=POLL_TIMEOUT)
+    wait_for_selectable_count(
+        XCH_WALLET_ID, xch_expected_free, "Stage 5 XCH settle", timeout=POLL_TIMEOUT
+    )
+    wait_for_selectable_count(
+        CAT_WALLET_ID, cat_expected_free, "Stage 5 CAT settle", timeout=POLL_TIMEOUT
+    )
 
     T.log("\n  Comparing after splits with offers still open:")
     T.log("  (expect 1 hidden per side = the offer-locked coin)")
     xch_h5, _ = compare_owned_vs_selectable("Stage 5:", "XCH", None, expect_hidden=1)
-    cat_h5, _ = compare_owned_vs_selectable("Stage 5:", "CAT", CAT_ASSET_ID, expect_hidden=1)
+    cat_h5, _ = compare_owned_vs_selectable(
+        "Stage 5:", "CAT", CAT_ASSET_ID, expect_hidden=1
+    )
 
     # ══════════════════════════════════════════════════════════
     # STAGE 6: CANCEL OFFERS — EVERYTHING SHOULD BE FREE
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'─'*60}")
+    T.log(f"\n{'─' * 60}")
     T.log("  STAGE 6: CANCEL OFFERS (all coins should be free)")
-    T.log(f"{'─'*60}")
+    T.log(f"{'─' * 60}")
 
     if buy_trade_id:
         T.log(f"  Cancelling BUY offer {buy_trade_id[:16]}...")
@@ -676,14 +763,16 @@ def main():
     wait_for_owned_equals_selectable(CAT_ASSET_ID, "Stage 6")
 
     xch_h6, _ = compare_owned_vs_selectable("Stage 6:", "XCH", None, expect_hidden=0)
-    cat_h6, _ = compare_owned_vs_selectable("Stage 6:", "CAT", CAT_ASSET_ID, expect_hidden=0)
+    cat_h6, _ = compare_owned_vs_selectable(
+        "Stage 6:", "CAT", CAT_ASSET_ID, expect_hidden=0
+    )
 
     # ══════════════════════════════════════════════════════════
     # VERDICT
     # ══════════════════════════════════════════════════════════
-    T.log(f"\n{'='*60}")
+    T.log(f"\n{'=' * 60}")
     T.log("  VERDICT")
-    T.log(f"{'='*60}")
+    T.log(f"{'=' * 60}")
     T.log(f"  Results: {T.passed} passed, {T.failed} failed")
 
     if T.failed == 0:
@@ -708,7 +797,7 @@ def main():
             T.log("\n  ⚠️  Some tests failed — see details above.")
             T.log("     May need manual investigation.")
 
-    T.log(f"{'='*60}\n")
+    T.log(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

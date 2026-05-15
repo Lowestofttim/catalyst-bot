@@ -7,6 +7,7 @@ Covers functions not previously tested:
   _apply_probe_retry_backoff, _get_sniper_launch_reason,
   _get_probe_price_boundary
 """
+
 import sys
 import types
 import unittest
@@ -18,6 +19,7 @@ from unittest.mock import patch
 # ---------------------------------------------------------------------------
 # Minimal module stubs — must be installed BEFORE importing bot_loop
 # ---------------------------------------------------------------------------
+
 
 class _FakeCfg:
     DRY_RUN = False
@@ -48,11 +50,26 @@ _fake_cfg_instance = _FakeCfg()
 
 _SAVED = {}
 _STUB_NAMES = [
-    "config", "requests", "database", "price_engine", "offer_manager",
-    "fill_tracker", "dexie_manager", "splash_manager", "splash_node",
-    "coinset_client", "coin_manager", "risk_manager", "sniper",
-    "boost_manager", "market_intel", "wallet", "amm_monitor",
-    "runtime_monitor", "splash_receive", "bot_loop",
+    "config",
+    "requests",
+    "database",
+    "price_engine",
+    "offer_manager",
+    "fill_tracker",
+    "dexie_manager",
+    "splash_manager",
+    "splash_node",
+    "coinset_client",
+    "coin_manager",
+    "risk_manager",
+    "sniper",
+    "boost_manager",
+    "market_intel",
+    "wallet",
+    "amm_monitor",
+    "runtime_monitor",
+    "splash_receive",
+    "bot_loop",
 ]
 for _n in _STUB_NAMES:
     _SAVED[_n] = sys.modules.get(_n)
@@ -98,81 +115,172 @@ _mod("splash_receive", classify_offer_for_asset=lambda *a, **kw: {})
 
 
 class _PE:
-    def get_price(self, *a, **kw): return {"mid_price": Decimal("1.10")}
+    def get_price(self, *a, **kw):
+        return {"mid_price": Decimal("1.10")}
+
 
 class _OM:
-    def __init__(self): pass
-    def get_recently_created_count(self, side): return 0
-    def get_replenishment_slots(self, side, total, **kw): return list(range(total))
-    def create_ladder(self, *a, **kw): return []
-    def should_requote(self, *a, **kw): return False
-    def should_requote_graduated(self, *a, **kw): return None
-    def requote_side(self, *a, **kw): return {"offers": [], "fully_replaced": True}
-    def get_suspended_slot_count(self, side): return 0
-    def unsuspend_slots_if_coins_available(self, side): pass
-    def clean_visible_recently_created(self, *a, **kw): pass
+    def __init__(self):
+        pass
+
+    def get_recently_created_count(self, side):
+        return 0
+
+    def get_replenishment_slots(self, side, total, **kw):
+        return list(range(total))
+
+    def create_ladder(self, *a, **kw):
+        return []
+
+    def should_requote(self, *a, **kw):
+        return False
+
+    def should_requote_graduated(self, *a, **kw):
+        return None
+
+    def requote_side(self, *a, **kw):
+        return {"offers": [], "fully_replaced": True}
+
+    def get_suspended_slot_count(self, side):
+        return 0
+
+    def unsuspend_slots_if_coins_available(self, side):
+        pass
+
+    def clean_visible_recently_created(self, *a, **kw):
+        pass
+
 
 class _FT:
-    def __init__(self, offer_manager=None): pass
-    def should_protect_side(self, side): return False
+    def __init__(self, offer_manager=None):
+        pass
+
+    def should_protect_side(self, side):
+        return False
+
 
 class _DM:
-    def __init__(self): pass
-    def queue_post(self, *a, **kw): pass
-    def flush_queue(self): return {"posted": 0, "failed": 0, "skipped": 0}
+    def __init__(self):
+        pass
+
+    def queue_post(self, *a, **kw):
+        pass
+
+    def flush_queue(self):
+        return {"posted": 0, "failed": 0, "skipped": 0}
+
 
 class _SM:
-    def __init__(self): pass
-    def queue_post(self, *a, **kw): pass
-    def flush_queue(self): return {"posted": 0, "failed": 0, "skipped": 0}
+    def __init__(self):
+        pass
 
-class _SN: pass
-class _CC: pass
+    def queue_post(self, *a, **kw):
+        pass
+
+    def flush_queue(self):
+        return {"posted": 0, "failed": 0, "skipped": 0}
+
+
+class _SN:
+    pass
+
+
+class _CC:
+    pass
+
 
 class _CM:
     def __init__(self):
         self._price_engine = None
         self.fee_pool = None
-    def is_busy(self): return False
-    def snapshot_coins(self, reason): pass
-    def get_status(self): return {"inventory": {}}
+
+    def is_busy(self):
+        return False
+
+    def snapshot_coins(self, reason):
+        pass
+
+    def get_status(self):
+        return {"inventory": {}}
+
 
 class _RM:
     def __init__(self, price_engine=None, market_intel=None):
         self._boost_manager = None
-    def should_enable_side(self, side, mid): return True
-    def get_adjusted_spread(self, side): return Decimal("0.08")
-    def update_arb_gap(self, gap): pass
+
+    def should_enable_side(self, side, mid):
+        return True
+
+    def get_adjusted_spread(self, side):
+        return Decimal("0.08")
+
+    def update_arb_gap(self, gap):
+        pass
+
 
 class _Sniper:
     def __init__(self, **kw):
         self._active_snipe_ids = []
         self._active_snipe_sides = {}
-    def prune_active_snipes(self, ids): pass
+
+    def prune_active_snipes(self, ids):
+        pass
+
 
 class _BM:
-    def __init__(self, **kw): pass
-    def prune_active_boosts(self, ids): pass
+    def __init__(self, **kw):
+        pass
+
+    def prune_active_boosts(self, ids):
+        pass
+
 
 class _MI:
-    def __init__(self, price_engine=None): self.orderbook = {}
-    def refresh_orderbook(self, force=False): return dict(self.orderbook)
+    def __init__(self, price_engine=None):
+        self.orderbook = {}
+
+    def refresh_orderbook(self, force=False):
+        return dict(self.orderbook)
+
 
 class _AMM:
-    def __init__(self, price_engine=None): pass
-    def start(self): pass
-    def stop(self): pass
-    def is_available(self): return False
-    def get_amm_price(self): return None
-    def get_amm_state(self): return None
-    def get_drift_bps(self): return None
-    def get_stats(self): return {}
-    def notify_quoted_price(self, buy=None, sell=None): pass
-    def check_amm_buffer(self, price, side): return True
+    def __init__(self, price_engine=None):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def is_available(self):
+        return False
+
+    def get_amm_price(self):
+        return None
+
+    def get_amm_state(self):
+        return None
+
+    def get_drift_bps(self):
+        return None
+
+    def get_stats(self):
+        return {}
+
+    def notify_quoted_price(self, buy=None, sell=None):
+        pass
+
+    def check_amm_buffer(self, price, side):
+        return True
+
 
 class _RM2:
-    def __init__(self, loop): pass
-    def get_state(self): return {}
+    def __init__(self, loop):
+        pass
+
+    def get_state(self):
+        return {}
 
 
 _cls_mod("price_engine", "PriceEngine", _PE)
@@ -206,6 +314,7 @@ for _n, _orig in _SAVED.items():
 # Helper: minimal BotLoop with cfg patched
 # ---------------------------------------------------------------------------
 
+
 def _make_loop():
     loop = bot_loop.BotLoop()
     loop._running = False
@@ -224,6 +333,7 @@ class _PatchedCfg(unittest.TestCase):
 # ===========================================================================
 # Tests
 # ===========================================================================
+
 
 class TestBpsToPct(_PatchedCfg):
     """_bps_to_pct — pure conversion utility."""
@@ -256,12 +366,14 @@ class TestPositionSanityDepositDetection(_PatchedCfg):
                 return self
 
             def fetchall(self):
-                return [{
-                    "coin_id": "0x65119c25b5bc049c2496a5791349c552269ff51483ada6bcb2bc68ae51ed08be",
-                    "amount_mojos": 193_886_291,
-                    "designation": "unknown",
-                    "first_seen": "2026-05-02 14:40:07",
-                }]
+                return [
+                    {
+                        "coin_id": "0x65119c25b5bc049c2496a5791349c552269ff51483ada6bcb2bc68ae51ed08be",
+                        "amount_mojos": 193_886_291,
+                        "designation": "unknown",
+                        "first_seen": "2026-05-02 14:40:07",
+                    }
+                ]
 
         fake_db = types.ModuleType("database")
         fake_db.get_connection = lambda: _Conn()
@@ -283,12 +395,14 @@ class TestPositionSanityDepositDetection(_PatchedCfg):
                 return self
 
             def fetchall(self):
-                return [{
-                    "coin_id": "0xolddeposit",
-                    "amount_mojos": 193_886_291,
-                    "designation": "unknown",
-                    "first_seen": "2026-05-02 14:40:07",
-                }]
+                return [
+                    {
+                        "coin_id": "0xolddeposit",
+                        "amount_mojos": 193_886_291,
+                        "designation": "unknown",
+                        "first_seen": "2026-05-02 14:40:07",
+                    }
+                ]
 
         fake_db = types.ModuleType("database")
         fake_db.get_connection = lambda: _Conn()
@@ -332,7 +446,9 @@ class TestTierSizeDriftTopup(_PatchedCfg):
 
         class DriftCoinManager:
             def check_tier_size_drift(self):
-                return [{"side": "cat", "tier": "inner", "ratio": 0.98, "coin_count": 2}]
+                return [
+                    {"side": "cat", "tier": "inner", "ratio": 0.98, "coin_count": 2}
+                ]
 
             def start_topup(self, active_buy, active_sell, is_drip=None):
                 calls.append((active_buy, active_sell, is_drip))
@@ -352,10 +468,16 @@ class TestTierSizeDriftTopup(_PatchedCfg):
         loop._emit_alert = lambda *a, **kw: alerts.append(a)
         loop._clear_alert = lambda *a, **kw: None
 
-        with patch.dict(sys.modules, {
-            "coin_manager": fake_coin_manager,
-            "database": fake_database,
-        }), patch.object(bot_loop, "log_event"):
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "coin_manager": fake_coin_manager,
+                    "database": fake_database,
+                },
+            ),
+            patch.object(bot_loop, "log_event"),
+        ):
             loop._check_tier_size_drift()
 
         self.assertEqual(calls, [(1, 2, True)])
@@ -369,15 +491,19 @@ class TestTierSizeDriftTopup(_PatchedCfg):
 
         class DriftCoinManager:
             def check_tier_size_drift(self):
-                return [{
-                    "side": "cat",
-                    "tier": "inner",
-                    "ratio": 0.89,
-                    "coin_count": 8,
-                    "live_size_mojos": 1000,
-                }]
+                return [
+                    {
+                        "side": "cat",
+                        "tier": "inner",
+                        "ratio": 0.89,
+                        "coin_count": 8,
+                        "live_size_mojos": 1000,
+                    }
+                ]
 
-            def _optional_topup_source_available(self, wallet_type, target_size_mojos=0):
+            def _optional_topup_source_available(
+                self, wallet_type, target_size_mojos=0
+            ):
                 return False
 
             def start_topup(self, active_buy, active_sell, is_drip=None):
@@ -396,10 +522,16 @@ class TestTierSizeDriftTopup(_PatchedCfg):
         loop._emit_alert = lambda *a, **kw: None
         loop._clear_alert = lambda *a, **kw: None
 
-        with patch.dict(sys.modules, {
-            "coin_manager": fake_coin_manager,
-            "database": fake_database,
-        }), patch.object(bot_loop, "log_event") as log_event:
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "coin_manager": fake_coin_manager,
+                    "database": fake_database,
+                },
+            ),
+            patch.object(bot_loop, "log_event") as log_event,
+        ):
             loop._check_tier_size_drift()
 
         events = [call.args[1] for call in log_event.call_args_list]
@@ -500,7 +632,9 @@ class TestCoinTopupPriority(_PatchedCfg):
             def check_runtime_health(self, active_buy, active_sell):
                 return False
 
-            def _optional_topup_source_available(self, wallet_type, target_size_mojos=0):
+            def _optional_topup_source_available(
+                self, wallet_type, target_size_mojos=0
+            ):
                 return False
 
         loop.coin_manager = SpareOnlyCoinManager()
@@ -548,7 +682,9 @@ class TestCoinTopupPriority(_PatchedCfg):
             def check_runtime_health(self, active_buy, active_sell):
                 return False
 
-            def _optional_topup_source_available(self, wallet_type, target_size_mojos=0):
+            def _optional_topup_source_available(
+                self, wallet_type, target_size_mojos=0
+            ):
                 return False
 
         loop.coin_manager = CriticalCoinManager()
@@ -688,7 +824,9 @@ class TestRequoteFailureBackoff(_PatchedCfg):
     def test_set_backoff_clears_force_flag(self):
         loop = _make_loop()
         loop._force_requote["buy"] = True
-        with patch.object(_fake_cfg_instance, "REQUOTE_FAILURE_BACKOFF_SECS", 12, create=True):
+        with patch.object(
+            _fake_cfg_instance, "REQUOTE_FAILURE_BACKOFF_SECS", 12, create=True
+        ):
             with patch.object(bot_loop.time, "time", return_value=100.0):
                 loop._set_requote_failure_backoff("buy", "unit_test")
         self.assertFalse(loop._force_requote["buy"])
@@ -765,7 +903,9 @@ class TestProbeCleanupTimer(_PatchedCfg):
             mock_cfg.SNIPER_CONFIRM_SECS = 30
             mock_cfg.SNIPER_LINGER_SECS = 0
             probe = {"confirmed_at": 1000.0}
-            self.assertEqual(loop._probe_cleanup_seconds_remaining(probe, now_ts=1001.0), 0.0)
+            self.assertEqual(
+                loop._probe_cleanup_seconds_remaining(probe, now_ts=1001.0), 0.0
+            )
 
 
 class TestConfirmedProbeSlotOffsets(_PatchedCfg):
@@ -779,14 +919,24 @@ class TestConfirmedProbeSlotOffsets(_PatchedCfg):
 
     def test_confirmed_probe_tid_in_ids_offsets_1(self):
         loop = _make_loop()
-        loop._probe_state = {"active": False, "buy_tid": "probe-buy", "sell_tid": "probe-sell"}
-        offsets = loop._confirmed_probe_slot_offsets({"probe-buy", "b2"}, {"probe-sell", "s2"})
+        loop._probe_state = {
+            "active": False,
+            "buy_tid": "probe-buy",
+            "sell_tid": "probe-sell",
+        }
+        offsets = loop._confirmed_probe_slot_offsets(
+            {"probe-buy", "b2"}, {"probe-sell", "s2"}
+        )
         self.assertEqual(offsets["buy"], 1)
         self.assertEqual(offsets["sell"], 1)
 
     def test_confirmed_probe_tid_not_in_ids_no_offset(self):
         loop = _make_loop()
-        loop._probe_state = {"active": False, "buy_tid": "probe-buy", "sell_tid": "probe-sell"}
+        loop._probe_state = {
+            "active": False,
+            "buy_tid": "probe-buy",
+            "sell_tid": "probe-sell",
+        }
         offsets = loop._confirmed_probe_slot_offsets({"b1", "b2"}, {"s1", "s2"})
         self.assertEqual(offsets, {"buy": 0, "sell": 0})
 
@@ -804,14 +954,18 @@ class TestApplyProbeRetryBackoff(_PatchedCfg):
         loop = _make_loop()
         # buy: candidate should be pushed down from previous (50bps)
         # previous=1.10 → stepped = 1.10 / 1.005 ≈ 1.0945
-        result = loop._apply_probe_retry_backoff("buy", Decimal("1.12"), Decimal("1.10"))
+        result = loop._apply_probe_retry_backoff(
+            "buy", Decimal("1.12"), Decimal("1.10")
+        )
         self.assertLess(result, Decimal("1.10"))
 
     def test_sell_side_pushes_candidate_above_previous(self):
         loop = _make_loop()
         # sell: candidate should be pushed up from previous (50bps)
         # previous=1.10 → stepped = 1.10 * 1.005 = 1.1055
-        result = loop._apply_probe_retry_backoff("sell", Decimal("1.08"), Decimal("1.10"))
+        result = loop._apply_probe_retry_backoff(
+            "sell", Decimal("1.08"), Decimal("1.10")
+        )
         self.assertGreater(result, Decimal("1.10"))
 
     def test_zero_candidate_returns_zero(self):
@@ -827,7 +981,9 @@ class TestApplyProbeRetryBackoff(_PatchedCfg):
     def test_buy_candidate_already_below_stepped_unchanged(self):
         loop = _make_loop()
         # candidate=1.08 already below stepped=1.0945, so min keeps it
-        result = loop._apply_probe_retry_backoff("buy", Decimal("1.08"), Decimal("1.10"))
+        result = loop._apply_probe_retry_backoff(
+            "buy", Decimal("1.08"), Decimal("1.10")
+        )
         self.assertLessEqual(result, Decimal("1.10"))
 
 
@@ -847,8 +1003,10 @@ class TestGetSniperLaunchReason(_PatchedCfg):
             "last_discovery_arb_gap_bps": "500",
         }
         reason = loop._get_sniper_launch_reason(
-            Decimal("1.03"), Decimal("500"),
-            current_buy_ids={"b1"}, current_sell_ids={"s1"},
+            Decimal("1.03"),
+            Decimal("500"),
+            current_buy_ids={"b1"},
+            current_sell_ids={"s1"},
         )
         self.assertIsNotNone(reason)
         self.assertIn("price_move", reason)
@@ -861,8 +1019,10 @@ class TestGetSniperLaunchReason(_PatchedCfg):
             "last_discovery_arb_gap_bps": "300",
         }
         reason = loop._get_sniper_launch_reason(
-            Decimal("1.10"), Decimal("300"),
-            current_buy_ids={"b1"}, current_sell_ids={"s1"},
+            Decimal("1.10"),
+            Decimal("300"),
+            current_buy_ids={"b1"},
+            current_sell_ids={"s1"},
         )
         self.assertIsNone(reason)
 
@@ -874,8 +1034,10 @@ class TestGetSniperLaunchReason(_PatchedCfg):
             "last_discovery_arb_gap_bps": "100",
         }
         reason = loop._get_sniper_launch_reason(
-            Decimal("1.10"), Decimal("210"),
-            current_buy_ids={"b1"}, current_sell_ids={"s1"},
+            Decimal("1.10"),
+            Decimal("210"),
+            current_buy_ids={"b1"},
+            current_sell_ids={"s1"},
         )
         self.assertIsNotNone(reason)
         self.assertIn("arb_gap_shift", reason)
@@ -898,6 +1060,7 @@ class TestGetProbePriceBoundary(_PatchedCfg):
     def test_buy_boundary_is_below_edge(self):
         loop = _make_loop()
         import time
+
         now = time.time()
         loop._probe_state = {
             "active": False,
@@ -912,6 +1075,7 @@ class TestGetProbePriceBoundary(_PatchedCfg):
     def test_sell_boundary_is_above_edge(self):
         loop = _make_loop()
         import time
+
         now = time.time()
         loop._probe_state = {
             "active": False,
@@ -926,6 +1090,7 @@ class TestGetProbePriceBoundary(_PatchedCfg):
     def test_zero_edge_price_returns_none(self):
         loop = _make_loop()
         import time
+
         now = time.time()
         loop._probe_state = {
             "active": False,

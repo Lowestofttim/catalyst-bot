@@ -3,14 +3,15 @@ Live external API test script.
 Tests all external API call sites to verify correct data is returned.
 Run: python run_api_tests.py
 """
+
 import sys
 import requests
 from dotenv import dotenv_values
 
 # Force UTF-8 output on Windows
-if sys.stdout.encoding != 'utf-8':
+if sys.stdout.encoding != "utf-8":
     try:
-        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stdout.reconfigure(encoding="utf-8")
     except AttributeError:
         pass
 
@@ -19,7 +20,9 @@ cfg = dotenv_values(".env")
 CAT_ASSET_ID = cfg.get("CAT_ASSET_ID", "")
 TIBET_PAIR_ID = cfg.get("TIBET_PAIR_ID", "")
 DEXIE_API_BASE = (cfg.get("DEXIE_API_BASE") or "https://api.dexie.space").rstrip("/")
-TIBET_API_BASE = (cfg.get("TIBET_API_BASE") or "https://api.v2.tibetswap.io").rstrip("/")
+TIBET_API_BASE = (cfg.get("TIBET_API_BASE") or "https://api.v2.tibetswap.io").rstrip(
+    "/"
+)
 COINSET_API_URL = (cfg.get("COINSET_API_URL") or "https://api.coinset.org").rstrip("/")
 SPACESCAN_API_KEY = cfg.get("SPACESCAN_API_KEY", "")
 SPACESCAN_BASE = "https://api2.spacescan.io"
@@ -29,6 +32,7 @@ PASS = "PASS"
 WARN = "WARN"
 FAIL = "FAIL"
 
+
 def result(code, ref, url, note):
     tag = {"PASS": "[PASS]", "WARN": "[WARN]", "FAIL": "[FAIL]"}[code]
     print(f"  {tag} [{ref}] {url}")
@@ -36,10 +40,12 @@ def result(code, ref, url, note):
         print(f"      → {note}")
     results.append((code, ref, url, note))
 
+
 def section(title):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print('='*60)
+    print("=" * 60)
+
 
 # ─────────────────────────────────────────────────────────────
 section("DEXIE API (E1-E11)")
@@ -66,18 +72,35 @@ try:
         required = ["last_price", "base_volume", "target_volume"]
         missing = [k for k in required if k not in ticker]
         if missing:
-            result(WARN, "E2", url, f"Missing fields: {missing}. Keys: {list(ticker.keys())}")
+            result(
+                WARN,
+                "E2",
+                url,
+                f"Missing fields: {missing}. Keys: {list(ticker.keys())}",
+            )
         else:
-            result(PASS, "E2", url, f"last_price={ticker.get('last_price')}, base_volume={ticker.get('base_volume')}")
+            result(
+                PASS,
+                "E2",
+                url,
+                f"last_price={ticker.get('last_price')}, base_volume={ticker.get('base_volume')}",
+            )
     elif isinstance(data, list) and len(data) == 0:
-        result(WARN, "E2", url, f"Empty list — CAT not traded on Dexie or wrong asset ID. ({CAT_ASSET_ID[:12]}...)")
+        result(
+            WARN,
+            "E2",
+            url,
+            f"Empty list — CAT not traded on Dexie or wrong asset ID. ({CAT_ASSET_ID[:12]}...)",
+        )
     elif isinstance(data, dict):
         # Some endpoints return dict with 'tickers' key
         tickers = data.get("tickers", data.get("data", []))
         if tickers:
             result(PASS, "E2", url, f"Got dict response with {len(tickers)} tickers")
         else:
-            result(WARN, "E2", url, f"Dict response, unexpected shape: {list(data.keys())}")
+            result(
+                WARN, "E2", url, f"Dict response, unexpected shape: {list(data.keys())}"
+            )
     else:
         result(WARN, "E2", url, f"Unexpected response type: {type(data)}")
 except Exception as e:
@@ -103,7 +126,13 @@ except Exception as e:
 # status=4 means "open" on dexie; offered_coin is XCH
 try:
     url = f"{DEXIE_API_BASE}/v1/offers"
-    params = {"status": 4, "offered": "xch", "requested": CAT_ASSET_ID, "page": 1, "page_size": 5}
+    params = {
+        "status": 4,
+        "offered": "xch",
+        "requested": CAT_ASSET_ID,
+        "page": 1,
+        "page_size": 5,
+    }
     r = requests.get(url, params=params, timeout=10)
     r.raise_for_status()
     data = r.json()
@@ -114,18 +143,39 @@ try:
         sample = offers[0]
         missing = [k for k in required_fields if k not in sample]
         if missing:
-            result(WARN, "E4", url, f"Offer missing fields: {missing}. Keys: {list(sample.keys())}")
+            result(
+                WARN,
+                "E4",
+                url,
+                f"Offer missing fields: {missing}. Keys: {list(sample.keys())}",
+            )
         else:
-            result(PASS, "E4", url, f"count={count}, sample offer id={sample.get('id','?')[:16]}...")
+            result(
+                PASS,
+                "E4",
+                url,
+                f"count={count}, sample offer id={sample.get('id', '?')[:16]}...",
+            )
     else:
-        result(WARN, "E4", url, f"No open buy offers found (count={count}) — market may be thin")
+        result(
+            WARN,
+            "E4",
+            url,
+            f"No open buy offers found (count={count}) — market may be thin",
+        )
 except Exception as e:
     result(FAIL, "E4", url, str(e))
 
 # E5 — dexie_manager.py GET /v1/offers (buy side — offering CAT, requesting XCH)
 try:
     url = f"{DEXIE_API_BASE}/v1/offers"
-    params = {"status": 4, "offered": CAT_ASSET_ID, "requested": "xch", "page": 1, "page_size": 5}
+    params = {
+        "status": 4,
+        "offered": CAT_ASSET_ID,
+        "requested": "xch",
+        "page": 1,
+        "page_size": 5,
+    }
     r = requests.get(url, params=params, timeout=10)
     r.raise_for_status()
     data = r.json()
@@ -133,7 +183,9 @@ try:
     count = data.get("count", len(offers))
     if offers:
         sample = offers[0]
-        result(PASS, "E5", url, f"count={count}, sample id={sample.get('id','?')[:16]}...")
+        result(
+            PASS, "E5", url, f"count={count}, sample id={sample.get('id', '?')[:16]}..."
+        )
     else:
         result(WARN, "E5", url, f"No open sell offers found (count={count})")
 except Exception as e:
@@ -149,7 +201,12 @@ try:
     r = requests.get(url, params=params, timeout=10)
     r.raise_for_status()
     data = r.json()
-    result(PASS, "E6", url, f"offers endpoint reachable, {len(data.get('offers',[]))} open offers")
+    result(
+        PASS,
+        "E6",
+        url,
+        f"offers endpoint reachable, {len(data.get('offers', []))} open offers",
+    )
 except Exception as e:
     result(FAIL, "E6", url, str(e))
 
@@ -180,11 +237,18 @@ if SAMPLE_OFFER_ID:
         else:
             # Check for spent_block_index (used by fill_classifier)
             has_sbi = "spent_block_index" in offer
-            result(PASS, "E7", url, f"offer detail OK, spent_block_index present={has_sbi}")
+            result(
+                PASS, "E7", url, f"offer detail OK, spent_block_index present={has_sbi}"
+            )
     except Exception as e:
         result(FAIL, "E7", url, str(e))
 else:
-    result(WARN, "E7", f"{DEXIE_API_BASE}/v1/offers/{{id}}", "No offer ID available to test single-offer lookup")
+    result(
+        WARN,
+        "E7",
+        f"{DEXIE_API_BASE}/v1/offers/{{id}}",
+        "No offer ID available to test single-offer lookup",
+    )
 
 # E8 — market_intel.py GET /v1/offers orderbook scrape
 try:
@@ -200,7 +264,12 @@ try:
         # Check shape market_intel needs
         has_offered = "offered" in sample
         has_requested = "requested" in sample
-        result(PASS, "E8", url, f"orderbook OK, {len(offers)} offers, offered={has_offered}, requested={has_requested}")
+        result(
+            PASS,
+            "E8",
+            url,
+            f"orderbook OK, {len(offers)} offers, offered={has_offered}, requested={has_requested}",
+        )
     else:
         result(WARN, "E8", url, "No offers to validate shape")
 except Exception as e:
@@ -213,17 +282,27 @@ try:
     r = requests.get(url, params=params, timeout=10)
     r.raise_for_status()
     data = r.json()
-    result(PASS, "E9", url, f"Taken offers (status=3): count={data.get('count','?')}")
+    result(PASS, "E9", url, f"Taken offers (status=3): count={data.get('count', '?')}")
 except Exception as e:
     result(FAIL, "E9", url, str(e))
 
 # E10 — dexie_manager.py POST offer submission
 # We won't actually submit, just confirm endpoint shape
-result(WARN, "E10", f"{DEXIE_API_BASE}/v1/offers (POST)", "Skipped — would submit a real offer. POST endpoint requires a valid offer blob.")
+result(
+    WARN,
+    "E10",
+    f"{DEXIE_API_BASE}/v1/offers (POST)",
+    "Skipped — would submit a real offer. POST endpoint requires a valid offer blob.",
+)
 
 # E11 — coin_manager.py price fallback (dexie tickers)
 # Already tested in E2, same URL path
-result(PASS, "E11", f"{DEXIE_API_BASE}/v2/prices/tickers?ticker_id=...", "Covered by E2 test")
+result(
+    PASS,
+    "E11",
+    f"{DEXIE_API_BASE}/v2/prices/tickers?ticker_id=...",
+    "Covered by E2 test",
+)
 
 # ─────────────────────────────────────────────────────────────
 section("TIBETSWAP API (E12-E19)")
@@ -240,11 +319,19 @@ try:
         required = ["asset_id", "name"]
         missing = [k for k in required if k not in token]
         # Find our CAT
-        our_cat = next((t for t in data if t.get("asset_id","").lower() == CAT_ASSET_ID.lower()), None)
+        our_cat = next(
+            (t for t in data if t.get("asset_id", "").lower() == CAT_ASSET_ID.lower()),
+            None,
+        )
         if missing:
             result(WARN, "E12", url, f"Token missing fields: {missing}")
         else:
-            result(PASS, "E12", url, f"{len(data)} tokens. Our CAT found={our_cat is not None}")
+            result(
+                PASS,
+                "E12",
+                url,
+                f"{len(data)} tokens. Our CAT found={our_cat is not None}",
+            )
     elif isinstance(data, dict):
         tokens = data.get("tokens", data.get("data", []))
         result(PASS, "E12", url, f"Dict response with {len(tokens)} tokens")
@@ -266,13 +353,27 @@ try:
         if data:
             missing = [k for k in required if k not in data[0]]
             # Find our pair
-            our_pair = next((p for p in data if p.get("asset_id","").lower() == CAT_ASSET_ID.lower()), None)
+            our_pair = next(
+                (
+                    p
+                    for p in data
+                    if p.get("asset_id", "").lower() == CAT_ASSET_ID.lower()
+                ),
+                None,
+            )
             if our_pair and not TIBET_PAIR_ID:
-                print(f"      [INFO] Found pair_id for our CAT: {our_pair.get('pair_id')} -- set TIBET_PAIR_ID in .env")
+                print(
+                    f"      [INFO] Found pair_id for our CAT: {our_pair.get('pair_id')} -- set TIBET_PAIR_ID in .env"
+                )
             if missing:
                 result(WARN, "E13", url, f"Pair missing fields: {missing}")
             else:
-                result(PASS, "E13", url, f"{len(data)} pairs. Our CAT pair found={our_pair is not None}")
+                result(
+                    PASS,
+                    "E13",
+                    url,
+                    f"{len(data)} pairs. Our CAT pair found={our_pair is not None}",
+                )
         else:
             result(WARN, "E13", url, "Empty pairs list")
     else:
@@ -284,9 +385,11 @@ except Exception as e:
 RESOLVED_PAIR_ID = TIBET_PAIR_ID
 if not RESOLVED_PAIR_ID and tibet_pair_data:
     for p in tibet_pair_data:
-        if p.get("asset_id","").lower() == CAT_ASSET_ID.lower():
-            RESOLVED_PAIR_ID = p.get("pair_id","")
-            print(f"  [INFO] Auto-resolved TIBET_PAIR_ID={RESOLVED_PAIR_ID[:20]}... from /pairs")
+        if p.get("asset_id", "").lower() == CAT_ASSET_ID.lower():
+            RESOLVED_PAIR_ID = p.get("pair_id", "")
+            print(
+                f"  [INFO] Auto-resolved TIBET_PAIR_ID={RESOLVED_PAIR_ID[:20]}... from /pairs"
+            )
             break
 
 # E14 — GET /pair/{pair_id} (single pair detail)
@@ -299,7 +402,12 @@ if RESOLVED_PAIR_ID:
         required = ["launcher_id", "xch_reserve", "token_reserve"]
         missing = [k for k in required if k not in data]
         if missing:
-            result(WARN, "E14", url, f"Missing fields: {missing}. Keys: {list(data.keys())}")
+            result(
+                WARN,
+                "E14",
+                url,
+                f"Missing fields: {missing}. Keys: {list(data.keys())}",
+            )
         else:
             xch_res = data.get("xch_reserve", 0)
             tok_res = data.get("token_reserve", 0)
@@ -307,25 +415,45 @@ if RESOLVED_PAIR_ID:
     except Exception as e:
         result(FAIL, "E14", url, str(e))
 else:
-    result(WARN, "E14", f"{TIBET_API_BASE}/pair/{{pair_id}}", "No TIBET_PAIR_ID configured or auto-resolved — set in .env")
+    result(
+        WARN,
+        "E14",
+        f"{TIBET_API_BASE}/pair/{{pair_id}}",
+        "No TIBET_PAIR_ID configured or auto-resolved — set in .env",
+    )
 
 # E15 — GET /quote (used by price_engine.py)
 if RESOLVED_PAIR_ID:
     try:
         # Quote for buying 100 CAT (in mojos, assuming 3 decimals = 100000)
         CAT_DECIMALS = int(cfg.get("CAT_DECIMALS", "3"))
-        amount = 100 * (10 ** CAT_DECIMALS)
+        amount = 100 * (10**CAT_DECIMALS)
         url = f"{TIBET_API_BASE}/quote"
-        params = {"pair_id": RESOLVED_PAIR_ID, "amount_in": amount, "xch_is_input": True, "estimate_fee": False}
+        params = {
+            "pair_id": RESOLVED_PAIR_ID,
+            "amount_in": amount,
+            "xch_is_input": True,
+            "estimate_fee": False,
+        }
         r = requests.get(url, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         required = ["amount_in", "amount_out"]
         missing = [k for k in required if k not in data]
         if missing:
-            result(WARN, "E15", url, f"Missing fields: {missing}. Keys: {list(data.keys())}")
+            result(
+                WARN,
+                "E15",
+                url,
+                f"Missing fields: {missing}. Keys: {list(data.keys())}",
+            )
         else:
-            result(PASS, "E15", url, f"amount_in={data['amount_in']}, amount_out={data['amount_out']}")
+            result(
+                PASS,
+                "E15",
+                url,
+                f"amount_in={data['amount_in']}, amount_out={data['amount_out']}",
+            )
     except Exception as e:
         result(FAIL, "E15", url, str(e))
 else:
@@ -340,7 +468,12 @@ if RESOLVED_PAIR_ID:
             data = r.json()
             result(PASS, "E16", url, f"Router OK, type={type(data).__name__}")
         elif r.status_code == 404:
-            result(WARN, "E16", url, "404 — /router endpoint may not exist in this API version")
+            result(
+                WARN,
+                "E16",
+                url,
+                "404 — /router endpoint may not exist in this API version",
+            )
         else:
             result(WARN, "E16", url, f"Status {r.status_code}")
     except Exception as e:
@@ -349,7 +482,12 @@ else:
     result(WARN, "E16", f"{TIBET_API_BASE}/router", "Skipped")
 
 # E17 — mempool_watcher.py reserve fetch (same as E14 effectively)
-result(PASS, "E17", f"{TIBET_API_BASE}/pair/{{pair_id}}", "Covered by E14 — same endpoint used by mempool_watcher")
+result(
+    PASS,
+    "E17",
+    f"{TIBET_API_BASE}/pair/{{pair_id}}",
+    "Covered by E14 — same endpoint used by mempool_watcher",
+)
 
 # E18 — price_engine.py GET /token/{asset_id} (used in some price lookups)
 try:
@@ -359,18 +497,29 @@ try:
         data = r.json()
         result(PASS, "E18", url, f"Token detail OK, keys={list(data.keys())[:6]}")
     elif r.status_code == 404:
-        result(WARN, "E18", url, "404 — token endpoint may not exist or CAT not on TibetSwap")
+        result(
+            WARN,
+            "E18",
+            url,
+            "404 — token endpoint may not exist or CAT not on TibetSwap",
+        )
     else:
         result(WARN, "E18", url, f"Status {r.status_code}")
 except Exception as e:
     result(FAIL, "E18", url, str(e))
 
 # E19 — Slippage estimation fallback (uses /pairs reserves, already tested)
-result(PASS, "E19", f"{TIBET_API_BASE}/pairs or /pair/{{id}}", "Reserve-based slippage uses E13/E14 data — already tested")
+result(
+    PASS,
+    "E19",
+    f"{TIBET_API_BASE}/pairs or /pair/{{id}}",
+    "Reserve-based slippage uses E13/E14 data — already tested",
+)
 
 # ─────────────────────────────────────────────────────────────
 section("COINSET API (E20-E25)")
 # ─────────────────────────────────────────────────────────────
+
 
 def coinset_post(method, params=None, label=""):
     url = f"{COINSET_API_URL}/{'full_node' if 'mempool' in method or 'blockchain' in method or 'fee' in method else 'full_node'}"
@@ -378,24 +527,39 @@ def coinset_post(method, params=None, label=""):
     url = f"{COINSET_API_URL}/{method}"
     payload = params or {}
     try:
-        r = requests.post(url, json=payload, timeout=15, headers={"Content-Type": "application/json"})
+        r = requests.post(
+            url, json=payload, timeout=15, headers={"Content-Type": "application/json"}
+        )
         r.raise_for_status()
         return r.json(), None
     except Exception as e:
         return None, str(e)
 
+
 # E20 — POST /get_blockchain_state (tx_fees.py fallback)
 try:
     url = f"{COINSET_API_URL}/get_blockchain_state"
-    r = requests.post(url, json={}, timeout=15, headers={"Content-Type": "application/json"})
+    r = requests.post(
+        url, json={}, timeout=15, headers={"Content-Type": "application/json"}
+    )
     r.raise_for_status()
     data = r.json()
     state = data.get("blockchain_state", {})
     if state:
         peak = state.get("peak", {})
-        result(PASS, "E20", url, f"peak height={peak.get('height','?')}, synced={state.get('sync',{}).get('synced','?')}")
+        result(
+            PASS,
+            "E20",
+            url,
+            f"peak height={peak.get('height', '?')}, synced={state.get('sync', {}).get('synced', '?')}",
+        )
     else:
-        result(WARN, "E20", url, f"No blockchain_state in response. Keys: {list(data.keys())}")
+        result(
+            WARN,
+            "E20",
+            url,
+            f"No blockchain_state in response. Keys: {list(data.keys())}",
+        )
 except Exception as e:
     result(FAIL, "E20", url, str(e))
 
@@ -403,7 +567,9 @@ except Exception as e:
 try:
     url = f"{COINSET_API_URL}/get_fee_estimate"
     payload = {"cost": 1000000, "target_times": [60, 300]}
-    r = requests.post(url, json=payload, timeout=15, headers={"Content-Type": "application/json"})
+    r = requests.post(
+        url, json=payload, timeout=15, headers={"Content-Type": "application/json"}
+    )
     r.raise_for_status()
     data = r.json()
     estimates = data.get("estimates", data.get("fee_estimates", None))
@@ -417,7 +583,9 @@ except Exception as e:
 # E22 — POST /get_all_mempool_items (mempool_watcher.py)
 try:
     url = f"{COINSET_API_URL}/get_all_mempool_items"
-    r = requests.post(url, json={}, timeout=30, headers={"Content-Type": "application/json"})
+    r = requests.post(
+        url, json={}, timeout=30, headers={"Content-Type": "application/json"}
+    )
     r.raise_for_status()
     data = r.json()
     items = data.get("mempool_items", {})
@@ -431,7 +599,12 @@ try:
             has_additions = "additions" in first
             has_removals = "removals" in first
             has_spend_bundle = "spend_bundle" in first
-            result(PASS, "E22b", url, f"Item shape: additions={has_additions}, removals={has_removals}, spend_bundle={has_spend_bundle}")
+            result(
+                PASS,
+                "E22b",
+                url,
+                f"Item shape: additions={has_additions}, removals={has_removals}, spend_bundle={has_spend_bundle}",
+            )
     elif isinstance(items, list):
         result(PASS, "E22", url, f"mempool_items list={len(items)} transactions")
     else:
@@ -443,8 +616,10 @@ except Exception as e:
 # Use a dummy coin ID to test endpoint reachability
 try:
     url = f"{COINSET_API_URL}/get_coin_record_by_name"
-    payload = {"name": "0x" + "a"*64}  # dummy 32-byte coin id
-    r = requests.post(url, json=payload, timeout=10, headers={"Content-Type": "application/json"})
+    payload = {"name": "0x" + "a" * 64}  # dummy 32-byte coin id
+    r = requests.post(
+        url, json=payload, timeout=10, headers={"Content-Type": "application/json"}
+    )
     data = r.json()
     # Should return {"coin_record": null, "success": true} or similar
     if data.get("success") == False and "error" in data:
@@ -461,10 +636,17 @@ except Exception as e:
 try:
     url = f"{COINSET_API_URL}/get_additions_and_removals"
     payload = {"height": 1}  # genesis block
-    r = requests.post(url, json=payload, timeout=10, headers={"Content-Type": "application/json"})
+    r = requests.post(
+        url, json=payload, timeout=10, headers={"Content-Type": "application/json"}
+    )
     data = r.json()
     if "additions" in data or "removals" in data:
-        result(PASS, "E24", url, f"additions={len(data.get('additions',[]))}, removals={len(data.get('removals',[]))}")
+        result(
+            PASS,
+            "E24",
+            url,
+            f"additions={len(data.get('additions', []))}, removals={len(data.get('removals', []))}",
+        )
     elif data.get("success") == False:
         result(WARN, "E24", url, f"API error: {data.get('error')}")
     else:
@@ -476,13 +658,22 @@ except Exception as e:
 try:
     url = f"{COINSET_API_URL}/get_block_record_by_height"
     payload = {"height": 5000000}
-    r = requests.post(url, json=payload, timeout=10, headers={"Content-Type": "application/json"})
+    r = requests.post(
+        url, json=payload, timeout=10, headers={"Content-Type": "application/json"}
+    )
     data = r.json()
     if "block_record" in data:
         br = data["block_record"]
-        result(PASS, "E25", url, f"block at height 5000000, timestamp={br.get('timestamp','?')}")
+        result(
+            PASS,
+            "E25",
+            url,
+            f"block at height 5000000, timestamp={br.get('timestamp', '?')}",
+        )
     elif data.get("success") == False:
-        result(WARN, "E25", url, f"API error: {data.get('error')} (block may not exist)")
+        result(
+            WARN, "E25", url, f"API error: {data.get('error')} (block may not exist)"
+        )
     else:
         result(WARN, "E25", url, f"Unexpected: {list(data.keys())}")
 except Exception as e:
@@ -493,7 +684,12 @@ section("SPACESCAN API (E26-E28)")
 # ─────────────────────────────────────────────────────────────
 
 if not SPACESCAN_API_KEY:
-    result(WARN, "E26", f"{SPACESCAN_BASE}/...", "SPACESCAN_API_KEY not set — skipping Spacescan tests")
+    result(
+        WARN,
+        "E26",
+        f"{SPACESCAN_BASE}/...",
+        "SPACESCAN_API_KEY not set — skipping Spacescan tests",
+    )
     result(WARN, "E27", f"{SPACESCAN_BASE}/...", "SPACESCAN_API_KEY not set — skipping")
     result(WARN, "E28", f"{SPACESCAN_BASE}/...", "SPACESCAN_API_KEY not set — skipping")
 else:
@@ -532,9 +728,9 @@ section("SUMMARY")
 # ─────────────────────────────────────────────────────────────
 
 passes = sum(1 for r in results if r[0] == PASS)
-warns  = sum(1 for r in results if r[0] == WARN)
-fails  = sum(1 for r in results if r[0] == FAIL)
-total  = len(results)
+warns = sum(1 for r in results if r[0] == WARN)
+fails = sum(1 for r in results if r[0] == FAIL)
+total = len(results)
 
 print(f"\n  Total: {total}   [PASS]: {passes}   [WARN]: {warns}   [FAIL]: {fails}")
 

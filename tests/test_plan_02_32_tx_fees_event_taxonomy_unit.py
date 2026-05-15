@@ -18,6 +18,7 @@ from unittest.mock import patch, MagicMock
 
 try:
     import tx_fees as _tf
+
     _SKIP_TF = None
 except ModuleNotFoundError as exc:
     _tf = None
@@ -25,6 +26,7 @@ except ModuleNotFoundError as exc:
 
 try:
     import event_taxonomy as _et
+
     _SKIP_ET = None
 except ModuleNotFoundError as exc:
     _et = None
@@ -32,6 +34,7 @@ except ModuleNotFoundError as exc:
 
 try:
     import notification_manager as _nm
+
     _SKIP_NM = None
 except ModuleNotFoundError as exc:
     _nm = None
@@ -41,6 +44,7 @@ except ModuleNotFoundError as exc:
 # ===========================================================================
 # tx_fees — pure conversion functions
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_TF is not None, f"tx_fees unavailable: {_SKIP_TF}")
 class TestDecimalOrZero(unittest.TestCase):
@@ -108,6 +112,7 @@ class TestMojosToXch(unittest.TestCase):
 # tx_fees — cfg-dependent helpers (patched cfg)
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_TF is not None, f"tx_fees unavailable: {_SKIP_TF}")
 class TestFeePoolHelpers(unittest.TestCase):
     def _cfg(self, **attrs):
@@ -130,37 +135,53 @@ class TestFeePoolHelpers(unittest.TestCase):
             self.assertEqual(_tf.get_fee_coin_size_mojos(), 1_000_000_000)
 
     def test_fee_pool_configured_when_count_and_size_set(self):
-        with patch.object(_tf, "cfg", self._cfg(
-            FEE_PREP_COUNT=5, FEE_COIN_SIZE_XCH=Decimal("0.005")
-        )):
+        with patch.object(
+            _tf, "cfg", self._cfg(FEE_PREP_COUNT=5, FEE_COIN_SIZE_XCH=Decimal("0.005"))
+        ):
             self.assertTrue(_tf.fee_pool_configured())
 
     def test_fee_pool_not_configured_when_count_zero(self):
-        with patch.object(_tf, "cfg", self._cfg(
-            FEE_PREP_COUNT=0, FEE_COIN_SIZE_XCH=Decimal("0.005")
-        )):
+        with patch.object(
+            _tf, "cfg", self._cfg(FEE_PREP_COUNT=0, FEE_COIN_SIZE_XCH=Decimal("0.005"))
+        ):
             self.assertFalse(_tf.fee_pool_configured())
 
     def test_fee_pool_not_configured_when_size_zero(self):
-        with patch.object(_tf, "cfg", self._cfg(
-            FEE_PREP_COUNT=5, FEE_COIN_SIZE_XCH=Decimal("0")
-        )):
+        with patch.object(
+            _tf, "cfg", self._cfg(FEE_PREP_COUNT=5, FEE_COIN_SIZE_XCH=Decimal("0"))
+        ):
             self.assertFalse(_tf.fee_pool_configured())
 
     def test_get_fee_pool_plan_has_expected_keys(self):
-        with patch.object(_tf, "cfg", self._cfg(
-            FEE_PREP_COUNT=3, FEE_COIN_SIZE_XCH=Decimal("0.005"),
-            TRANSACTION_FEE_MODE="manual", TRANSACTION_FEE_XCH=Decimal("0.001"),
-            CHIA_WALLET_CERT="", CHIA_WALLET_KEY="", WALLET_TYPE="sage"
-        )):
+        with patch.object(
+            _tf,
+            "cfg",
+            self._cfg(
+                FEE_PREP_COUNT=3,
+                FEE_COIN_SIZE_XCH=Decimal("0.005"),
+                TRANSACTION_FEE_MODE="manual",
+                TRANSACTION_FEE_XCH=Decimal("0.001"),
+                CHIA_WALLET_CERT="",
+                CHIA_WALLET_KEY="",
+                WALLET_TYPE="sage",
+            ),
+        ):
             plan = _tf.get_fee_pool_plan()
-        for key in ("enabled", "configured", "tier_name", "count", "coin_size_mojos", "coin_size_xch"):
+        for key in (
+            "enabled",
+            "configured",
+            "tier_name",
+            "count",
+            "coin_size_mojos",
+            "coin_size_xch",
+        ):
             self.assertIn(key, plan)
 
 
 # ===========================================================================
 # tx_fees — get_transaction_fee_mode
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_TF is not None, f"tx_fees unavailable: {_SKIP_TF}")
 class TestGetTransactionFeeMode(unittest.TestCase):
@@ -181,12 +202,21 @@ class TestGetTransactionFeeMode(unittest.TestCase):
 # event_taxonomy — EventCategory + categorize_event + get_category_map
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_ET is not None, f"event_taxonomy unavailable: {_SKIP_ET}")
 class TestEventCategory(unittest.TestCase):
     def test_all_expected_categories_present(self):
         categories = {c.value for c in _et.EventCategory}
-        for expected in ("lifecycle", "offer", "pricing", "wallet",
-                         "exchange", "risk", "system", "coin"):
+        for expected in (
+            "lifecycle",
+            "offer",
+            "pricing",
+            "wallet",
+            "exchange",
+            "risk",
+            "system",
+            "coin",
+        ):
             self.assertIn(expected, categories)
 
     def test_category_is_str(self):
@@ -237,6 +267,7 @@ class TestGetCategoryMap(unittest.TestCase):
 # ===========================================================================
 # notification_manager — rate limiting and category control (no plyer calls)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_NM is not None, f"notification_manager unavailable: {_SKIP_NM}")
 class TestNotificationManagerRateLimit(unittest.TestCase):
@@ -290,8 +321,17 @@ class TestNotificationManagerRateLimit(unittest.TestCase):
     def test_get_categories_returns_all_default_categories(self):
         mgr = self._make_nm()
         cats = mgr.get_categories()
-        for key in ("fill", "error", "circuit_breaker", "sniper", "coin_prep",
-                    "price_alert", "info", "warning", "critical"):
+        for key in (
+            "fill",
+            "error",
+            "circuit_breaker",
+            "sniper",
+            "coin_prep",
+            "price_alert",
+            "info",
+            "warning",
+            "critical",
+        ):
             self.assertIn(key, cats)
 
     def test_get_categories_returns_copy(self):
@@ -345,14 +385,16 @@ class TestDesktopNotificationBridge(unittest.TestCase):
         with patch.dict(sys.modules, {"api_server": fake_api_server}):
             desktop_app._wire_notifications(notifier)
 
-        q.put({
-            "type": "fill",
-            "data": {
-                "side": "buy",
-                "size_xch": "0.1234",
-                "price": "0.002",
-            },
-        })
+        q.put(
+            {
+                "type": "fill",
+                "data": {
+                    "side": "buy",
+                    "size_xch": "0.1234",
+                    "price": "0.002",
+                },
+            }
+        )
 
         deadline = time.time() + 1
         while time.time() < deadline and not notifier.notify.called:

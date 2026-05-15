@@ -1,6 +1,8 @@
 """Tests for the ladder + coin-accounting watchdog."""
+
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from decimal import Decimal
@@ -14,9 +16,9 @@ from ladder_watchdog import (
 
 # Reverse-ladder config: inner = largest, extreme = smallest (per user's toggle)
 REVERSE_TIER_SIZES = {
-    "inner":   Decimal("1.6887"),
-    "mid":     Decimal("0.9288"),
-    "outer":   Decimal("0.4222"),
+    "inner": Decimal("1.6887"),
+    "mid": Decimal("0.9288"),
+    "outer": Decimal("0.4222"),
     "extreme": Decimal("0.2111"),
 }
 REVERSE_TIER_COUNTS = {"inner": 10, "mid": 5, "outer": 3, "extreme": 2}
@@ -46,7 +48,8 @@ class TestHealthyReverseLadder:
             offers.append(_offer(0.000129 + i * 0.00000001, 0.2111))
 
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -69,7 +72,8 @@ class TestHealthyReverseLadder:
             offers.append(_offer(0.000127 + i * 0.00000001, 1.6887, "inner"))
 
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -101,7 +105,8 @@ class TestReverseLadderInversion:
             offers.append(_offer(0.000129 + i * 0.00000001, 3.04))
 
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -110,8 +115,9 @@ class TestReverseLadderInversion:
         assert result.has_errors() is True
         # The error should be ladder_inversion_reverse
         codes = [i.code for i in result.issues]
-        assert any(c == "ladder_inversion_reverse" for c in codes), \
+        assert any(c == "ladder_inversion_reverse" for c in codes), (
             f"Expected ladder_inversion_reverse in {codes}"
+        )
 
 
 class TestStandardLadder:
@@ -120,9 +126,9 @@ class TestStandardLadder:
     def test_standard_ladder_no_issues(self):
         offers = []
         std_tiers = {
-            "inner":   Decimal("0.2111"),
-            "mid":     Decimal("0.4222"),
-            "outer":   Decimal("0.9288"),
+            "inner": Decimal("0.2111"),
+            "mid": Decimal("0.4222"),
+            "outer": Decimal("0.9288"),
             "extreme": Decimal("1.6887"),
         }
         for i in range(10):
@@ -134,7 +140,8 @@ class TestStandardLadder:
         for i in range(2):
             offers.append(_offer(0.000129 + i * 0.00000001, 1.6887))
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=std_tiers,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=False,
@@ -155,7 +162,8 @@ class TestSizeDrift:
         offers += [_offer(0.000129 + i * 0.00000001, 0.2111) for i in range(2)]
 
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -171,7 +179,8 @@ class TestSizeDrift:
         offers += [_offer(0.000129 + i * 0.00000001, 0.2111) for i in range(2)]
 
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -186,7 +195,8 @@ class TestOfferCountMismatch:
     def test_short_ladder_warns(self):
         offers = [_offer(0.000126 + i * 0.00000001, 1.6887) for i in range(5)]
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -199,10 +209,13 @@ class TestOfferCountMismatch:
         offers = [_offer(0.000126 + i * 0.00000001, 1.6887) for i in range(10)]
         offers += [_offer(0.000127 + i * 0.00000001, 0.9288) for i in range(5)]
         offers += [_offer(0.000128 + i * 0.00000001, 0.4222) for i in range(3)]
-        offers += [_offer(0.000129 + i * 0.00000001, 0.2111) for i in range(1)]  # 1 instead of 2
+        offers += [
+            _offer(0.000129 + i * 0.00000001, 0.2111) for i in range(1)
+        ]  # 1 instead of 2
         # total = 19, expected = 20 → ±1 OK
         result = audit_ladder_shape(
-            side="sell", offers=offers,
+            side="sell",
+            offers=offers,
             tier_sizes_xch=REVERSE_TIER_SIZES,
             tier_counts=REVERSE_TIER_COUNTS,
             reversed_ladder=True,
@@ -217,8 +230,10 @@ class TestCoinInvariants:
     def test_clean_accounting_no_issues(self):
         result = check_coin_invariants(
             wallet_totals={"xch_total": 122, "cat_total": 67},
-            inventory={"xch": {"free": 98, "locked": 24},
-                       "cat": {"free": 43, "locked": 24}},
+            inventory={
+                "xch": {"free": 98, "locked": 24},
+                "cat": {"free": 43, "locked": 24},
+            },
             open_offers_count={"buy": 24, "sell": 24},
             db_locked_count={"xch": 24, "cat": 24},
         )
@@ -228,8 +243,10 @@ class TestCoinInvariants:
     def test_inventory_mismatch_warns(self):
         result = check_coin_invariants(
             wallet_totals={"xch_total": 130, "cat_total": 67},  # 130, but...
-            inventory={"xch": {"free": 98, "locked": 24},       # inv = 122
-                       "cat": {"free": 43, "locked": 24}},
+            inventory={
+                "xch": {"free": 98, "locked": 24},  # inv = 122
+                "cat": {"free": 43, "locked": 24},
+            },
             open_offers_count={"buy": 24, "sell": 24},
             db_locked_count={"xch": 24, "cat": 24},
         )
@@ -239,8 +256,10 @@ class TestCoinInvariants:
     def test_locked_vs_offers_divergence_warns(self):
         result = check_coin_invariants(
             wallet_totals={"xch_total": 122, "cat_total": 67},
-            inventory={"xch": {"free": 98, "locked": 24},
-                       "cat": {"free": 43, "locked": 24}},
+            inventory={
+                "xch": {"free": 98, "locked": 24},
+                "cat": {"free": 43, "locked": 24},
+            },
             open_offers_count={"buy": 24, "sell": 24},
             db_locked_count={"xch": 30, "cat": 24},  # 6 phantom locks
         )
@@ -251,10 +270,12 @@ class TestCoinInvariants:
         """±2 tolerance for sniper probes and transient states."""
         result = check_coin_invariants(
             wallet_totals={"xch_total": 122, "cat_total": 67},
-            inventory={"xch": {"free": 98, "locked": 24},
-                       "cat": {"free": 43, "locked": 24}},
+            inventory={
+                "xch": {"free": 98, "locked": 24},
+                "cat": {"free": 43, "locked": 24},
+            },
             open_offers_count={"buy": 24, "sell": 24},
-            db_locked_count={"xch": 25, "cat": 25},   # +1 each (sniper probes)
+            db_locked_count={"xch": 25, "cat": 25},  # +1 each (sniper probes)
         )
         assert result.ok is True
         assert len(result.issues) == 0
@@ -274,8 +295,10 @@ class TestCombinedAudit:
             buy_reversed=True,
             sell_reversed=True,
             wallet_totals={"xch_total": 122, "cat_total": 67},
-            inventory={"xch": {"free": 98, "locked": 24},
-                       "cat": {"free": 43, "locked": 24}},
+            inventory={
+                "xch": {"free": 98, "locked": 24},
+                "cat": {"free": 43, "locked": 24},
+            },
             db_locked_count={"xch": 24, "cat": 24},
         )
         # Should be a list of issues (may include size-taper warnings

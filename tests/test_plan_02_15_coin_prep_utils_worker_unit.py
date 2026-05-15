@@ -24,8 +24,8 @@ from coin_prep_worker import (
 # CLI argument parsing
 # ---------------------------------------------------------------------------
 
-class TestCoinPrepWorkerCli(unittest.TestCase):
 
+class TestCoinPrepWorkerCli(unittest.TestCase):
     def test_help_exits_cleanly(self):
         with patch.object(sys, "argv", ["coin_prep_worker.py", "--help"]):
             with self.assertRaises(SystemExit) as cm:
@@ -41,7 +41,6 @@ class TestCoinPrepWorkerCli(unittest.TestCase):
 
 
 class TestSageRpcSmoke(unittest.TestCase):
-
     def test_returns_success_when_sage_initialize_and_key_succeed(self):
         calls = []
         fake_wallet_sage = types.ModuleType("wallet_sage")
@@ -49,11 +48,11 @@ class TestSageRpcSmoke(unittest.TestCase):
         fake_wallet_sage.CERT_PATH = __file__
         fake_wallet_sage.KEY_PATH = __file__
         fake_wallet_sage.reload_connection_settings = lambda: calls.append("reload")
-        fake_wallet_sage.ensure_initialized = (
-            lambda force_retry=False: calls.append(("initialize", force_retry)) or True
+        fake_wallet_sage.ensure_initialized = lambda force_retry=False: (
+            calls.append(("initialize", force_retry)) or True
         )
-        fake_wallet_sage.get_current_key = (
-            lambda: calls.append("get_key") or {"fingerprint": 123456}
+        fake_wallet_sage.get_current_key = lambda: (
+            calls.append("get_key") or {"fingerprint": 123456}
         )
 
         with patch.dict(sys.modules, {"wallet_sage": fake_wallet_sage}):
@@ -68,10 +67,12 @@ class TestSageRpcSmoke(unittest.TestCase):
         fake_wallet_sage.CERT_PATH = __file__
         fake_wallet_sage.KEY_PATH = __file__
         fake_wallet_sage.reload_connection_settings = lambda: calls.append("reload")
-        fake_wallet_sage.ensure_initialized = (
-            lambda force_retry=False: calls.append(("initialize", force_retry)) or False
+        fake_wallet_sage.ensure_initialized = lambda force_retry=False: (
+            calls.append(("initialize", force_retry)) or False
         )
-        fake_wallet_sage.get_current_key = lambda: calls.append("get_key") or {"fingerprint": 123456}
+        fake_wallet_sage.get_current_key = lambda: (
+            calls.append("get_key") or {"fingerprint": 123456}
+        )
 
         with patch.dict(sys.modules, {"wallet_sage": fake_wallet_sage}):
             self.assertEqual(_worker_module._run_sage_rpc_smoke(), 1)
@@ -80,7 +81,6 @@ class TestSageRpcSmoke(unittest.TestCase):
 
 
 class TestWalletBalanceResponseParsing(unittest.TestCase):
-
     def test_balance_response_uses_unconfirmed_before_confirmed(self):
         response = {
             "success": True,
@@ -106,8 +106,8 @@ class TestWalletBalanceResponseParsing(unittest.TestCase):
 # should_retry_unconsumed_split
 # ---------------------------------------------------------------------------
 
-class TestShouldRetryUnconsumedSplit(unittest.TestCase):
 
+class TestShouldRetryUnconsumedSplit(unittest.TestCase):
     def _call(self, **kw):
         defaults = dict(
             elapsed_s=120,
@@ -162,8 +162,8 @@ class TestShouldRetryUnconsumedSplit(unittest.TestCase):
 # should_extend_pending_consumed_split_grace
 # ---------------------------------------------------------------------------
 
-class TestShouldExtendPendingConsumedSplitGrace(unittest.TestCase):
 
+class TestShouldExtendPendingConsumedSplitGrace(unittest.TestCase):
     def _call(self, **kw):
         # Base: extension should succeed (all conditions satisfied)
         defaults = dict(
@@ -213,46 +213,81 @@ class TestShouldExtendPendingConsumedSplitGrace(unittest.TestCase):
 
     def test_false_when_completion_ratio_too_low(self):
         # 8/10 = 0.80 < min_completion_ratio=0.90
-        self.assertFalse(self._call(owned_output_count=8, expected_count=10,
-                                     selectable_output_count=8))
+        self.assertFalse(
+            self._call(
+                owned_output_count=8, expected_count=10, selectable_output_count=8
+            )
+        )
 
     def test_true_at_exact_ratio_threshold(self):
         # 9/10 = 0.90 >= 0.90 → True
-        self.assertTrue(self._call(owned_output_count=9, expected_count=10,
-                                    selectable_output_count=9))
+        self.assertTrue(
+            self._call(
+                owned_output_count=9, expected_count=10, selectable_output_count=9
+            )
+        )
 
     def test_all_owned_none_selectable_still_extends(self):
         # all_owned=True, so missing_selectable not checked against limit
-        self.assertTrue(self._call(owned_output_count=10, expected_count=10,
-                                    selectable_output_count=0))
+        self.assertTrue(
+            self._call(
+                owned_output_count=10, expected_count=10, selectable_output_count=0
+            )
+        )
 
     def test_custom_extension_missing_limit(self):
         # 4 missing, limit=5 → passes missing_owned check; ratio=6/10=0.60 < 0.90 → False
-        self.assertFalse(self._call(owned_output_count=6, expected_count=10,
-                                     selectable_output_count=6, extension_missing_limit=5))
+        self.assertFalse(
+            self._call(
+                owned_output_count=6,
+                expected_count=10,
+                selectable_output_count=6,
+                extension_missing_limit=5,
+            )
+        )
         # 8/10=0.80 < 0.90 still False
-        self.assertFalse(self._call(owned_output_count=8, expected_count=10,
-                                     selectable_output_count=8, extension_missing_limit=5))
+        self.assertFalse(
+            self._call(
+                owned_output_count=8,
+                expected_count=10,
+                selectable_output_count=8,
+                extension_missing_limit=5,
+            )
+        )
 
     def test_custom_min_completion_ratio(self):
         # 8/10=0.80 >= 0.75 with custom min → True
-        self.assertTrue(self._call(owned_output_count=8, expected_count=10,
-                                    selectable_output_count=8,
-                                    min_completion_ratio=0.75))
+        self.assertTrue(
+            self._call(
+                owned_output_count=8,
+                expected_count=10,
+                selectable_output_count=8,
+                min_completion_ratio=0.75,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
 # PrepPhase enum
 # ---------------------------------------------------------------------------
 
-class TestPrepPhase(unittest.TestCase):
 
+class TestPrepPhase(unittest.TestCase):
     def test_all_members_present(self):
         names = {m.name for m in PrepPhase}
-        self.assertEqual(names, {
-            "IDLE", "ANALYZING", "CONSOLIDATING", "CREATING_POOL",
-            "SPLITTING", "VERIFYING", "COMPLETE", "ERROR",
-        })
+        self.assertEqual(
+            names,
+            {
+                "IDLE",
+                "ANALYZING",
+                "CONSOLIDATING",
+                "CREATING_POOL",
+                "SPLITTING",
+                "VERIFYING",
+                "COMPLETE",
+                "ERROR",
+            },
+        )
 
     def test_string_values(self):
         self.assertEqual(PrepPhase.IDLE.value, "idle")
@@ -267,8 +302,8 @@ class TestPrepPhase(unittest.TestCase):
 # CoinPrepStatus dataclass + to_dict
 # ---------------------------------------------------------------------------
 
-class TestCoinPrepStatus(unittest.TestCase):
 
+class TestCoinPrepStatus(unittest.TestCase):
     def _make(self, **kw):
         defaults = dict(
             phase="idle",
@@ -290,8 +325,15 @@ class TestCoinPrepStatus(unittest.TestCase):
     def test_to_dict_includes_all_fields(self):
         s = self._make()
         d = s.to_dict()
-        for key in ("phase", "progress", "message", "xch_coins_current",
-                    "xch_coins_target", "cat_coins_current", "cat_coins_target"):
+        for key in (
+            "phase",
+            "progress",
+            "message",
+            "xch_coins_current",
+            "xch_coins_target",
+            "cat_coins_current",
+            "cat_coins_target",
+        ):
             self.assertIn(key, d)
 
     def test_percentage_truncates(self):
@@ -313,8 +355,8 @@ class TestCoinPrepStatus(unittest.TestCase):
 # CoinPrepWorker._prepared_coin_count_from_total
 # ---------------------------------------------------------------------------
 
-class TestPreparedCoinCountFromTotal(unittest.TestCase):
 
+class TestPreparedCoinCountFromTotal(unittest.TestCase):
     def _call(self, v):
         return CoinPrepWorker._prepared_coin_count_from_total(v)
 
@@ -338,8 +380,8 @@ class TestPreparedCoinCountFromTotal(unittest.TestCase):
 # CoinPrepWorker._sage_submit_succeeded
 # ---------------------------------------------------------------------------
 
-class TestSageSubmitSucceeded(unittest.TestCase):
 
+class TestSageSubmitSucceeded(unittest.TestCase):
     def _call(self, v):
         return CoinPrepWorker._sage_submit_succeeded(v)
 
@@ -372,8 +414,8 @@ class TestSageSubmitSucceeded(unittest.TestCase):
 # CoinPrepWorker._extract_sage_transaction_ids
 # ---------------------------------------------------------------------------
 
-class TestExtractSageTransactionIds(unittest.TestCase):
 
+class TestExtractSageTransactionIds(unittest.TestCase):
     def _call(self, v):
         return CoinPrepWorker._extract_sage_transaction_ids(v)
 
@@ -414,8 +456,8 @@ class TestExtractSageTransactionIds(unittest.TestCase):
 # CoinPrepWorker._ensure_0x
 # ---------------------------------------------------------------------------
 
-class TestEnsure0x(unittest.TestCase):
 
+class TestEnsure0x(unittest.TestCase):
     def _call(self, v):
         return CoinPrepWorker._ensure_0x(v)
 
@@ -436,8 +478,8 @@ class TestEnsure0x(unittest.TestCase):
 # CoinPrepWorker._compute_coin_id
 # ---------------------------------------------------------------------------
 
-class TestComputeCoinId(unittest.TestCase):
 
+class TestComputeCoinId(unittest.TestCase):
     _PARENT = "a" * 64
     _PUZZLE = "b" * 64
 
@@ -452,7 +494,10 @@ class TestComputeCoinId(unittest.TestCase):
         else:
             byte_count = (amount.bit_length() + 8) >> 3
             amount_bytes = amount.to_bytes(byte_count, byteorder="big", signed=True)
-        return "0x" + hashlib.sha256(parent_bytes + puzzle_bytes + amount_bytes).hexdigest()
+        return (
+            "0x"
+            + hashlib.sha256(parent_bytes + puzzle_bytes + amount_bytes).hexdigest()
+        )
 
     def test_returns_0x_prefixed_hex(self):
         result = self._call(1000)
@@ -477,13 +522,14 @@ class TestComputeCoinId(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_strips_0x_from_inputs(self):
-        r1 = CoinPrepWorker._compute_coin_id("0x" + self._PARENT, "0x" + self._PUZZLE, 1)
+        r1 = CoinPrepWorker._compute_coin_id(
+            "0x" + self._PARENT, "0x" + self._PUZZLE, 1
+        )
         r2 = CoinPrepWorker._compute_coin_id(self._PARENT, self._PUZZLE, 1)
         self.assertEqual(r1, r2)
 
 
 class TestPartitionCoinsForDesignation(unittest.TestCase):
-
     def test_xch_fee_outputs_with_full_fee_delta_still_match_fee_tier(self):
         worker = object.__new__(CoinPrepWorker)
         worker.tier_enabled = True
@@ -510,7 +556,6 @@ class TestPartitionCoinsForDesignation(unittest.TestCase):
 
 
 class TestWaitForExpectedLocalCoinCounts(unittest.TestCase):
-
     def _worker_with_counts(self, xch_counts, cat_counts):
         worker = object.__new__(CoinPrepWorker)
         worker.xch_wallet_id = 1
@@ -539,15 +584,11 @@ class TestWaitForExpectedLocalCoinCounts(unittest.TestCase):
             return state["cat"]
 
         worker.get_confirmed_coin_count = get_confirmed_coin_count
-        worker._set_status_coin_counts = (
-            lambda xch_total=None, cat_total=None: worker.status_counts.append(
-                (xch_total, cat_total)
-            )
+        worker._set_status_coin_counts = lambda xch_total=None, cat_total=None: (
+            worker.status_counts.append((xch_total, cat_total))
         )
-        worker.update_status = (
-            lambda phase, progress, message: worker.status_messages.append(
-                (phase, progress, message)
-            )
+        worker.update_status = lambda phase, progress, message: (
+            worker.status_messages.append((phase, progress, message))
         )
         worker.log = lambda message: worker.log_lines.append(message)
         return worker

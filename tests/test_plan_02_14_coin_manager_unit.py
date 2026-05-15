@@ -14,14 +14,22 @@ from unittest.mock import patch
 try:
     import coin_manager as _cm_mod
     from coin_manager import (
-        request_fast_reconcile, consume_fast_reconcile,
-        _extract_coin_records, _coin_amount, _chia_int_to_bytes,
-        _coin_id_from_record, _classify_coins,
-        _clamp_coin_prep_multiplier, _format_amount_xch, _format_amount_cat,
-        get_tier_distribution, get_weighted_tier_prep_counts,
+        request_fast_reconcile,
+        consume_fast_reconcile,
+        _extract_coin_records,
+        _coin_amount,
+        _chia_int_to_bytes,
+        _coin_id_from_record,
+        _classify_coins,
+        _clamp_coin_prep_multiplier,
+        _format_amount_xch,
+        _format_amount_cat,
+        get_tier_distribution,
+        get_weighted_tier_prep_counts,
         flip_position_tiers_to_coin_size_tiers,
         FeeCoinPool,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -61,6 +69,7 @@ def _with_cfg(**overrides):
 # fast_reconcile flag
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestFastReconcileFlag(unittest.TestCase):
     def setUp(self):
@@ -91,6 +100,7 @@ class TestFastReconcileFlag(unittest.TestCase):
 # ===========================================================================
 # _extract_coin_records
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestExtractCoinRecords(unittest.TestCase):
@@ -128,6 +138,7 @@ class TestExtractCoinRecords(unittest.TestCase):
 # _coin_amount
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestCoinAmount(unittest.TestCase):
     def test_extracts_amount(self):
@@ -143,6 +154,7 @@ class TestCoinAmount(unittest.TestCase):
 # ===========================================================================
 # _chia_int_to_bytes
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestChiaIntToBytes(unittest.TestCase):
@@ -161,13 +173,14 @@ class TestChiaIntToBytes(unittest.TestCase):
     def test_byte_count_formula(self):
         # For 1 mojo: bit_length=1, byte_count = (1+8)>>3 = 1
         result = _chia_int_to_bytes(1)
-        expected_bytes = (1 .bit_length() + 8) >> 3
+        expected_bytes = ((1).bit_length() + 8) >> 3
         self.assertEqual(len(result), expected_bytes)
 
 
 # ===========================================================================
 # _coin_id_from_record
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestCoinIdFromRecord(unittest.TestCase):
@@ -189,9 +202,13 @@ class TestCoinIdFromRecord(unittest.TestCase):
     def test_computes_sha256_from_fields(self):
         parent = "a" * 64
         puzzle = "b" * 64
-        rec = {"coin": {"parent_coin_info": "0x" + parent,
-                        "puzzle_hash": "0x" + puzzle,
-                        "amount": 0}}
+        rec = {
+            "coin": {
+                "parent_coin_info": "0x" + parent,
+                "puzzle_hash": "0x" + puzzle,
+                "amount": 0,
+            }
+        }
         result = _coin_id_from_record(rec)
         p_bytes = bytes.fromhex(parent)
         z_bytes = bytes.fromhex(puzzle)
@@ -211,6 +228,7 @@ class TestCoinIdFromRecord(unittest.TestCase):
 # _classify_coins
 # ===========================================================================
 
+
 def _make_rec(amount: int) -> dict:
     return {"coin": {"amount": amount}}
 
@@ -218,12 +236,16 @@ def _make_rec(amount: int) -> dict:
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestClassifyCoins(unittest.TestCase):
     def test_large_coin_goes_to_reserve(self):
-        result = _classify_coins([_make_rec(2_000_000_000)], trading_size_mojos=1_000_000_000)
+        result = _classify_coins(
+            [_make_rec(2_000_000_000)], trading_size_mojos=1_000_000_000
+        )
         self.assertEqual(len(result["reserve"]), 1)
         self.assertEqual(len(result["trading"]), 0)
 
     def test_trading_size_coin_goes_to_trading(self):
-        result = _classify_coins([_make_rec(1_000_000_000)], trading_size_mojos=1_000_000_000)
+        result = _classify_coins(
+            [_make_rec(1_000_000_000)], trading_size_mojos=1_000_000_000
+        )
         self.assertEqual(len(result["trading"]), 1)
 
     def test_small_coin_goes_to_small(self):
@@ -254,6 +276,7 @@ class TestClassifyCoins(unittest.TestCase):
 # _clamp_coin_prep_multiplier
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestClampCoinPrepMultiplier(unittest.TestCase):
     def test_one_is_identity(self):
@@ -279,6 +302,7 @@ class TestClampCoinPrepMultiplier(unittest.TestCase):
 # Format helpers
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestFormatHelpers(unittest.TestCase):
     def test_format_xch_one_xch(self):
@@ -302,6 +326,7 @@ class TestFormatHelpers(unittest.TestCase):
 # get_tier_distribution
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestGetTierDistribution(unittest.TestCase):
     def test_zero_max_returns_all_zeros(self):
@@ -310,8 +335,7 @@ class TestGetTierDistribution(unittest.TestCase):
 
     def test_explicit_tier_counts(self):
         result = get_tier_distribution(
-            8,
-            tier_counts={"inner": 2, "mid": 3, "outer": 2, "extreme": 1}
+            8, tier_counts={"inner": 2, "mid": 3, "outer": 2, "extreme": 1}
         )
         self.assertEqual(result["inner"], 2)
         self.assertEqual(result["mid"], 3)
@@ -319,8 +343,7 @@ class TestGetTierDistribution(unittest.TestCase):
     def test_overflow_goes_to_extreme(self):
         # 10 slots but only inner=2 configured — 8 overflow to extreme
         result = get_tier_distribution(
-            10,
-            tier_counts={"inner": 2, "mid": 0, "outer": 0, "extreme": 0}
+            10, tier_counts={"inner": 2, "mid": 0, "outer": 0, "extreme": 0}
         )
         self.assertEqual(result["inner"], 2)
         self.assertEqual(result["extreme"], 8)
@@ -333,8 +356,7 @@ class TestGetTierDistribution(unittest.TestCase):
 
     def test_total_matches_max_offers(self):
         result = get_tier_distribution(
-            10,
-            tier_counts={"inner": 3, "mid": 3, "outer": 2, "extreme": 2}
+            10, tier_counts={"inner": 3, "mid": 3, "outer": 2, "extreme": 2}
         )
         self.assertEqual(sum(result.values()), 10)
 
@@ -342,6 +364,7 @@ class TestGetTierDistribution(unittest.TestCase):
 # ===========================================================================
 # flip_position_tiers_to_coin_size_tiers
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestFlipPositionTiers(unittest.TestCase):
@@ -366,7 +389,7 @@ class TestFlipPositionTiers(unittest.TestCase):
             result = flip_position_tiers_to_coin_size_tiers(counts, side="buy")
         # inner position → extreme coin size, extreme position → inner coin size
         self.assertEqual(result["extreme"], 2)  # was inner
-        self.assertEqual(result["inner"], 1)   # was extreme
+        self.assertEqual(result["inner"], 1)  # was extreme
 
     def test_non_positional_tiers_preserved(self):
         counts = {"inner": 1, "mid": 1, "outer": 1, "extreme": 1, "sniper": 3}
@@ -378,6 +401,7 @@ class TestFlipPositionTiers(unittest.TestCase):
 # ===========================================================================
 # get_weighted_tier_prep_counts
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestGetWeightedTierPrepCounts(unittest.TestCase):
@@ -405,7 +429,8 @@ class TestGetWeightedTierPrepCounts(unittest.TestCase):
         spare = {"inner": 5, "mid": 5, "outer": 5, "extreme": 0}
         with patch.object(_cm_mod, "cfg", _FAKE_CFG):
             result = get_weighted_tier_prep_counts(
-                6, 2.0, tier_counts=tc, spare_counts=spare)
+                6, 2.0, tier_counts=tc, spare_counts=spare
+            )
         # inner = 2 active + 5 spare = 7
         self.assertEqual(result["inner"], 7)
 
@@ -413,6 +438,7 @@ class TestGetWeightedTierPrepCounts(unittest.TestCase):
 # ===========================================================================
 # FeeCoinPool
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestFeeCoinPool(unittest.TestCase):

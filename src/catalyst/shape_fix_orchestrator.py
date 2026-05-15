@@ -55,19 +55,22 @@ from typing import Any, Dict, List, Optional
 # State enums
 # ---------------------------------------------------------------------------
 
+
 class Stage(Enum):
     """A flow's current execution stage."""
+
     CANCELLING = "cancelling"
     WAITING_FOR_CONFIRMATION = "waiting_for_confirmation"
-    CHECKING_COINS = "checking_coins"        # P2
-    RESHAPING = "reshaping"                  # P3
-    REBUILDING = "rebuilding"                # P2
+    CHECKING_COINS = "checking_coins"  # P2
+    RESHAPING = "reshaping"  # P3
+    REBUILDING = "rebuilding"  # P2
     COMPLETE = "complete"
     HALTED = "halted"
 
 
 class HaltReason(Enum):
     """Why a flow halted short of COMPLETE."""
+
     USER_ABORTED = "user_aborted"
     TIMEOUT_CONFIRMATION = "timeout_waiting_for_confirmation"
     TIMEOUT_RESHAPE = "timeout_reshape"
@@ -101,10 +104,12 @@ ACTIVE_PIPELINE: tuple = P2_PIPELINE
 # Flow state
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FlowState:
     """Snapshot of a single recovery flow. Mutated by the orchestrator
     thread; rendered to dict for SSE emission."""
+
     flow_id: str
     side: str
     trade_ids: List[str]
@@ -161,6 +166,7 @@ class FlowState:
 # Orchestrator
 # ---------------------------------------------------------------------------
 
+
 class ShapeFixOrchestrator:
     """Attach-to-bot singleton that manages recovery flows.
 
@@ -176,7 +182,7 @@ class ShapeFixOrchestrator:
     # tech allows" requirement. The DB read is cheap (~ms), so 2s polls
     # give sub-3s detection latency without spinning the CPU.
     CONFIRMATION_POLL_INTERVAL_S: float = 2.0
-    CONFIRMATION_TIMEOUT_S: float = 180.0   # 3 min — generous for slow mempool
+    CONFIRMATION_TIMEOUT_S: float = 180.0  # 3 min — generous for slow mempool
 
     # P2 tuning — the rebuild wait is longer because we're waiting for:
     #   - the main loop's next requote tick (up to ~45s)
@@ -184,7 +190,7 @@ class ShapeFixOrchestrator:
     # If rebuild is blocked by the position guard, we detect that after
     # 2 min of no progress and halt with POSITION_GUARD_BLOCKED.
     REBUILD_POLL_INTERVAL_S: float = 3.0
-    REBUILD_TIMEOUT_S: float = 600.0        # 10 min — covers guard stalemates
+    REBUILD_TIMEOUT_S: float = 600.0  # 10 min — covers guard stalemates
     POSITION_GUARD_SUSPICION_S: float = 120.0  # 2 min of no progress = guard
 
     def __init__(self, bot: Any, event_bus: Any):
@@ -219,8 +225,9 @@ class ShapeFixOrchestrator:
                 return next(iter(self._active.values()))
             return None
 
-    def start_flow(self, side: str, trade_ids: List[str],
-                   alert_id: str = "") -> Dict[str, Any]:
+    def start_flow(
+        self, side: str, trade_ids: List[str], alert_id: str = ""
+    ) -> Dict[str, Any]:
         """Begin a recovery flow.
 
         Returns a dict with:
@@ -304,11 +311,11 @@ class ShapeFixOrchestrator:
         # Also log at INFO for auditability.
         try:
             from super_log import log_event
+
             log_event(
                 "info",
                 "shape_fix_progress",
-                f"[{flow.side}] {flow.stage.value} "
-                f"({flow.status}) — {flow.detail}",
+                f"[{flow.side}] {flow.stage.value} ({flow.status}) — {flow.detail}",
                 data={
                     "flow_id": flow.flow_id,
                     "side": flow.side,
@@ -371,8 +378,10 @@ class ShapeFixOrchestrator:
             flow.detail = f"Internal error: {type(e).__name__}: {e}"
             try:
                 from super_log import log_event
+
                 log_event(
-                    "error", "shape_fix_internal_error",
+                    "error",
+                    "shape_fix_internal_error",
                     f"Shape-fix flow crashed: {e}",
                 )
             except Exception:
@@ -399,7 +408,8 @@ class ShapeFixOrchestrator:
 
         try:
             result = self._bot.offer_manager.cancel_offers(
-                flow.trade_ids, reason="shape_fix_recovery")
+                flow.trade_ids, reason="shape_fix_recovery"
+            )
         except Exception as e:
             flow.halt_reason = HaltReason.INTERNAL_ERROR
             flow.stage = Stage.HALTED
@@ -430,8 +440,7 @@ class ShapeFixOrchestrator:
             return
 
         succeeded = [
-            tid for tid, r in result.items()
-            if isinstance(r, dict) and r.get("success")
+            tid for tid, r in result.items() if isinstance(r, dict) and r.get("success")
         ]
         flow.cancelled_count = len(succeeded)
         flow.stages_completed.append(Stage.CANCELLING)
@@ -502,9 +511,7 @@ class ShapeFixOrchestrator:
 
             if still_open == 0:
                 flow.stages_completed.append(Stage.WAITING_FOR_CONFIRMATION)
-                flow.detail = (
-                    f"All {flow.total_requested} cancels confirmed on-chain"
-                )
+                flow.detail = f"All {flow.total_requested} cancels confirmed on-chain"
                 self._emit(flow)
                 return
 
@@ -665,8 +672,9 @@ class ShapeFixOrchestrator:
 
         def _count_side_offers() -> int:
             try:
-                rows = get_open_offers(
-                    side=flow.side, cat_asset_id=cfg.CAT_ASSET_ID) or []
+                rows = (
+                    get_open_offers(side=flow.side, cat_asset_id=cfg.CAT_ASSET_ID) or []
+                )
                 return len(rows)
             except Exception:
                 return -1

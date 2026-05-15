@@ -6,12 +6,14 @@ auth, token injection, rate-limit exemptions, and open-external validation):
   /api/bot/state (bot=None), /api/status (bot=None), /api/config GET shape,
   /api/bot/start when already running.
 """
+
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
 
 try:
     import api_server
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     api_server = None
@@ -155,6 +157,7 @@ class TestBotStateEndpoint(unittest.TestCase):
 
     def test_bot_with_state_returns_200(self):
         from types import SimpleNamespace
+
         fake_bot = SimpleNamespace(
             is_running=lambda: False,
             get_state=lambda: {"running": False, "coins": {}},
@@ -219,6 +222,7 @@ class TestBotStartEndpoint(unittest.TestCase):
 
     def test_start_already_running_returns_already_running_status(self):
         from types import SimpleNamespace
+
         fake_bot = SimpleNamespace(is_running=lambda: True)
         with patch.object(api_server, "bot", fake_bot):
             resp = self.client.post(

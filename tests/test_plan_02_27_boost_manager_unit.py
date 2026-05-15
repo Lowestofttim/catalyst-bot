@@ -13,6 +13,7 @@ from unittest.mock import patch
 try:
     import boost_manager as _bm_mod
     from boost_manager import _bps_to_pct, BoostManager
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -22,10 +23,10 @@ _SKIP_MSG = f"boost_manager unavailable: {_SKIP}"
 
 class _FakeOfferManager:
     """Minimal fake with a price cache so _find_stale_offers can find prices."""
+
     def __init__(self, prices=None):
         self._offer_details_cache = {
-            tid: {"price": price}
-            for tid, price in (prices or {}).items()
+            tid: {"price": price} for tid, price in (prices or {}).items()
         }
         self._cycle_used_coin_ids = set()
 
@@ -33,6 +34,7 @@ class _FakeOfferManager:
 # ---------------------------------------------------------------------------
 # _bps_to_pct
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestBoostBpsToPct(unittest.TestCase):
@@ -50,6 +52,7 @@ class TestBoostBpsToPct(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # BoostManager._find_stale_offers
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestFindStaleOffers(unittest.TestCase):
@@ -73,7 +76,9 @@ class TestFindStaleOffers(unittest.TestCase):
     def test_no_offer_manager_returns_empty(self):
         mgr = BoostManager(offer_manager=None)
         offers = [{"trade_id": "tid1"}]
-        result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
+        result = mgr._find_stale_offers(
+            offers, Decimal("0.001"), "buy", Decimal("0.05")
+        )
         self.assertEqual(result, [])
 
     def test_stale_offer_identified(self):
@@ -82,7 +87,9 @@ class TestFindStaleOffers(unittest.TestCase):
         prices = {"tid1": Decimal("0.002")}
         mgr = self._make_manager(prices)
         offers = [{"trade_id": "tid1"}]
-        result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
+        result = mgr._find_stale_offers(
+            offers, Decimal("0.001"), "buy", Decimal("0.05")
+        )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["trade_id"], "tid1")
 
@@ -91,7 +98,9 @@ class TestFindStaleOffers(unittest.TestCase):
         prices = {"tid1": Decimal("0.00103")}
         mgr = self._make_manager(prices)
         offers = [{"trade_id": "tid1"}]
-        result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
+        result = mgr._find_stale_offers(
+            offers, Decimal("0.001"), "buy", Decimal("0.05")
+        )
         self.assertEqual(result, [])
 
     def test_sorted_most_stale_first(self):
@@ -99,21 +108,27 @@ class TestFindStaleOffers(unittest.TestCase):
         prices = {"tid1": Decimal("0.0015"), "tid2": Decimal("0.002")}
         mgr = self._make_manager(prices)
         offers = [{"trade_id": "tid1"}, {"trade_id": "tid2"}]
-        result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
+        result = mgr._find_stale_offers(
+            offers, Decimal("0.001"), "buy", Decimal("0.05")
+        )
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["trade_id"], "tid2")  # most stale first
 
     def test_offers_missing_trade_id_skipped(self):
         mgr = self._make_manager({"": Decimal("0.002")})
         offers = [{"no_trade_id": True}]
-        result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
+        result = mgr._find_stale_offers(
+            offers, Decimal("0.001"), "buy", Decimal("0.05")
+        )
         self.assertEqual(result, [])
 
     def test_distance_bps_appended_to_result(self):
         prices = {"tid1": Decimal("0.002")}
         mgr = self._make_manager(prices)
         offers = [{"trade_id": "tid1"}]
-        result = mgr._find_stale_offers(offers, Decimal("0.001"), "buy", Decimal("0.05"))
+        result = mgr._find_stale_offers(
+            offers, Decimal("0.001"), "buy", Decimal("0.05")
+        )
         self.assertIn("_distance_bps", result[0])
         self.assertGreater(result[0]["_distance_bps"], 0)
 
@@ -166,7 +181,9 @@ class TestFlexibleProbeSize(unittest.TestCase):
                 create=True,
             ),
         ):
-            result = mgr._create_single_offer("sell", Decimal("0.0001175"), Decimal("0.01"))
+            result = mgr._create_single_offer(
+                "sell", Decimal("0.0001175"), Decimal("0.01")
+            )
 
         self.assertIsNotNone(result)
         self.assertEqual(result["trade_id"], "tid-flex")

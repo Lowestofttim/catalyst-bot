@@ -24,6 +24,7 @@ import threading
 # Attempt import — graceful fail if not installed
 try:
     from plyer import notification as plyer_notification
+
     PLYER_AVAILABLE = True
 except ImportError:
     PLYER_AVAILABLE = False
@@ -39,12 +40,12 @@ DEFAULT_CATEGORIES = {
         # storm during active markets; the category can still be re-enabled.
         "enabled": False,
         "title_prefix": "",
-        "cooldown_secs": 5,       # Min gap between fill notifications
+        "cooldown_secs": 5,  # Min gap between fill notifications
     },
     "error": {
         "enabled": True,
         "title_prefix": "",
-        "cooldown_secs": 30,      # Don't spam error notifications
+        "cooldown_secs": 30,  # Don't spam error notifications
         "dedupe_secs": 300,
     },
     "warning": {
@@ -75,7 +76,7 @@ DEFAULT_CATEGORIES = {
     "coin_prep": {
         "enabled": True,
         "title_prefix": "",
-        "cooldown_secs": 300,     # Coin prep is infrequent
+        "cooldown_secs": 300,  # Coin prep is infrequent
     },
     "price_alert": {
         "enabled": True,
@@ -129,8 +130,9 @@ class NotificationManager:
         self._last_signature_sent = {}
         self._lock = threading.Lock()
 
-    def notify(self, title: str, message: str, category: str = "info",
-               timeout: int = 10):
+    def notify(
+        self, title: str, message: str, category: str = "info", timeout: int = 10
+    ):
         """
         Send a native notification.
 
@@ -172,9 +174,7 @@ class NotificationManager:
 
         # Send notification in a background thread (plyer can block briefly)
         thread = threading.Thread(
-            target=self._send,
-            args=(full_title, message, timeout),
-            daemon=True
+            target=self._send, args=(full_title, message, timeout), daemon=True
         )
         thread.start()
         return True
@@ -211,4 +211,4 @@ class NotificationManager:
             return text
         if max_len <= 1:
             return text[:max_len]
-        return text[:max_len - 1] + "…"
+        return text[: max_len - 1] + "…"

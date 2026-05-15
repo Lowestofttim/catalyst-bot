@@ -26,6 +26,7 @@ try:
     import database as _db
     import coin_manager as _cm_mod
     from coin_manager import CoinManager
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     CoinManager = None
@@ -35,6 +36,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Fake cfg — just enough for non-tiered needs_topup() path
 # ---------------------------------------------------------------------------
+
 
 def _fake_cfg():
     return types.SimpleNamespace(
@@ -64,8 +66,8 @@ def _fake_cfg():
 # Base — temp SQLite DB + patched cfg
 # ---------------------------------------------------------------------------
 
-class _TempDB(unittest.TestCase):
 
+class _TempDB(unittest.TestCase):
     def setUp(self):
         sys.modules["database"] = _db
         fd, self._db_path = tempfile.mkstemp(suffix=".db")
@@ -89,9 +91,9 @@ class _TempDB(unittest.TestCase):
 # 1. needs_topup() gate conditions — flag-based
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestNeedsTopupGates(_TempDB):
-
     def _make_cm(self):
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             return CoinManager()
@@ -112,8 +114,8 @@ class TestNeedsTopupGates(_TempDB):
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             cm = CoinManager()
             now = time.time()
-            cm._last_topup_time = now          # emergency not ready
-            cm._last_drip_time = now           # drip not ready
+            cm._last_topup_time = now  # emergency not ready
+            cm._last_drip_time = now  # drip not ready
             self.assertFalse(cm.needs_topup())
 
     def test_drip_timer_overrides_emergency_cooldown(self):
@@ -121,8 +123,8 @@ class TestNeedsTopupGates(_TempDB):
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             cm = CoinManager()
             cm._last_topup_time = time.time()  # emergency blocked
-            cm._last_drip_time = 0             # drip ready (long ago)
-            cm._xch_coins = 0                  # would trigger low-coins
+            cm._last_drip_time = 0  # drip ready (long ago)
+            cm._xch_coins = 0  # would trigger low-coins
             # drip path passes cooldown gate — function proceeds to threshold check
             # result can be True or False depending on thresholds, but must not raise
             result = cm.needs_topup()
@@ -143,15 +145,15 @@ class TestNeedsTopupGates(_TempDB):
 # 2. needs_topup() threshold logic — non-tiered path
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestNeedsTopupThreshold(_TempDB):
-
     def test_returns_true_when_xch_coins_zero(self):
         """0 free XCH is below threshold (max(3, 10*0.5)=5) → needs topup."""
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             cm = CoinManager()
             cm._xch_coins = 0
-            cm._cat_coins = 99    # cat side healthy
+            cm._cat_coins = 99  # cat side healthy
             cm._last_topup_time = 0
             cm._last_drip_time = 0
             self.assertTrue(cm.needs_topup())
@@ -160,7 +162,7 @@ class TestNeedsTopupThreshold(_TempDB):
         """0 free CAT is below threshold → needs topup."""
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             cm = CoinManager()
-            cm._xch_coins = 99    # xch side healthy
+            cm._xch_coins = 99  # xch side healthy
             cm._cat_coins = 0
             cm._last_topup_time = 0
             cm._last_drip_time = 0
@@ -185,8 +187,8 @@ class TestNeedsTopupThreshold(_TempDB):
         cfg.ENABLE_BUY = True
         with patch.object(_cm_mod, "cfg", cfg):
             cm = CoinManager()
-            cm._xch_coins = 20   # xch healthy
-            cm._cat_coins = 0    # cat low but sell disabled
+            cm._xch_coins = 20  # xch healthy
+            cm._cat_coins = 0  # cat low but sell disabled
             cm._last_topup_time = 0
             cm._last_drip_time = 0
             self.assertFalse(cm.needs_topup())
@@ -198,8 +200,8 @@ class TestNeedsTopupThreshold(_TempDB):
         cfg.ENABLE_SELL = True
         with patch.object(_cm_mod, "cfg", cfg):
             cm = CoinManager()
-            cm._xch_coins = 0    # xch low but buy disabled
-            cm._cat_coins = 20   # cat healthy
+            cm._xch_coins = 0  # xch low but buy disabled
+            cm._cat_coins = 20  # cat healthy
             cm._last_topup_time = 0
             cm._last_drip_time = 0
             self.assertFalse(cm.needs_topup())
@@ -207,7 +209,7 @@ class TestNeedsTopupThreshold(_TempDB):
     def test_threshold_scales_with_max_offers(self):
         """Higher MAX_ACTIVE_BUY_OFFERS raises the trigger threshold."""
         cfg_low = _fake_cfg()
-        cfg_low.MAX_ACTIVE_BUY_OFFERS = 6   # threshold = max(3, int(6*0.5)) = 3
+        cfg_low.MAX_ACTIVE_BUY_OFFERS = 6  # threshold = max(3, int(6*0.5)) = 3
         cfg_high = _fake_cfg()
         cfg_high.MAX_ACTIVE_BUY_OFFERS = 20  # threshold = max(3, int(20*0.5)) = 10
 
@@ -228,13 +230,12 @@ class TestNeedsTopupThreshold(_TempDB):
             high_result = cm_high.needs_topup()
 
         # 5 coins: above threshold-3 (low config) but below threshold-10 (high config)
-        self.assertFalse(low_result)   # 5 >= 3 → no topup needed
-        self.assertTrue(high_result)   # 5 < 10 → topup needed
+        self.assertFalse(low_result)  # 5 >= 3 → no topup needed
+        self.assertTrue(high_result)  # 5 < 10 → topup needed
 
 
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestTieredDripTopupSources(_TempDB):
-
     def test_optional_source_ignores_reserve_smaller_than_requested_tier(self):
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             cm = CoinManager()
@@ -253,10 +254,14 @@ class TestTieredDripTopupSources(_TempDB):
         dist = {"inner": 0, "mid": 5, "outer": 0, "extreme": 0}
         prepared = {"inner": 0, "mid": 10, "outer": 0, "extreme": 0}
 
-        with patch.object(_cm_mod, "cfg", cfg), \
-                patch.object(_cm_mod, "get_tier_distribution", return_value=dist), \
-                patch.object(_cm_mod, "get_weighted_tier_prep_counts", return_value=prepared), \
-                patch.object(_cm_mod, "log_event") as log_event_mock:
+        with (
+            patch.object(_cm_mod, "cfg", cfg),
+            patch.object(_cm_mod, "get_tier_distribution", return_value=dist),
+            patch.object(
+                _cm_mod, "get_weighted_tier_prep_counts", return_value=prepared
+            ),
+            patch.object(_cm_mod, "log_event") as log_event_mock,
+        ):
             cm = CoinManager()
             cm._last_topup_time = time.time()
             cm._last_drip_time = 0
@@ -264,17 +269,23 @@ class TestTieredDripTopupSources(_TempDB):
                 "xch": {"inner": 0, "mid": 10, "outer": 0, "extreme": 0},
                 "cat": {"inner": 0, "mid": 1, "outer": 0, "extreme": 0},
             }
-            with patch.object(cm, "_get_tier_sizes_mojos",
-                              return_value={"mid": 24_129_000}), \
-                    patch.object(cm, "_optional_topup_source_available",
-                                 return_value=False) as source_mock:
+            with (
+                patch.object(
+                    cm, "_get_tier_sizes_mojos", return_value={"mid": 24_129_000}
+                ),
+                patch.object(
+                    cm, "_optional_topup_source_available", return_value=False
+                ) as source_mock,
+            ):
                 result = cm.needs_topup(active_buy_count=4, active_sell_count=4)
 
         self.assertFalse(result)
         source_mock.assert_called_once_with("cat", 24_129_000)
         self.assertTrue(
-            any(call.args[1] == "drip_source_unavailable"
-                for call in log_event_mock.call_args_list)
+            any(
+                call.args[1] == "drip_source_unavailable"
+                for call in log_event_mock.call_args_list
+            )
         )
 
 
@@ -282,9 +293,9 @@ class TestTieredDripTopupSources(_TempDB):
 # 3. _record_topup_pool_spend() — DB persistence
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestTopupPoolSpendPersistence(_TempDB):
-
     def _make_cm(self):
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             return CoinManager()
@@ -337,9 +348,9 @@ class TestTopupPoolSpendPersistence(_TempDB):
 # 4. Cooldown backoff state
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_manager unavailable: {_SKIP}")
 class TestTopupCooldownState(_TempDB):
-
     def test_no_coins_backoff_flag_not_set_initially(self):
         with patch.object(_cm_mod, "cfg", _fake_cfg()):
             cm = CoinManager()

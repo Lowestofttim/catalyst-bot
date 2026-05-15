@@ -28,6 +28,7 @@ if WALLET_TYPE == "chia":
     print("🔄 [Wallet] Using Chia wallet backend (port 9256)")
     try:
         from database import log_event as _log_wallet
+
         _log_wallet("info", "wallet_backend", "Using Chia wallet backend (port 9256)")
     except Exception:
         pass
@@ -91,12 +92,15 @@ if WALLET_TYPE == "chia":
         get_transaction_count,
         get_all_coins_for_wallet,
     )
+
     def get_owned_coins_detailed(wallet_id: int):
         """Chia backend compatibility stub for Sage-only detailed owned coins."""
         return None
+
     def sign_message_by_address(address: str, message: str) -> dict:
         """Chia backend stub — message signing for Dexie claims is Sage-only."""
         return {"success": False, "error": "claim_unsupported_on_chia_backend"}
+
     # Chia's spendable RPC is already the exact selectable view.
     get_exact_spendable_coins_rpc = get_spendable_coins_rpc
 else:
@@ -108,11 +112,16 @@ else:
             print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
 
     if WALLET_TYPE != "sage":
-        _safe_console(f"[Wallet] Unknown WALLET_TYPE '{WALLET_TYPE}', defaulting to 'sage'")
+        _safe_console(
+            f"[Wallet] Unknown WALLET_TYPE '{WALLET_TYPE}', defaulting to 'sage'"
+        )
     _safe_console("[Wallet] Using Sage light wallet backend (port 9257)")
     try:
         from database import log_event as _log_wallet
-        _log_wallet("info", "wallet_backend", "Using Sage light wallet backend (port 9257)")
+
+        _log_wallet(
+            "info", "wallet_backend", "Using Sage light wallet backend (port 9257)"
+        )
     except Exception:
         pass
     from wallet_sage import (  # noqa: F401
@@ -182,4 +191,3 @@ else:
 def get_wallet_type() -> str:
     """Return which wallet backend is active: 'chia' or 'sage'."""
     return WALLET_TYPE
-

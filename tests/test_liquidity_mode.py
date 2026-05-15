@@ -12,6 +12,7 @@ module-level fakes), we temporarily mutate cfg.LIQUIDITY_MODE /
 cfg.ENABLE_BUY / cfg.ENABLE_SELL on the already-imported Config
 instance and restore it on tearDown.
 """
+
 from __future__ import annotations
 
 import os
@@ -31,6 +32,7 @@ class LiquidityModeConfigTests(unittest.TestCase):
 
     def setUp(self):
         import config
+
         self.cfg = config.cfg
         # Snapshot the fields we mutate so tearDown can put them back.
         self._snap = {
@@ -100,12 +102,16 @@ class ConfigDerivationAtLoadTests(unittest.TestCase):
         os.environ patch. Stub load_dotenv for the duration of the build so
         our env vars stick.
         """
-        prev = {k: os.environ.get(k) for k in ("LIQUIDITY_MODE", "ENABLE_BUY", "ENABLE_SELL")}
+        prev = {
+            k: os.environ.get(k)
+            for k in ("LIQUIDITY_MODE", "ENABLE_BUY", "ENABLE_SELL")
+        }
         os.environ["LIQUIDITY_MODE"] = mode
         os.environ["ENABLE_BUY"] = enable_buy
         os.environ["ENABLE_SELL"] = enable_sell
         try:
             import config
+
             with patch("config.load_dotenv", lambda *a, **kw: None):
                 c = config.Config()
         finally:
@@ -151,6 +157,7 @@ class SniperSingleSidedShortCircuitTests(unittest.TestCase):
 
     def setUp(self):
         import config
+
         self.cfg = config.cfg
         self._snap_mode = getattr(self.cfg, "LIQUIDITY_MODE", "two_sided")
 
@@ -162,6 +169,7 @@ class SniperSingleSidedShortCircuitTests(unittest.TestCase):
         # is enough; no need to re-import.
         from decimal import Decimal
         import sniper as s_mod
+
         self.cfg.LIQUIDITY_MODE = "buy_only"
         sniper = s_mod.Sniper(offer_manager=None, risk_manager=None, dexie_manager=None)
         self.assertEqual(sniper.try_snipe(Decimal("0.0001"), Decimal("0.0002")), [])
@@ -170,6 +178,7 @@ class SniperSingleSidedShortCircuitTests(unittest.TestCase):
     def test_try_snipe_empty_in_sell_only(self):
         from decimal import Decimal
         import sniper as s_mod
+
         self.cfg.LIQUIDITY_MODE = "sell_only"
         sniper = s_mod.Sniper(offer_manager=None, risk_manager=None, dexie_manager=None)
         self.assertEqual(sniper.try_snipe(Decimal("0.0001"), Decimal("0.0002")), [])
@@ -187,10 +196,11 @@ class CoinManagerSniperPoolTests(unittest.TestCase):
 
     def setUp(self):
         import config
+
         self.cfg = config.cfg
         self._snap = {
             "LIQUIDITY_MODE": getattr(self.cfg, "LIQUIDITY_MODE", "two_sided"),
-            "TIER_ENABLED":   getattr(self.cfg, "TIER_ENABLED", False),
+            "TIER_ENABLED": getattr(self.cfg, "TIER_ENABLED", False),
             "SNIPER_ENABLED": getattr(self.cfg, "SNIPER_ENABLED", False),
             "SNIPER_PREP_COUNT": getattr(self.cfg, "SNIPER_PREP_COUNT", 0),
             "SNIPER_SIZE_XCH": getattr(self.cfg, "SNIPER_SIZE_XCH", 0),
@@ -200,6 +210,7 @@ class CoinManagerSniperPoolTests(unittest.TestCase):
         self.cfg.SNIPER_ENABLED = True
         self.cfg.SNIPER_PREP_COUNT = 20
         from decimal import Decimal
+
         self.cfg.SNIPER_SIZE_XCH = Decimal("0.01")
 
     def tearDown(self):
@@ -208,6 +219,7 @@ class CoinManagerSniperPoolTests(unittest.TestCase):
 
     def _mgr(self):
         import coin_manager as cm
+
         return cm.CoinManager.__new__(cm.CoinManager)
 
     def test_sniper_pool_off_in_buy_only(self):

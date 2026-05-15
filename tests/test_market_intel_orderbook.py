@@ -38,10 +38,20 @@ class MarketIntelOrderbookTests(unittest.TestCase):
 
     def test_inverted_competitor_book_is_ignored(self):
         buy_offers = [
-            {"price": Decimal("0.00012"), "xch_amount": Decimal("1.0"), "side": "buy", "is_ours": False},
+            {
+                "price": Decimal("0.00012"),
+                "xch_amount": Decimal("1.0"),
+                "side": "buy",
+                "is_ours": False,
+            },
         ]
         sell_offers = [
-            {"price": Decimal("0.00011"), "xch_amount": Decimal("1.0"), "side": "sell", "is_ours": False},
+            {
+                "price": Decimal("0.00011"),
+                "xch_amount": Decimal("1.0"),
+                "side": "sell",
+                "is_ours": False,
+            },
         ]
 
         self.intel._analyse_orderbook(buy_offers, sell_offers)

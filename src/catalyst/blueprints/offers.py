@@ -100,6 +100,7 @@ def _build_fill_history_for_gui(asset_id: str, limit: int = 20) -> list:
     since_cutoff = api_server._get_run_history_cutoff()
     try:
         from database import get_fills
+
         fills = get_fills(
             cat_asset_id=asset_id,
             since=since_cutoff,
@@ -108,7 +109,9 @@ def _build_fill_history_for_gui(asset_id: str, limit: int = 20) -> list:
     except Exception:
         fills = []
 
-    cat_name = api_server._active_cat.get("name") or getattr(cfg, "CAT_NAME", "") or "CAT"
+    cat_name = (
+        api_server._active_cat.get("name") or getattr(cfg, "CAT_NAME", "") or "CAT"
+    )
 
     def _add_history_row(row: dict):
         trade_id = str(row.get("trade_id") or "").strip()
@@ -127,10 +130,7 @@ def _build_fill_history_for_gui(asset_id: str, limit: int = 20) -> list:
             return
 
         filled_at = (
-            row.get("filled_at")
-            or row.get("timestamp")
-            or row.get("created_at")
-            or ""
+            row.get("filled_at") or row.get("timestamp") or row.get("created_at") or ""
         )
         history_by_trade_id[trade_id] = {
             "trade_id": trade_id,
@@ -178,6 +178,7 @@ def _build_fill_history_for_gui(asset_id: str, limit: int = 20) -> list:
         item.pop("_sort_key", None)
     return history[:limit]
 
+
 @bp.route("/api/offers")
 def api_offers():
     """Get current open offers."""
@@ -187,18 +188,22 @@ def api_offers():
 
     open_buys, open_sells, _ = bot.offer_manager.sync_from_wallet()
 
-    return jsonify({
-        "buys": api_server._serialize_offers(open_buys),
-        "sells": api_server._serialize_offers(open_sells),
-        "buy_count": len(open_buys),
-        "sell_count": len(open_sells),
-    })
+    return jsonify(
+        {
+            "buys": api_server._serialize_offers(open_buys),
+            "sells": api_server._serialize_offers(open_sells),
+            "buy_count": len(open_buys),
+            "sell_count": len(open_sells),
+        }
+    )
+
 
 @bp.route("/api/offers/cancel_all/status")
 def api_cancel_all_status():
     """Return the live cancel-all progress state for the GUI."""
     bot = api_server.bot
     return jsonify({"success": True, **_get_cancel_all_state()})
+
 
 @bp.route("/api/offers/open_count")
 def api_open_offer_count():
@@ -210,11 +215,15 @@ def api_open_offer_count():
     bot = api_server.bot
     try:
         from database import get_open_offers
+
         open_offers = get_open_offers()
         return jsonify({"success": True, "open_count": len(open_offers)})
     except Exception as e:
         log_event("error", "open_offer_count_failed", str(e))
-        return jsonify({"success": False, "open_count": -1, "error": "open_offer_count_failed"})
+        return jsonify(
+            {"success": False, "open_count": -1, "error": "open_offer_count_failed"}
+        )
+
 
 @bp.route("/api/offers/cancel_all", methods=["POST"])
 def api_cancel_all():
@@ -225,21 +234,27 @@ def api_cancel_all():
     failed = 0
 
     if bot and bot.is_running():
-        msg = ("Stop the bot before cancelling all offers. "
-               "A live cancel can race with automatic requotes and recreate the book.")
+        msg = (
+            "Stop the bot before cancelling all offers. "
+            "A live cancel can race with automatic requotes and recreate the book."
+        )
         log_event("warning", "cancel_all_blocked_live", msg)
-        return jsonify({
-            "success": False,
-            "error": msg,
-            "requires_stop": True,
-        }), 409
+        return jsonify(
+            {
+                "success": False,
+                "error": msg,
+                "requires_stop": True,
+            }
+        ), 409
 
     state = _get_cancel_all_state()
     if state.get("running"):
-        return jsonify({
-            "success": False,
-            "error": "Cancel all is already in progress.",
-        }), 409
+        return jsonify(
+            {
+                "success": False,
+                "error": "Cancel all is already in progress.",
+            }
+        ), 409
 
     _reset_cancel_all_state(
         running=True,
@@ -254,6 +269,7 @@ def api_cancel_all():
     if bot and bot.is_running() and bot.offer_manager:
         # Bot is live — use offer manager (handles database updates + fill tracking)
         try:
+
             def on_progress(payload):
                 _set_cancel_all_state(**payload)
 
@@ -274,7 +290,9 @@ def api_cancel_all():
                 finished_at=datetime.now(timezone.utc).isoformat(),
                 message=f"Cancel all complete: {cancelled} succeeded, {failed} failed.",
             )
-            api_server.events.emit("offers_cancelled", {"count": cancelled, "reason": "manual_cancel_all"})
+            api_server.events.emit(
+                "offers_cancelled", {"count": cancelled, "reason": "manual_cancel_all"}
+            )
             # Reset gap closer state if active (cancel_all includes gap-closer offers)
             if bot.boost_manager._boost_active:
                 bot.boost_manager._boost_active = False
@@ -303,11 +321,18 @@ def api_cancel_all():
         # and the GUI can poll /api/offers/cancel_all/status for live progress
         # instead of hanging for 2-3 minutes with no feedback.
         try:
-            from wallet import get_all_offers, cancel_offers_batch, is_offer_time_expired
+            from wallet import (
+                get_all_offers,
+                cancel_offers_batch,
+                is_offer_time_expired,
+            )
+
             all_offers = get_all_offers(include_completed=False, end=500)
             if not all_offers:
                 if bot and getattr(bot, "offer_manager", None):
-                    bot.offer_manager.expect_empty_wallet_offer_book("manual_cancel_all_no_offers")
+                    bot.offer_manager.expect_empty_wallet_offer_book(
+                        "manual_cancel_all_no_offers"
+                    )
                 _set_cancel_all_state(
                     running=False,
                     complete=True,
@@ -316,24 +341,35 @@ def api_cancel_all():
                     message="No offers found to cancel.",
                     finished_at=datetime.now(timezone.utc).isoformat(),
                 )
-                return jsonify({"success": True, "cancelled": 0, "message": "No offers found"})
+                return jsonify(
+                    {"success": True, "cancelled": 0, "message": "No offers found"}
+                )
 
             # Filter to open offers only.
             # Accept both Chia statuses (PENDING_ACCEPT / 4) and
             # Sage statuses (ACTIVE / OPEN / PENDING).
             # Sage may return integer status (0/1 = open) or string.
-            OPEN_STATUSES = {"PENDING_ACCEPT", "4", "ACTIVE", "OPEN",
-                             "PENDING", "PENDING_CONFIRM", "IN_PROGRESS",
-                             "0", "1"}
+            OPEN_STATUSES = {
+                "PENDING_ACCEPT",
+                "4",
+                "ACTIVE",
+                "OPEN",
+                "PENDING",
+                "PENDING_CONFIRM",
+                "IN_PROGRESS",
+                "0",
+                "1",
+            }
             open_ids = []
-            for o in (all_offers if isinstance(all_offers, list) else []):
+            for o in all_offers if isinstance(all_offers, list) else []:
                 if not isinstance(o, dict):
                     continue
                 raw_status = o.get("status", "")
                 status = str(raw_status).upper() if raw_status is not None else ""
                 # Integer status: 0 or 1 = open in Sage
-                is_open = (status in OPEN_STATUSES
-                           or (isinstance(raw_status, int) and raw_status <= 1))
+                is_open = status in OPEN_STATUSES or (
+                    isinstance(raw_status, int) and raw_status <= 1
+                )
                 if is_open:
                     if not is_offer_time_expired(o):
                         tid = o.get("trade_id", "") or o.get("offer_id", "")
@@ -342,7 +378,9 @@ def api_cancel_all():
 
             if not open_ids:
                 if bot and getattr(bot, "offer_manager", None):
-                    bot.offer_manager.expect_empty_wallet_offer_book("manual_cancel_all_no_active_offers")
+                    bot.offer_manager.expect_empty_wallet_offer_book(
+                        "manual_cancel_all_no_active_offers"
+                    )
                 _set_cancel_all_state(
                     running=False,
                     complete=True,
@@ -351,7 +389,13 @@ def api_cancel_all():
                     message="No active offers found to cancel.",
                     finished_at=datetime.now(timezone.utc).isoformat(),
                 )
-                return jsonify({"success": True, "cancelled": 0, "message": "No active offers found"})
+                return jsonify(
+                    {
+                        "success": True,
+                        "cancelled": 0,
+                        "message": "No active offers found",
+                    }
+                )
 
             # Set initial progress state — frontend polls this immediately.
             _set_cancel_all_state(
@@ -367,9 +411,12 @@ def api_cancel_all():
                 failed=0,
                 message=f"Cancelling {len(open_ids)} offers directly from the wallet...",
             )
-            log_event("info", "cancel_all_direct",
-                      f"Cancelling {len(open_ids)} offers directly via wallet "
-                      f"(bot stopped, bypassing DB)")
+            log_event(
+                "info",
+                "cancel_all_direct",
+                f"Cancelling {len(open_ids)} offers directly via wallet "
+                f"(bot stopped, bypassing DB)",
+            )
 
             # ---- Background worker ----
             _cancel_open_ids = list(open_ids)  # snapshot
@@ -415,11 +462,24 @@ def api_cancel_all():
                         finished_at=datetime.now(timezone.utc).isoformat(),
                         message=f"Cancel all complete: {_w_cancelled} succeeded, {_w_failed} failed.",
                     )
-                    api_server.events.emit("offers_cancelled", {"count": _w_cancelled, "reason": "manual_cancel_all"})
-                    if _w_cancelled > 0 and _w_failed == 0 and bot and getattr(bot, "offer_manager", None):
-                        bot.offer_manager.expect_empty_wallet_offer_book("manual_cancel_all")
-                    log_event("info", "cancel_all_complete",
-                              f"Cancel all finished: {_w_cancelled} succeeded, {_w_failed} failed")
+                    api_server.events.emit(
+                        "offers_cancelled",
+                        {"count": _w_cancelled, "reason": "manual_cancel_all"},
+                    )
+                    if (
+                        _w_cancelled > 0
+                        and _w_failed == 0
+                        and bot
+                        and getattr(bot, "offer_manager", None)
+                    ):
+                        bot.offer_manager.expect_empty_wallet_offer_book(
+                            "manual_cancel_all"
+                        )
+                    log_event(
+                        "info",
+                        "cancel_all_complete",
+                        f"Cancel all finished: {_w_cancelled} succeeded, {_w_failed} failed",
+                    )
                     # Reset gap closer state if active
                     if bot and getattr(bot, "boost_manager", None):
                         try:
@@ -441,20 +501,26 @@ def api_cancel_all():
                         finished_at=datetime.now(timezone.utc).isoformat(),
                         message=f"Cancel all failed: {_e}",
                     )
-                    log_event("error", "cancel_all_error",
-                              f"Cancel all background worker failed: {_e}")
+                    log_event(
+                        "error",
+                        "cancel_all_error",
+                        f"Cancel all background worker failed: {_e}",
+                    )
 
-            _t = threading.Thread(target=_cancel_all_worker, name="cancel-all-bg",
-                                  daemon=True)
+            _t = threading.Thread(
+                target=_cancel_all_worker, name="cancel-all-bg", daemon=True
+            )
             _t.start()
 
             # Return immediately — frontend polls /api/offers/cancel_all/status
-            return jsonify({
-                "success": True,
-                "async": True,
-                "total": len(open_ids),
-                "message": f"Cancelling {len(open_ids)} offers in background...",
-            })
+            return jsonify(
+                {
+                    "success": True,
+                    "async": True,
+                    "total": len(open_ids),
+                    "message": f"Cancelling {len(open_ids)} offers in background...",
+                }
+            )
 
         except Exception as e:
             _set_cancel_all_state(
@@ -467,11 +533,14 @@ def api_cancel_all():
             )
             return api_server._api_exception(request.path)
 
-    return jsonify({
-        "success": True,
-        "cancelled": cancelled,
-        "failed": failed,
-    })
+    return jsonify(
+        {
+            "success": True,
+            "cancelled": cancelled,
+            "failed": failed,
+        }
+    )
+
 
 @bp.route("/api/offers/cleanup_orphans", methods=["POST"])
 def api_cleanup_orphans():
@@ -493,6 +562,7 @@ def api_cleanup_orphans():
     except Exception:
         return api_server._api_exception(request.path)
 
+
 @bp.route("/api/offers/cancel", methods=["POST"])
 def api_cancel_offer():
     """Cancel a specific offer.
@@ -507,8 +577,11 @@ def api_cancel_offer():
     # race with the wallet. Still allow it (user may need to emergency-cancel)
     # but surface the risk so callers can back off if appropriate.
     if bot.is_running() and bot.coin_manager.is_busy():
-        log_event("warning", "cancel_while_busy",
-                  "Manual cancel issued while coin operations are in progress")
+        log_event(
+            "warning",
+            "cancel_while_busy",
+            "Manual cancel issued while coin operations are in progress",
+        )
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -526,6 +599,7 @@ def api_cancel_offer():
         return jsonify({"success": False, "trade_id": trade_id, **result}), 400
     return jsonify({"success": True, "status": "cancelled", "trade_id": trade_id})
 
+
 @bp.route("/api/fills")
 def api_fills():
     """Get recent fill history."""
@@ -536,12 +610,14 @@ def api_fills():
 
     limit = request.args.get("limit", 20, type=int)
     from database import get_fills
+
     fills = get_fills(
         cat_asset_id=cfg.CAT_ASSET_ID,
         limit=limit,
         since=api_server._get_run_history_cutoff(),
     )
     return jsonify({"fills": api_server._serialize_list(fills)})
+
 
 @bp.route("/api/fills/classified")
 def api_fills_classified():
@@ -562,17 +638,21 @@ def api_fills_classified():
         from fill_classifier import FillType
 
         classification_filter = request.args.get("type") or None
-        side_filter           = request.args.get("side") or None
-        limit                 = min(request.args.get("limit", 50, type=int), 200)
-        offset                = request.args.get("offset", 0, type=int)
-        since                 = request.args.get("since") or api_server._get_run_history_cutoff() or None
+        side_filter = request.args.get("side") or None
+        limit = min(request.args.get("limit", 50, type=int), 200)
+        offset = request.args.get("offset", 0, type=int)
+        since = (
+            request.args.get("since") or api_server._get_run_history_cutoff() or None
+        )
 
         conn = get_connection()
         cat_asset_id = cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
 
         params = [cat_asset_id]
-        where  = ["cat_asset_id = ?",
-                  "COALESCE(verification_status, 'legacy') = 'verified'"]
+        where = [
+            "cat_asset_id = ?",
+            "COALESCE(verification_status, 'legacy') = 'verified'",
+        ]
 
         if classification_filter:
             if classification_filter == "arb":
@@ -615,11 +695,11 @@ def api_fills_classified():
 
         # Build summary counts
         summary: dict = {
-            FillType.RETAIL:         0,
-            FillType.ARB_SWEEP_BUY:  0,
+            FillType.RETAIL: 0,
+            FillType.ARB_SWEEP_BUY: 0,
             FillType.ARB_SWEEP_SELL: 0,
             FillType.DEXIE_COMBINED: 0,
-            FillType.UNKNOWN:        0,
+            FillType.UNKNOWN: 0,
         }
         for f in fills:
             cls = f.get("fill_classification") or FillType.UNKNOWN
@@ -632,20 +712,24 @@ def api_fills_classified():
         sweep_pending: dict = {}
         try:
             from sweep_coordinator import get_coordinator as _sc
+
             sweep_pending = _sc().get_pending_summary()
         except Exception:
             pass
 
-        return jsonify({
-            "fills":           api_server._serialize_list(fills),
-            "total":           total,
-            "limit":           limit,
-            "offset":          offset,
-            "summary":         summary,
-            "sweep_pending":   sweep_pending,
-        })
+        return jsonify(
+            {
+                "fills": api_server._serialize_list(fills),
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "summary": summary,
+                "sweep_pending": sweep_pending,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/fills/arb-wallets")
 def api_fills_arb_wallets():
@@ -687,22 +771,27 @@ def api_fills_arb_wallets():
         ).fetchall()
 
         if not rows:
-            return jsonify({
-                "candidates": [],
-                "total_fills_with_taker_hash": 0,
-                "message": "No fills with taker_puzzle_hash recorded yet. "
-                           "Hashes are captured as new fills occur.",
-            })
+            return jsonify(
+                {
+                    "candidates": [],
+                    "total_fills_with_taker_hash": 0,
+                    "message": "No fills with taker_puzzle_hash recorded yet. "
+                    "Hashes are captured as new fills occur.",
+                }
+            )
 
         # Aggregate per puzzle hash
         from collections import defaultdict
-        stats: dict = defaultdict(lambda: {
-            "fill_count": 0,
-            "sweep_groups": set(),
-            "sides": set(),
-            "classifications": set(),
-            "latest_fill": None,
-        })
+
+        stats: dict = defaultdict(
+            lambda: {
+                "fill_count": 0,
+                "sweep_groups": set(),
+                "sides": set(),
+                "classifications": set(),
+                "latest_fill": None,
+            }
+        )
 
         for row in rows:
             ph = str(row["taker_puzzle_hash"]).lower().removeprefix("0x")
@@ -724,7 +813,7 @@ def api_fills_arb_wallets():
         candidates = []
         for ph, s in stats.items():
             sweep_count = len(s["sweep_groups"])
-            fill_count  = s["fill_count"]
+            fill_count = s["fill_count"]
 
             # Confidence heuristic:
             #   high   → appears in 3+ distinct sweep groups (definitely systematic)
@@ -737,47 +826,55 @@ def api_fills_arb_wallets():
             else:
                 confidence = "low"
 
-            candidates.append({
-                "puzzle_hash":       ph,
-                "fill_count":        fill_count,
-                "sweep_group_count": sweep_count,
-                "arb_confidence":    confidence,
-                "already_known":     ph in known_hashes,
-                "sides":             sorted(s["sides"]),
-                "classifications":   sorted(s["classifications"]),
-                "latest_fill":       s["latest_fill"],
-            })
+            candidates.append(
+                {
+                    "puzzle_hash": ph,
+                    "fill_count": fill_count,
+                    "sweep_group_count": sweep_count,
+                    "arb_confidence": confidence,
+                    "already_known": ph in known_hashes,
+                    "sides": sorted(s["sides"]),
+                    "classifications": sorted(s["classifications"]),
+                    "latest_fill": s["latest_fill"],
+                }
+            )
 
         # Sort: already-known first (so you can see what's configured),
         # then by sweep_group_count desc, then fill_count desc
-        candidates.sort(key=lambda c: (
-            not c["already_known"],
-            -c["sweep_group_count"],
-            -c["fill_count"],
-        ))
+        candidates.sort(
+            key=lambda c: (
+                not c["already_known"],
+                -c["sweep_group_count"],
+                -c["fill_count"],
+            )
+        )
 
         # Summarise which hashes look like strong candidates not yet configured
         unconfigured_high = [
-            c["puzzle_hash"] for c in candidates
+            c["puzzle_hash"]
+            for c in candidates
             if c["arb_confidence"] == "high" and not c["already_known"]
         ]
 
-        return jsonify({
-            "candidates":               candidates,
-            "total_fills_with_taker_hash": len(rows),
-            "total_unique_hashes":      len(candidates),
-            "unconfigured_high_confidence": unconfigured_high,
-            "known_hashes_configured":  sorted(known_hashes),
-            "tip": (
-                "High-confidence puzzle hashes found. Review them in Market Intel; "
-                "ARB sweep tuning is not yet exposed as a one-click setting."
-                if unconfigured_high else
-                "No unconfigured high-confidence candidates found yet. "
-                "More fills needed or all known hashes are already configured."
-            ),
-        })
+        return jsonify(
+            {
+                "candidates": candidates,
+                "total_fills_with_taker_hash": len(rows),
+                "total_unique_hashes": len(candidates),
+                "unconfigured_high_confidence": unconfigured_high,
+                "known_hashes_configured": sorted(known_hashes),
+                "tip": (
+                    "High-confidence puzzle hashes found. Review them in Market Intel; "
+                    "ARB sweep tuning is not yet exposed as a one-click setting."
+                    if unconfigured_high
+                    else "No unconfigured high-confidence candidates found yet. "
+                    "More fills needed or all known hashes are already configured."
+                ),
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/market/fill-intel")
 def api_market_fill_intel():
@@ -824,23 +921,31 @@ def api_market_fill_intel():
         total = len(rows)
 
         if total == 0:
-            return jsonify({
-                "classification_breakdown": {},
-                "arb_rate_pct":    0.0,
-                "sweep_stats":     {"total_sweeps": 0, "avg_fills_per_sweep": 0.0, "max_fills_per_sweep": 0},
-                "hourly_buckets":  [],
-                "spread_correlation": None,
-                "spread_correlation_note": "No fills recorded in this window.",
-                "data_window_days": days,
-                "fill_count": 0,
-            })
+            return jsonify(
+                {
+                    "classification_breakdown": {},
+                    "arb_rate_pct": 0.0,
+                    "sweep_stats": {
+                        "total_sweeps": 0,
+                        "avg_fills_per_sweep": 0.0,
+                        "max_fills_per_sweep": 0,
+                    },
+                    "hourly_buckets": [],
+                    "spread_correlation": None,
+                    "spread_correlation_note": "No fills recorded in this window.",
+                    "data_window_days": days,
+                    "fill_count": 0,
+                }
+            )
 
         # ── Classification breakdown ────────────────────────────────────────────
         from collections import defaultdict, Counter
 
         cls_counts: Counter = Counter()
         sweep_groups: dict = defaultdict(int)  # group_id → fill count
-        hourly: dict = defaultdict(lambda: {"fill_count": 0, "arb_count": 0, "retail_count": 0})
+        hourly: dict = defaultdict(
+            lambda: {"fill_count": 0, "arb_count": 0, "retail_count": 0}
+        )
 
         ARB_TYPES = {"arb_sweep_buy", "arb_sweep_sell", "dexie_combined"}
 
@@ -855,7 +960,10 @@ def api_market_fill_intel():
             if row["filled_at"]:
                 try:
                     from datetime import datetime, timedelta
-                    dt_utc = datetime.fromisoformat(str(row["filled_at"]).replace("Z", "+00:00"))
+
+                    dt_utc = datetime.fromisoformat(
+                        str(row["filled_at"]).replace("Z", "+00:00")
+                    )
                     dt_local = dt_utc + timedelta(hours=tz_offset)
                     hour_key = dt_local.hour
                     bucket = hourly[hour_key]
@@ -871,51 +979,59 @@ def api_market_fill_intel():
         breakdown = {}
         for cls_name, count in sorted(cls_counts.items(), key=lambda x: -x[1]):
             breakdown[cls_name] = {
-                "count":   count,
-                "pct":     round(count / total * 100, 1) if total else 0.0,
+                "count": count,
+                "pct": round(count / total * 100, 1) if total else 0.0,
             }
 
         arb_count = sum(cls_counts.get(t, 0) for t in ARB_TYPES)
-        arb_rate  = round(arb_count / total * 100, 1) if total else 0.0
+        arb_rate = round(arb_count / total * 100, 1) if total else 0.0
 
         # ── Sweep stats ─────────────────────────────────────────────────────────
         sweep_fill_counts = list(sweep_groups.values())
-        total_sweeps      = len(sweep_fill_counts)
-        avg_fills         = round(sum(sweep_fill_counts) / total_sweeps, 2) if total_sweeps else 0.0
-        max_fills         = max(sweep_fill_counts, default=0)
+        total_sweeps = len(sweep_fill_counts)
+        avg_fills = (
+            round(sum(sweep_fill_counts) / total_sweeps, 2) if total_sweeps else 0.0
+        )
+        max_fills = max(sweep_fill_counts, default=0)
 
         # ── Hourly buckets (all 24 hours, zero-filled) ─────────────────────────
         hourly_buckets = []
         for h in range(24):
             b = hourly.get(h, {"fill_count": 0, "arb_count": 0, "retail_count": 0})
-            hourly_buckets.append({
-                "hour":         h,
-                "fill_count":   b["fill_count"],
-                "arb_count":    b["arb_count"],
-                "retail_count": b["retail_count"],
-                "arb_pct":      round(b["arb_count"] / b["fill_count"] * 100, 1)
-                                if b["fill_count"] else 0.0,
-            })
+            hourly_buckets.append(
+                {
+                    "hour": h,
+                    "fill_count": b["fill_count"],
+                    "arb_count": b["arb_count"],
+                    "retail_count": b["retail_count"],
+                    "arb_pct": round(b["arb_count"] / b["fill_count"] * 100, 1)
+                    if b["fill_count"]
+                    else 0.0,
+                }
+            )
 
-        return jsonify({
-            "classification_breakdown": breakdown,
-            "arb_rate_pct":    arb_rate,
-            "sweep_stats": {
-                "total_sweeps":        total_sweeps,
-                "avg_fills_per_sweep": avg_fills,
-                "max_fills_per_sweep": max_fills,
-            },
-            "hourly_buckets":  hourly_buckets,
-            "spread_correlation": None,
-            "spread_correlation_note": (
-                "Spread-at-fill is not yet stored in the fills table. "
-                "This field will be populated in a future schema migration."
-            ),
-            "data_window_days": days,
-            "fill_count": total,
-        })
+        return jsonify(
+            {
+                "classification_breakdown": breakdown,
+                "arb_rate_pct": arb_rate,
+                "sweep_stats": {
+                    "total_sweeps": total_sweeps,
+                    "avg_fills_per_sweep": avg_fills,
+                    "max_fills_per_sweep": max_fills,
+                },
+                "hourly_buckets": hourly_buckets,
+                "spread_correlation": None,
+                "spread_correlation_note": (
+                    "Spread-at-fill is not yet stored in the fills table. "
+                    "This field will be populated in a future schema migration."
+                ),
+                "data_window_days": days,
+                "fill_count": total,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/offers/diagnostic")
 def api_offers_diagnostic():
@@ -924,8 +1040,11 @@ def api_offers_diagnostic():
     cfg = api_server.cfg
     try:
         from database import get_connection
+
         conn = get_connection()
-        asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
+        asset_id = api_server._active_cat.get("asset_id") or (
+            cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+        )
 
         db_rows = conn.execute(
             """SELECT o.trade_id, o.side, o.tier, o.price_xch, o.size_xch, o.size_cat,
@@ -944,7 +1063,7 @@ def api_offers_diagnostic():
                             ELSE 9
                         END,
                         CAST(o.price_xch AS REAL)""",
-            (asset_id,)
+            (asset_id,),
         ).fetchall()
         db_open = [dict(row) for row in db_rows]
         db_ids = {row["trade_id"] for row in db_open if row.get("trade_id")}
@@ -957,7 +1076,7 @@ def api_offers_diagnostic():
                GROUP BY coin_id
                HAVING COUNT(*) > 1
                ORDER BY cnt DESC, coin_id""",
-            (asset_id,)
+            (asset_id,),
         ).fetchall()
         duplicate_coin_ids = [dict(row) for row in duplicate_rows]
 
@@ -967,7 +1086,7 @@ def api_offers_diagnostic():
                JOIN coins c ON c.coin_id = o.coin_id
                WHERE o.status='open' AND o.cat_asset_id=? AND c.designation='reserve'
                ORDER BY o.side, o.tier, CAST(o.price_xch AS REAL)""",
-            (asset_id,)
+            (asset_id,),
         ).fetchall()
         reserve_backed = [dict(row) for row in reserve_rows]
 
@@ -977,7 +1096,7 @@ def api_offers_diagnostic():
                WHERE status='open' AND cat_asset_id=?
                GROUP BY side, tier
                ORDER BY side, tier""",
-            (asset_id,)
+            (asset_id,),
         ).fetchall()
         db_summary = [dict(row) for row in summary_rows]
 
@@ -986,57 +1105,78 @@ def api_offers_diagnostic():
         wallet_open_sells = []
         try:
             if bot and getattr(bot, "offer_manager", None):
-                wallet_open_buys, wallet_open_sells, _ = bot.offer_manager.sync_from_wallet()
+                wallet_open_buys, wallet_open_sells, _ = (
+                    bot.offer_manager.sync_from_wallet()
+                )
             else:
                 from wallet import get_all_offers, classify_offers_from_list
-                wallet_offers = get_all_offers(include_completed=False, start=0, end=500)
+
+                wallet_offers = get_all_offers(
+                    include_completed=False, start=0, end=500
+                )
                 if wallet_offers is None:
                     raise RuntimeError("wallet_offer_query_failed")
-                wallet_open_buys, wallet_open_sells, _ = classify_offers_from_list(wallet_offers, asset_id)
+                wallet_open_buys, wallet_open_sells, _ = classify_offers_from_list(
+                    wallet_offers, asset_id
+                )
         except Exception as e:
             wallet_error = str(e)
 
         wallet_ids = {
-            o.get("trade_id", "") for o in (wallet_open_buys + wallet_open_sells)
+            o.get("trade_id", "")
+            for o in (wallet_open_buys + wallet_open_sells)
             if o.get("trade_id")
         }
         stale_in_db = sorted(db_ids - wallet_ids)
         wallet_only = sorted(wallet_ids - db_ids)
 
         likely_stale_dexie_rows = (
-            wallet_error is None and
-            len(duplicate_coin_ids) == 0 and
-            len(reserve_backed) == 0 and
-            len(stale_in_db) == 0 and
-            len(wallet_only) == 0
+            wallet_error is None
+            and len(duplicate_coin_ids) == 0
+            and len(reserve_backed) == 0
+            and len(stale_in_db) == 0
+            and len(wallet_only) == 0
         )
 
         if likely_stale_dexie_rows:
-            diagnosis = ("Wallet and DB agree on the open book, and each live offer has a "
-                         "unique non-reserve coin. Greyed Dexie rows are likely stale invalid "
-                         "offers from earlier runs or Dexie cache lag.")
+            diagnosis = (
+                "Wallet and DB agree on the open book, and each live offer has a "
+                "unique non-reserve coin. Greyed Dexie rows are likely stale invalid "
+                "offers from earlier runs or Dexie cache lag."
+            )
         else:
-            diagnosis = ("Wallet/DB mismatch or coin-safety issue detected. Inspect the "
-                         "differences below before assuming Dexie is just stale.")
+            diagnosis = (
+                "Wallet/DB mismatch or coin-safety issue detected. Inspect the "
+                "differences below before assuming Dexie is just stale."
+            )
 
-        return jsonify(api_server._serialize_dict({
-            "success": True,
-            "diagnosis": diagnosis,
-            "likely_stale_dexie_rows": likely_stale_dexie_rows,
-            "wallet_error": wallet_error,
-            "wallet_open_buys": len(wallet_open_buys),
-            "wallet_open_sells": len(wallet_open_sells),
-            "db_open_buys": sum(1 for row in db_open if row.get("side") == "buy"),
-            "db_open_sells": sum(1 for row in db_open if row.get("side") == "sell"),
-            "duplicate_coin_ids": duplicate_coin_ids,
-            "reserve_backed_offers": reserve_backed,
-            "stale_in_db": stale_in_db,
-            "wallet_only": wallet_only,
-            "summary": db_summary,
-            "open_offers": db_open,
-        }))
+        return jsonify(
+            api_server._serialize_dict(
+                {
+                    "success": True,
+                    "diagnosis": diagnosis,
+                    "likely_stale_dexie_rows": likely_stale_dexie_rows,
+                    "wallet_error": wallet_error,
+                    "wallet_open_buys": len(wallet_open_buys),
+                    "wallet_open_sells": len(wallet_open_sells),
+                    "db_open_buys": sum(
+                        1 for row in db_open if row.get("side") == "buy"
+                    ),
+                    "db_open_sells": sum(
+                        1 for row in db_open if row.get("side") == "sell"
+                    ),
+                    "duplicate_coin_ids": duplicate_coin_ids,
+                    "reserve_backed_offers": reserve_backed,
+                    "stale_in_db": stale_in_db,
+                    "wallet_only": wallet_only,
+                    "summary": db_summary,
+                    "open_offers": db_open,
+                }
+            )
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/fills/purge", methods=["POST"])
 def api_purge_fills():
@@ -1051,15 +1191,18 @@ def api_purge_fills():
 
     try:
         from database import get_connection, log_event
+
         conn = get_connection()
 
         # Count before purge
         fill_count = conn.execute("SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"]
-        rt_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM round_trips"
-        ).fetchone()["cnt"] if conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
-        ).fetchone() else 0
+        rt_count = (
+            conn.execute("SELECT COUNT(*) as cnt FROM round_trips").fetchone()["cnt"]
+            if conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
+            ).fetchone()
+            else 0
+        )
 
         # Purge fills
         conn.execute("DELETE FROM fills")
@@ -1072,22 +1215,28 @@ def api_purge_fills():
             conn.execute("DELETE FROM round_trips")
             conn.commit()
 
-        log_event("info", "fills_purged",
-                  f"Purged {fill_count} fills and {rt_count} round-trips "
-                  f"(inventory position reset to 0)")
+        log_event(
+            "info",
+            "fills_purged",
+            f"Purged {fill_count} fills and {rt_count} round-trips "
+            f"(inventory position reset to 0)",
+        )
 
         # Reset risk manager state if bot is running
         if bot and bot.risk_manager:
             bot.risk_manager.reset_position()
 
-        return jsonify({
-            "success": True,
-            "fills_purged": fill_count,
-            "round_trips_purged": rt_count,
-            "message": f"Purged {fill_count} fills — position reset to 0"
-        })
+        return jsonify(
+            {
+                "success": True,
+                "fills_purged": fill_count,
+                "round_trips_purged": rt_count,
+                "message": f"Purged {fill_count} fills — position reset to 0",
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/pnl/reset-preview", methods=["GET"])
 def api_pnl_reset_preview():
@@ -1102,20 +1251,29 @@ def api_pnl_reset_preview():
     cfg = api_server.cfg
     try:
         from database import get_connection
+
         conn = get_connection()
         fills = 0
         round_trips = 0
         try:
-            fills = int((conn.execute(
-                "SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"]) or 0)
+            fills = int(
+                (conn.execute("SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"])
+                or 0
+            )
         except Exception:
             fills = 0
         try:
             if conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
             ).fetchone():
-                round_trips = int((conn.execute(
-                    "SELECT COUNT(*) as cnt FROM round_trips").fetchone()["cnt"]) or 0)
+                round_trips = int(
+                    (
+                        conn.execute(
+                            "SELECT COUNT(*) as cnt FROM round_trips"
+                        ).fetchone()["cnt"]
+                    )
+                    or 0
+                )
         except Exception:
             round_trips = 0
 
@@ -1123,12 +1281,17 @@ def api_pnl_reset_preview():
         # whether to offer the "clear offer history" checkbox.
         offer_history_rows = 0
         try:
-            offer_history_rows = int((conn.execute(
-                "SELECT COUNT(*) AS cnt FROM offers "
-                "WHERE status IN ('cancelled', 'filled', 'expired') "
-                "   OR lifecycle_state IN ('cancelled', 'filled', 'expired', "
-                "                          'phantom_rejected', 'user_cancelled')"
-            ).fetchone()["cnt"]) or 0)
+            offer_history_rows = int(
+                (
+                    conn.execute(
+                        "SELECT COUNT(*) AS cnt FROM offers "
+                        "WHERE status IN ('cancelled', 'filled', 'expired') "
+                        "   OR lifecycle_state IN ('cancelled', 'filled', 'expired', "
+                        "                          'phantom_rejected', 'user_cancelled')"
+                    ).fetchone()["cnt"]
+                )
+                or 0
+            )
         except Exception:
             offer_history_rows = 0
 
@@ -1138,7 +1301,9 @@ def api_pnl_reset_preview():
             # Same data sources as /api/pnl — get_stats aggregates fills
             # to realised_pnl, risk_manager.get_inventory_state reports
             # the live net position.
-            stats = api_server.get_stats(cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff())
+            stats = api_server.get_stats(
+                cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff()
+            )
             realised_pnl_xch = Decimal(str(stats.get("realised_pnl_xch", 0) or 0))
         except Exception:
             realised_pnl_xch = Decimal("0")
@@ -1149,21 +1314,28 @@ def api_pnl_reset_preview():
         except Exception:
             net_position_cat = Decimal("0")
 
-        has_pnl_data = (fills > 0 or round_trips > 0
-                        or realised_pnl_xch != 0 or net_position_cat != 0)
+        has_pnl_data = (
+            fills > 0
+            or round_trips > 0
+            or realised_pnl_xch != 0
+            or net_position_cat != 0
+        )
         has_data = bool(has_pnl_data or offer_history_rows > 0)
-        return jsonify({
-            "success": True,
-            "has_data": has_data,
-            "has_pnl_data": bool(has_pnl_data),
-            "fills": fills,
-            "round_trips": round_trips,
-            "realised_pnl_xch": str(realised_pnl_xch),
-            "net_position_cat": str(net_position_cat),
-            "offer_history_rows": offer_history_rows,
-        })
+        return jsonify(
+            {
+                "success": True,
+                "has_data": has_data,
+                "has_pnl_data": bool(has_pnl_data),
+                "fills": fills,
+                "round_trips": round_trips,
+                "realised_pnl_xch": str(realised_pnl_xch),
+                "net_position_cat": str(net_position_cat),
+                "offer_history_rows": offer_history_rows,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/pnl/reset", methods=["POST"])
 def api_pnl_reset():
@@ -1185,11 +1357,13 @@ def api_pnl_reset():
     try:
         payload = request.get_json(silent=True) or {}
         if (payload.get("confirm") or "").strip().upper() != "RESET":
-            return jsonify({
-                "success": False,
-                "error": "confirmation_required",
-                "message": "Send {confirm: 'RESET'} to confirm the wipe.",
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "confirmation_required",
+                    "message": "Send {confirm: 'RESET'} to confirm the wipe.",
+                }
+            ), 400
 
         summary = api_server._reset_fresh_run_session(
             clear_coins=False,
@@ -1199,17 +1373,21 @@ def api_pnl_reset():
             preserve_history=False,
             reason="pnl_reset_stats",
         )
-        return jsonify({
-            "success": True,
-            "message": (f"Cleared {summary.get('fills_cleared', 0)} fills "
-                        f"and {summary.get('round_trips_cleared', 0)} round-trips. "
-                        f"Position baseline reset to zero."),
-            **api_server._serialize_dict(summary),
-        })
+        return jsonify(
+            {
+                "success": True,
+                "message": (
+                    f"Cleared {summary.get('fills_cleared', 0)} fills "
+                    f"and {summary.get('round_trips_cleared', 0)} round-trips. "
+                    f"Position baseline reset to zero."
+                ),
+                **api_server._serialize_dict(summary),
+            }
+        )
     except Exception as e:
-        log_event("warning", "pnl_reset_failed",
-                  f"Explicit PnL reset failed: {e}")
+        log_event("warning", "pnl_reset_failed", f"Explicit PnL reset failed: {e}")
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/reset/offer-history", methods=["POST"])
 def api_reset_offer_history():
@@ -1228,19 +1406,23 @@ def api_reset_offer_history():
     slog("GUI_ACTION", ">>> BUTTON: Clear Offer History")
     try:
         if bot and bot.is_running():
-            return jsonify({
-                "success": False,
-                "error": "bot_running",
-                "message": "Stop the bot before clearing offer history.",
-            }), 409
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "bot_running",
+                    "message": "Stop the bot before clearing offer history.",
+                }
+            ), 409
 
         payload = request.get_json(silent=True) or {}
         if (payload.get("confirm") or "").strip().upper() != "RESET":
-            return jsonify({
-                "success": False,
-                "error": "confirmation_required",
-                "message": "Send {confirm: 'RESET'} to confirm the wipe.",
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "confirmation_required",
+                    "message": "Send {confirm: 'RESET'} to confirm the wipe.",
+                }
+            ), 400
 
         conn = get_connection()
         try:
@@ -1268,18 +1450,24 @@ def api_reset_offer_history():
                 pass
             raise
 
-        log_event("info", "offer_history_cleared",
-                  f"Cleared {deleted} terminal-state offer rows "
-                  f"(was {n_before} matching)")
-        return jsonify({
-            "success": True,
-            "message": f"Cleared {deleted} closed/cancelled/expired offer rows.",
-            "deleted": deleted,
-        })
+        log_event(
+            "info",
+            "offer_history_cleared",
+            f"Cleared {deleted} terminal-state offer rows (was {n_before} matching)",
+        )
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Cleared {deleted} closed/cancelled/expired offer rows.",
+                "deleted": deleted,
+            }
+        )
     except Exception as e:
-        log_event("warning", "offer_history_clear_failed",
-                  f"Clear offer history failed: {e}")
+        log_event(
+            "warning", "offer_history_clear_failed", f"Clear offer history failed: {e}"
+        )
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/reset/full", methods=["POST"])
 def api_reset_full():
@@ -1297,19 +1485,23 @@ def api_reset_full():
     slog("GUI_ACTION", ">>> BUTTON: Full Reset")
     try:
         if bot and bot.is_running():
-            return jsonify({
-                "success": False,
-                "error": "bot_running",
-                "message": "Stop the bot before running a full reset.",
-            }), 409
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "bot_running",
+                    "message": "Stop the bot before running a full reset.",
+                }
+            ), 409
 
         payload = request.get_json(silent=True) or {}
         if (payload.get("confirm") or "").strip().upper() != "RESET":
-            return jsonify({
-                "success": False,
-                "error": "confirmation_required",
-                "message": "Send {confirm: 'RESET'} to confirm the wipe.",
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "confirmation_required",
+                    "message": "Send {confirm: 'RESET'} to confirm the wipe.",
+                }
+            ), 400
 
         # Step 1: PnL reset (fills + round_trips + price_history + inventory).
         summary = api_server._reset_fresh_run_session(
@@ -1383,27 +1575,37 @@ def api_reset_full():
                 except Exception:
                     pass
         except Exception as _c_err:
-            log_event("debug", "full_reset_counters_partial",
-                      f"Some in-memory counter resets failed (non-fatal): {_c_err}")
+            log_event(
+                "debug",
+                "full_reset_counters_partial",
+                f"Some in-memory counter resets failed (non-fatal): {_c_err}",
+            )
 
-        log_event("info", "full_reset_done",
-                  f"Full reset: fills={summary.get('fills_cleared', 0)}, "
-                  f"round_trips={summary.get('round_trips_cleared', 0)}, "
-                  f"offers_deleted={offers_deleted}, "
-                  f"counters_reset={','.join(counters_reset) or 'none'}")
-        return jsonify({
-            "success": True,
-            "message": (f"Cleared {summary.get('fills_cleared', 0)} fills, "
-                        f"{offers_deleted} offer rows, and reset "
-                        f"{len(counters_reset)} in-memory counters."),
-            "offers_deleted": offers_deleted,
-            "counters_reset": counters_reset,
-            **api_server._serialize_dict(summary),
-        })
+        log_event(
+            "info",
+            "full_reset_done",
+            f"Full reset: fills={summary.get('fills_cleared', 0)}, "
+            f"round_trips={summary.get('round_trips_cleared', 0)}, "
+            f"offers_deleted={offers_deleted}, "
+            f"counters_reset={','.join(counters_reset) or 'none'}",
+        )
+        return jsonify(
+            {
+                "success": True,
+                "message": (
+                    f"Cleared {summary.get('fills_cleared', 0)} fills, "
+                    f"{offers_deleted} offer rows, and reset "
+                    f"{len(counters_reset)} in-memory counters."
+                ),
+                "offers_deleted": offers_deleted,
+                "counters_reset": counters_reset,
+                **api_server._serialize_dict(summary),
+            }
+        )
     except Exception as e:
-        log_event("warning", "full_reset_failed",
-                  f"Full reset failed: {e}")
+        log_event("warning", "full_reset_failed", f"Full reset failed: {e}")
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/pnl")
 def api_pnl():
@@ -1415,7 +1617,9 @@ def api_pnl():
         return jsonify({"error": "Bot not initialised"}), 500
 
     try:
-        stats = server.get_stats(cfg.CAT_ASSET_ID, since=server._get_run_history_cutoff())
+        stats = server.get_stats(
+            cfg.CAT_ASSET_ID, since=server._get_run_history_cutoff()
+        )
         inventory = bot.risk_manager.get_inventory_state()
         sniper_stats = bot.sniper.get_stats() if getattr(bot, "sniper", None) else {}
         pnl_mid_price = _resolve_pnl_mid_price(bot, server)
@@ -1430,6 +1634,7 @@ def api_pnl():
         cat_usd_price = None
         try:
             from market_data_collector import get_cached_xch_usd_price
+
             xch_usd = get_cached_xch_usd_price() or {}
             xch_usd_price = _decimal_or_none(xch_usd.get("xch_usd"))
             xch_usd_source = str(xch_usd.get("source") or "")
@@ -1438,7 +1643,10 @@ def api_pnl():
 
         try:
             from database import get_market_analysis_cache
-            spacescan_cache = get_market_analysis_cache(cfg.CAT_ASSET_ID, "spacescan") or {}
+
+            spacescan_cache = (
+                get_market_analysis_cache(cfg.CAT_ASSET_ID, "spacescan") or {}
+            )
             cat_usd_price = _decimal_or_none(spacescan_cache.get("price_usd"))
         except Exception:
             pass
@@ -1480,24 +1688,38 @@ def api_pnl():
             # net_xch_flow = sell_volume_xch - buy_volume_xch (gross XCH gain/loss)
             # net_cat_flow = buy_volume_cat - sell_volume_cat (inventory delta)
             "buy_volume_xch": stats.get("buy_volume_xch", "0"),
-            "buy_volume_usd": _usd_string(stats.get("buy_volume_xch", "0"), xch_usd_price),
+            "buy_volume_usd": _usd_string(
+                stats.get("buy_volume_xch", "0"), xch_usd_price
+            ),
             "buy_volume_cat": stats.get("buy_volume_cat", "0"),
-            "buy_volume_cat_usd": _usd_string(stats.get("buy_volume_cat", "0"), cat_usd_price),
+            "buy_volume_cat_usd": _usd_string(
+                stats.get("buy_volume_cat", "0"), cat_usd_price
+            ),
             "sell_volume_xch": stats.get("sell_volume_xch", "0"),
-            "sell_volume_usd": _usd_string(stats.get("sell_volume_xch", "0"), xch_usd_price),
+            "sell_volume_usd": _usd_string(
+                stats.get("sell_volume_xch", "0"), xch_usd_price
+            ),
             "sell_volume_cat": stats.get("sell_volume_cat", "0"),
-            "sell_volume_cat_usd": _usd_string(stats.get("sell_volume_cat", "0"), cat_usd_price),
+            "sell_volume_cat_usd": _usd_string(
+                stats.get("sell_volume_cat", "0"), cat_usd_price
+            ),
             "net_xch_flow": stats.get("net_xch_flow", "0"),
-            "net_xch_flow_usd": _usd_string(stats.get("net_xch_flow", "0"), xch_usd_price),
+            "net_xch_flow_usd": _usd_string(
+                stats.get("net_xch_flow", "0"), xch_usd_price
+            ),
             "net_xch_flow_after_fees": stats.get(
                 "net_xch_flow_after_fees",
                 stats.get("net_xch_flow", "0"),
             ),
             "fee_xch": stats.get("fee_xch", "0"),
             "net_cat_flow": stats.get("net_cat_flow", "0"),
-            "net_cat_flow_usd": _usd_string(stats.get("net_cat_flow", "0"), cat_usd_price),
+            "net_cat_flow_usd": _usd_string(
+                stats.get("net_cat_flow", "0"), cat_usd_price
+            ),
             "avg_fill_size_xch": stats.get("avg_fill_size_xch", "0"),
-            "avg_fill_size_usd": _usd_string(stats.get("avg_fill_size_xch", "0"), xch_usd_price),
+            "avg_fill_size_usd": _usd_string(
+                stats.get("avg_fill_size_xch", "0"), xch_usd_price
+            ),
             "avg_round_trip_secs": stats.get("avg_round_trip_secs", 0),
             "avg_pnl_per_trip_xch": stats.get("avg_pnl_per_trip_xch", "0"),
             "avg_pnl_per_trip_usd": _usd_string(
@@ -1509,6 +1731,7 @@ def api_pnl():
         return jsonify(server._serialize_dict(pnl_data))
     except Exception:
         return server._api_exception(request.path)
+
 
 def _new_cancel_all_state():
     return {
@@ -1530,19 +1753,26 @@ def _new_cancel_all_state():
         "failed": 0,
     }
 
+
 def _set_cancel_all_state(**updates):
     with api_server._cancel_all_state_lock:
         api_server._cancel_all_state.update(updates)
-        api_server._cancel_all_state["updated_at"] = datetime.now(timezone.utc).isoformat()
+        api_server._cancel_all_state["updated_at"] = datetime.now(
+            timezone.utc
+        ).isoformat()
         return dict(api_server._cancel_all_state)
+
 
 def _reset_cancel_all_state(**updates):
     with api_server._cancel_all_state_lock:
         api_server._cancel_all_state.clear()
         api_server._cancel_all_state.update(_new_cancel_all_state())
         api_server._cancel_all_state.update(updates)
-        api_server._cancel_all_state["updated_at"] = datetime.now(timezone.utc).isoformat()
+        api_server._cancel_all_state["updated_at"] = datetime.now(
+            timezone.utc
+        ).isoformat()
         return dict(api_server._cancel_all_state)
+
 
 def _get_cancel_all_state():
     with api_server._cancel_all_state_lock:

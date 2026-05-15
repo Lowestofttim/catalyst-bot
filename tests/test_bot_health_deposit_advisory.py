@@ -106,9 +106,11 @@ class _FakeConn:
         if self._last_wallet_type is None:
             rows = list(self._rows)
         else:
-            rows = [r for r in self._rows
-                    if str(r.get("wallet_type", "cat")).lower()
-                    == self._last_wallet_type]
+            rows = [
+                r
+                for r in self._rows
+                if str(r.get("wallet_type", "cat")).lower() == self._last_wallet_type
+            ]
         sql = getattr(self, "_last_sql", "") or ""
         params = getattr(self, "_last_params", ()) or ()
         if "amount_mojos" not in sql:
@@ -117,11 +119,13 @@ class _FakeConn:
             unknown_threshold = int(params[1])
             reserve_threshold = int(params[2])
             return [
-                r for r in rows
+                r
+                for r in rows
                 if (
                     str(r.get("designation", "reserve")).lower() == "unknown"
                     and int(r.get("amount_mojos", 0)) >= unknown_threshold
-                ) or (
+                )
+                or (
                     str(r.get("designation", "reserve")).lower() == "reserve"
                     and int(r.get("amount_mojos", 0)) >= reserve_threshold
                 )
@@ -129,7 +133,8 @@ class _FakeConn:
         if "designation='reserve'" in sql and len(params) >= 2:
             threshold = int(params[1])
             return [
-                r for r in rows
+                r
+                for r in rows
                 if str(r.get("designation", "reserve")).lower() == "reserve"
                 and int(r.get("amount_mojos", 0)) >= threshold
             ]
@@ -142,20 +147,36 @@ class _FakeEventBus:
         self.cleared = []
         self._alert_store = self
 
-    def alert(self, alert_id, severity, title, message,
-              action=None, action_label=None, action_value=None):
+    def alert(
+        self,
+        alert_id,
+        severity,
+        title,
+        message,
+        action=None,
+        action_label=None,
+        action_value=None,
+    ):
         self.alerts[alert_id] = {
-            "id": alert_id, "severity": severity,
-            "title": title, "message": message,
-            "action": action, "action_label": action_label,
+            "id": alert_id,
+            "severity": severity,
+            "title": title,
+            "message": message,
+            "action": action,
+            "action_label": action_label,
             "action_value": action_value,
         }
 
     def set_alert(self, alert_id, severity, title, message, *args, **kwargs):
-        self.alert(alert_id, severity, title, message,
-                   action=kwargs.get("action"),
-                   action_label=kwargs.get("action_label"),
-                   action_value=kwargs.get("action_value"))
+        self.alert(
+            alert_id,
+            severity,
+            title,
+            message,
+            action=kwargs.get("action"),
+            action_label=kwargs.get("action_label"),
+            action_value=kwargs.get("action_value"),
+        )
 
     def clear(self, alert_id):
         self.cleared.append(alert_id)
@@ -172,9 +193,17 @@ class UnclaimedDepositsTests(unittest.TestCase):
             sys.modules.pop(name, None)
         sys.modules.pop("api_server", None)
 
-    def _install(self, *, rows=None, advised="", last_absorb_ts=0,
-                 cat_reserve="50", settings=None, tier_sizes=None,
-                 last_quoted_mid=Decimal("0")):
+    def _install(
+        self,
+        *,
+        rows=None,
+        advised="",
+        last_absorb_ts=0,
+        cat_reserve="50",
+        settings=None,
+        tier_sizes=None,
+        last_quoted_mid=Decimal("0"),
+    ):
         """Wire up fake DB, event bus, cfg. Returns (bus, cleanup)."""
         rows = rows or []
         settings = settings or {}
@@ -203,19 +232,61 @@ class UnclaimedDepositsTests(unittest.TestCase):
             patch.object(cfg, "CAT_DECIMALS", 3),
             patch.object(cfg, "CAT_NAME", "MZ"),
             patch.object(cfg, "CAT_RESERVE", Decimal(str(cat_reserve))),
-            patch.object(cfg, "BUY_INNER_SIZE_XCH", Decimal(str(tier_sizes.get("buy_inner", "0.6023")))),
-            patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal(str(tier_sizes.get("sell_inner", "0.6023")))),
-            patch.object(cfg, "SELL_MID_SIZE_XCH", Decimal(str(tier_sizes.get("sell_mid", "0.6023"))), create=True),
-            patch.object(cfg, "SELL_OUTER_SIZE_XCH", Decimal(str(tier_sizes.get("sell_outer", "0.6023"))), create=True),
-            patch.object(cfg, "SELL_EXTREME_SIZE_XCH", Decimal(str(tier_sizes.get("sell_extreme", "0.6023"))), create=True),
-            patch.object(cfg, "INNER_SIZE_XCH", Decimal(str(tier_sizes.get("inner", "0.6023")))),
-            patch.object(cfg, "MID_SIZE_XCH", Decimal(str(tier_sizes.get("mid", "0.6023"))), create=True),
-            patch.object(cfg, "OUTER_SIZE_XCH", Decimal(str(tier_sizes.get("outer", "0.6023"))), create=True),
-            patch.object(cfg, "EXTREME_SIZE_XCH", Decimal(str(tier_sizes.get("extreme", "0.6023"))), create=True),
+            patch.object(
+                cfg,
+                "BUY_INNER_SIZE_XCH",
+                Decimal(str(tier_sizes.get("buy_inner", "0.6023"))),
+            ),
+            patch.object(
+                cfg,
+                "SELL_INNER_SIZE_XCH",
+                Decimal(str(tier_sizes.get("sell_inner", "0.6023"))),
+            ),
+            patch.object(
+                cfg,
+                "SELL_MID_SIZE_XCH",
+                Decimal(str(tier_sizes.get("sell_mid", "0.6023"))),
+                create=True,
+            ),
+            patch.object(
+                cfg,
+                "SELL_OUTER_SIZE_XCH",
+                Decimal(str(tier_sizes.get("sell_outer", "0.6023"))),
+                create=True,
+            ),
+            patch.object(
+                cfg,
+                "SELL_EXTREME_SIZE_XCH",
+                Decimal(str(tier_sizes.get("sell_extreme", "0.6023"))),
+                create=True,
+            ),
+            patch.object(
+                cfg, "INNER_SIZE_XCH", Decimal(str(tier_sizes.get("inner", "0.6023")))
+            ),
+            patch.object(
+                cfg,
+                "MID_SIZE_XCH",
+                Decimal(str(tier_sizes.get("mid", "0.6023"))),
+                create=True,
+            ),
+            patch.object(
+                cfg,
+                "OUTER_SIZE_XCH",
+                Decimal(str(tier_sizes.get("outer", "0.6023"))),
+                create=True,
+            ),
+            patch.object(
+                cfg,
+                "EXTREME_SIZE_XCH",
+                Decimal(str(tier_sizes.get("extreme", "0.6023"))),
+                create=True,
+            ),
             patch.object(cfg, "TOPUP_POOL_XCH", Decimal("60")),
             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("140")),
             patch.object(cfg, "XCH_RESERVE", Decimal("10")),
-            patch.object(cfg, "LAST_QUOTED_MID", Decimal(str(last_quoted_mid)), create=True),
+            patch.object(
+                cfg, "LAST_QUOTED_MID", Decimal(str(last_quoted_mid)), create=True
+            ),
         ]
         for p in patchers:
             p.start()
@@ -233,12 +304,14 @@ class UnclaimedDepositsTests(unittest.TestCase):
 
     def test_large_fresh_reserve_raises_alert(self):
         # Single matching row — a 750k CAT coin landed 2 min ago.
-        row = _FakeRow({
-            "coin_id": "0x0ed57fad82d8283b902e4fcc63cbabd2",
-            "amount_mojos": 750_000_000,   # 750,000 CAT at 3 decimals
-            "first_seen": "2026-04-21 20:13:01",
-            "wallet_type": "cat",
-        })
+        row = _FakeRow(
+            {
+                "coin_id": "0x0ed57fad82d8283b902e4fcc63cbabd2",
+                "amount_mojos": 750_000_000,  # 750,000 CAT at 3 decimals
+                "first_seen": "2026-04-21 20:13:01",
+                "wallet_type": "cat",
+            }
+        )
         bus, cleanup = self._install(rows=[row])
         try:
             check = bot_health.check_unclaimed_deposits(auto_repair=True)
@@ -262,13 +335,15 @@ class UnclaimedDepositsTests(unittest.TestCase):
         self.assertEqual(parts[5], "CAT_RESERVE")
 
     def test_large_unknown_cat_deposit_raises_alert_before_topup_spends_it(self):
-        row = _FakeRow({
-            "coin_id": "0x65119c25b5bc049c2496a5791349c552269ff51483ada6bcb2bc68ae51ed08be",
-            "amount_mojos": 193_886_291,
-            "first_seen": "2026-05-02 14:40:07",
-            "wallet_type": "cat",
-            "designation": "unknown",
-        })
+        row = _FakeRow(
+            {
+                "coin_id": "0x65119c25b5bc049c2496a5791349c552269ff51483ada6bcb2bc68ae51ed08be",
+                "amount_mojos": 193_886_291,
+                "first_seen": "2026-05-02 14:40:07",
+                "wallet_type": "cat",
+                "designation": "unknown",
+            }
+        )
         bus, cleanup = self._install(
             rows=[row],
             cat_reserve="0",
@@ -297,14 +372,15 @@ class UnclaimedDepositsTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_advised_coin_is_skipped(self):
-        row = _FakeRow({
-            "coin_id": "0xdeadbeef",
-            "amount_mojos": 750_000_000,
-            "first_seen": "2026-04-21 20:13:01",
-            "wallet_type": "cat",
-        })
-        bus, cleanup = self._install(
-            rows=[row], advised="0xdeadbeef,0xcafebabe")
+        row = _FakeRow(
+            {
+                "coin_id": "0xdeadbeef",
+                "amount_mojos": 750_000_000,
+                "first_seen": "2026-04-21 20:13:01",
+                "wallet_type": "cat",
+            }
+        )
+        bus, cleanup = self._install(rows=[row], advised="0xdeadbeef,0xcafebabe")
         try:
             check = bot_health.check_unclaimed_deposits(auto_repair=True)
         finally:
@@ -318,13 +394,16 @@ class UnclaimedDepositsTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_recent_absorb_suppresses_alert(self):
-        row = _FakeRow({
-            "coin_id": "0xfeed",
-            "amount_mojos": 750_000_000,
-            "first_seen": "2026-04-21 20:13:01",
-            "wallet_type": "cat",
-        })
+        row = _FakeRow(
+            {
+                "coin_id": "0xfeed",
+                "amount_mojos": 750_000_000,
+                "first_seen": "2026-04-21 20:13:01",
+                "wallet_type": "cat",
+            }
+        )
         import time as _t
+
         # Absorption happened 30s ago — within the 90s cooldown.
         last = int(_t.time()) - 30
         bus, cleanup = self._install(rows=[row], last_absorb_ts=last)
@@ -357,12 +436,14 @@ class UnclaimedDepositsTests(unittest.TestCase):
         # Simulate: alert was previously raised for 0xdeadbeef, user
         # allocated it (so now on advised list), DB no longer returns
         # it as a candidate. The check should CLEAR the dangling alert.
-        row = _FakeRow({
-            "coin_id": "0xdeadbeef",
-            "amount_mojos": 750_000_000,
-            "first_seen": "2026-04-21 20:13:01",
-            "wallet_type": "cat",
-        })
+        row = _FakeRow(
+            {
+                "coin_id": "0xdeadbeef",
+                "amount_mojos": 750_000_000,
+                "first_seen": "2026-04-21 20:13:01",
+                "wallet_type": "cat",
+            }
+        )
         # First call: raise alert.
         bus, cleanup = self._install(rows=[row])
         try:
@@ -380,7 +461,8 @@ class UnclaimedDepositsTests(unittest.TestCase):
         # stale entry to prove the clear path works.
         bus2 = _FakeEventBus()
         bus2.alerts["deposit_advisory_0xdeadbeef"] = dict(
-            bus.alerts["deposit_advisory_0xdeadbeef"])
+            bus.alerts["deposit_advisory_0xdeadbeef"]
+        )
         fake_api2 = types.ModuleType("api_server")
         fake_api2.events = bus2
         sys.modules["api_server"] = fake_api2
@@ -388,10 +470,12 @@ class UnclaimedDepositsTests(unittest.TestCase):
         cfg = bot_health.cfg
         patchers = [
             patch("database.get_connection", return_value=_FakeConn([row])),
-            patch("database.get_setting",
-                  side_effect=lambda k, d="": (
-                      "0xdeadbeef" if k == "deposit_advisory_advised_coins"
-                      else "0")),
+            patch(
+                "database.get_setting",
+                side_effect=lambda k, d="": (
+                    "0xdeadbeef" if k == "deposit_advisory_advised_coins" else "0"
+                ),
+            ),
             patch.object(cfg, "ENABLE_BUY", True),
             patch.object(cfg, "ENABLE_SELL", True),
             patch.object(cfg, "CAT_DECIMALS", 3),
@@ -425,12 +509,14 @@ class UnclaimedDepositsTests(unittest.TestCase):
         this test pins the behaviour so it doesn't regress."""
         # Row with a first_seen from yesterday — way past any plausible
         # time window.
-        row = _FakeRow({
-            "coin_id": "0xancient",
-            "amount_mojos": 750_000_000,
-            "first_seen": "2026-04-20 08:00:00",
-            "wallet_type": "cat",
-        })
+        row = _FakeRow(
+            {
+                "coin_id": "0xancient",
+                "amount_mojos": 750_000_000,
+                "first_seen": "2026-04-20 08:00:00",
+                "wallet_type": "cat",
+            }
+        )
         bus, cleanup = self._install(rows=[row])
         try:
             check = bot_health.check_unclaimed_deposits(auto_repair=True)
@@ -447,31 +533,39 @@ class UnclaimedDepositsTests(unittest.TestCase):
         """When there are 20 pending reserves, only _MAX_ALERTS_PER_PASS
         fire this pass. The rest surface on subsequent passes as those
         are allocated."""
-        rows = [_FakeRow({
-            "coin_id": f"0xcoin{i:03d}",
-            "amount_mojos": 750_000_000,
-            "first_seen": "2026-04-21 20:13:01",
-            "wallet_type": "cat",
-        }) for i in range(20)]
+        rows = [
+            _FakeRow(
+                {
+                    "coin_id": f"0xcoin{i:03d}",
+                    "amount_mojos": 750_000_000,
+                    "first_seen": "2026-04-21 20:13:01",
+                    "wallet_type": "cat",
+                }
+            )
+            for i in range(20)
+        ]
         bus, cleanup = self._install(rows=rows)
         try:
             check = bot_health.check_unclaimed_deposits(auto_repair=True)
         finally:
             cleanup()
-        self.assertEqual(check.anomaly_count,
-                         bot_health._DEPOSIT_ADVISORY_MAX_ALERTS_PER_PASS)
+        self.assertEqual(
+            check.anomaly_count, bot_health._DEPOSIT_ADVISORY_MAX_ALERTS_PER_PASS
+        )
 
     # ------------------------------------------------------------------
     # Read-only mode: detects but doesn't emit
     # ------------------------------------------------------------------
 
     def test_read_only_mode_reports_without_alerting(self):
-        row = _FakeRow({
-            "coin_id": "0xbeef",
-            "amount_mojos": 750_000_000,
-            "first_seen": "2026-04-21 20:13:01",
-            "wallet_type": "cat",
-        })
+        row = _FakeRow(
+            {
+                "coin_id": "0xbeef",
+                "amount_mojos": 750_000_000,
+                "first_seen": "2026-04-21 20:13:01",
+                "wallet_type": "cat",
+            }
+        )
         bus, cleanup = self._install(rows=[row])
         try:
             check = bot_health.check_unclaimed_deposits(auto_repair=False)

@@ -59,4 +59,3 @@ def hidden_subprocess_kwargs(
         kwargs["startupinfo"] = startupinfo
 
     return kwargs
-

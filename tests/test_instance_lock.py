@@ -44,6 +44,7 @@ class InstanceLockMutexTest(unittest.TestCase):
     def _instance1_acquire_and_write(self):
         """Mirror desktop_app._acquire_instance_lock's success path."""
         import msvcrt
+
         fh = open(self._tmp.name, "a+", encoding="utf-8")
         fh.seek(0)
         msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
@@ -60,6 +61,7 @@ class InstanceLockMutexTest(unittest.TestCase):
         anchors the lock to byte 0.
         """
         import msvcrt
+
         fh = open(self._tmp.name, "a+", encoding="utf-8")
         try:
             fh.seek(0)
@@ -75,12 +77,14 @@ class InstanceLockMutexTest(unittest.TestCase):
     def test_second_acquire_blocked_when_first_holds_byte_zero(self):
         fh1 = self._instance1_acquire_and_write()
         try:
-            with self.assertRaises(OSError,
-                                   msg="second acquire succeeded; singleton race re-introduced"):
+            with self.assertRaises(
+                OSError, msg="second acquire succeeded; singleton race re-introduced"
+            ):
                 self._instance2_try_acquire()
         finally:
             try:
                 import msvcrt
+
                 fh1.seek(0)
                 msvcrt.locking(fh1.fileno(), msvcrt.LK_UNLCK, 1)
             except Exception:
@@ -91,6 +95,7 @@ class InstanceLockMutexTest(unittest.TestCase):
         """Sanity: lock protocol is releasable so an honest restart works."""
         fh1 = self._instance1_acquire_and_write()
         import msvcrt
+
         fh1.seek(0)
         msvcrt.locking(fh1.fileno(), msvcrt.LK_UNLCK, 1)
         fh1.close()
@@ -115,14 +120,18 @@ class DesktopAppUsesSeekZeroTest(unittest.TestCase):
 
     def test_acquire_function_seeks_to_zero(self):
         import ast
+
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         src = os.path.join(repo_root, "desktop_app.py")
         with open(src, "r", encoding="utf-8") as fh:
             text = fh.read()
         tree = ast.parse(text)
         fn = next(
-            (n for n in ast.walk(tree)
-             if isinstance(n, ast.FunctionDef) and n.name == "_acquire_instance_lock"),
+            (
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef) and n.name == "_acquire_instance_lock"
+            ),
             None,
         )
         self.assertIsNotNone(fn, "_acquire_instance_lock function not found")
@@ -132,20 +141,26 @@ class DesktopAppUsesSeekZeroTest(unittest.TestCase):
             if isinstance(node, ast.Call):
                 func = node.func
                 # Detect fh.seek(0): Attribute on .seek with literal 0.
-                if (isinstance(func, ast.Attribute)
-                        and func.attr == "seek"
-                        and node.args
-                        and isinstance(node.args[0], ast.Constant)
-                        and node.args[0].value == 0):
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "seek"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value == 0
+                ):
                     seen_seek_zero = True
                 # Detect msvcrt.locking(...): must come AFTER a seek(0).
-                if (isinstance(func, ast.Attribute)
-                        and func.attr == "locking"
-                        and isinstance(func.value, ast.Name)
-                        and func.value.id == "msvcrt"):
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "locking"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "msvcrt"
+                ):
                     # Reject LK_UNLCK calls; we only care about acquires.
-                    if any(isinstance(a, ast.Attribute) and a.attr == "LK_NBLCK"
-                           for a in node.args):
+                    if any(
+                        isinstance(a, ast.Attribute) and a.attr == "LK_NBLCK"
+                        for a in node.args
+                    ):
                         self.assertTrue(
                             seen_seek_zero,
                             "msvcrt.locking(LK_NBLCK) called without a preceding "

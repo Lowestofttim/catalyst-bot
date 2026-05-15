@@ -28,6 +28,7 @@ try:
     import offer_manager as _om_mod
     from offer_manager import OfferManager
     from reaction_strategy import RequoteSeverity, tiers_for_severity
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _om_mod = None
@@ -40,6 +41,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Shared cfg factory
 # ---------------------------------------------------------------------------
+
 
 def _make_cfg(**overrides):
     defaults = dict(
@@ -65,9 +67,9 @@ def _make_cfg(**overrides):
 # 1. should_requote — basic detection
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestShouldRequote(unittest.TestCase):
-
     def setUp(self):
         self._cfg = _make_cfg()
         self._patch = patch.object(_om_mod, "cfg", self._cfg)
@@ -123,18 +125,16 @@ class TestShouldRequote(unittest.TestCase):
         )
 
     def test_zero_last_price_returns_false(self):
-        self.assertFalse(
-            self.om.should_requote("buy", Decimal("0.001"), Decimal("0"))
-        )
+        self.assertFalse(self.om.should_requote("buy", Decimal("0.001"), Decimal("0")))
 
 
 # ---------------------------------------------------------------------------
 # 2. should_requote_graduated — reaction_strategy wiring
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestShouldRequoteGraduated(unittest.TestCase):
-
     def setUp(self):
         self._cfg = _make_cfg()
         self._patch = patch.object(_om_mod, "cfg", self._cfg)
@@ -201,8 +201,8 @@ class TestShouldRequoteGraduated(unittest.TestCase):
     def test_symmetric_drift_same_severity(self):
         # Up vs down drift at same magnitude should give same severity
         last = Decimal("0.001")
-        up = last * Decimal("1.04")    # +4% → FULL
-        dn = last * Decimal("0.96")    # -4% → FULL
+        up = last * Decimal("1.04")  # +4% → FULL
+        dn = last * Decimal("0.96")  # -4% → FULL
         sev_up = self.om.should_requote_graduated("buy", up, last)
         sev_dn = self.om.should_requote_graduated("sell", dn, last)
         self.assertEqual(sev_up, sev_dn)
@@ -211,6 +211,7 @@ class TestShouldRequoteGraduated(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 3. Graduated severity → tier set wiring
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestSeverityToTierSetWiring(unittest.TestCase):
@@ -270,6 +271,7 @@ class TestSeverityToTierSetWiring(unittest.TestCase):
 # 4. Custom drift thresholds via cfg override
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestCustomDriftThresholds(unittest.TestCase):
     """Verify that graduated thresholds are read from cfg, not hardcoded."""
@@ -277,10 +279,10 @@ class TestCustomDriftThresholds(unittest.TestCase):
     def setUp(self):
         # Set all thresholds to very wide values
         self._cfg = _make_cfg(
-            REQUOTE_DRIFT_INNER=Decimal("0.10"),    # 10%
-            REQUOTE_DRIFT_MID=Decimal("0.20"),      # 20%
-            REQUOTE_DRIFT_FULL=Decimal("0.30"),     # 30%
-            REQUOTE_DRIFT_EMERGENCY=Decimal("0.50"), # 50%
+            REQUOTE_DRIFT_INNER=Decimal("0.10"),  # 10%
+            REQUOTE_DRIFT_MID=Decimal("0.20"),  # 20%
+            REQUOTE_DRIFT_FULL=Decimal("0.30"),  # 30%
+            REQUOTE_DRIFT_EMERGENCY=Decimal("0.50"),  # 50%
         )
         self._patch = patch.object(_om_mod, "cfg", self._cfg)
         self._patch.start()

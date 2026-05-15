@@ -107,6 +107,8 @@ def test_mock_sage_server_context_requires_tls_1_2_or_newer(tmp_path):
         tmp_path, "server", "mock-sage-server", ca_key, ca_cert, is_server=True
     )
 
-    context = packaged_api_smoke._mock_sage_server_context(server_cert, server_key, ca_path)
+    context = packaged_api_smoke._mock_sage_server_context(
+        server_cert, server_key, ca_path
+    )
 
     assert context.minimum_version >= ssl.TLSVersion.TLSv1_2

@@ -17,8 +17,12 @@ from unittest.mock import patch, MagicMock
 # ---------------------------------------------------------------------------
 try:
     from fill_classifier import (
-        FillType, FillClassification, classify_fill, _extract_taker_puzzle_hash,
+        FillType,
+        FillClassification,
+        classify_fill,
+        _extract_taker_puzzle_hash,
     )
+
     _SKIP_FC = None
 except ModuleNotFoundError as exc:
     _SKIP_FC = str(exc)
@@ -29,6 +33,7 @@ except ModuleNotFoundError as exc:
 try:
     import fill_tracker as _ft_mod
     from fill_tracker import FillTracker
+
     _SKIP_FT = None
 except ModuleNotFoundError as exc:
     _SKIP_FT = str(exc)
@@ -38,11 +43,17 @@ except ModuleNotFoundError as exc:
 # FillType constants
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_FC is not None, f"fill_classifier unavailable: {_SKIP_FC}")
 class TestFillTypeConstants(unittest.TestCase):
     def test_all_expected_types_defined(self):
-        for attr in ("RETAIL", "ARB_SWEEP_BUY", "ARB_SWEEP_SELL",
-                     "DEXIE_COMBINED", "UNKNOWN"):
+        for attr in (
+            "RETAIL",
+            "ARB_SWEEP_BUY",
+            "ARB_SWEEP_SELL",
+            "DEXIE_COMBINED",
+            "UNKNOWN",
+        ):
             self.assertTrue(hasattr(FillType, attr))
 
     def test_values_are_strings(self):
@@ -53,6 +64,7 @@ class TestFillTypeConstants(unittest.TestCase):
 # ===========================================================================
 # FillClassification.is_arb
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_FC is not None, f"fill_classifier unavailable: {_SKIP_FC}")
 class TestFillClassificationIsArb(unittest.TestCase):
@@ -80,6 +92,7 @@ class TestFillClassificationIsArb(unittest.TestCase):
 # ===========================================================================
 # classify_fill decision tree
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_FC is not None, f"fill_classifier unavailable: {_SKIP_FC}")
 class TestClassifyFill(unittest.TestCase):
@@ -156,6 +169,7 @@ class TestClassifyFill(unittest.TestCase):
 # _extract_taker_puzzle_hash
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_FC is not None, f"fill_classifier unavailable: {_SKIP_FC}")
 class TestExtractTakerPuzzleHash(unittest.TestCase):
     def test_none_detail_returns_none(self):
@@ -188,6 +202,7 @@ class TestExtractTakerPuzzleHash(unittest.TestCase):
 # ===========================================================================
 # FillTracker — pure static helpers
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_FT is not None, f"fill_tracker unavailable: {_SKIP_FT}")
 class TestFillTrackerParseIsoTs(unittest.TestCase):
@@ -241,6 +256,7 @@ class TestFillTrackerExtractDexieCoinIds(unittest.TestCase):
 # FillTracker — _check_mass_disappearance
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_FT is not None, f"fill_tracker unavailable: {_SKIP_FT}")
 class TestCheckMassDisappearance(unittest.TestCase):
     def _make_ft(self):
@@ -280,6 +296,7 @@ class TestCheckMassDisappearance(unittest.TestCase):
 # ===========================================================================
 # FillTracker — state helpers
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_FT is not None, f"fill_tracker unavailable: {_SKIP_FT}")
 class TestFillTrackerStateHelpers(unittest.TestCase):

@@ -22,10 +22,19 @@ def test_arb_alert_threshold_round_trips_percent_in_settings_ui():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
     assert "const _pct2bps = v => Math.round((parseFloat(v) || 0) * 100);" in html
-    assert "document.getElementById('configArbThreshold').value = arb > 0 ? _bps2pct(arb) : '2.0';" in html
-    assert "arb_threshold_bps: _pct2bps(document.getElementById('configArbThreshold')?.value || '2.0')," in html
+    assert (
+        "document.getElementById('configArbThreshold').value = arb > 0 ? _bps2pct(arb) : '2.0';"
+        in html
+    )
+    assert (
+        "arb_threshold_bps: _pct2bps(document.getElementById('configArbThreshold')?.value || '2.0'),"
+        in html
+    )
     assert "_arbEl.value = _bps2pct(data.arb_alert_threshold_bps);" in html
-    assert "arb_threshold_bps: parseInt(document.getElementById('configArbThreshold')?.value || '200')" not in html
+    assert (
+        "arb_threshold_bps: parseInt(document.getElementById('configArbThreshold')?.value || '200')"
+        not in html
+    )
 
 
 def test_smart_settings_summary_converts_bps_values_before_rendering_percent():
@@ -35,7 +44,10 @@ def test_smart_settings_summary_converts_bps_values_before_rendering_percent():
     assert "const requotePct = bps2pct(data.requote_bps || 0);" in html
     assert "Base <strong>${spreadPct}</strong>" in html
     assert "Requote at <strong>${requotePct}</strong>" in html
-    assert "document.getElementById('configDbxMaxSpreadBps').value = _bps2pct(data.dbx_max_spread_bps);" in html
+    assert (
+        "document.getElementById('configDbxMaxSpreadBps').value = _bps2pct(data.dbx_max_spread_bps);"
+        in html
+    )
     assert "Base <strong>${spreadBps.toFixed(1)}%</strong>" not in html
 
 

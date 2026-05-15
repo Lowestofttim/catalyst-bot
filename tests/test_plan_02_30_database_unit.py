@@ -6,6 +6,7 @@ get_open_offers, record_fill/get_fills/get_net_position, upsert_coin/
 get_free_coins/lock_coin/free_coin/get_coin_summary, record_price/
 get_recent_prices, log_event/get_recent_events, get_setting/set_setting.
 """
+
 import os
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from decimal import Decimal
 
 try:
     import database as _db
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _db = None
@@ -22,6 +24,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Per-test temp DB helper
 # ---------------------------------------------------------------------------
+
 
 class _TempDB(unittest.TestCase):
     """Base class: creates an isolated temp DB for each test method."""
@@ -73,6 +76,7 @@ class _TempDB(unittest.TestCase):
 # Pure function tests (no DB needed)
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestNormCoinId(unittest.TestCase):
     """norm_coin_id — normalize coin IDs to lowercase 0x-prefixed form."""
@@ -100,18 +104,21 @@ class TestNormCoinId(unittest.TestCase):
 # DB tests (isolated per-test temp database)
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestAddOffer(_TempDB):
     """add_offer and get_offer — insert and read."""
 
     def test_add_offer_returns_true(self):
-        result = _db.add_offer("t1", "buy", Decimal("1.00"), Decimal("0.5"),
-                               Decimal("500"), "assetid1")
+        result = _db.add_offer(
+            "t1", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetid1"
+        )
         self.assertTrue(result)
 
     def test_get_offer_returns_inserted(self):
-        _db.add_offer("t2", "sell", Decimal("1.10"), Decimal("0.3"),
-                      Decimal("300"), "assetid1")
+        _db.add_offer(
+            "t2", "sell", Decimal("1.10"), Decimal("0.3"), Decimal("300"), "assetid1"
+        )
         offer = _db.get_offer("t2")
         self.assertIsNotNone(offer)
         self.assertEqual(offer["trade_id"], "t2")
@@ -119,18 +126,27 @@ class TestAddOffer(_TempDB):
         self.assertEqual(offer["status"], "open")
 
     def test_duplicate_trade_id_returns_false(self):
-        _db.add_offer("t3", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetid1")
-        result = _db.add_offer("t3", "buy", Decimal("1.00"), Decimal("0.5"),
-                               Decimal("500"), "assetid1")
+        _db.add_offer(
+            "t3", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetid1"
+        )
+        result = _db.add_offer(
+            "t3", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetid1"
+        )
         self.assertFalse(result)
 
     def test_get_offer_missing_returns_none(self):
         self.assertIsNone(_db.get_offer("nonexistent"))
 
     def test_tier_is_stored(self):
-        _db.add_offer("t4", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetid1", tier="inner")
+        _db.add_offer(
+            "t4",
+            "buy",
+            Decimal("1.00"),
+            Decimal("0.5"),
+            Decimal("500"),
+            "assetid1",
+            tier="inner",
+        )
         offer = _db.get_offer("t4")
         self.assertEqual(offer["tier"], "inner")
 
@@ -140,14 +156,16 @@ class TestUpdateOfferStatus(_TempDB):
     """update_offer_status - state transitions."""
 
     def test_returns_true_on_success(self):
-        _db.add_offer("t1", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetid1")
+        _db.add_offer(
+            "t1", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetid1"
+        )
         result = _db.update_offer_status("t1", "cancelled")
         self.assertTrue(result)
 
     def test_status_updated(self):
-        _db.add_offer("t2", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetid1")
+        _db.add_offer(
+            "t2", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetid1"
+        )
         _db.update_offer_status("t2", "filled")
         offer = _db.get_offer("t2")
         self.assertEqual(offer["status"], "filled")
@@ -158,7 +176,9 @@ class TestUpdateOfferStatus(_TempDB):
         self.assertTrue(result)
 
     def test_not_submitted_marks_offer_terminal_and_frees_locked_coin(self):
-        _db.upsert_coin("0xnot-submitted", "cat", 123456, designation="tier_spare", tier="inner")
+        _db.upsert_coin(
+            "0xnot-submitted", "cat", 123456, designation="tier_spare", tier="inner"
+        )
         _db.add_offer(
             "t-not-submitted",
             "sell",
@@ -174,10 +194,14 @@ class TestUpdateOfferStatus(_TempDB):
         result = _db.update_offer_status("t-not-submitted", "not_submitted")
 
         offer = _db.get_offer("t-not-submitted")
-        coin = _db.get_connection().execute(
-            "SELECT status, trade_id FROM coins WHERE coin_id=?",
-            ("0xnot-submitted",),
-        ).fetchone()
+        coin = (
+            _db.get_connection()
+            .execute(
+                "SELECT status, trade_id FROM coins WHERE coin_id=?",
+                ("0xnot-submitted",),
+            )
+            .fetchone()
+        )
         self.assertTrue(result)
         self.assertEqual(offer["status"], "expired")
         self.assertEqual(offer["lifecycle_state"], "not_submitted")
@@ -191,12 +215,15 @@ class TestGetOpenOffers(_TempDB):
 
     def setUp(self):
         super().setUp()
-        _db.add_offer("b1", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetA")
-        _db.add_offer("s1", "sell", Decimal("1.10"), Decimal("0.3"),
-                      Decimal("300"), "assetA")
-        _db.add_offer("b2", "buy", Decimal("0.99"), Decimal("0.5"),
-                      Decimal("500"), "assetB")
+        _db.add_offer(
+            "b1", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
+        _db.add_offer(
+            "s1", "sell", Decimal("1.10"), Decimal("0.3"), Decimal("300"), "assetA"
+        )
+        _db.add_offer(
+            "b2", "buy", Decimal("0.99"), Decimal("0.5"), Decimal("500"), "assetB"
+        )
 
     def test_returns_all_open_when_no_filter(self):
         offers = _db.get_open_offers()
@@ -241,12 +268,8 @@ class TestGetOpenOffers(_TempDB):
 
     def test_get_offers_for_repost_excludes_non_actionable_open_rows(self):
         conn = _db.get_connection()
-        conn.execute(
-            "UPDATE offers SET offer_bech32='offer1fake' WHERE trade_id='b1'"
-        )
-        conn.execute(
-            "UPDATE offers SET offer_bech32='offer1fake' WHERE trade_id='s1'"
-        )
+        conn.execute("UPDATE offers SET offer_bech32='offer1fake' WHERE trade_id='b1'")
+        conn.execute("UPDATE offers SET offer_bech32='offer1fake' WHERE trade_id='s1'")
         conn.commit()
         _db.update_offer_lifecycle_state("b1", "mempool_observed")
 
@@ -262,16 +285,41 @@ class TestOfferLifecycleSummary(_TempDB):
     """get_offer_lifecycle_summary — compact counts for GUI diagnostics."""
 
     def test_counts_status_and_lifecycle_by_side_for_one_cat(self):
-        _db.add_offer("open-buy", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetA")
-        _db.add_offer("open-sell", "sell", Decimal("1.10"), Decimal("0.3"),
-                      Decimal("300"), "assetA")
-        _db.add_offer("cancel-buy", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetA")
-        _db.add_offer("pending-sell", "sell", Decimal("1.10"), Decimal("0.3"),
-                      Decimal("300"), "assetA")
-        _db.add_offer("other-cat", "buy", Decimal("1.00"), Decimal("0.5"),
-                      Decimal("500"), "assetB")
+        _db.add_offer(
+            "open-buy", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
+        _db.add_offer(
+            "open-sell",
+            "sell",
+            Decimal("1.10"),
+            Decimal("0.3"),
+            Decimal("300"),
+            "assetA",
+        )
+        _db.add_offer(
+            "cancel-buy",
+            "buy",
+            Decimal("1.00"),
+            Decimal("0.5"),
+            Decimal("500"),
+            "assetA",
+        )
+        _db.add_offer(
+            "pending-sell",
+            "sell",
+            Decimal("1.10"),
+            Decimal("0.3"),
+            Decimal("300"),
+            "assetA",
+        )
+        _db.add_offer(
+            "other-cat",
+            "buy",
+            Decimal("1.00"),
+            Decimal("0.5"),
+            Decimal("500"),
+            "assetB",
+        )
 
         _db.update_offer_status("cancel-buy", "cancelled")
         _db.update_offer_lifecycle_state("pending-sell", "cancel_requested")
@@ -291,23 +339,27 @@ class TestRecordFill(_TempDB):
     """record_fill and get_fills — fill recording round-trip."""
 
     def test_record_fill_returns_fill_id(self):
-        fill_id = _db.record_fill("t1", "buy", Decimal("1.00"), Decimal("0.5"),
-                                  Decimal("500"), "assetA")
+        fill_id = _db.record_fill(
+            "t1", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
         self.assertIsNotNone(fill_id)
         self.assertGreater(fill_id, 0)
 
     def test_get_fills_returns_recorded_fill(self):
-        _db.record_fill("t2", "sell", Decimal("1.10"), Decimal("0.3"),
-                        Decimal("300"), "assetA")
+        _db.record_fill(
+            "t2", "sell", Decimal("1.10"), Decimal("0.3"), Decimal("300"), "assetA"
+        )
         fills = _db.get_fills(cat_asset_id="assetA")
         trade_ids = [f["trade_id"] for f in fills]
         self.assertIn("t2", trade_ids)
 
     def test_get_fills_filters_by_side(self):
-        _db.record_fill("tb", "buy", Decimal("1.00"), Decimal("0.5"),
-                        Decimal("500"), "assetA")
-        _db.record_fill("ts", "sell", Decimal("1.10"), Decimal("0.3"),
-                        Decimal("300"), "assetA")
+        _db.record_fill(
+            "tb", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
+        _db.record_fill(
+            "ts", "sell", Decimal("1.10"), Decimal("0.3"), Decimal("300"), "assetA"
+        )
         buys = _db.get_fills(cat_asset_id="assetA", side="buy")
         self.assertTrue(all(f["side"] == "buy" for f in buys))
 
@@ -321,22 +373,26 @@ class TestGetNetPosition(_TempDB):
         self.assertEqual(pos, Decimal("0"))
 
     def test_buy_fill_adds_to_position(self):
-        _db.record_fill("t1", "buy", Decimal("1.00"), Decimal("0.5"),
-                        Decimal("500"), "assetA")
+        _db.record_fill(
+            "t1", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
         pos = _db.get_net_position("assetA")
         self.assertGreater(pos, Decimal("0"))
 
     def test_sell_fill_subtracts_from_position(self):
-        _db.record_fill("t1", "sell", Decimal("1.00"), Decimal("0.5"),
-                        Decimal("500"), "assetA")
+        _db.record_fill(
+            "t1", "sell", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
         pos = _db.get_net_position("assetA")
         self.assertLess(pos, Decimal("0"))
 
     def test_balanced_buys_and_sells_near_zero(self):
-        _db.record_fill("b1", "buy", Decimal("1.00"), Decimal("0.5"),
-                        Decimal("500"), "assetA")
-        _db.record_fill("s1", "sell", Decimal("1.05"), Decimal("0.5"),
-                        Decimal("500"), "assetA")
+        _db.record_fill(
+            "b1", "buy", Decimal("1.00"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
+        _db.record_fill(
+            "s1", "sell", Decimal("1.05"), Decimal("0.5"), Decimal("500"), "assetA"
+        )
         pos = _db.get_net_position("assetA")
         self.assertAlmostEqual(float(pos), 0.0, delta=1.0)
 
@@ -346,23 +402,20 @@ class TestUpsertCoin(_TempDB):
     """upsert_coin, get_free_coins, lock_coin, free_coin."""
 
     def test_upsert_coin_can_be_retrieved(self):
-        _db.upsert_coin("0xabc1", "xch", 250_000_000_000,
-                        designation="mid", tier="mid")
+        _db.upsert_coin("0xabc1", "xch", 250_000_000_000, designation="mid", tier="mid")
         coins = _db.get_free_coins("xch")
         ids = [c["coin_id"] for c in coins]
         self.assertIn("0xabc1", ids)
 
     def test_lock_coin_removes_from_free_list(self):
-        _db.upsert_coin("0xabc2", "xch", 250_000_000_000,
-                        designation="mid", tier="mid")
+        _db.upsert_coin("0xabc2", "xch", 250_000_000_000, designation="mid", tier="mid")
         _db.lock_coin("0xabc2", "offer-t1")
         coins = _db.get_free_coins("xch")
         ids = [c["coin_id"] for c in coins]
         self.assertNotIn("0xabc2", ids)
 
     def test_free_coin_restores_to_free_list(self):
-        _db.upsert_coin("0xabc3", "xch", 250_000_000_000,
-                        designation="mid", tier="mid")
+        _db.upsert_coin("0xabc3", "xch", 250_000_000_000, designation="mid", tier="mid")
         _db.lock_coin("0xabc3", "offer-t2")
         _db.free_coin("0xabc3")
         coins = _db.get_free_coins("xch")
@@ -370,10 +423,8 @@ class TestUpsertCoin(_TempDB):
         self.assertIn("0xabc3", ids)
 
     def test_upsert_updates_amount_on_conflict(self):
-        _db.upsert_coin("0xabc4", "xch", 100_000_000_000,
-                        designation="mid", tier="mid")
-        _db.upsert_coin("0xabc4", "xch", 200_000_000_000,
-                        designation="mid", tier="mid")
+        _db.upsert_coin("0xabc4", "xch", 100_000_000_000, designation="mid", tier="mid")
+        _db.upsert_coin("0xabc4", "xch", 200_000_000_000, designation="mid", tier="mid")
         coins = _db.get_free_coins("xch")
         match = next((c for c in coins if c["coin_id"] == "0xabc4"), None)
         self.assertIsNotNone(match)
@@ -390,22 +441,28 @@ class TestGetCoinSummary(_TempDB):
         self.assertEqual(summary.get("cat_free_count", 0), 0)
 
     def test_counts_free_coins(self):
-        _db.upsert_coin("0xcoin1", "xch", 250_000_000_000,
-                        designation="mid", tier="mid")
-        _db.upsert_coin("0xcoin2", "xch", 250_000_000_000,
-                        designation="mid", tier="mid")
+        _db.upsert_coin(
+            "0xcoin1", "xch", 250_000_000_000, designation="mid", tier="mid"
+        )
+        _db.upsert_coin(
+            "0xcoin2", "xch", 250_000_000_000, designation="mid", tier="mid"
+        )
         summary = _db.get_coin_summary()
         self.assertGreaterEqual(summary.get("xch_free_count", 0), 2)
 
     def test_live_tier_counts_mark_reverse_buy_position_order(self):
-        _db.upsert_coin("0xaaa1", "xch", 100,
-                        designation="tier_spare", assigned_tier="extreme")
-        _db.upsert_coin("0xaaa2", "xch", 100,
-                        designation="tier_spare", assigned_tier="extreme")
-        _db.upsert_coin("0xaaa3", "xch", 200,
-                        designation="tier_spare", assigned_tier="inner")
+        _db.upsert_coin(
+            "0xaaa1", "xch", 100, designation="tier_spare", assigned_tier="extreme"
+        )
+        _db.upsert_coin(
+            "0xaaa2", "xch", 100, designation="tier_spare", assigned_tier="extreme"
+        )
+        _db.upsert_coin(
+            "0xaaa3", "xch", 200, designation="tier_spare", assigned_tier="inner"
+        )
 
         from config import cfg
+
         old = getattr(cfg, "BUY_LADDER_REVERSED", False)
         try:
             cfg.BUY_LADDER_REVERSED = True

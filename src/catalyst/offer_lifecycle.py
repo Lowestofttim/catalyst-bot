@@ -24,55 +24,61 @@ try:
     from enum import StrEnum
 except ImportError:
     from enum import Enum
+
     class StrEnum(str, Enum):
         pass
 
 
 class OfferState(StrEnum):
     """Extended offer lifecycle states."""
-    OPEN = "open"                              # live on wallet, tradeable
-    REFRESH_DUE = "refresh_due"                # expiry approaching, needs requote
-    CANCEL_REQUESTED = "cancel_requested"      # cancel RPC sent, awaiting confirmation
-    CANCELLED = "cancelled"                    # terminal: cancel confirmed
-    MEMPOOL_OBSERVED = "mempool_observed"       # potential take seen in mempool
-    FILLED = "filled"                          # terminal: fill detected & verified
-    EXPIRED = "expired"                        # terminal: time-expired
-    NOT_SUBMITTED = "not_submitted"             # terminal: local row never became wallet-visible
-    PHANTOM_REJECTED = "phantom_rejected"      # terminal: self-spend/false fill rejected
+
+    OPEN = "open"  # live on wallet, tradeable
+    REFRESH_DUE = "refresh_due"  # expiry approaching, needs requote
+    CANCEL_REQUESTED = "cancel_requested"  # cancel RPC sent, awaiting confirmation
+    CANCELLED = "cancelled"  # terminal: cancel confirmed
+    MEMPOOL_OBSERVED = "mempool_observed"  # potential take seen in mempool
+    FILLED = "filled"  # terminal: fill detected & verified
+    EXPIRED = "expired"  # terminal: time-expired
+    NOT_SUBMITTED = "not_submitted"  # terminal: local row never became wallet-visible
+    PHANTOM_REJECTED = "phantom_rejected"  # terminal: self-spend/false fill rejected
 
 
 class OfferSignal(StrEnum):
     """Signals that drive state transitions."""
-    EXPIRY_NEAR = "expiry_near"                # refresh window entered
-    CANCEL_SENT = "cancel_sent"                # cancel RPC dispatched
-    CANCEL_CONFIRMED = "cancel_confirmed"      # wallet confirmed cancel
-    CANCEL_FAILED = "cancel_failed"            # cancel RPC failed, revert to previous
-    FILL_DETECTED = "fill_detected"            # offer disappeared (not our cancel)
-    FILL_VERIFIED = "fill_verified"            # on-chain verification passed
-    FILL_REJECTED = "fill_rejected"            # phantom/self-spend detected
-    TIME_EXPIRED = "time_expired"              # max_time passed
-    REFRESH_POSTED = "refresh_posted"          # replacement offer created
-    MEMPOOL_SEEN = "mempool_seen"              # potential take in mempool
+
+    EXPIRY_NEAR = "expiry_near"  # refresh window entered
+    CANCEL_SENT = "cancel_sent"  # cancel RPC dispatched
+    CANCEL_CONFIRMED = "cancel_confirmed"  # wallet confirmed cancel
+    CANCEL_FAILED = "cancel_failed"  # cancel RPC failed, revert to previous
+    FILL_DETECTED = "fill_detected"  # offer disappeared (not our cancel)
+    FILL_VERIFIED = "fill_verified"  # on-chain verification passed
+    FILL_REJECTED = "fill_rejected"  # phantom/self-spend detected
+    TIME_EXPIRED = "time_expired"  # max_time passed
+    REFRESH_POSTED = "refresh_posted"  # replacement offer created
+    MEMPOOL_SEEN = "mempool_seen"  # potential take in mempool
 
 
 @dataclass(frozen=True, slots=True)
 class OfferTransition:
     """Result of applying a signal to a state."""
+
     old_state: OfferState
     new_state: OfferState
     signal: OfferSignal
-    action: str      # what the caller should do
-    reason: str      # human-readable explanation
+    action: str  # what the caller should do
+    reason: str  # human-readable explanation
 
 
 # Terminal states — no further transitions allowed
-_TERMINAL_STATES = frozenset({
-    OfferState.CANCELLED,
-    OfferState.FILLED,
-    OfferState.EXPIRED,
-    OfferState.NOT_SUBMITTED,
-    OfferState.PHANTOM_REJECTED,
-})
+_TERMINAL_STATES = frozenset(
+    {
+        OfferState.CANCELLED,
+        OfferState.FILLED,
+        OfferState.EXPIRED,
+        OfferState.NOT_SUBMITTED,
+        OfferState.PHANTOM_REJECTED,
+    }
+)
 
 
 def apply_signal(state: OfferState, signal: OfferSignal) -> OfferTransition:
@@ -83,40 +89,53 @@ def apply_signal(state: OfferState, signal: OfferSignal) -> OfferTransition:
     # Terminal states reject all signals
     if state in _TERMINAL_STATES:
         return OfferTransition(
-            old_state=state, new_state=state, signal=signal,
-            action="noop", reason="offer_in_terminal_state",
+            old_state=state,
+            new_state=state,
+            signal=signal,
+            action="noop",
+            reason="offer_in_terminal_state",
         )
 
     # ---- OPEN state transitions ----
     if state == OfferState.OPEN:
         if signal == OfferSignal.EXPIRY_NEAR:
             return OfferTransition(
-                old_state=state, new_state=OfferState.REFRESH_DUE,
-                signal=signal, action="schedule_requote",
+                old_state=state,
+                new_state=OfferState.REFRESH_DUE,
+                signal=signal,
+                action="schedule_requote",
                 reason="refresh_window_entered",
             )
         if signal == OfferSignal.CANCEL_SENT:
             return OfferTransition(
-                old_state=state, new_state=OfferState.CANCEL_REQUESTED,
-                signal=signal, action="await_cancel_confirm",
+                old_state=state,
+                new_state=OfferState.CANCEL_REQUESTED,
+                signal=signal,
+                action="await_cancel_confirm",
                 reason="cancel_dispatched",
             )
         if signal == OfferSignal.FILL_DETECTED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.FILLED,
-                signal=signal, action="record_fill",
+                old_state=state,
+                new_state=OfferState.FILLED,
+                signal=signal,
+                action="record_fill",
                 reason="offer_disappeared_not_our_cancel",
             )
         if signal == OfferSignal.TIME_EXPIRED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.EXPIRED,
-                signal=signal, action="cleanup_expired",
+                old_state=state,
+                new_state=OfferState.EXPIRED,
+                signal=signal,
+                action="cleanup_expired",
                 reason="offer_time_expired",
             )
         if signal == OfferSignal.MEMPOOL_SEEN:
             return OfferTransition(
-                old_state=state, new_state=OfferState.MEMPOOL_OBSERVED,
-                signal=signal, action="mark_mempool_observed",
+                old_state=state,
+                new_state=OfferState.MEMPOOL_OBSERVED,
+                signal=signal,
+                action="mark_mempool_observed",
                 reason="potential_take_seen",
             )
 
@@ -125,32 +144,42 @@ def apply_signal(state: OfferState, signal: OfferSignal) -> OfferTransition:
         if signal == OfferSignal.REFRESH_POSTED:
             # This offer is being replaced — mark it cancelled
             return OfferTransition(
-                old_state=state, new_state=OfferState.CANCELLED,
-                signal=signal, action="track_replacement",
+                old_state=state,
+                new_state=OfferState.CANCELLED,
+                signal=signal,
+                action="track_replacement",
                 reason="offer_replaced_by_refresh",
             )
         if signal == OfferSignal.CANCEL_SENT:
             return OfferTransition(
-                old_state=state, new_state=OfferState.CANCEL_REQUESTED,
-                signal=signal, action="await_cancel_confirm",
+                old_state=state,
+                new_state=OfferState.CANCEL_REQUESTED,
+                signal=signal,
+                action="await_cancel_confirm",
                 reason="cancel_during_refresh",
             )
         if signal == OfferSignal.FILL_DETECTED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.FILLED,
-                signal=signal, action="record_fill",
+                old_state=state,
+                new_state=OfferState.FILLED,
+                signal=signal,
+                action="record_fill",
                 reason="filled_while_awaiting_refresh",
             )
         if signal == OfferSignal.TIME_EXPIRED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.EXPIRED,
-                signal=signal, action="cleanup_expired",
+                old_state=state,
+                new_state=OfferState.EXPIRED,
+                signal=signal,
+                action="cleanup_expired",
                 reason="expired_before_refresh",
             )
         if signal == OfferSignal.MEMPOOL_SEEN:
             return OfferTransition(
-                old_state=state, new_state=OfferState.MEMPOOL_OBSERVED,
-                signal=signal, action="mark_mempool_observed",
+                old_state=state,
+                new_state=OfferState.MEMPOOL_OBSERVED,
+                signal=signal,
+                action="mark_mempool_observed",
                 reason="potential_take_while_refresh_due",
             )
 
@@ -158,36 +187,46 @@ def apply_signal(state: OfferState, signal: OfferSignal) -> OfferTransition:
     if state == OfferState.CANCEL_REQUESTED:
         if signal == OfferSignal.CANCEL_CONFIRMED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.CANCELLED,
-                signal=signal, action="finalize_cancel",
+                old_state=state,
+                new_state=OfferState.CANCELLED,
+                signal=signal,
+                action="finalize_cancel",
                 reason="cancel_confirmed_by_wallet",
             )
         if signal == OfferSignal.CANCEL_FAILED:
             # Revert to open — cancel didn't take
             return OfferTransition(
-                old_state=state, new_state=OfferState.OPEN,
-                signal=signal, action="retry_or_revert",
+                old_state=state,
+                new_state=OfferState.OPEN,
+                signal=signal,
+                action="retry_or_revert",
                 reason="cancel_rpc_failed",
             )
         if signal == OfferSignal.FILL_DETECTED:
             # Race: filled while cancel was in flight
             return OfferTransition(
-                old_state=state, new_state=OfferState.FILLED,
-                signal=signal, action="record_fill",
+                old_state=state,
+                new_state=OfferState.FILLED,
+                signal=signal,
+                action="record_fill",
                 reason="filled_during_cancel",
             )
         if signal == OfferSignal.TIME_EXPIRED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.EXPIRED,
-                signal=signal, action="cleanup_expired",
+                old_state=state,
+                new_state=OfferState.EXPIRED,
+                signal=signal,
+                action="cleanup_expired",
                 reason="expired_during_cancel",
             )
         if signal == OfferSignal.MEMPOOL_SEEN:
             # Mempool take observed while cancel is in flight — note but
             # stay in cancel_requested; the fill or cancel will resolve it
             return OfferTransition(
-                old_state=state, new_state=state,
-                signal=signal, action="note_mempool_during_cancel",
+                old_state=state,
+                new_state=state,
+                signal=signal,
+                action="note_mempool_during_cancel",
                 reason="mempool_seen_but_cancel_pending",
             )
 
@@ -195,26 +234,34 @@ def apply_signal(state: OfferState, signal: OfferSignal) -> OfferTransition:
     if state == OfferState.MEMPOOL_OBSERVED:
         if signal == OfferSignal.FILL_DETECTED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.FILLED,
-                signal=signal, action="record_fill",
+                old_state=state,
+                new_state=OfferState.FILLED,
+                signal=signal,
+                action="record_fill",
                 reason="mempool_take_confirmed",
             )
         if signal == OfferSignal.FILL_VERIFIED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.FILLED,
-                signal=signal, action="record_verified_fill",
+                old_state=state,
+                new_state=OfferState.FILLED,
+                signal=signal,
+                action="record_verified_fill",
                 reason="on_chain_verification_passed",
             )
         if signal == OfferSignal.TIME_EXPIRED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.EXPIRED,
-                signal=signal, action="cleanup_expired",
+                old_state=state,
+                new_state=OfferState.EXPIRED,
+                signal=signal,
+                action="cleanup_expired",
                 reason="expired_after_mempool",
             )
         if signal == OfferSignal.CANCEL_SENT:
             return OfferTransition(
-                old_state=state, new_state=OfferState.CANCEL_REQUESTED,
-                signal=signal, action="await_cancel_confirm",
+                old_state=state,
+                new_state=OfferState.CANCEL_REQUESTED,
+                signal=signal,
+                action="await_cancel_confirm",
                 reason="cancel_despite_mempool",
             )
 
@@ -226,8 +273,11 @@ def apply_signal(state: OfferState, signal: OfferSignal) -> OfferTransition:
 
     # Default: no valid transition
     return OfferTransition(
-        old_state=state, new_state=state, signal=signal,
-        action="noop", reason="signal_ignored_for_state",
+        old_state=state,
+        new_state=state,
+        signal=signal,
+        action="noop",
+        reason="signal_ignored_for_state",
     )
 
 
@@ -240,20 +290,27 @@ def apply_fill_verification(state: OfferState, signal: OfferSignal) -> OfferTran
     if state == OfferState.FILLED:
         if signal == OfferSignal.FILL_VERIFIED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.FILLED,
-                signal=signal, action="confirm_fill",
+                old_state=state,
+                new_state=OfferState.FILLED,
+                signal=signal,
+                action="confirm_fill",
                 reason="verification_passed",
             )
         if signal == OfferSignal.FILL_REJECTED:
             return OfferTransition(
-                old_state=state, new_state=OfferState.PHANTOM_REJECTED,
-                signal=signal, action="revert_fill_record",
+                old_state=state,
+                new_state=OfferState.PHANTOM_REJECTED,
+                signal=signal,
+                action="revert_fill_record",
                 reason="self_spend_or_phantom_detected",
             )
 
     return OfferTransition(
-        old_state=state, new_state=state, signal=signal,
-        action="noop", reason="not_a_fill_verification_context",
+        old_state=state,
+        new_state=state,
+        signal=signal,
+        action="noop",
+        reason="not_a_fill_verification_context",
     )
 
 
@@ -265,12 +322,12 @@ def coarse_status(lifecycle_state: str) -> str:
     _map = {
         "open": "open",
         "refresh_due": "open",
-        "cancel_requested": "open",      # still live until confirmed
+        "cancel_requested": "open",  # still live until confirmed
         "cancelled": "cancelled",
-        "mempool_observed": "open",       # still live until confirmed
+        "mempool_observed": "open",  # still live until confirmed
         "filled": "filled",
         "expired": "expired",
-        "not_submitted": "expired",       # no live offer exists; unlock local coin
+        "not_submitted": "expired",  # no live offer exists; unlock local coin
         "phantom_rejected": "cancelled",  # treat as cancelled for legacy
     }
     return _map.get(lifecycle_state, "open")
@@ -279,6 +336,9 @@ def coarse_status(lifecycle_state: str) -> str:
 def is_terminal(state: str) -> bool:
     """Check if a lifecycle state is terminal (no further transitions)."""
     return state in {
-        "cancelled", "filled", "expired", "not_submitted", "phantom_rejected",
+        "cancelled",
+        "filled",
+        "expired",
+        "not_submitted",
+        "phantom_rejected",
     }
-

@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     _db = None
@@ -150,18 +151,25 @@ class _TempDB(unittest.TestCase):
 # Phase 1: check-resume on fresh DB
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartupPhase1CheckResume(_TempDB):
     """check-resume must return the correct can_resume flag on a fresh DB."""
 
     def _check(self, wallet_offers=None, classified_buy=None):
         wallet_offers = wallet_offers or []
-        classified_buy = classified_buy or [{"trade_id": o["trade_id"]} for o in wallet_offers]
-        with patch("api_server.bot", None), \
-             patch("api_server._fresh_start_is_set", return_value=False), \
-             patch("wallet.get_all_offers", return_value=wallet_offers), \
-             patch("wallet.classify_offers_from_list",
-                   return_value=(classified_buy, [], [])):
+        classified_buy = classified_buy or [
+            {"trade_id": o["trade_id"]} for o in wallet_offers
+        ]
+        with (
+            patch("api_server.bot", None),
+            patch("api_server._fresh_start_is_set", return_value=False),
+            patch("wallet.get_all_offers", return_value=wallet_offers),
+            patch(
+                "wallet.classify_offers_from_list",
+                return_value=(classified_buy, [], []),
+            ),
+        ):
             return self.client.get("/api/check-resume", environ_base=_LOOPBACK)
 
     def test_fresh_db_no_offers_returns_can_resume_false(self):
@@ -183,10 +191,14 @@ class TestStartupPhase1CheckResume(_TempDB):
         bot = MagicMock()
         bot.is_running.return_value = True
         bot._loop_count = 1  # MagicMock default would fail the > 0 comparison
-        with patch("api_server.bot", bot), \
-             patch("wallet.get_all_offers", return_value=[{"trade_id": "b1"}]), \
-             patch("wallet.classify_offers_from_list",
-                   return_value=([{"trade_id": "b1"}], [], [])):
+        with (
+            patch("api_server.bot", bot),
+            patch("wallet.get_all_offers", return_value=[{"trade_id": "b1"}]),
+            patch(
+                "wallet.classify_offers_from_list",
+                return_value=([{"trade_id": "b1"}], [], []),
+            ),
+        ):
             resp = self.client.get("/api/check-resume", environ_base=_LOOPBACK)
         self.assertFalse(resp.get_json().get("can_resume"))
 
@@ -201,6 +213,7 @@ class TestStartupPhase1CheckResume(_TempDB):
 # ---------------------------------------------------------------------------
 # Phase 2: session mode selection (fresh-start vs resume-chosen)
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartupPhase2SessionMode(_TempDB):
@@ -254,6 +267,7 @@ class TestStartupPhase2SessionMode(_TempDB):
 # Phase 3: Sage wallet connection probes
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartupPhase3SageConnection(_TempDB):
     """Sage running probe and begin-startup must behave correctly."""
@@ -266,8 +280,10 @@ class TestStartupPhase3SageConnection(_TempDB):
 
     def test_sage_running_returns_false_when_unreachable(self):
         """GET /api/wallet/sage-running returns running=False when port closed."""
-        with patch("sage_node._is_sage_rpc_available", return_value=False), \
-             patch("sage_node._is_sage_rpc_port_listening", return_value=False):
+        with (
+            patch("sage_node._is_sage_rpc_available", return_value=False),
+            patch("sage_node._is_sage_rpc_port_listening", return_value=False),
+        ):
             resp = self.client.get("/api/wallet/sage-running", environ_base=_LOOPBACK)
         self.assertFalse(resp.get_json().get("running"))
 
@@ -278,8 +294,7 @@ class TestStartupPhase3SageConnection(_TempDB):
 
     def test_begin_startup_returns_started_true(self):
         """POST /api/wallet/begin-startup fires the preload and returns started=True."""
-        with patch("chia_node.set_auto_launch"), \
-             patch("chia_node.start_preload"):
+        with patch("chia_node.set_auto_launch"), patch("chia_node.start_preload"):
             resp = self.client.post(
                 "/api/wallet/begin-startup",
                 json={"auto_launch": True},
@@ -289,8 +304,7 @@ class TestStartupPhase3SageConnection(_TempDB):
         self.assertTrue(resp.get_json().get("started"))
 
     def test_begin_startup_returns_200(self):
-        with patch("chia_node.set_auto_launch"), \
-             patch("chia_node.start_preload"):
+        with patch("chia_node.set_auto_launch"), patch("chia_node.start_preload"):
             resp = self.client.post(
                 "/api/wallet/begin-startup",
                 json={},
@@ -304,19 +318,27 @@ class TestStartupPhase3SageConnection(_TempDB):
 # Phase 4: CAT pair selection
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartupPhase4PairSelection(_TempDB):
     """User selects a CAT pair after connecting wallet."""
 
     def _select_cat(self, asset_id=_FAKE_ASSET, name="TestToken"):
-        with patch.object(api_server, "bot", None), \
-             patch("api_server.cfg.update"), \
-             patch("wallet_sage.notify_cat_asset_id_changed", create=True), \
-             patch("api_server.threading") as mock_threading:
+        with (
+            patch.object(api_server, "bot", None),
+            patch("api_server.cfg.update"),
+            patch("wallet_sage.notify_cat_asset_id_changed", create=True),
+            patch("api_server.threading") as mock_threading,
+        ):
             mock_threading.Thread.return_value = MagicMock()
             return self.client.post(
                 "/api/cat/select",
-                json={"asset_id": asset_id, "name": name, "wallet_id": 2, "decimals": 3},
+                json={
+                    "asset_id": asset_id,
+                    "name": name,
+                    "wallet_id": 2,
+                    "decimals": 3,
+                },
                 headers={"X-Bot-Local-Token": self.token},
                 environ_base=_LOOPBACK,
             )
@@ -335,14 +357,19 @@ class TestStartupPhase4PairSelection(_TempDB):
 # Phase 5: dashboard initial state
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartupPhase5DashboardLoad(_TempDB):
     """Dashboard must load without 500 even before bot is started."""
 
     def _get_dashboard(self, bot=None):
-        with patch.object(api_server, "bot", bot), \
-             patch("wallet.get_wallet_sync_status",
-                   return_value={"reachable": False, "synced": False}):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": False, "synced": False},
+            ),
+        ):
             return self.client.get("/api/dashboard", environ_base=_LOOPBACK)
 
     def test_dashboard_returns_200_with_no_bot(self):
@@ -370,6 +397,7 @@ class TestStartupPhase5DashboardLoad(_TempDB):
 # Phase 6: pre-start validation (setup incomplete → error; complete → start)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartupPhase6BotStartValidation(_TempDB):
     """Bot start must fail gracefully when setup is incomplete."""
@@ -382,13 +410,17 @@ class TestStartupPhase6BotStartValidation(_TempDB):
             bot.market_intel.reset_session_stats = MagicMock()
             bot.splash_manager.reset_session_stats = MagicMock()
             bot.get_splash_receive_stats.return_value = {}
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server._get_sage_signing_block_reason", return_value=None), \
-             patch("wallet.get_wallet_sync_status",
-                   return_value={"reachable": True, "sync_state": "synced"}), \
-             patch.object(api_server.cfg, "CAT_ASSET_ID", asset_id), \
-             patch.object(api_server.cfg, "SPREAD_BPS", spread_bps), \
-             patch("api_server.events"):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server._get_sage_signing_block_reason", return_value=None),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": True, "sync_state": "synced"},
+            ),
+            patch.object(api_server.cfg, "CAT_ASSET_ID", asset_id),
+            patch.object(api_server.cfg, "SPREAD_BPS", spread_bps),
+            patch("api_server.events"),
+        ):
             return self.client.post(
                 "/api/bot/start",
                 headers={"X-Bot-Local-Token": self.token},

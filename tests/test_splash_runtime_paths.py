@@ -95,7 +95,9 @@ def test_splash_node_offer_hook_uses_ipv4_loopback(monkeypatch):
 
     monkeypatch.setattr(cfg, "SPLASH_RECEIVE_ENABLED", True, raising=False)
     monkeypatch.setattr(cfg, "PORT", 5000, raising=False)
-    monkeypatch.setattr(cfg, "SPLASH_SUBMIT_URL", "http://localhost:4000", raising=False)
+    monkeypatch.setattr(
+        cfg, "SPLASH_SUBMIT_URL", "http://localhost:4000", raising=False
+    )
     monkeypatch.setattr(cfg, "SPLASH_P2P_PORT", 11511, raising=False)
     monkeypatch.setattr(cfg, "SPLASH_METRICS_PORT", 4001, raising=False)
     monkeypatch.setattr(splash_node.subprocess, "Popen", fake_popen)
@@ -116,10 +118,12 @@ def test_splash_output_reader_keeps_reading_lines(monkeypatch):
     import splash_node
 
     class FakeProcess:
-        stdout = iter([
-            "connected to peer one\n",
-            "connected to peer two\n",
-        ])
+        stdout = iter(
+            [
+                "connected to peer one\n",
+                "connected to peer two\n",
+            ]
+        )
 
     monkeypatch.setattr(splash_node, "log_event", lambda *args, **kwargs: None)
     node = splash_node.SplashNode()

@@ -16,7 +16,8 @@ def _icon_lines():
 
 def test_app_shortcuts_use_executable_embedded_icon():
     app_shortcuts = [
-        line for line in _icon_lines()
+        line
+        for line in _icon_lines()
         if r"{#MyAppExeName}" in line and "(Help)" not in line
     ]
 

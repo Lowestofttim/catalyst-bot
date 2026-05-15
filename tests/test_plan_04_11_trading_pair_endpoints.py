@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -23,7 +24,12 @@ except (ModuleNotFoundError, ImportError) as exc:
 
 # Valid 64-hex asset_id for test use
 _VALID_ASSET_ID = "a" * 64
-_VALID_BODY = {"asset_id": _VALID_ASSET_ID, "wallet_id": 2, "name": "TestCAT", "decimals": 3}
+_VALID_BODY = {
+    "asset_id": _VALID_ASSET_ID,
+    "wallet_id": 2,
+    "name": "TestCAT",
+    "decimals": 3,
+}
 
 
 class _FlaskBase(unittest.TestCase):
@@ -53,18 +59,22 @@ class _FlaskBase(unittest.TestCase):
 # 1. GET /api/cats
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCatsGet(_FlaskBase):
-
     def test_returns_200(self):
-        with patch("wallet.get_wallets", return_value={"success": True, "wallets": []}), \
-             patch("wallet.get_wallet_type", return_value="sage"):
+        with (
+            patch("wallet.get_wallets", return_value={"success": True, "wallets": []}),
+            patch("wallet.get_wallet_type", return_value="sage"),
+        ):
             resp = self.client.get("/api/cats", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_cats_list(self):
-        with patch("wallet.get_wallets", return_value={"success": True, "wallets": []}), \
-             patch("wallet.get_wallet_type", return_value="sage"):
+        with (
+            patch("wallet.get_wallets", return_value={"success": True, "wallets": []}),
+            patch("wallet.get_wallet_type", return_value="sage"),
+        ):
             resp = self.client.get("/api/cats", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertIn("cats", body)
@@ -73,8 +83,10 @@ class TestCatsGet(_FlaskBase):
     def test_no_wallet_cats_returns_list(self):
         # With no wallet CATs, list may still contain the active CAT
         # (pre-populated from _active_cat / .env). Just verify it's a list.
-        with patch("wallet.get_wallets", return_value={"success": True, "wallets": []}), \
-             patch("wallet.get_wallet_type", return_value="sage"):
+        with (
+            patch("wallet.get_wallets", return_value={"success": True, "wallets": []}),
+            patch("wallet.get_wallet_type", return_value="sage"),
+        ):
             resp = self.client.get("/api/cats", environ_base=self._LOOPBACK)
         self.assertIsInstance(resp.get_json()["cats"], list)
 
@@ -83,14 +95,16 @@ class TestCatsGet(_FlaskBase):
 # 2. POST /api/cat/select
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCatSelect(_FlaskBase):
-
     def _mocked_post(self, body):
-        with patch.object(api_server.cfg, "update"), \
-             patch("threading.Thread") as mt, \
-             patch("wallet_sage.notify_cat_asset_id_changed"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.cfg, "update"),
+            patch("threading.Thread") as mt,
+            patch("wallet_sage.notify_cat_asset_id_changed"),
+            patch.object(api_server, "bot", None),
+        ):
             mt.return_value.start = MagicMock()
             return self._post("/api/cat/select", body)
 
@@ -164,9 +178,9 @@ class TestCatSelect(_FlaskBase):
 # 3. POST /api/cat/refresh
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCatRefresh(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/cat/refresh", auth=False)
         self.assertEqual(resp.status_code, 401)

@@ -35,7 +35,9 @@ def test_tibet_price_shift_events_are_visible_in_system_logs():
 
 def test_tibet_price_shift_events_have_activity_copy():
     html = GUI.read_text(encoding="utf-8", errors="replace")
-    activity_translator = _section(html, "function laTranslate(", "function laHandleEvent(")
+    activity_translator = _section(
+        html, "function laTranslate(", "function laHandleEvent("
+    )
 
     required_events = [
         "mempool_swap_detected",
@@ -59,7 +61,9 @@ def test_tibet_price_shift_events_have_activity_copy():
 
 def test_controlled_recovery_activity_events_are_info_not_warning():
     html = GUI.read_text(encoding="utf-8", errors="replace")
-    activity_translator = _section(html, "function laTranslate(", "function laHandleEvent(")
+    activity_translator = _section(
+        html, "function laTranslate(", "function laHandleEvent("
+    )
 
     assert "eventType === 'recovery_mode_enter'" in activity_translator
     recovery_section = activity_translator.split(
@@ -107,12 +111,14 @@ def test_coin_topup_events_are_visible_in_system_logs():
 
 def test_startup_spare_deficit_activity_is_amber_not_critical():
     html = GUI.read_text(encoding="utf-8", errors="replace")
-    activity_translator = _section(html, "function laTranslate(", "function laHandleEvent(")
+    activity_translator = _section(
+        html, "function laTranslate(", "function laHandleEvent("
+    )
 
     assert "eventType === 'startup_spares_low'" in activity_translator
-    spares_section = activity_translator.split(
-        "eventType === 'startup_spares_low'", 1
-    )[1].split("if (eventType === 'startup_coins_unavailable')", 1)[0]
+    spares_section = activity_translator.split("eventType === 'startup_spares_low'", 1)[
+        1
+    ].split("if (eventType === 'startup_coins_unavailable')", 1)[0]
     assert "Spare coin buffers below target" in spares_section
     assert "cls: 'la-warning'" in spares_section
     assert "la-error" not in spares_section

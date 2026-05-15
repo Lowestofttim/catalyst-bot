@@ -34,25 +34,30 @@ class OversizedLockedOffersTests(unittest.TestCase):
         except OSError:
             pass
 
-    def _add_locked_buy(self, trade_id, coin_id, coin_mojos, size_xch,
-                        designation="tier_spare"):
-        self.assertTrue(database.upsert_coin(
-            coin_id=coin_id,
-            wallet_type="xch",
-            amount_mojos=coin_mojos,
-            designation=designation,
-            assigned_tier="mid" if designation != "reserve" else "none",
-        ))
-        self.assertTrue(database.add_offer(
-            trade_id=trade_id,
-            side="buy",
-            price_xch=Decimal("0.001"),
-            size_xch=Decimal(str(size_xch)),
-            size_cat=Decimal("1000"),
-            cat_asset_id="cat",
-            tier="mid",
-            coin_id=coin_id,
-        ))
+    def _add_locked_buy(
+        self, trade_id, coin_id, coin_mojos, size_xch, designation="tier_spare"
+    ):
+        self.assertTrue(
+            database.upsert_coin(
+                coin_id=coin_id,
+                wallet_type="xch",
+                amount_mojos=coin_mojos,
+                designation=designation,
+                assigned_tier="mid" if designation != "reserve" else "none",
+            )
+        )
+        self.assertTrue(
+            database.add_offer(
+                trade_id=trade_id,
+                side="buy",
+                price_xch=Decimal("0.001"),
+                size_xch=Decimal(str(size_xch)),
+                size_cat=Decimal("1000"),
+                cat_asset_id="cat",
+                tier="mid",
+                coin_id=coin_id,
+            )
+        )
         self.assertTrue(database.lock_coin(coin_id, trade_id))
 
     def test_flags_reserve_coin_even_when_amount_would_fit(self):
@@ -135,7 +140,9 @@ class OversizedLockedOffersTests(unittest.TestCase):
         with (
             patch.object(bot_loop.cfg, "TIER_ENABLED", True),
             patch.object(bot_loop.cfg, "COIN_MAX_SIZE_RATIO", 1.5),
-            patch.object(bot_loop.cfg, "COIN_OVERSIZE_FALLBACK_RATIO", 2.0, create=True),
+            patch.object(
+                bot_loop.cfg, "COIN_OVERSIZE_FALLBACK_RATIO", 2.0, create=True
+            ),
             patch.object(bot_loop.cfg, "CAT_DECIMALS", 3),
             patch("database.get_oversized_locked_offers", return_value=[]) as mock_scan,
         ):

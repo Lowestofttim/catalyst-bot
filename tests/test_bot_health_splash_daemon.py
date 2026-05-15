@@ -93,11 +93,21 @@ class _FakeEventBus:
         self.cleared = []
         self._alert_store = self
 
-    def alert(self, alert_id, severity, title, message,
-              action=None, action_label=None, action_value=None):
+    def alert(
+        self,
+        alert_id,
+        severity,
+        title,
+        message,
+        action=None,
+        action_label=None,
+        action_value=None,
+    ):
         self.alerts[alert_id] = {
-            "id": alert_id, "severity": severity,
-            "title": title, "message": message,
+            "id": alert_id,
+            "severity": severity,
+            "title": title,
+            "message": message,
         }
 
     def set_alert(self, alert_id, severity, title, message, *args, **kwargs):
@@ -115,8 +125,7 @@ class SplashDaemonTests(unittest.TestCase):
             sys.modules.pop(name, None)
         sys.modules.pop("api_server", None)
 
-    def _install(self, *, splash_node, receive_enabled=True,
-                 delivered_total=0):
+    def _install(self, *, splash_node, receive_enabled=True, delivered_total=0):
         """Install fake api_server + patch splash-incoming DB stats.
 
         Returns (bus, cleanup_callable). Cleanup resets module state.
@@ -131,8 +140,10 @@ class SplashDaemonTests(unittest.TestCase):
         patchers = [
             patch.object(cfg, "SPLASH_RECEIVE_ENABLED", receive_enabled),
             patch.object(cfg, "CAT_ASSET_ID", "abc123"),
-            patch("database.get_splash_incoming_stats",
-                  return_value={"total": delivered_total}),
+            patch(
+                "database.get_splash_incoming_stats",
+                return_value={"total": delivered_total},
+            ),
         ]
         for p in patchers:
             p.start()
@@ -149,12 +160,14 @@ class SplashDaemonTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_healthy_daemon_no_alerts(self):
-        node = _FakeSplashNode({
-            "reachable": True,
-            "peers": 5,
-            "offers_received": 120,
-            "offers_broadcasted": 46,
-        })
+        node = _FakeSplashNode(
+            {
+                "reachable": True,
+                "peers": 5,
+                "offers_received": 120,
+                "offers_broadcasted": 46,
+            }
+        )
         bus, cleanup = self._install(splash_node=node, delivered_total=120)
         try:
             check = bot_health.check_splash_daemon(auto_repair=True)
@@ -170,14 +183,16 @@ class SplashDaemonTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_unreachable_metrics_raises_alert(self):
-        node = _FakeSplashNode({
-            "reachable": False,
-            "last_error": "connection refused",
-            "metrics_url": "http://127.0.0.1:4001/metrics",
-            "peers": 0,
-            "offers_received": 0,
-            "offers_broadcasted": 0,
-        })
+        node = _FakeSplashNode(
+            {
+                "reachable": False,
+                "last_error": "connection refused",
+                "metrics_url": "http://127.0.0.1:4001/metrics",
+                "peers": 0,
+                "offers_received": 0,
+                "offers_broadcasted": 0,
+            }
+        )
         bus, cleanup = self._install(splash_node=node)
         try:
             check = bot_health.check_splash_daemon(auto_repair=True)
@@ -193,12 +208,14 @@ class SplashDaemonTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_no_peers_raises_alert(self):
-        node = _FakeSplashNode({
-            "reachable": True,
-            "peers": 0,
-            "offers_received": 0,
-            "offers_broadcasted": 0,
-        })
+        node = _FakeSplashNode(
+            {
+                "reachable": True,
+                "peers": 0,
+                "offers_received": 0,
+                "offers_broadcasted": 0,
+            }
+        )
         bus, cleanup = self._install(splash_node=node)
         try:
             check = bot_health.check_splash_daemon(auto_repair=True)
@@ -215,12 +232,14 @@ class SplashDaemonTests(unittest.TestCase):
 
     def test_hook_broken_raises_alert(self):
         """5 peers, 100 offers seen by daemon, 0 delivered to webhook."""
-        node = _FakeSplashNode({
-            "reachable": True,
-            "peers": 5,
-            "offers_received": 100,
-            "offers_broadcasted": 46,
-        })
+        node = _FakeSplashNode(
+            {
+                "reachable": True,
+                "peers": 5,
+                "offers_received": 100,
+                "offers_broadcasted": 46,
+            }
+        )
         bus, cleanup = self._install(splash_node=node, delivered_total=0)
         try:
             check = bot_health.check_splash_daemon(auto_repair=True)
@@ -237,12 +256,14 @@ class SplashDaemonTests(unittest.TestCase):
 
     def test_hook_gap_under_threshold_does_not_alert(self):
         """5 offers seen is below _SPLASH_HOOK_MIN_SEEN → be patient."""
-        node = _FakeSplashNode({
-            "reachable": True,
-            "peers": 5,
-            "offers_received": 5,  # below the 10 threshold
-            "offers_broadcasted": 46,
-        })
+        node = _FakeSplashNode(
+            {
+                "reachable": True,
+                "peers": 5,
+                "offers_received": 5,  # below the 10 threshold
+                "offers_broadcasted": 46,
+            }
+        )
         bus, cleanup = self._install(splash_node=node, delivered_total=0)
         try:
             check = bot_health.check_splash_daemon(auto_repair=True)
@@ -257,12 +278,15 @@ class SplashDaemonTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_receive_disabled_skips_all_checks(self):
-        node = _FakeSplashNode({
-            "reachable": False, "peers": 0,
-            "offers_received": 0, "offers_broadcasted": 0,
-        })
-        bus, cleanup = self._install(splash_node=node,
-                                     receive_enabled=False)
+        node = _FakeSplashNode(
+            {
+                "reachable": False,
+                "peers": 0,
+                "offers_received": 0,
+                "offers_broadcasted": 0,
+            }
+        )
+        bus, cleanup = self._install(splash_node=node, receive_enabled=False)
         try:
             check = bot_health.check_splash_daemon(auto_repair=True)
         finally:
@@ -276,12 +300,14 @@ class SplashDaemonTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_hook_alert_clears_on_first_delivery(self):
-        node = _FakeSplashNode({
-            "reachable": True,
-            "peers": 5,
-            "offers_received": 100,
-            "offers_broadcasted": 46,
-        })
+        node = _FakeSplashNode(
+            {
+                "reachable": True,
+                "peers": 5,
+                "offers_received": 100,
+                "offers_broadcasted": 46,
+            }
+        )
         # First pass: 0 delivered → alert raised.
         bus, cleanup = self._install(splash_node=node, delivered_total=0)
         try:

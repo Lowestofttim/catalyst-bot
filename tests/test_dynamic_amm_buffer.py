@@ -25,6 +25,7 @@ class DynamicAMMBufferTests(unittest.TestCase):
         _install_config()
         sys.modules.pop("dynamic_amm_buffer", None)
         import dynamic_amm_buffer
+
         self.mod = dynamic_amm_buffer
         self.mod.reset_buffer()
 
@@ -38,12 +39,14 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_no_sweeps_returns_base_bps_unchanged(self):
         from decimal import Decimal
+
         result = self.mod.get_buffer(30)
         self.assertEqual(result, Decimal("30.0"))
 
     def test_no_sweeps_multiplier_is_1(self):
         buf = self.mod._get_buffer_instance()
         from decimal import Decimal
+
         self.assertEqual(buf._get_multiplier(), Decimal("1"))
 
     # ------------------------------------------------------------------
@@ -52,12 +55,14 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_one_sweep_applies_medium_multiplier(self):
         from decimal import Decimal
+
         self.mod.record_sweep()
         result = self.mod.get_buffer(30)
         self.assertEqual(result, Decimal("45.0"))  # 30 × 1.5
 
     def test_two_sweeps_applies_medium_multiplier(self):
         from decimal import Decimal
+
         self.mod.record_sweep()
         self.mod.record_sweep()
         result = self.mod.get_buffer(30)
@@ -65,6 +70,7 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_three_sweeps_applies_high_multiplier(self):
         from decimal import Decimal
+
         for _ in range(3):
             self.mod.record_sweep()
         result = self.mod.get_buffer(30)
@@ -72,6 +78,7 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_five_sweeps_applies_high_multiplier(self):
         from decimal import Decimal
+
         for _ in range(5):
             self.mod.record_sweep()
         result = self.mod.get_buffer(30)
@@ -79,6 +86,7 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_six_sweeps_applies_cap_multiplier(self):
         from decimal import Decimal
+
         for _ in range(6):
             self.mod.record_sweep()
         result = self.mod.get_buffer(30)
@@ -86,6 +94,7 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_many_sweeps_capped_at_cap_multiplier(self):
         from decimal import Decimal
+
         for _ in range(20):
             self.mod.record_sweep()
         result = self.mod.get_buffer(30)
@@ -97,9 +106,11 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_disabled_always_returns_base(self):
         from decimal import Decimal
+
         sys.modules.pop("dynamic_amm_buffer", None)
         _install_config(enabled=False)
         import dynamic_amm_buffer
+
         self.mod = dynamic_amm_buffer
         self.mod.reset_buffer()
 
@@ -115,14 +126,16 @@ class DynamicAMMBufferTests(unittest.TestCase):
     def test_sweeps_outside_window_not_counted(self):
         """Sweeps with zero-length window expire immediately."""
         sys.modules.pop("dynamic_amm_buffer", None)
-        _install_config(window_mins=0.0)   # 0-minute window → all expire at once
+        _install_config(window_mins=0.0)  # 0-minute window → all expire at once
         import dynamic_amm_buffer
+
         self.mod = dynamic_amm_buffer
         self.mod.reset_buffer()
 
         buf = self.mod._get_buffer_instance()
         # Inject a stale entry directly (monotonic time in the distant past)
         from collections import deque
+
         buf._sweeps = deque([(time.monotonic() - 9999, 1)])
 
         # After pruning, count should be 0 → multiplier 1
@@ -170,11 +183,13 @@ class DynamicAMMBufferTests(unittest.TestCase):
 
     def test_accepts_string_base_bps(self):
         from decimal import Decimal
+
         result = self.mod.get_buffer("50")
         self.assertEqual(result, Decimal("50.0"))
 
     def test_accepts_float_base_bps(self):
         from decimal import Decimal
+
         result = self.mod.get_buffer(25.0)
         self.assertEqual(result, Decimal("25.0"))
 

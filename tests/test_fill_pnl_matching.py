@@ -12,8 +12,9 @@ class _FakeCfg:
     RUN_HISTORY_CUTOFF = None
 
 
-def _make_fill(fill_id, side, size_xch, price_xch, size_cat, tier="inner",
-               timestamp=None):
+def _make_fill(
+    fill_id, side, size_xch, price_xch, size_cat, tier="inner", timestamp=None
+):
     return {
         "fill_id": fill_id,
         "side": side,
@@ -26,17 +27,22 @@ def _make_fill(fill_id, side, size_xch, price_xch, size_cat, tier="inner",
     }
 
 
-_MODS_TO_RESTORE = ("fill_tracker", "spacescan", "wallet_sage", "wallet",
-                    "database", "config", "dexie_manager")
+_MODS_TO_RESTORE = (
+    "fill_tracker",
+    "spacescan",
+    "wallet_sage",
+    "wallet",
+    "database",
+    "config",
+    "dexie_manager",
+)
 
 
 class FillPnlMatchingTests(unittest.TestCase):
     """Tests for multi-pass buy↔sell round-trip matching in FillTracker."""
 
     def setUp(self):
-        self._saved_modules = {
-            name: sys.modules.get(name) for name in _MODS_TO_RESTORE
-        }
+        self._saved_modules = {name: sys.modules.get(name) for name in _MODS_TO_RESTORE}
         self.round_trips_recorded = []
         self.logged = []
         self._rt_id_counter = [0]
@@ -47,11 +53,13 @@ class FillPnlMatchingTests(unittest.TestCase):
 
         def _fake_match_round_trip(buy_fill_id, sell_fill_id, pnl_xch):
             self._rt_id_counter[0] += 1
-            self.round_trips_recorded.append({
-                "buy_fill_id": buy_fill_id,
-                "sell_fill_id": sell_fill_id,
-                "pnl_xch": pnl_xch,
-            })
+            self.round_trips_recorded.append(
+                {
+                    "buy_fill_id": buy_fill_id,
+                    "sell_fill_id": sell_fill_id,
+                    "pnl_xch": pnl_xch,
+                }
+            )
             return self._rt_id_counter[0]
 
         def _fake_log_event(severity, event_type, message, data=None):
@@ -61,8 +69,7 @@ class FillPnlMatchingTests(unittest.TestCase):
         self._unmatched_sells = []
 
         fake_database = types.ModuleType("database")
-        fake_database.get_unmatched_fills = (
-            lambda asset_id, side, since=None:
+        fake_database.get_unmatched_fills = lambda asset_id, side, since=None: (
             self._unmatched_buys if side == "buy" else self._unmatched_sells
         )
         fake_database.match_round_trip = _fake_match_round_trip
@@ -100,8 +107,12 @@ class FillPnlMatchingTests(unittest.TestCase):
 
     def test_pass1_matches_same_tier_exact_size(self):
         """Buy and sell at the same tier and nearly identical XCH size → pass 1."""
-        self._unmatched_buys = [_make_fill("b1", "buy",  "0.670", "0.00038", "1762", "inner")]
-        self._unmatched_sells = [_make_fill("s1", "sell", "0.670", "0.00040", "1675", "inner")]
+        self._unmatched_buys = [
+            _make_fill("b1", "buy", "0.670", "0.00038", "1762", "inner")
+        ]
+        self._unmatched_sells = [
+            _make_fill("s1", "sell", "0.670", "0.00040", "1675", "inner")
+        ]
 
         tracker = self._make_tracker()
         results = tracker.match_round_trips()
@@ -109,8 +120,7 @@ class FillPnlMatchingTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(len(self.round_trips_recorded), 1)
         # Pass 1 logged in the round_trip_matched message
-        match_log = next(
-            (m for m in self.logged if m[1] == "round_trip_matched"), None)
+        match_log = next((m for m in self.logged if m[1] == "round_trip_matched"), None)
         self.assertIsNotNone(match_log)
         self.assertIn("pass=1", match_log[2])
 
@@ -120,15 +130,18 @@ class FillPnlMatchingTests(unittest.TestCase):
 
     def test_pass2_matches_different_tier_exact_size(self):
         """Buy inner, sell mid — same XCH amount → falls through to pass 2."""
-        self._unmatched_buys = [_make_fill("b1", "buy",  "0.670", "0.00038", "1762", "inner")]
-        self._unmatched_sells = [_make_fill("s1", "sell", "0.672", "0.00040", "1680", "mid")]
+        self._unmatched_buys = [
+            _make_fill("b1", "buy", "0.670", "0.00038", "1762", "inner")
+        ]
+        self._unmatched_sells = [
+            _make_fill("s1", "sell", "0.672", "0.00040", "1680", "mid")
+        ]
 
         tracker = self._make_tracker()
         results = tracker.match_round_trips()
 
         self.assertEqual(len(results), 1)
-        match_log = next(
-            (m for m in self.logged if m[1] == "round_trip_matched"), None)
+        match_log = next((m for m in self.logged if m[1] == "round_trip_matched"), None)
         self.assertIsNotNone(match_log)
         self.assertIn("pass=2", match_log[2])
 
@@ -138,30 +151,36 @@ class FillPnlMatchingTests(unittest.TestCase):
 
     def test_pass3_matches_within_20_pct_tolerance(self):
         """Buy 0.67 XCH, sell 0.78 XCH (16% diff) → pass 3, under 20% threshold."""
-        self._unmatched_buys = [_make_fill("b1", "buy",  "0.670", "0.00038", "1762", "inner")]
-        self._unmatched_sells = [_make_fill("s1", "sell", "0.780", "0.00042", "1857", "mid")]
+        self._unmatched_buys = [
+            _make_fill("b1", "buy", "0.670", "0.00038", "1762", "inner")
+        ]
+        self._unmatched_sells = [
+            _make_fill("s1", "sell", "0.780", "0.00042", "1857", "mid")
+        ]
 
         tracker = self._make_tracker()
         results = tracker.match_round_trips()
 
         self.assertEqual(len(results), 1)
-        match_log = next(
-            (m for m in self.logged if m[1] == "round_trip_matched"), None)
+        match_log = next((m for m in self.logged if m[1] == "round_trip_matched"), None)
         self.assertIsNotNone(match_log)
         self.assertIn("pass=3", match_log[2])
 
     def test_pass3_rejects_beyond_20_pct_tolerance(self):
         """Buy 0.67 XCH, sell 0.90 XCH (34% diff) → does NOT match in pass 3 alone."""
         # 0.90/0.67 ≈ 1.34x — beyond 20% tolerance for pass 3, eligible for pass 4
-        self._unmatched_buys = [_make_fill("b1", "buy",  "0.670", "0.00038", "1762", "inner")]
-        self._unmatched_sells = [_make_fill("s1", "sell", "0.900", "0.00042", "2142", "mid")]
+        self._unmatched_buys = [
+            _make_fill("b1", "buy", "0.670", "0.00038", "1762", "inner")
+        ]
+        self._unmatched_sells = [
+            _make_fill("s1", "sell", "0.900", "0.00042", "2142", "mid")
+        ]
 
         tracker = self._make_tracker()
         results = tracker.match_round_trips()
 
         # Pass 4 FIFO fires; confirm no pass-3 match
-        match_log = next(
-            (m for m in self.logged if m[1] == "round_trip_matched"), None)
+        match_log = next((m for m in self.logged if m[1] == "round_trip_matched"), None)
         if match_log:
             self.assertNotIn("pass=3", match_log[2])
 
@@ -175,19 +194,21 @@ class FillPnlMatchingTests(unittest.TestCase):
         Passes 1-3 cannot match (size diff >> 20%).  Pass 4 FIFO must
         match them and produce a round-trip with correct PnL.
         """
-        buy_xch  = Decimal("0.6729")   # realistic BUY_INNER_SIZE_XCH
-        sell_xch = Decimal("3.2600")   # realistic SELL_INNER_SIZE_XCH
-        buy_price  = Decimal("0.000375")
+        buy_xch = Decimal("0.6729")  # realistic BUY_INNER_SIZE_XCH
+        sell_xch = Decimal("3.2600")  # realistic SELL_INNER_SIZE_XCH
+        buy_price = Decimal("0.000375")
         sell_price = Decimal("0.000380")
 
-        buy_cat  = buy_xch  / buy_price
+        buy_cat = buy_xch / buy_price
         sell_cat = sell_xch / sell_price
 
         self._unmatched_buys = [
-            _make_fill("b1", "buy",  str(buy_xch),  str(buy_price),  str(buy_cat),  "inner")
+            _make_fill("b1", "buy", str(buy_xch), str(buy_price), str(buy_cat), "inner")
         ]
         self._unmatched_sells = [
-            _make_fill("s1", "sell", str(sell_xch), str(sell_price), str(sell_cat), "inner")
+            _make_fill(
+                "s1", "sell", str(sell_xch), str(sell_price), str(sell_cat), "inner"
+            )
         ]
 
         tracker = self._make_tracker()
@@ -197,7 +218,7 @@ class FillPnlMatchingTests(unittest.TestCase):
         self.assertEqual(len(results), 1, "Pass-4 FIFO should produce one round-trip")
 
         rt = results[0]
-        self.assertEqual(rt["buy_fill_id"],  "b1")
+        self.assertEqual(rt["buy_fill_id"], "b1")
         self.assertEqual(rt["sell_fill_id"], "s1")
 
         # PnL: net_xch = sell_xch - buy_xch; net_cat = buy_cat - sell_cat
@@ -206,12 +227,14 @@ class FillPnlMatchingTests(unittest.TestCase):
         mid_price = (buy_price + sell_price) / 2
         expected_pnl = net_xch + net_cat * mid_price
         self.assertAlmostEqual(
-            float(rt["pnl_xch"]), float(expected_pnl), places=6,
-            msg="PnL calculation should be correct for asymmetric pair")
+            float(rt["pnl_xch"]),
+            float(expected_pnl),
+            places=6,
+            msg="PnL calculation should be correct for asymmetric pair",
+        )
 
         # Confirm pass 4 was used
-        match_log = next(
-            (m for m in self.logged if m[1] == "round_trip_matched"), None)
+        match_log = next((m for m in self.logged if m[1] == "round_trip_matched"), None)
         self.assertIsNotNone(match_log, "round_trip_matched should be logged")
         self.assertIn("pass=4", match_log[2])
 
@@ -227,8 +250,8 @@ class FillPnlMatchingTests(unittest.TestCase):
         # b2 also available but same tier — both eligible for pass 4
         # The sell matches best with b2 (size diff smaller)
         self._unmatched_buys = [
-            _make_fill("b1", "buy",  "0.670", "0.000375", "1786", "inner"),
-            _make_fill("b2", "buy",  "3.100", "0.000375", "8266", "inner"),
+            _make_fill("b1", "buy", "0.670", "0.000375", "1786", "inner"),
+            _make_fill("b2", "buy", "3.100", "0.000375", "8266", "inner"),
         ]
         self._unmatched_sells = [
             _make_fill("s1", "sell", "3.260", "0.000380", "8578", "inner"),
@@ -244,7 +267,8 @@ class FillPnlMatchingTests(unittest.TestCase):
         self.assertEqual(results[0]["sell_fill_id"], "s1")
         # b1 should remain unmatched (logged as one-directional inventory)
         unmatched_log = next(
-            (m for m in self.logged if m[1] == "pnl_unmatched_fills"), None)
+            (m for m in self.logged if m[1] == "pnl_unmatched_fills"), None
+        )
         self.assertIsNotNone(unmatched_log)
 
     # ------------------------------------------------------------------
@@ -254,15 +278,18 @@ class FillPnlMatchingTests(unittest.TestCase):
     def test_no_match_when_no_fills_remain_for_pass4(self):
         """If all fills are matched in pass 1-3, pass 4 is never appended."""
         # Exact same size → pass 1 matches → no residual → pass 4 not needed
-        self._unmatched_buys = [_make_fill("b1", "buy",  "0.670", "0.00038", "1762", "inner")]
-        self._unmatched_sells = [_make_fill("s1", "sell", "0.671", "0.00040", "1677", "inner")]
+        self._unmatched_buys = [
+            _make_fill("b1", "buy", "0.670", "0.00038", "1762", "inner")
+        ]
+        self._unmatched_sells = [
+            _make_fill("s1", "sell", "0.671", "0.00040", "1677", "inner")
+        ]
 
         tracker = self._make_tracker()
         results = tracker.match_round_trips()
 
         self.assertEqual(len(results), 1)
-        match_log = next(
-            (m for m in self.logged if m[1] == "round_trip_matched"), None)
+        match_log = next((m for m in self.logged if m[1] == "round_trip_matched"), None)
         # Must be pass 1 (same tier, exact size)
         self.assertIn("pass=1", match_log[2])
         # Pass 4 must NOT appear

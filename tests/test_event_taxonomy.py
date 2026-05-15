@@ -10,13 +10,16 @@ from event_taxonomy import (
 
 
 class TestEventTaxonomy(unittest.TestCase):
-
     def test_lifecycle_events(self):
         self.assertEqual(categorize_event("bot_starting"), EventCategory.LIFECYCLE)
         self.assertEqual(categorize_event("startup_sync_done"), EventCategory.LIFECYCLE)
         self.assertEqual(categorize_event("cycle_complete"), EventCategory.LIFECYCLE)
-        self.assertEqual(categorize_event("startup_spares_low"), EventCategory.LIFECYCLE)
-        self.assertEqual(categorize_event("startup_coins_unavailable"), EventCategory.LIFECYCLE)
+        self.assertEqual(
+            categorize_event("startup_spares_low"), EventCategory.LIFECYCLE
+        )
+        self.assertEqual(
+            categorize_event("startup_coins_unavailable"), EventCategory.LIFECYCLE
+        )
 
     def test_offer_events(self):
         self.assertEqual(categorize_event("offer_created"), EventCategory.OFFER)
@@ -26,17 +29,41 @@ class TestEventTaxonomy(unittest.TestCase):
     def test_pricing_events(self):
         self.assertEqual(categorize_event("price_found"), EventCategory.PRICING)
         self.assertEqual(categorize_event("no_price"), EventCategory.PRICING)
-        self.assertEqual(categorize_event("mempool_price_confirmed"), EventCategory.PRICING)
-        self.assertEqual(categorize_event("mempool_swap_detected"), EventCategory.PRICING)
-        self.assertEqual(categorize_event("mempool_preconfirm_cancel_below_trigger"), EventCategory.PRICING)
+        self.assertEqual(
+            categorize_event("mempool_price_confirmed"), EventCategory.PRICING
+        )
+        self.assertEqual(
+            categorize_event("mempool_swap_detected"), EventCategory.PRICING
+        )
+        self.assertEqual(
+            categorize_event("mempool_preconfirm_cancel_below_trigger"),
+            EventCategory.PRICING,
+        )
 
     def test_tibet_protection_offer_events(self):
-        self.assertEqual(categorize_event("defensive_cancel_start"), EventCategory.OFFER)
-        self.assertEqual(categorize_event("mempool_defensive_cancel_done"), EventCategory.OFFER)
-        self.assertEqual(categorize_event("mempool_preconfirm_defensive_cancel_done"), EventCategory.OFFER)
-        self.assertEqual(categorize_event("mempool_preconfirm_cancel_deferred_pending_cancel_settle"), EventCategory.OFFER)
-        self.assertEqual(categorize_event("emergency_requote_waiting_for_cancel_settle"), EventCategory.OFFER)
-        self.assertEqual(categorize_event("pending_cancel_settle_retry_queued"), EventCategory.OFFER)
+        self.assertEqual(
+            categorize_event("defensive_cancel_start"), EventCategory.OFFER
+        )
+        self.assertEqual(
+            categorize_event("mempool_defensive_cancel_done"), EventCategory.OFFER
+        )
+        self.assertEqual(
+            categorize_event("mempool_preconfirm_defensive_cancel_done"),
+            EventCategory.OFFER,
+        )
+        self.assertEqual(
+            categorize_event(
+                "mempool_preconfirm_cancel_deferred_pending_cancel_settle"
+            ),
+            EventCategory.OFFER,
+        )
+        self.assertEqual(
+            categorize_event("emergency_requote_waiting_for_cancel_settle"),
+            EventCategory.OFFER,
+        )
+        self.assertEqual(
+            categorize_event("pending_cancel_settle_retry_queued"), EventCategory.OFFER
+        )
 
     def test_wallet_events(self):
         self.assertEqual(categorize_event("wallet_sync"), EventCategory.WALLET)
@@ -59,7 +86,9 @@ class TestEventTaxonomy(unittest.TestCase):
         self.assertEqual(categorize_event("topup_trigger"), EventCategory.COIN)
 
     def test_unknown_event_defaults_to_system(self):
-        self.assertEqual(categorize_event("totally_unknown_event"), EventCategory.SYSTEM)
+        self.assertEqual(
+            categorize_event("totally_unknown_event"), EventCategory.SYSTEM
+        )
 
     def test_new_preflight_events_mapped(self):
         self.assertEqual(categorize_event("preflight_run"), EventCategory.LIFECYCLE)
@@ -71,7 +100,9 @@ class TestEventTaxonomy(unittest.TestCase):
         self.assertEqual(categorize_event("reservation_expired"), EventCategory.COIN)
 
     def test_offer_lifecycle_event_mapped(self):
-        self.assertEqual(categorize_event("offer_lifecycle_transition"), EventCategory.OFFER)
+        self.assertEqual(
+            categorize_event("offer_lifecycle_transition"), EventCategory.OFFER
+        )
 
     def test_get_category_map_returns_dict(self):
         m = get_category_map()

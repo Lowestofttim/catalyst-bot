@@ -32,14 +32,19 @@ def api_session_fresh_start():
         # next page load, even though the old live offers are still in Sage.
         # Cleared automatically when the bot starts a new run.
         api_server._fresh_start_set()
-        return jsonify({
-            "success": True,
-            "message": "Fresh run session started",
-            **api_server._serialize_dict(payload),
-        })
+        return jsonify(
+            {
+                "success": True,
+                "message": "Fresh run session started",
+                **api_server._serialize_dict(payload),
+            }
+        )
     except Exception as e:
-        log_event("warning", "session_fresh_start_failed",
-                  f"Failed to reset fresh run session: {e}")
+        log_event(
+            "warning",
+            "session_fresh_start_failed",
+            f"Failed to reset fresh run session: {e}",
+        )
         return api_server._api_exception(request.path)
 
 

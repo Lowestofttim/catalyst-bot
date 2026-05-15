@@ -37,17 +37,27 @@ from database import (
     update_offer_status,
     backfill_verified_fills_from_offers,
 )
+
 try:
     from database import get_offers_by_trade_ids
 except ImportError:
+
     def get_offers_by_trade_ids(trade_ids):
         del trade_ids
         return []
+
+
 try:
     from super_log import slog, log_thread_start
 except ImportError:
-    def slog(cat, msg, data=None): pass
-    def log_thread_start(name=None): pass
+
+    def slog(cat, msg, data=None):
+        pass
+
+    def log_thread_start(name=None):
+        pass
+
+
 from price_engine import PriceEngine
 from offer_manager import OfferManager
 from fill_tracker import FillTracker
@@ -65,6 +75,7 @@ from amm_monitor import AMMMonitor
 from splash_receive import classify_offer_for_asset
 from shock_protection import evaluate_tibet_shock
 from wallet import get_all_offers, get_chia_health
+
 try:
     import mempool_watcher as _mempool_watcher_mod
 except ImportError:
@@ -121,6 +132,7 @@ def _find_cat_deposit_for_position_delta(delta_cat, scale, baseline_at=0):
 
     try:
         from database import get_connection
+
         conn = get_connection()
         rows = conn.execute(
             "SELECT coin_id, amount_mojos, designation, first_seen "
@@ -177,7 +189,9 @@ def _find_cat_deposit_for_position_delta(delta_cat, scale, baseline_at=0):
     return None
 
 
-def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None, now_ts=None):
+def map_sage_terminal_offer_status(
+    status_val, sage_offer=None, local_offer=None, now_ts=None
+):
     """Map Sage terminal offer states onto the local offer status enum.
 
     The local SQLite schema only supports:
@@ -211,8 +225,7 @@ def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None
             pass
 
     valid_times = sage_offer.get("valid_times") or {}
-    max_time = (valid_times.get("max_time", 0) or
-               sage_offer.get("max_time", 0) or 0)
+    max_time = valid_times.get("max_time", 0) or sage_offer.get("max_time", 0) or 0
     if max_time:
         try:
             if int(max_time) <= now_ts:
@@ -230,10 +243,13 @@ def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None
         # 0 = pending, 1 = active/open — both return None (not terminal).
         # Anything else is an unknown future status code from Sage.
         if status_val not in {0, 1}:
-            log_event("warning", "sage_unknown_status_code",
-                      f"Unrecognised Sage offer status code {status_val!r} — "
-                      f"treating as active (not terminal). Sage API may have added "
-                      f"a new status. Update map_sage_terminal_offer_status.")
+            log_event(
+                "warning",
+                "sage_unknown_status_code",
+                f"Unrecognised Sage offer status code {status_val!r} — "
+                f"treating as active (not terminal). Sage API may have added "
+                f"a new status. Update map_sage_terminal_offer_status.",
+            )
         return None
 
     if status_text in {"EXPIRED"}:
@@ -248,9 +264,12 @@ def map_sage_terminal_offer_status(status_val, sage_offer=None, local_offer=None
     if status_text in {"ACTIVE", "OPEN", "PENDING", "SUBMITTED", ""}:
         return None
     # Truly unknown string status — log so we know to handle it
-    log_event("warning", "sage_unknown_status_str",
-              f"Unrecognised Sage offer status string {status_text!r} — "
-              f"treating as active (not terminal). Update map_sage_terminal_offer_status.")
+    log_event(
+        "warning",
+        "sage_unknown_status_str",
+        f"Unrecognised Sage offer status string {status_text!r} — "
+        f"treating as active (not terminal). Update map_sage_terminal_offer_status.",
+    )
     return None
 
 
@@ -279,7 +298,9 @@ def _extract_wallet_balance_or_defer(raw):
     if not isinstance(raw, dict):
         raise _ReserveCheckDeferred("balance result was not a dict")
     if raw.get("success") is False:
-        raise _ReserveCheckDeferred(f"balance RPC reported success=False: {raw.get('error')}")
+        raise _ReserveCheckDeferred(
+            f"balance RPC reported success=False: {raw.get('error')}"
+        )
     bal = raw.get("wallet_balance")
     if not bal:
         raise _ReserveCheckDeferred("balance result missing wallet_balance payload")
@@ -310,8 +331,7 @@ class BotLoop:
         self.coin_manager = CoinManager()
         self.coin_manager._price_engine = self.price_engine  # For CAT size derivation
         self.risk_manager = RiskManager(
-            price_engine=self.price_engine,
-            market_intel=self.market_intel
+            price_engine=self.price_engine, market_intel=self.market_intel
         )
         # F37 (2026-04-08): wire dexie_manager into risk_manager so the
         # volatility calculation can use real Dexie v3 historical_trades
@@ -327,7 +347,7 @@ class BotLoop:
         self.boost_manager = BoostManager(
             offer_manager=self.offer_manager,
             dexie_manager=self.dexie_manager,
-            risk_manager=self.risk_manager
+            risk_manager=self.risk_manager,
         )
         self.runtime_monitor = RuntimeMonitor(self)
         # AMM monitor — live TibetSwap reserve polling and drift detection
@@ -413,10 +433,12 @@ class BotLoop:
         # Both are stamped together on full rebuild (empty book) and
         # re-stamped when drift exceeds threshold triggers a realign.
         self._ladder_grid_mid: Dict[str, Decimal] = {
-            "buy": Decimal("0"), "sell": Decimal("0"),
+            "buy": Decimal("0"),
+            "sell": Decimal("0"),
         }
         self._ladder_anchor_plain_mid: Dict[str, Decimal] = {
-            "buy": Decimal("0"), "sell": Decimal("0"),
+            "buy": Decimal("0"),
+            "sell": Decimal("0"),
         }
         # Drift threshold in percent. 1.5% ≈ 150 bps — generous enough to
         # absorb normal noise, tight enough that a directional move forces
@@ -424,16 +446,25 @@ class BotLoop:
         self._ladder_anchor_drift_pct: Decimal = Decimal("1.5")
 
         # ---- Price tracking ----
-        self._last_quoted_price: Dict[str, Decimal] = {"buy": Decimal("0"), "sell": Decimal("0")}
+        self._last_quoted_price: Dict[str, Decimal] = {
+            "buy": Decimal("0"),
+            "sell": Decimal("0"),
+        }
         # F67: Un-anchored (plain) mid captured alongside probe-anchored
         # _last_quoted_price at ladder creation. When probes expire and
         # _clear_probe_side fires, the baseline snaps to this value to prevent
         # the dead probe offset from triggering a spurious requote.
-        self._last_quoted_plain_mid: Dict[str, Decimal] = {"buy": Decimal("0"), "sell": Decimal("0")}
+        self._last_quoted_plain_mid: Dict[str, Decimal] = {
+            "buy": Decimal("0"),
+            "sell": Decimal("0"),
+        }
         self._force_requote: Dict[str, bool] = {"buy": False, "sell": False}
-        self._requote_failure_backoff_until: Dict[str, float] = {"buy": 0.0, "sell": 0.0}
+        self._requote_failure_backoff_until: Dict[str, float] = {
+            "buy": 0.0,
+            "sell": 0.0,
+        }
         self._current_mid_price: Decimal = Decimal("0")
-        self._requoted_this_cycle: set = set()   # sides requoted in current cycle
+        self._requoted_this_cycle: set = set()  # sides requoted in current cycle
 
         # ---- Bot state (for GUI) ----
         self._bot_state: Dict = {
@@ -446,8 +477,8 @@ class BotLoop:
             "status": "stopped",
         }
         self._state_lock = threading.Lock()
-        self._probe_lock = threading.Lock()   # Protects _probe_state multi-key updates
-        self._ladder_threads: list = []       # Track active ladder-creation threads
+        self._probe_lock = threading.Lock()  # Protects _probe_state multi-key updates
+        self._ladder_threads: list = []  # Track active ladder-creation threads
 
         # ---- Event bus (set by api_server after creation) ----
         self._event_bus = None
@@ -463,7 +494,9 @@ class BotLoop:
         # Skip coin health checks during this window to avoid false topups.
         self._last_bulk_create_time: float = 0
         self._coin_settle_grace_secs: int = 90  # seconds to wait after bulk create
-        self._startup_coin_recheck_done: bool = False  # Re-check coins after wallet settles
+        self._startup_coin_recheck_done: bool = (
+            False  # Re-check coins after wallet settles
+        )
 
         # ---- Startup gate ----
         # Background threads wait on this before doing DB writes.
@@ -512,8 +545,8 @@ class BotLoop:
         self._health_check_interval: int = 15  # seconds between checks
         self._consecutive_unhealthy: int = 0
         self._last_auto_restart_time: float = 0
-        self._auto_restart_threshold: int = 300   # 5 min unhealthy → restart
-        self._auto_restart_cooldown: int = 1800   # 30 min between restarts
+        self._auto_restart_threshold: int = 300  # 5 min unhealthy → restart
+        self._auto_restart_cooldown: int = 1800  # 30 min between restarts
         self._chia_health: Dict = {
             "status": "unknown",
             "wallet_sync_state": "unknown",
@@ -550,14 +583,22 @@ class BotLoop:
         # ---- Coin watcher state (lifecycle tracking) ----
         self._coin_watcher_thread: Optional[threading.Thread] = None
         self._coin_watcher_lock = threading.Lock()
-        self._coin_watcher_interval: int = 30  # seconds between polls (reduced from 12s — read-only thread)
-        self._coin_snapshot: Dict[str, Dict] = {}  # {coin_id: {amount, status, wallet_type}}
+        self._coin_watcher_interval: int = (
+            30  # seconds between polls (reduced from 12s — read-only thread)
+        )
+        self._coin_snapshot: Dict[
+            str, Dict
+        ] = {}  # {coin_id: {amount, status, wallet_type}}
         self._coin_watcher_stale_log_last: float = 0
 
         # ---- Splash incoming watcher state ----
         self._splash_receive_thread: Optional[threading.Thread] = None
-        self._splash_receive_interval: int = max(2, int(getattr(cfg, "SPLASH_RECEIVE_POLL_SECS", 5) or 5))
-        self._splash_receive_batch_size: int = max(1, int(getattr(cfg, "SPLASH_RECEIVE_BATCH_SIZE", 10) or 10))
+        self._splash_receive_interval: int = max(
+            2, int(getattr(cfg, "SPLASH_RECEIVE_POLL_SECS", 5) or 5)
+        )
+        self._splash_receive_batch_size: int = max(
+            1, int(getattr(cfg, "SPLASH_RECEIVE_BATCH_SIZE", 10) or 10)
+        )
         self._splash_receive_parser_warned: bool = False
 
         # ---- Graceful migration state (V1 parity) ----
@@ -573,14 +614,14 @@ class BotLoop:
         # The sniper fires both sides near Tibet price, then we wait one loop
         # to see which offers survive. Main offers only deploy once probes confirm.
         self._probe_state: Dict = {
-            "active": False,          # True while probing
-            "buy_tid": None,          # trade_id of buy probe
-            "sell_tid": None,         # trade_id of sell probe
+            "active": False,  # True while probing
+            "buy_tid": None,  # trade_id of buy probe
+            "sell_tid": None,  # trade_id of sell probe
             "buy_price": Decimal("0"),
             "sell_price": Decimal("0"),
             "tibet_price": Decimal("0"),
-            "attempt": 0,             # retry count (widens buffer each time)
-            "max_attempts": 5,        # give up after 5 retries
+            "attempt": 0,  # retry count (widens buffer each time)
+            "max_attempts": 5,  # give up after 5 retries
             "confirmed_price": None,  # the mid price to use for main offers
             "confirmed_at": 0,
             "launched_at": 0,
@@ -721,7 +762,9 @@ class BotLoop:
             return 0.0
         return max(0.0, until - time.time())
 
-    def _set_requote_failure_backoff(self, side: str, reason: str, data: Optional[Dict] = None) -> None:
+    def _set_requote_failure_backoff(
+        self, side: str, reason: str, data: Optional[Dict] = None
+    ) -> None:
         try:
             base = float(getattr(cfg, "REQUOTE_FAILURE_BACKOFF_SECS", 0) or 0)
         except Exception:
@@ -767,14 +810,13 @@ class BotLoop:
                 requote_result.get(
                     "original_target_count",
                     requote_result.get("target_count", 0) or 0,
-                ) or 0
+                )
+                or 0
             )
             pending_cancel_count = int(
                 requote_result.get("pending_cancel_count", 0) or 0
             )
-            failed_cancel_count = int(
-                requote_result.get("failed_cancel_count", 0) or 0
-            )
+            failed_cancel_count = int(requote_result.get("failed_cancel_count", 0) or 0)
             fully_replaced = bool(requote_result.get("fully_replaced"))
             any_progress = replaced > 0 or len(new_offers) > 0
 
@@ -894,25 +936,38 @@ class BotLoop:
         if not callable(self._spacescan_context_getter):
             return health_data
         try:
-            asset_id  = str(getattr(cfg, "CAT_ASSET_ID",  "") or "").strip().lower()
-            ticker_id = str(getattr(cfg, "CAT_NAME", "") or
-                            getattr(cfg, "CAT_TICKER_ID", "") or "").strip().upper()
-            decimals  = int(getattr(cfg, "CAT_DECIMALS", 3) or 3)
+            asset_id = str(getattr(cfg, "CAT_ASSET_ID", "") or "").strip().lower()
+            ticker_id = (
+                str(
+                    getattr(cfg, "CAT_NAME", "")
+                    or getattr(cfg, "CAT_TICKER_ID", "")
+                    or ""
+                )
+                .strip()
+                .upper()
+            )
+            decimals = int(getattr(cfg, "CAT_DECIMALS", 3) or 3)
             mid_price = float(self._current_mid_price or 0)
             spacescan = self._spacescan_context_getter(
-                asset_id, ticker_id, decimals,
+                asset_id,
+                ticker_id,
+                decimals,
                 executable_mid_price=mid_price,
             )
             metrics = health_data.setdefault("metrics", {})
-            metrics["spacescan_enabled"]     = spacescan.get("enabled", False)
-            metrics["spacescan_has_data"]    = spacescan.get("has_data", False)
-            metrics["spacescan_holder_count"]= spacescan.get("holder_count", 0)
-            metrics["spacescan_activity_level"] = spacescan.get("activity_level", "unknown")
-            metrics["spacescan_risk_level"]  = spacescan.get("risk_level", "unknown")
+            metrics["spacescan_enabled"] = spacescan.get("enabled", False)
+            metrics["spacescan_has_data"] = spacescan.get("has_data", False)
+            metrics["spacescan_holder_count"] = spacescan.get("holder_count", 0)
+            metrics["spacescan_activity_level"] = spacescan.get(
+                "activity_level", "unknown"
+            )
+            metrics["spacescan_risk_level"] = spacescan.get("risk_level", "unknown")
             metrics["spacescan_price_gap_bps"] = str(spacescan.get("price_gap_bps", 0))
             # F40 (2026-04-08): expose supply + market-cap metrics so the
             # Advisor can warn about low-cap risk relative to trade size.
-            metrics["spacescan_circulating_supply"] = spacescan.get("circulating_supply", 0)
+            metrics["spacescan_circulating_supply"] = spacescan.get(
+                "circulating_supply", 0
+            )
             metrics["spacescan_total_supply"] = spacescan.get("total_supply", 0)
             metrics["spacescan_activity_count"] = spacescan.get("activity_count", 0)
             # Compute market cap in XCH = circulating_supply × current_mid_price
@@ -925,12 +980,22 @@ class BotLoop:
             except Exception:
                 metrics["market_cap_xch"] = 0
         except Exception as e:
-            log_event("debug", "spacescan_augment_failed",
-                      f"Spacescan health augment failed (non-critical): {e}")
+            log_event(
+                "debug",
+                "spacescan_augment_failed",
+                f"Spacescan health augment failed (non-critical): {e}",
+            )
         return health_data
 
-    def _emit_alert(self, alert_id: str, severity: str, title: str, message: str,
-                    action: str = None, action_label: str = None):
+    def _emit_alert(
+        self,
+        alert_id: str,
+        severity: str,
+        title: str,
+        message: str,
+        action: str = None,
+        action_label: str = None,
+    ):
         """Emit a persistent alert to the GUI.
 
         If the event bus itself throws (misconfigured alert_store, disk
@@ -942,15 +1007,21 @@ class BotLoop:
         """
         if self._event_bus:
             try:
-                self._event_bus.alert(alert_id, severity, title, message, action, action_label)
+                self._event_bus.alert(
+                    alert_id, severity, title, message, action, action_label
+                )
             except Exception as _alert_err:
                 try:
                     log_event(
-                        "warning", "alert_emit_failed",
+                        "warning",
+                        "alert_emit_failed",
                         f"Alert '{alert_id}' (sev={severity}) failed to emit: "
                         f"{_alert_err}. Title was: {title!r}",
-                        data={"alert_id": alert_id, "severity": severity,
-                              "title": title},
+                        data={
+                            "alert_id": alert_id,
+                            "severity": severity,
+                            "title": title,
+                        },
                     )
                 except Exception:
                     pass  # don't cascade a logging failure
@@ -959,12 +1030,13 @@ class BotLoop:
         """Clear a resolved alert."""
         if self._event_bus:
             try:
-                if hasattr(self._event_bus, '_alert_store'):
+                if hasattr(self._event_bus, "_alert_store"):
                     self._event_bus._alert_store.clear(alert_id)
             except Exception as _clear_err:
                 try:
                     log_event(
-                        "debug", "alert_clear_failed",
+                        "debug",
+                        "alert_clear_failed",
                         f"Alert '{alert_id}' failed to clear: {_clear_err}",
                         data={"alert_id": alert_id},
                     )
@@ -1019,8 +1091,8 @@ class BotLoop:
         now = time.time()
         try:
             cooldown = float(
-                getattr(cfg, "BOT_HEALTH_ANOMALY_LOG_COOLDOWN_SECS", 0) or
-                self._bot_health_anomaly_log_cooldown
+                getattr(cfg, "BOT_HEALTH_ANOMALY_LOG_COOLDOWN_SECS", 0)
+                or self._bot_health_anomaly_log_cooldown
             )
         except Exception:
             cooldown = self._bot_health_anomaly_log_cooldown
@@ -1086,6 +1158,7 @@ class BotLoop:
         if not known:
             try:
                 from database import get_tier_spare_counts
+
                 spares = dict(get_tier_spare_counts(wallet_type) or {})
                 known = True
             except Exception:
@@ -1112,7 +1185,10 @@ class BotLoop:
         side_norm = str(side or "").lower()
         if side_norm not in {"buy", "sell"}:
             return
-        opposite = str((pause or {}).get("opposite_side") or ("sell" if side_norm == "buy" else "buy"))
+        opposite = str(
+            (pause or {}).get("opposite_side")
+            or ("sell" if side_norm == "buy" else "buy")
+        )
         current = str((pause or {}).get("current_position_xch") or "?")
         limit = str((pause or {}).get("hard_limit_xch") or "?")
         self._emit_alert(
@@ -1178,8 +1254,7 @@ class BotLoop:
             return False
 
         summary = ", ".join(
-            f"{side} {info['active']}/{info['target']} "
-            f"with {info['spares']} spare"
+            f"{side} {info['active']}/{info['target']} with {info['spares']} spare"
             for side, info in deficits.items()
         )
         log_event(
@@ -1200,7 +1275,9 @@ class BotLoop:
         if self._offer_rebuild_deficits(active_buy_count, active_sell_count):
             return False
 
-        raw_wallet_types = getattr(self.coin_manager, "_topup_needed_wallet_types", None)
+        raw_wallet_types = getattr(
+            self.coin_manager, "_topup_needed_wallet_types", None
+        )
         if not raw_wallet_types:
             return False
         wallet_types = {
@@ -1275,13 +1352,18 @@ class BotLoop:
         try:
             now = time.time()
             last = self._last_adaptive_target_log.get(side_norm, {})
-            cooldown = float(getattr(cfg, "ADAPTIVE_LADDER_TARGET_LOG_COOLDOWN_SECS", 120) or 120)
+            cooldown = float(
+                getattr(cfg, "ADAPTIVE_LADDER_TARGET_LOG_COOLDOWN_SECS", 120) or 120
+            )
             if (
                 str(last.get("signature") or "") == signature
                 and now - float(last.get("at") or 0) < cooldown
             ):
                 return
-            self._last_adaptive_target_log[side_norm] = {"at": now, "signature": signature}
+            self._last_adaptive_target_log[side_norm] = {
+                "at": now,
+                "signature": signature,
+            }
         except Exception:
             pass
         reason = (
@@ -1318,11 +1400,19 @@ class BotLoop:
         """
         targets = self._get_expected_offer_targets(mid_price)
         try:
-            targets["buy"] = max(0, int(targets["buy"]) - int(self.offer_manager.get_suspended_slot_count("buy") or 0))
+            targets["buy"] = max(
+                0,
+                int(targets["buy"])
+                - int(self.offer_manager.get_suspended_slot_count("buy") or 0),
+            )
         except Exception:
             targets["buy"] = max(0, int(targets.get("buy", 0) or 0))
         try:
-            targets["sell"] = max(0, int(targets["sell"]) - int(self.offer_manager.get_suspended_slot_count("sell") or 0))
+            targets["sell"] = max(
+                0,
+                int(targets["sell"])
+                - int(self.offer_manager.get_suspended_slot_count("sell") or 0),
+            )
         except Exception:
             targets["sell"] = max(0, int(targets.get("sell", 0) or 0))
 
@@ -1346,7 +1436,9 @@ class BotLoop:
                 targets[side] = full_target
                 continue
             affordable_target = min(full_target, live_count + spare_count)
-            backoff_until = float(self._adaptive_target_backoff_until.get(side, 0.0) or 0.0)
+            backoff_until = float(
+                self._adaptive_target_backoff_until.get(side, 0.0) or 0.0
+            )
             backoff_remaining = max(0.0, backoff_until - now)
             if backoff_remaining > 0:
                 affordable_target = min(affordable_target, live_count)
@@ -1395,8 +1487,12 @@ class BotLoop:
         if not wallet_sync_fresh:
             return retired
         now = float(now_ts if now_ts is not None else time.time())
-        grace = max(15.0, float(getattr(cfg, "DB_ONLY_OFFER_CONFIRM_GRACE_SECS", 90) or 90))
-        retry_backoff = max(0.0, float(getattr(cfg, "DB_ONLY_OFFER_RETRY_BACKOFF_SECS", 300) or 300))
+        grace = max(
+            15.0, float(getattr(cfg, "DB_ONLY_OFFER_CONFIRM_GRACE_SECS", 90) or 90)
+        )
+        retry_backoff = max(
+            0.0, float(getattr(cfg, "DB_ONLY_OFFER_RETRY_BACKOFF_SECS", 300) or 300)
+        )
         side_rows = {
             "buy": (list(db_buy_offers or []), set(wallet_buy_ids or set())),
             "sell": (list(db_sell_offers or []), set(wallet_sell_ids or set())),
@@ -1433,8 +1529,12 @@ class BotLoop:
                     },
                 )
             if retired[side] and retry_backoff > 0:
-                current_until = float(self._adaptive_target_backoff_until.get(side, 0.0) or 0.0)
-                self._adaptive_target_backoff_until[side] = max(current_until, now + retry_backoff)
+                current_until = float(
+                    self._adaptive_target_backoff_until.get(side, 0.0) or 0.0
+                )
+                self._adaptive_target_backoff_until[side] = max(
+                    current_until, now + retry_backoff
+                )
         return retired
 
     def _enter_recovery_mode(self, reason: str, buy_deficit: int, sell_deficit: int):
@@ -1447,17 +1547,19 @@ class BotLoop:
             return
 
         now = time.time()
-        state.update({
-            "active": True,
-            "phase": "rebuilding",
-            "reason": reason,
-            "started_at": now,
-            "last_transition_at": now,
-            "entered_loop": int(self._loop_count),
-            "healthy_streak": 0,
-            "buy_deficit": int(buy_deficit),
-            "sell_deficit": int(sell_deficit),
-        })
+        state.update(
+            {
+                "active": True,
+                "phase": "rebuilding",
+                "reason": reason,
+                "started_at": now,
+                "last_transition_at": now,
+                "entered_loop": int(self._loop_count),
+                "healthy_streak": 0,
+                "buy_deficit": int(buy_deficit),
+                "sell_deficit": int(sell_deficit),
+            }
+        )
         self._set_state(status="recovering")
         # Recovery mode is a controlled rebuild state. The alert still makes
         # the state visible; the log line should read as progress, not failure.
@@ -1489,30 +1591,32 @@ class BotLoop:
             "recovery_mode_exit",
             f"Recovery mode cleared after {duration:.0f}s — main book is back on target.",
         )
-        state.update({
-            "active": False,
-            "phase": "idle",
-            "reason": "",
-            "started_at": 0.0,
-            "last_transition_at": time.time(),
-            "entered_loop": 0,
-            "under_target_streak": 0,
-            "wallet_stale_streak": 0,
-            "probe_churn_streak": 0,
-            "create_stall_streak": 0,
-            "healthy_streak": 0,
-            "buy_deficit": 0,
-            "sell_deficit": 0,
-            "cycle_probe_churn": False,
-            "cycle_create_stalled": False,
-        })
+        state.update(
+            {
+                "active": False,
+                "phase": "idle",
+                "reason": "",
+                "started_at": 0.0,
+                "last_transition_at": time.time(),
+                "entered_loop": 0,
+                "under_target_streak": 0,
+                "wallet_stale_streak": 0,
+                "probe_churn_streak": 0,
+                "create_stall_streak": 0,
+                "healthy_streak": 0,
+                "buy_deficit": 0,
+                "sell_deficit": 0,
+                "cycle_probe_churn": False,
+                "cycle_create_stalled": False,
+            }
+        )
         if self._running:
             self._set_state(status="running")
         self._clear_alert("bot_recovery")
 
-    def _evaluate_recovery_mode(self, mid_price: Decimal,
-                                current_buy_count: int,
-                                current_sell_count: int):
+    def _evaluate_recovery_mode(
+        self, mid_price: Decimal, current_buy_count: int, current_sell_count: int
+    ):
         """Enter or clear recovery mode based on persistent degraded state."""
         state = self._recovery_state
         targets = self._get_adaptive_offer_targets(
@@ -1520,8 +1624,12 @@ class BotLoop:
             current_buy_count=current_buy_count,
             current_sell_count=current_sell_count,
         )
-        buy_effective = int(current_buy_count) + int(self.offer_manager.get_recently_created_count("buy"))
-        sell_effective = int(current_sell_count) + int(self.offer_manager.get_recently_created_count("sell"))
+        buy_effective = int(current_buy_count) + int(
+            self.offer_manager.get_recently_created_count("buy")
+        )
+        sell_effective = int(current_sell_count) + int(
+            self.offer_manager.get_recently_created_count("sell")
+        )
         buy_deficit = max(0, int(targets["buy"]) - buy_effective)
         sell_deficit = max(0, int(targets["sell"]) - sell_effective)
         total_deficit = buy_deficit + sell_deficit
@@ -1541,19 +1649,21 @@ class BotLoop:
             state["book_ever_at_target"] = True
         state["wallet_stale_streak"] = (
             int(state.get("wallet_stale_streak", 0)) + 1
-            if self._wallet_sync_stale_cycle else 0
+            if self._wallet_sync_stale_cycle
+            else 0
         )
         state["under_target_streak"] = (
-            int(state.get("under_target_streak", 0)) + 1
-            if under_target else 0
+            int(state.get("under_target_streak", 0)) + 1 if under_target else 0
         )
         state["probe_churn_streak"] = (
             int(state.get("probe_churn_streak", 0)) + 1
-            if state.get("cycle_probe_churn") else 0
+            if state.get("cycle_probe_churn")
+            else 0
         )
         state["create_stall_streak"] = (
             int(state.get("create_stall_streak", 0)) + 1
-            if state.get("cycle_create_stalled") else 0
+            if state.get("cycle_create_stalled")
+            else 0
         )
 
         # Escalate if create-stall streak is very long — bot may be stuck.
@@ -1561,10 +1671,13 @@ class BotLoop:
         # to avoid spamming CRITICAL entries every 7.5 min during multi-hour stalls.
         _stall_streak = int(state.get("create_stall_streak", 0))
         if _stall_streak in (10, 20, 40, 80, 160, 320):
-            log_event("critical", "recovery_create_stall_escalation",
-                      f"Offer creation has been stalled for {_stall_streak} consecutive "
-                      f"recovery cycles — bot may be unable to rebuild the book. "
-                      f"Check wallet connectivity and coin inventory.")
+            log_event(
+                "critical",
+                "recovery_create_stall_escalation",
+                f"Offer creation has been stalled for {_stall_streak} consecutive "
+                f"recovery cycles — bot may be unable to rebuild the book. "
+                f"Check wallet connectivity and coin inventory.",
+            )
 
         reasons = []
         wallet_stale_recovery_relevant = under_target or state.get("active")
@@ -1575,15 +1688,28 @@ class BotLoop:
             reasons.append(
                 f"wallet offer sync has been stale for {state['wallet_stale_streak']} cycles"
             )
-        if under_target and state["under_target_streak"] >= self._recovery_under_target_cycles:
+        if (
+            under_target
+            and state["under_target_streak"] >= self._recovery_under_target_cycles
+        ):
             reasons.append(
                 f"book is still under target ({buy_effective}/{targets['buy']} buys, "
                 f"{sell_effective}/{targets['sell']} sells)"
             )
-        if under_target and state["probe_churn_streak"] >= self._recovery_probe_churn_cycles:
-            reasons.append("probe retries keep churning while the main ladder is under target")
-        if under_target and state["create_stall_streak"] >= self._recovery_create_stall_cycles:
-            reasons.append("offer creation is stalling while the book is trying to recover")
+        if (
+            under_target
+            and state["probe_churn_streak"] >= self._recovery_probe_churn_cycles
+        ):
+            reasons.append(
+                "probe retries keep churning while the main ladder is under target"
+            )
+        if (
+            under_target
+            and state["create_stall_streak"] >= self._recovery_create_stall_cycles
+        ):
+            reasons.append(
+                "offer creation is stalling while the book is trying to recover"
+            )
 
         if reasons:
             self._enter_recovery_mode("; ".join(reasons), buy_deficit, sell_deficit)
@@ -1676,8 +1802,12 @@ class BotLoop:
                     side_filter=blocked_side,
                 )
 
-            cancelled = sum(1 for item in result.values() if item and item.get("success"))
-            failed = sum(1 for item in result.values() if item and not item.get("success"))
+            cancelled = sum(
+                1 for item in result.values() if item and item.get("success")
+            )
+            failed = sum(
+                1 for item in result.values() if item and not item.get("success")
+            )
             log_event(
                 "warning",
                 "circuit_breaker_cancel_done",
@@ -1691,8 +1821,11 @@ class BotLoop:
                 self.coin_manager.snapshot_coins("circuit_breaker_cancel")
                 self._emit_coin_update("circuit_breaker_cancel")
             except Exception as e:
-                log_event("warning", "circuit_breaker_coin_snapshot_failed",
-                          f"Coin snapshot after circuit breaker cancel failed: {e}")
+                log_event(
+                    "warning",
+                    "circuit_breaker_coin_snapshot_failed",
+                    f"Coin snapshot after circuit breaker cancel failed: {e}",
+                )
         except Exception as e:
             # Cancel threw — don't mark as safed, retry on next cycle
             log_event(
@@ -1736,8 +1869,11 @@ class BotLoop:
             if anchored_mid > 0:
                 return anchored_mid
         except Exception as e:
-            log_event("debug", "probe_anchor_failed",
-                      f"Probe-anchored mid calculation failed (falling back to Tibet mid): {e}")
+            log_event(
+                "debug",
+                "probe_anchor_failed",
+                f"Probe-anchored mid calculation failed (falling back to Tibet mid): {e}",
+            )
         return fallback_mid
 
     def _clear_probe_side(self, side: str, trade_id: Optional[str] = None):
@@ -1778,18 +1914,28 @@ class BotLoop:
             if plain_mid > 0 and current_baseline != plain_mid:
                 self._last_quoted_price[side] = plain_mid
                 self._last_quoted_plain_mid[side] = Decimal("0")
-                log_event("info", "probe_baseline_snap",
-                          f"{side} baseline snapped to plain mid "
-                          f"({current_baseline:.8f} -> {plain_mid:.8f}) on probe clear; "
-                          f"ladder kept in place — refills will interpolate into the "
-                          f"existing tier band on next fill/expiry turnover")
+                log_event(
+                    "info",
+                    "probe_baseline_snap",
+                    f"{side} baseline snapped to plain mid "
+                    f"({current_baseline:.8f} -> {plain_mid:.8f}) on probe clear; "
+                    f"ladder kept in place — refills will interpolate into the "
+                    f"existing tier band on next fill/expiry turnover",
+                )
         except Exception as _e:
-            log_event("debug", "probe_baseline_snap_failed",
-                      f"Could not snap {side} baseline on probe clear: {_e}")
+            log_event(
+                "debug",
+                "probe_baseline_snap_failed",
+                f"Could not snap {side} baseline on probe clear: {_e}",
+            )
 
-    def _remember_probe_market_snapshot(self, mid_price: Decimal, arb_gap: Decimal,
-                                        tibet_price: Decimal = Decimal("0"),
-                                        reason: str = ""):
+    def _remember_probe_market_snapshot(
+        self,
+        mid_price: Decimal,
+        arb_gap: Decimal,
+        tibet_price: Decimal = Decimal("0"),
+        reason: str = "",
+    ):
         """Persist the market snapshot that justified the latest probe discovery."""
         probe = self._probe_state or {}
         probe["last_discovery_mid_price"] = Decimal(str(mid_price or 0))
@@ -1798,8 +1944,13 @@ class BotLoop:
         probe["last_discovery_reason"] = reason or ""
         probe["last_discovery_at"] = time.time()
 
-    def _get_sniper_launch_reason(self, mid_price: Decimal, arb_gap: Decimal,
-                                  current_buy_ids=None, current_sell_ids=None) -> Optional[str]:
+    def _get_sniper_launch_reason(
+        self,
+        mid_price: Decimal,
+        arb_gap: Decimal,
+        current_buy_ids=None,
+        current_sell_ids=None,
+    ) -> Optional[str]:
         """Return why a new sniper discovery probe is justified, or None."""
         current_buy_ids = set(current_buy_ids or set())
         current_sell_ids = set(current_sell_ids or set())
@@ -1821,9 +1972,7 @@ class BotLoop:
         )
 
         if last_mid > 0 and mid_price > 0 and price_threshold > 0:
-            price_move_bps = (
-                abs(mid_price - last_mid) / last_mid * Decimal("10000")
-            )
+            price_move_bps = abs(mid_price - last_mid) / last_mid * Decimal("10000")
             if price_move_bps >= price_threshold:
                 return (
                     f"price_move ({_bps_to_pct(price_move_bps)} >= "
@@ -1873,9 +2022,12 @@ class BotLoop:
 
         return None
 
-    def _get_market_aware_probe_prices(self, tibet_price: Decimal,
-                                       buffer_bps: Decimal,
-                                       offer_edges: Optional[Dict] = None) -> Dict[str, Decimal]:
+    def _get_market_aware_probe_prices(
+        self,
+        tibet_price: Decimal,
+        buffer_bps: Decimal,
+        offer_edges: Optional[Dict] = None,
+    ) -> Dict[str, Decimal]:
         """Derive probe prices from Tibet while nudging onto the live Dexie book."""
         result = {
             "buy_price": Decimal("0"),
@@ -1894,7 +2046,9 @@ class BotLoop:
         amm_safe_sell_floor = sell_price
 
         orderbook = {}
-        if getattr(self, "market_intel", None) and hasattr(self.market_intel, "refresh_orderbook"):
+        if getattr(self, "market_intel", None) and hasattr(
+            self.market_intel, "refresh_orderbook"
+        ):
             try:
                 orderbook = self.market_intel.refresh_orderbook(force=True) or {}
             except Exception:
@@ -1945,12 +2099,14 @@ class BotLoop:
         buy_price = min(buy_price, amm_safe_buy_ceiling)
         sell_price = max(sell_price, amm_safe_sell_floor)
 
-        result.update({
-            "buy_price": buy_price,
-            "sell_price": sell_price,
-            "overall_best_bid": overall_best_bid,
-            "overall_best_ask": overall_best_ask,
-        })
+        result.update(
+            {
+                "buy_price": buy_price,
+                "sell_price": sell_price,
+                "overall_best_bid": overall_best_bid,
+                "overall_best_ask": overall_best_ask,
+            }
+        )
         return result
 
     def _get_probe_price_boundary(self, side: str) -> Optional[Decimal]:
@@ -1979,8 +2135,9 @@ class BotLoop:
         except Exception:
             return None
 
-    def _apply_probe_retry_backoff(self, side: str, candidate_price: Decimal,
-                                   previous_price: Decimal) -> Decimal:
+    def _apply_probe_retry_backoff(
+        self, side: str, candidate_price: Decimal, previous_price: Decimal
+    ) -> Decimal:
         """Step a retried probe away from the previous edge after it gets taken."""
         try:
             candidate = Decimal(str(candidate_price or 0))
@@ -2002,8 +2159,9 @@ class BotLoop:
         except Exception:
             return Decimal(str(candidate_price or 0))
 
-    def _probe_hold_seconds_remaining(self, probe: Optional[Dict] = None,
-                                      now_ts: Optional[float] = None) -> float:
+    def _probe_hold_seconds_remaining(
+        self, probe: Optional[Dict] = None, now_ts: Optional[float] = None
+    ) -> float:
         """Return how much longer an active probe should sit before confirmation."""
         probe = probe or self._probe_state or {}
         confirm_secs = max(0, int(getattr(cfg, "SNIPER_CONFIRM_SECS", 30) or 0))
@@ -2026,13 +2184,17 @@ class BotLoop:
 
         def _trade_id(offer: Dict) -> str:
             try:
-                return str((offer or {}).get("trade_id") or (offer or {}).get("offer_id") or "")
+                return str(
+                    (offer or {}).get("trade_id") or (offer or {}).get("offer_id") or ""
+                )
             except Exception:
                 return ""
 
         live_trade_ids = [
             tid
-            for tid in (_trade_id(o) for o in list(open_buys or []) + list(open_sells or []))
+            for tid in (
+                _trade_id(o) for o in list(open_buys or []) + list(open_sells or [])
+            )
             if tid
         ]
         db_by_trade_id = {}
@@ -2057,8 +2219,12 @@ class BotLoop:
                 # the wallet just confirmed live so stale DB rows cannot widen
                 # the displayed inner spread by themselves.
                 if db_offer and str(db_offer.get("side") or "").lower() == side:
-                    raw_values.append(db_offer.get("price_xch") or db_offer.get("price"))
-                raw_values.append((offer or {}).get("price_xch") or (offer or {}).get("price"))
+                    raw_values.append(
+                        db_offer.get("price_xch") or db_offer.get("price")
+                    )
+                raw_values.append(
+                    (offer or {}).get("price_xch") or (offer or {}).get("price")
+                )
                 for raw in raw_values:
                     try:
                         price = Decimal(str(raw or 0))
@@ -2141,14 +2307,18 @@ class BotLoop:
 
         return protected
 
-    def _clear_adaptive_target_backoff_for_confirmed_fills(self, buy_fills, sell_fills) -> None:
+    def _clear_adaptive_target_backoff_for_confirmed_fills(
+        self, buy_fills, sell_fills
+    ) -> None:
         """Let verified fills rebuild after sweep protection instead of DB-only retry backoff."""
         cleared = []
         now_ts = time.time()
         for side, fills in (("buy", buy_fills or []), ("sell", sell_fills or [])):
             if not fills:
                 continue
-            backoff_until = float(self._adaptive_target_backoff_until.get(side, 0.0) or 0.0)
+            backoff_until = float(
+                self._adaptive_target_backoff_until.get(side, 0.0) or 0.0
+            )
             if backoff_until <= 0:
                 continue
             self._adaptive_target_backoff_until[side] = 0.0
@@ -2176,13 +2346,15 @@ class BotLoop:
                 },
             )
 
-    def _probe_has_matured(self, probe: Optional[Dict] = None,
-                           now_ts: Optional[float] = None) -> bool:
+    def _probe_has_matured(
+        self, probe: Optional[Dict] = None, now_ts: Optional[float] = None
+    ) -> bool:
         """True once a probe pair has survived for the minimum hold time."""
         return self._probe_hold_seconds_remaining(probe, now_ts) <= 0
 
-    def _probe_cleanup_seconds_remaining(self, probe: Optional[Dict] = None,
-                                         now_ts: Optional[float] = None) -> float:
+    def _probe_cleanup_seconds_remaining(
+        self, probe: Optional[Dict] = None, now_ts: Optional[float] = None
+    ) -> float:
         """Return how much longer confirmed probes should linger before cleanup."""
         probe = probe or self._probe_state or {}
         linger_secs = max(0, int(getattr(cfg, "SNIPER_LINGER_SECS", 600) or 0))
@@ -2199,8 +2371,9 @@ class BotLoop:
         age = max(0.0, now_ts - anchor_at)
         return max(0.0, float(linger_secs) - age)
 
-    def _classify_probe_offer(self, side: str, trade_id: Optional[str],
-                              open_ids) -> Dict:
+    def _classify_probe_offer(
+        self, side: str, trade_id: Optional[str], open_ids
+    ) -> Dict:
         """Classify a probe using both wallet visibility and Dexie state."""
         open_ids = set(open_ids or set())
         wallet_alive = bool(trade_id and trade_id in open_ids)
@@ -2216,10 +2389,12 @@ class BotLoop:
             "dexie_status": None,
         }
         if not trade_id:
-            state.update({
-                "confirmable": False,
-                "reason": "not_placed",
-            })
+            state.update(
+                {
+                    "confirmable": False,
+                    "reason": "not_placed",
+                }
+            )
             return state
 
         if not bool(getattr(cfg, "DEXIE_AUTO_POST", True)):
@@ -2234,11 +2409,13 @@ class BotLoop:
 
         if not dexie_id:
             if wallet_alive:
-                state.update({
-                    "confirmable": False,
-                    "unverified": True,
-                    "reason": "dexie_id_missing",
-                })
+                state.update(
+                    {
+                        "confirmable": False,
+                        "unverified": True,
+                        "reason": "dexie_id_missing",
+                    }
+                )
             return state
 
         state["dexie_id"] = dexie_id
@@ -2257,11 +2434,13 @@ class BotLoop:
 
         if not isinstance(dexie_offer, dict):
             if wallet_alive:
-                state.update({
-                    "confirmable": False,
-                    "unverified": True,
-                    "reason": "dexie_unreachable",
-                })
+                state.update(
+                    {
+                        "confirmable": False,
+                        "unverified": True,
+                        "reason": "dexie_unreachable",
+                    }
+                )
             return state
 
         raw_status = dexie_offer.get("status")
@@ -2272,34 +2451,49 @@ class BotLoop:
         state["dexie_status"] = status
 
         if status == DEXIE_STATUS_ACTIVE:
-            state.update({
-                "confirmable": wallet_alive,
-                "unverified": not wallet_alive,
-                "reason": "dexie_active" if wallet_alive else "wallet_missing_dexie_active",
-            })
+            state.update(
+                {
+                    "confirmable": wallet_alive,
+                    "unverified": not wallet_alive,
+                    "reason": "dexie_active"
+                    if wallet_alive
+                    else "wallet_missing_dexie_active",
+                }
+            )
         elif status in (DEXIE_STATUS_PENDING, DEXIE_STATUS_COMPLETED):
-            state.update({
-                "confirmable": False,
-                "taken": True,
-                "unverified": False,
-                "reason": "dexie_pending" if status == DEXIE_STATUS_PENDING else "dexie_completed",
-            })
+            state.update(
+                {
+                    "confirmable": False,
+                    "taken": True,
+                    "unverified": False,
+                    "reason": "dexie_pending"
+                    if status == DEXIE_STATUS_PENDING
+                    else "dexie_completed",
+                }
+            )
         elif status in (DEXIE_STATUS_CANCELLED, DEXIE_STATUS_EXPIRED):
-            state.update({
-                "confirmable": False,
-                "unverified": False,
-                "reason": "dexie_cancelled" if status == DEXIE_STATUS_CANCELLED else "dexie_expired",
-            })
+            state.update(
+                {
+                    "confirmable": False,
+                    "unverified": False,
+                    "reason": "dexie_cancelled"
+                    if status == DEXIE_STATUS_CANCELLED
+                    else "dexie_expired",
+                }
+            )
         else:
-            state.update({
-                "confirmable": False,
-                "unverified": wallet_alive,
-                "reason": f"dexie_status_{status}",
-            })
+            state.update(
+                {
+                    "confirmable": False,
+                    "unverified": wallet_alive,
+                    "reason": f"dexie_status_{status}",
+                }
+            )
         return state
 
-    def _confirmed_probe_slot_offsets(self, current_buy_ids=None,
-                                      current_sell_ids=None) -> Dict[str, int]:
+    def _confirmed_probe_slot_offsets(
+        self, current_buy_ids=None, current_sell_ids=None
+    ) -> Dict[str, int]:
         """Exclude lingering confirmed probes from the main ladder slot count."""
         probe = self._probe_state or {}
         if probe.get("active", False):
@@ -2331,7 +2525,9 @@ class BotLoop:
 
             summary = offer.get("summary") or {}
             offered = {str(k).lower() for k in (summary.get("offered") or {}).keys()}
-            requested = {str(k).lower() for k in (summary.get("requested") or {}).keys()}
+            requested = {
+                str(k).lower() for k in (summary.get("requested") or {}).keys()
+            }
 
             if "xch" in offered and asset_id in requested:
                 buy_ids.add(trade_id)
@@ -2340,7 +2536,9 @@ class BotLoop:
 
         return buy_ids, sell_ids
 
-    def _refresh_live_offer_ids_from_wallet(self, current_buy_ids=None, current_sell_ids=None):
+    def _refresh_live_offer_ids_from_wallet(
+        self, current_buy_ids=None, current_sell_ids=None
+    ):
         """Lightweight wallet refresh for probe monitoring without a full cycle sync."""
         current_buy_ids = set(current_buy_ids or set())
         current_sell_ids = set(current_sell_ids or set())
@@ -2355,15 +2553,21 @@ class BotLoop:
             self.offer_manager.clean_visible_recently_created(all_open_ids)
             self.sniper.prune_active_snipes(all_open_ids)
             self.boost_manager.prune_active_boosts(all_open_ids)
-            self._set_state(open_buys=len(current_buy_ids), open_sells=len(current_sell_ids))
+            self._set_state(
+                open_buys=len(current_buy_ids), open_sells=len(current_sell_ids)
+            )
         except Exception as e:
-            log_event("debug", "probe_wallet_poll_failed",
-                      f"Fast probe wallet poll failed: {e}")
+            log_event(
+                "debug",
+                "probe_wallet_poll_failed",
+                f"Fast probe wallet poll failed: {e}",
+            )
 
         return current_buy_ids, current_sell_ids
 
-    def _watch_active_probe_window(self, current_buy_ids=None, current_sell_ids=None,
-                                   force_refresh: bool = False):
+    def _watch_active_probe_window(
+        self, current_buy_ids=None, current_sell_ids=None, force_refresh: bool = False
+    ):
         """Poll wallet offers quickly while a probe is active so confirmation is real-time-ish."""
         current_buy_ids = set(current_buy_ids or set())
         current_sell_ids = set(current_sell_ids or set())
@@ -2376,9 +2580,11 @@ class BotLoop:
 
         while self._running and self._probe_state.get("active", False):
             if force_refresh or not first_pass:
-                current_buy_ids, current_sell_ids = self._refresh_live_offer_ids_from_wallet(
-                    current_buy_ids,
-                    current_sell_ids,
+                current_buy_ids, current_sell_ids = (
+                    self._refresh_live_offer_ids_from_wallet(
+                        current_buy_ids,
+                        current_sell_ids,
+                    )
                 )
                 force_refresh = False
 
@@ -2404,10 +2610,18 @@ class BotLoop:
             if probe_taken:
                 break
 
-            probe_age = max(0.0, time.time() - float(probe.get("launched_at") or time.time()))
+            probe_age = max(
+                0.0, time.time() - float(probe.get("launched_at") or time.time())
+            )
             # Only wait for visibility if at least one expected probe isn't visible yet
-            if (buy_tid or sell_tid) and probe_age < visibility_grace and not all_expected_alive:
-                time.sleep(min(float(poll_secs), max(0.0, visibility_grace - probe_age)))
+            if (
+                (buy_tid or sell_tid)
+                and probe_age < visibility_grace
+                and not all_expected_alive
+            ):
+                time.sleep(
+                    min(float(poll_secs), max(0.0, visibility_grace - probe_age))
+                )
                 first_pass = False
                 continue
 
@@ -2415,9 +2629,12 @@ class BotLoop:
 
         return current_buy_ids, current_sell_ids
 
-    def _revalidate_confirmed_probe_edges(self, current_buy_ids=None,
-                                          current_sell_ids=None,
-                                          arb_gap: Decimal = Decimal("0")):
+    def _revalidate_confirmed_probe_edges(
+        self,
+        current_buy_ids=None,
+        current_sell_ids=None,
+        arb_gap: Decimal = Decimal("0"),
+    ):
         """Before building the main ladder, make sure confirmed probe edges still exist."""
         current_buy_ids = set(current_buy_ids or set())
         current_sell_ids = set(current_sell_ids or set())
@@ -2435,9 +2652,11 @@ class BotLoop:
             return current_buy_ids, current_sell_ids, False
 
         if self._running:
-            current_buy_ids, current_sell_ids = self._refresh_live_offer_ids_from_wallet(
-                current_buy_ids,
-                current_sell_ids,
+            current_buy_ids, current_sell_ids = (
+                self._refresh_live_offer_ids_from_wallet(
+                    current_buy_ids,
+                    current_sell_ids,
+                )
             )
         open_ids = current_buy_ids | current_sell_ids
         buy_state = self._classify_probe_offer("buy", buy_tid, open_ids)
@@ -2486,9 +2705,13 @@ class BotLoop:
             True,
         )
 
-    def _process_active_probe(self, current_buy_ids=None, current_sell_ids=None,
-                              arb_gap: Decimal = Decimal("0"),
-                              force_refresh: bool = False):
+    def _process_active_probe(
+        self,
+        current_buy_ids=None,
+        current_sell_ids=None,
+        arb_gap: Decimal = Decimal("0"),
+        force_refresh: bool = False,
+    ):
         """Handle active-probe confirmation/retry logic using fast wallet polling."""
         current_buy_ids = set(current_buy_ids or set())
         current_sell_ids = set(current_sell_ids or set())
@@ -2525,7 +2748,9 @@ class BotLoop:
             if remaining_hold > 0:
                 last_notice_at = float(probe.get("last_wait_log_at") or 0)
                 if (now_ts - last_notice_at) >= 5:
-                    probe_age = max(0.0, now_ts - float(probe.get("launched_at") or now_ts))
+                    probe_age = max(
+                        0.0, now_ts - float(probe.get("launched_at") or now_ts)
+                    )
                     log_event(
                         "info",
                         "probe_hold_wait",
@@ -2533,8 +2758,11 @@ class BotLoop:
                         f"{remaining_hold:.1f}s more before confirming",
                     )
                     probe["last_wait_log_at"] = now_ts
-                log_event("debug", "probe_hold_status",
-                          "Probe pair still aging before main ladder deploy")
+                log_event(
+                    "debug",
+                    "probe_hold_status",
+                    "Probe pair still aging before main ladder deploy",
+                )
             else:
                 probe["confirmed_price"] = probe["tibet_price"]
                 probe["confirmed_at"] = now_ts
@@ -2542,23 +2770,29 @@ class BotLoop:
                 self._current_mid_price = probe["tibet_price"]
                 self._set_state(mid_price=str(probe["tibet_price"]))
                 linger_secs = int(getattr(cfg, "SNIPER_LINGER_SECS", 600) or 0)
-                _probe_desc = "Both probes survived" if sell_required else "Buy probe survived (sell probe not placed — sniper single-sided or no CAT sniper coins)"
-                log_event("info", "probe_confirmed",
-                          f"{_probe_desc} - price confirmed at Tibet "
-                          f"{probe['tibet_price']:.8f}. Keeping probes live for "
-                          f"{linger_secs}s while building main offers behind them.")
-                log_event("info", "probe_confirmed_status",
-                          "Price confirmed - deploying main offers behind live probes")
+                _probe_desc = (
+                    "Both probes survived"
+                    if sell_required
+                    else "Buy probe survived (sell probe not placed — sniper single-sided or no CAT sniper coins)"
+                )
+                log_event(
+                    "info",
+                    "probe_confirmed",
+                    f"{_probe_desc} - price confirmed at Tibet "
+                    f"{probe['tibet_price']:.8f}. Keeping probes live for "
+                    f"{linger_secs}s while building main offers behind them.",
+                )
+                log_event(
+                    "info",
+                    "probe_confirmed_status",
+                    "Price confirmed - deploying main offers behind live probes",
+                )
                 self._clear_alert("probe_status")
         else:
             active_states = [buy_state]
             if sell_required:
                 active_states.append(sell_state)
-            taken_state_sides = [
-                s.get("side")
-                for s in active_states
-                if s.get("taken")
-            ]
+            taken_state_sides = [s.get("side") for s in active_states if s.get("taken")]
             unverified_sides = [
                 f"{s.get('side')}:{s.get('reason', 'unverified')}"
                 for s in active_states
@@ -2575,8 +2809,11 @@ class BotLoop:
                         "main ladder deploy",
                     )
                     probe["last_wait_log_at"] = now_ts
-                log_event("debug", "probe_hold_status",
-                          "Probe pair still awaiting Dexie verification")
+                log_event(
+                    "debug",
+                    "probe_hold_status",
+                    "Probe pair still awaiting Dexie verification",
+                )
                 return {
                     "buy_ids": current_buy_ids,
                     "sell_ids": current_sell_ids,
@@ -2586,9 +2823,16 @@ class BotLoop:
             poll_secs = max(1, int(getattr(cfg, "SNIPER_POLL_SECS", 5) or 5))
             visibility_grace = max(float(poll_secs), 10.0)
             probe_age = max(0.0, now_ts - float(probe.get("launched_at") or now_ts))
-            if not taken_state_sides and probe_age < visibility_grace and (buy_tid or sell_tid):
-                log_event("debug", "probe_visibility_wait",
-                          f"Probe offers not fully visible yet ({probe_age:.1f}s old) - waiting")
+            if (
+                not taken_state_sides
+                and probe_age < visibility_grace
+                and (buy_tid or sell_tid)
+            ):
+                log_event(
+                    "debug",
+                    "probe_visibility_wait",
+                    f"Probe offers not fully visible yet ({probe_age:.1f}s old) - waiting",
+                )
             else:
                 # ----------------------------------------------------------
                 # PROBE-FILL = BOUNDARY NOT FOUND — widen and retry
@@ -2646,12 +2890,18 @@ class BotLoop:
                         offer_edges=self._last_live_offer_edges,
                     )
 
-                    log_event("info", "probe_retry",
-                              f"Probe attempt {attempt}: {'+'.join(taken_sides) or 'none visible'} "
-                              f"taken (arb gap {_bps_to_pct(arb_gap_bps_float)}) — safe edge "
-                              f"not found, widening buffer to {_bps_to_pct(adjusted_buffer)}")
-                    log_event("info", "probe_retry_status",
-                              f"Probe retry {attempt} - widening spread to find safe edge")
+                    log_event(
+                        "info",
+                        "probe_retry",
+                        f"Probe attempt {attempt}: {'+'.join(taken_sides) or 'none visible'} "
+                        f"taken (arb gap {_bps_to_pct(arb_gap_bps_float)}) — safe edge "
+                        f"not found, widening buffer to {_bps_to_pct(adjusted_buffer)}",
+                    )
+                    log_event(
+                        "info",
+                        "probe_retry_status",
+                        f"Probe retry {attempt} - widening spread to find safe edge",
+                    )
                     self._clear_alert("probe_status")
 
                     new_sell_price = self._apply_probe_retry_backoff(
@@ -2679,11 +2929,13 @@ class BotLoop:
                     if (sell_tid and not sell_alive) or not sell_tid:
                         self.sniper._last_snipe_time = 0
                         sell_results = self.sniper.try_snipe_single(
-                            "sell", new_sell_price, arb_gap)
+                            "sell", new_sell_price, arb_gap
+                        )
                     if (buy_tid and not buy_alive) or not buy_tid:
                         self.sniper._last_snipe_time = 0
                         buy_results = self.sniper.try_snipe_single(
-                            "buy", new_buy_price, arb_gap)
+                            "buy", new_buy_price, arb_gap
+                        )
 
                     probe["attempt"] = attempt
                     if sell_results:
@@ -2719,24 +2971,30 @@ class BotLoop:
             inv = status.get("inventory") or {}
             tier_counts = get_live_tier_group_counts()
             tier_counts["enabled"] = bool(inv.get("tier_enabled"))
-            self._emit("coin_update", {
-                "reason": reason,
-                "xch_free": status.get("xch_coins", 0),
-                "xch_locked": status.get("xch_locked_coins", 0),
-                "xch_total": status.get("xch_total_coins", 0),
-                "cat_free": status.get("cat_coins", 0),
-                "cat_locked": status.get("cat_locked_coins", 0),
-                "cat_total": status.get("cat_total_coins", 0),
-                "xch_locked_amount": inv.get("xch_locked_amount", "0"),
-                "cat_locked_amount": inv.get("cat_locked_amount", "0"),
-                "xch_topup_pool_amount": inv.get("xch_reserve_total", "0"),
-                "cat_topup_pool_amount": inv.get("cat_reserve_total", "0"),
-                "tier_counts": tier_counts,
-            })
+            self._emit(
+                "coin_update",
+                {
+                    "reason": reason,
+                    "xch_free": status.get("xch_coins", 0),
+                    "xch_locked": status.get("xch_locked_coins", 0),
+                    "xch_total": status.get("xch_total_coins", 0),
+                    "cat_free": status.get("cat_coins", 0),
+                    "cat_locked": status.get("cat_locked_coins", 0),
+                    "cat_total": status.get("cat_total_coins", 0),
+                    "xch_locked_amount": inv.get("xch_locked_amount", "0"),
+                    "cat_locked_amount": inv.get("cat_locked_amount", "0"),
+                    "xch_topup_pool_amount": inv.get("xch_reserve_total", "0"),
+                    "cat_topup_pool_amount": inv.get("cat_reserve_total", "0"),
+                    "tier_counts": tier_counts,
+                },
+            )
         except Exception as e:
             # Non-critical GUI update — log at debug so it's findable but doesn't alarm
-            log_event("debug", "coin_update_event_failed",
-                      f"Coin update GUI event failed (non-critical): {e}")
+            log_event(
+                "debug",
+                "coin_update_event_failed",
+                f"Coin update GUI event failed (non-critical): {e}",
+            )
 
     def _try_start_mempool_watcher(self, *, log_skip: bool = False) -> bool:
         """F78 (2026-04-17): attempt to start the mempool watcher.
@@ -2748,9 +3006,11 @@ class BotLoop:
         Returns True on successful start or when already running;
         False when it couldn't start (caller should retry next cycle).
         """
-        if not (_mempool_watcher_mod
-                and getattr(cfg, "COINSET_ENABLED", True)
-                and cfg.CAT_ASSET_ID):
+        if not (
+            _mempool_watcher_mod
+            and getattr(cfg, "COINSET_ENABLED", True)
+            and cfg.CAT_ASSET_ID
+        ):
             return False
         # Already running?
         try:
@@ -2763,14 +3023,18 @@ class BotLoop:
             pair_id = getattr(cfg, "_cached_tibet_pair_id", "") or ""
             if not pair_id:
                 from price_engine import PriceEngine as _PE
+
                 _tmp_pe = _PE()
                 _tmp_pair = _tmp_pe._find_tibet_pair(cfg.CAT_ASSET_ID) or {}
                 pair_id = _tmp_pair.get("pair_id", "")
             if not pair_id:
                 if log_skip:
-                    log_event("info", "mempool_watcher_deferred",
-                              "Mempool watcher deferred — TibetSwap pair_id "
-                              "not resolved yet; will retry on next cycle")
+                    log_event(
+                        "info",
+                        "mempool_watcher_deferred",
+                        "Mempool watcher deferred — TibetSwap pair_id "
+                        "not resolved yet; will retry on next cycle",
+                    )
                 return False
             _mempool_watcher_mod.start_watcher(
                 pair_id=pair_id,
@@ -2778,13 +3042,19 @@ class BotLoop:
                 cat_decimals=int(getattr(cfg, "CAT_DECIMALS", 3) or 3),
                 wake_callback=self._watcher_event.set,
             )
-            log_event("info", "mempool_watcher_init",
-                      f"Mempool watcher started (pair {pair_id[:16]}...)")
+            log_event(
+                "info",
+                "mempool_watcher_init",
+                f"Mempool watcher started (pair {pair_id[:16]}...)",
+            )
             return True
         except Exception as _mw_err:
             if log_skip:
-                log_event("warning", "mempool_watcher_skip",
-                          f"Mempool watcher could not start: {_mw_err}")
+                log_event(
+                    "warning",
+                    "mempool_watcher_skip",
+                    f"Mempool watcher could not start: {_mw_err}",
+                )
             return False
 
     def _run_ladder_watchdog(self) -> None:
@@ -2802,8 +3072,11 @@ class BotLoop:
             from ladder_watchdog import run_periodic_audit, Severity
             from database import get_open_offers, get_locked_coins
         except Exception as _imp_err:
-            log_event("debug", "watchdog_import_failed",
-                      f"Watchdog import failed (non-fatal): {_imp_err}")
+            log_event(
+                "debug",
+                "watchdog_import_failed",
+                f"Watchdog import failed (non-fatal): {_imp_err}",
+            )
             return
 
         # Pull current open offers from DB (authoritative for live book).
@@ -2834,12 +3107,14 @@ class BotLoop:
                     s = r.get("size_xch")
                     if p is None or s is None:
                         continue
-                    out.append({
-                        "price": p,
-                        "size_xch": Decimal(str(s)),
-                        "trade_id": r.get("trade_id") or "",
-                        "tier": tier,
-                    })
+                    out.append(
+                        {
+                            "price": p,
+                            "size_xch": Decimal(str(s)),
+                            "trade_id": r.get("trade_id") or "",
+                            "tier": tier,
+                        }
+                    )
                 except Exception:
                     continue
             return out
@@ -2850,7 +3125,8 @@ class BotLoop:
         # Build per-side tier config from cfg.
         try:
             from config import (
-                get_buy_tier_size_xch, get_sell_tier_size_xch,
+                get_buy_tier_size_xch,
+                get_sell_tier_size_xch,
             )
         except Exception:
             return
@@ -2867,13 +3143,13 @@ class BotLoop:
         sell_sizes = _tier_sizes("sell")
         buy_counts = {
             "inner": int(getattr(cfg, "BUY_INNER_TIER_COUNT", 0) or 0),
-            "mid":   int(getattr(cfg, "BUY_MID_TIER_COUNT", 0) or 0),
+            "mid": int(getattr(cfg, "BUY_MID_TIER_COUNT", 0) or 0),
             "outer": int(getattr(cfg, "BUY_OUTER_TIER_COUNT", 0) or 0),
             "extreme": int(getattr(cfg, "BUY_EXTREME_TIER_COUNT", 0) or 0),
         }
         sell_counts = {
             "inner": int(getattr(cfg, "SELL_INNER_TIER_COUNT", 0) or 0),
-            "mid":   int(getattr(cfg, "SELL_MID_TIER_COUNT", 0) or 0),
+            "mid": int(getattr(cfg, "SELL_MID_TIER_COUNT", 0) or 0),
             "outer": int(getattr(cfg, "SELL_OUTER_TIER_COUNT", 0) or 0),
             "extreme": int(getattr(cfg, "SELL_EXTREME_TIER_COUNT", 0) or 0),
         }
@@ -2881,7 +3157,7 @@ class BotLoop:
         if sum(buy_counts.values()) == 0:
             buy_counts = {
                 "inner": int(getattr(cfg, "INNER_TIER_COUNT", 10) or 0),
-                "mid":   int(getattr(cfg, "MID_TIER_COUNT", 5) or 0),
+                "mid": int(getattr(cfg, "MID_TIER_COUNT", 5) or 0),
                 "outer": int(getattr(cfg, "OUTER_TIER_COUNT", 3) or 0),
                 "extreme": int(getattr(cfg, "EXTREME_TIER_COUNT", 2) or 0),
             }
@@ -2951,7 +3227,9 @@ class BotLoop:
         _now = time.time()
         try:
             last_fill_buy = float(self.fill_tracker._last_fill_time.get("buy", 0) or 0)
-            last_fill_sell = float(self.fill_tracker._last_fill_time.get("sell", 0) or 0)
+            last_fill_sell = float(
+                self.fill_tracker._last_fill_time.get("sell", 0) or 0
+            )
         except Exception:
             last_fill_buy = last_fill_sell = 0.0
         _last_fill = max(last_fill_buy, last_fill_sell)
@@ -2960,11 +3238,14 @@ class BotLoop:
             and (_now - _last_fill) < self._watchdog_post_fill_cooldown_secs
         )
         if _in_post_fill_window:
-            log_event("debug", "watchdog_post_fill_skip",
-                      f"Watchdog skipped: in post-fill refill window "
-                      f"({int(_now - _last_fill)}s since last fill, "
-                      f"cooldown {int(self._watchdog_post_fill_cooldown_secs)}s). "
-                      f"Refill cycle will realign the ladder.")
+            log_event(
+                "debug",
+                "watchdog_post_fill_skip",
+                f"Watchdog skipped: in post-fill refill window "
+                f"({int(_now - _last_fill)}s since last fill, "
+                f"cooldown {int(self._watchdog_post_fill_cooldown_secs)}s). "
+                f"Refill cycle will realign the ladder.",
+            )
             return
 
         issues = run_periodic_audit(
@@ -3023,27 +3304,36 @@ class BotLoop:
             if new_streak < self._watchdog_persistence_threshold:
                 # First observation — likely a transient refill artefact.
                 # Log at debug level and do NOT raise an operator alert.
-                log_event("debug", f"watchdog_{issue.code}_pending",
-                          f"{issue.message} (first observation, streak "
-                          f"{new_streak}/{self._watchdog_persistence_threshold} "
-                          f"— will warn if it persists)",
-                          data=issue.details)
+                log_event(
+                    "debug",
+                    f"watchdog_{issue.code}_pending",
+                    f"{issue.message} (first observation, streak "
+                    f"{new_streak}/{self._watchdog_persistence_threshold} "
+                    f"— will warn if it persists)",
+                    data=issue.details,
+                )
                 continue
 
             is_error = issue.severity == Severity.ERROR
             sev = "error" if is_error else "warning"
             if self._should_log_watchdog_operator_warning(
-                    is_error=is_error,
-                    streak=new_streak):
-                log_event(sev, f"watchdog_{issue.code}",
-                          f"{issue.message} — {issue.suggested_action} "
-                          f"(persisted for {new_streak} watchdog passes)",
-                          data=issue.details)
+                is_error=is_error, streak=new_streak
+            ):
+                log_event(
+                    sev,
+                    f"watchdog_{issue.code}",
+                    f"{issue.message} — {issue.suggested_action} "
+                    f"(persisted for {new_streak} watchdog passes)",
+                    data=issue.details,
+                )
             else:
-                log_event("debug", f"watchdog_{issue.code}_persistent",
-                          f"{issue.message} still present "
-                          f"(streak {new_streak}; operator alert already active)",
-                          data=issue.details)
+                log_event(
+                    "debug",
+                    f"watchdog_{issue.code}_persistent",
+                    f"{issue.message} still present "
+                    f"(streak {new_streak}; operator alert already active)",
+                    data=issue.details,
+                )
 
             if issue.code in ACTIONABLE and has_event_bus:
                 det = issue.details or {}
@@ -3055,12 +3345,9 @@ class BotLoop:
                 # to cancel. Without them the button would cancel nothing.
                 has_targets = len(tids) > 0
                 title_map = {
-                    "ladder_size_taper_violated":
-                        f"Ladder size drift — {side} side",
-                    "ladder_inversion_reverse":
-                        f"Ladder inversion (reverse layout) — {side} side",
-                    "ladder_inversion_standard":
-                        f"Ladder inversion (standard layout) — {side} side",
+                    "ladder_size_taper_violated": f"Ladder size drift — {side} side",
+                    "ladder_inversion_reverse": f"Ladder inversion (reverse layout) — {side} side",
+                    "ladder_inversion_standard": f"Ladder inversion (standard layout) — {side} side",
                 }
                 title = title_map.get(issue.code, f"Ladder issue — {side} side")
                 try:
@@ -3070,23 +3357,30 @@ class BotLoop:
                         title,
                         f"{issue.message} {issue.suggested_action}".strip(),
                         action=("cancel_mismatched_offers" if has_targets else None),
-                        action_label=(f"Cancel {len(tids)} mismatched offer(s)"
-                                      if has_targets else None),
+                        action_label=(
+                            f"Cancel {len(tids)} mismatched offer(s)"
+                            if has_targets
+                            else None
+                        ),
                         action_value=(",".join(tids) if has_targets else None),
                     )
                 except Exception as _alert_err:
-                    log_event("debug", "watchdog_alert_failed",
-                              f"Watchdog alert dispatch failed (non-fatal): "
-                              f"{_alert_err}")
+                    log_event(
+                        "debug",
+                        "watchdog_alert_failed",
+                        f"Watchdog alert dispatch failed (non-fatal): {_alert_err}",
+                    )
 
                 # 2026-04-22: auto-dispatch the ShapeFix flow once the same
                 # drift has persisted past the auto-heal threshold. Gates:
                 #   * the issue has trade_ids we can act on
                 #   * the ShapeFixOrchestrator exists and isn't already busy
                 #   * we haven't already auto-healed this alert this session
-                if (has_targets
-                        and new_streak >= self._watchdog_auto_heal_threshold
-                        and alert_id not in self._watchdog_auto_healed):
+                if (
+                    has_targets
+                    and new_streak >= self._watchdog_auto_heal_threshold
+                    and alert_id not in self._watchdog_auto_healed
+                ):
                     orchestrator = getattr(self, "shape_fix_orchestrator", None)
                     if orchestrator is not None:
                         try:
@@ -3097,26 +3391,34 @@ class BotLoop:
                             )
                             if outcome.get("accepted"):
                                 self._watchdog_auto_healed.add(alert_id)
-                                log_event("info", "watchdog_auto_heal_dispatched",
-                                          f"Auto-heal: {issue.code} on {side} "
-                                          f"persisted {new_streak} passes — "
-                                          f"ShapeFix flow started for "
-                                          f"{len(tids)} offer(s)",
-                                          data={
-                                              "alert_id": alert_id,
-                                              "flow_id": outcome.get("flow_id"),
-                                              "side": side,
-                                              "trade_id_count": len(tids),
-                                              "streak": new_streak,
-                                          })
+                                log_event(
+                                    "info",
+                                    "watchdog_auto_heal_dispatched",
+                                    f"Auto-heal: {issue.code} on {side} "
+                                    f"persisted {new_streak} passes — "
+                                    f"ShapeFix flow started for "
+                                    f"{len(tids)} offer(s)",
+                                    data={
+                                        "alert_id": alert_id,
+                                        "flow_id": outcome.get("flow_id"),
+                                        "side": side,
+                                        "trade_id_count": len(tids),
+                                        "streak": new_streak,
+                                    },
+                                )
                             else:
-                                log_event("debug", "watchdog_auto_heal_busy",
-                                          f"Auto-heal deferred: orchestrator "
-                                          f"busy ({outcome.get('error')})")
+                                log_event(
+                                    "debug",
+                                    "watchdog_auto_heal_busy",
+                                    f"Auto-heal deferred: orchestrator "
+                                    f"busy ({outcome.get('error')})",
+                                )
                         except Exception as _ah_err:
-                            log_event("debug", "watchdog_auto_heal_failed",
-                                      f"Auto-heal dispatch failed (non-fatal): "
-                                      f"{_ah_err}")
+                            log_event(
+                                "debug",
+                                "watchdog_auto_heal_failed",
+                                f"Auto-heal dispatch failed (non-fatal): {_ah_err}",
+                            )
 
         # Clear any previously-raised watchdog alerts that did NOT fire
         # this pass — those conditions have resolved.
@@ -3170,10 +3472,13 @@ class BotLoop:
         if not issues:
             # All clear — log at debug so we can confirm the watchdog is
             # running, without spamming info-level logs every 10 cycles.
-            log_event("debug", "watchdog_clean",
-                      f"Watchdog audit clean "
-                      f"(cycle={self._loop_count}, "
-                      f"buys={len(offers_buy)}, sells={len(offers_sell)})")
+            log_event(
+                "debug",
+                "watchdog_clean",
+                f"Watchdog audit clean "
+                f"(cycle={self._loop_count}, "
+                f"buys={len(offers_buy)}, sells={len(offers_sell)})",
+            )
 
     def _should_log_watchdog_operator_warning(
         self,
@@ -3278,17 +3583,23 @@ class BotLoop:
         """
         try:
             from coin_manager import reclassify_tier_spare_coins
+
             reclassify_tier_spare_coins()
         except Exception as _reclass_err:
-            log_event("debug", "tier_size_drift_reclassify_failed",
-                      f"Pre-drift reclassification failed (non-fatal): "
-                      f"{_reclass_err}")
+            log_event(
+                "debug",
+                "tier_size_drift_reclassify_failed",
+                f"Pre-drift reclassification failed (non-fatal): {_reclass_err}",
+            )
 
         try:
             findings = self.coin_manager.check_tier_size_drift()
         except Exception as _err:
-            log_event("debug", "tier_size_drift_unavailable",
-                      f"Drift check raised (non-fatal): {_err}")
+            log_event(
+                "debug",
+                "tier_size_drift_unavailable",
+                f"Drift check raised (non-fatal): {_err}",
+            )
             return
 
         alert_id = "tier_size_drift"
@@ -3313,8 +3624,7 @@ class BotLoop:
         topup_note = "Live topup will retry on the next eligible cycle."
         waiting_sides = self._tier_size_drift_waiting_sides(findings)
         actionable_findings = [
-            f for f in findings
-            if str(f.get("side") or "").lower() not in waiting_sides
+            f for f in findings if str(f.get("side") or "").lower() not in waiting_sides
         ]
         waiting_for_source_only = bool(waiting_sides) and not actionable_findings
         if waiting_for_source_only:
@@ -3330,9 +3640,10 @@ class BotLoop:
             )
         else:
             log_event(
-                "info", "tier_size_drift",
+                "info",
+                "tier_size_drift",
                 f"Prepared coin sizes need live reshaping: {summary}. "
-                f"The bot will use live topup/rebuild before asking for Coin Prep."
+                f"The bot will use live topup/rebuild before asking for Coin Prep.",
             )
 
         try:
@@ -3356,9 +3667,7 @@ class BotLoop:
                     _active_buy, _active_sell, is_drip=True
                 ):
                     self._last_tier_drift_topup_time = _now
-                    topup_note = (
-                        "Live topup has been queued to reshape the coin pools."
-                    )
+                    topup_note = "Live topup has been queued to reshape the coin pools."
                     log_event(
                         "info",
                         "tier_size_drift_topup_started",
@@ -3379,7 +3688,9 @@ class BotLoop:
                     )
             else:
                 _remaining = int(_cooldown - (_now - _last_topup))
-                topup_note = f"Live topup recently ran; retry window opens in {_remaining}s."
+                topup_note = (
+                    f"Live topup recently ran; retry window opens in {_remaining}s."
+                )
                 log_event(
                     "debug",
                     "tier_size_drift_topup_cooldown",
@@ -3496,8 +3807,7 @@ class BotLoop:
             self.risk_manager.reset_session()
         # Clear startup gate so background threads re-wait on next start
         self._startup_complete.clear()
-        log_event("debug", "runtime_state_reset",
-                  "Runtime state reset for new session")
+        log_event("debug", "runtime_state_reset", "Runtime state reset for new session")
 
     def start(self) -> bool:
         """Start the bot loop in a background thread.
@@ -3514,23 +3824,25 @@ class BotLoop:
         # Just reload config to pick up any .env changes from GUI.
         cfg.reload()
         self.runtime_monitor.reset_session()
-        self._recovery_state.update({
-            "active": False,
-            "phase": "idle",
-            "reason": "",
-            "started_at": 0.0,
-            "last_transition_at": 0.0,
-            "entered_loop": 0,
-            "under_target_streak": 0,
-            "wallet_stale_streak": 0,
-            "probe_churn_streak": 0,
-            "create_stall_streak": 0,
-            "healthy_streak": 0,
-            "buy_deficit": 0,
-            "sell_deficit": 0,
-            "cycle_probe_churn": False,
-            "cycle_create_stalled": False,
-        })
+        self._recovery_state.update(
+            {
+                "active": False,
+                "phase": "idle",
+                "reason": "",
+                "started_at": 0.0,
+                "last_transition_at": 0.0,
+                "entered_loop": 0,
+                "under_target_streak": 0,
+                "wallet_stale_streak": 0,
+                "probe_churn_streak": 0,
+                "create_stall_streak": 0,
+                "healthy_streak": 0,
+                "buy_deficit": 0,
+                "sell_deficit": 0,
+                "cycle_probe_churn": False,
+                "cycle_create_stalled": False,
+            }
+        )
         self._clear_alert("bot_recovery")
 
         # ---- Preflight / Doctor checks ----
@@ -3538,15 +3850,25 @@ class BotLoop:
         # If any check fails, block startup with a detailed report.
         try:
             from doctor import run_preflight
+
             preflight = run_preflight(force=True)
-            log_event("info", "preflight_run", preflight.summary,
-                      data={"can_start": preflight.can_start,
-                            "duration_ms": round(preflight.duration_ms, 1)})
+            log_event(
+                "info",
+                "preflight_run",
+                preflight.summary,
+                data={
+                    "can_start": preflight.can_start,
+                    "duration_ms": round(preflight.duration_ms, 1),
+                },
+            )
             if not preflight.can_start:
                 failures = [c for c in preflight.checks if c.status == "fail"]
                 fail_msgs = "; ".join(f"{c.name}: {c.message}" for c in failures[:3])
-                log_event("error", "preflight_blocked",
-                          f"Bot start blocked by preflight: {fail_msgs}")
+                log_event(
+                    "error",
+                    "preflight_blocked",
+                    f"Bot start blocked by preflight: {fail_msgs}",
+                )
                 self._emit_alert(
                     "preflight_blocked",
                     "error",
@@ -3555,21 +3877,26 @@ class BotLoop:
                     action="run_doctor",
                     action_label="View Report",
                 )
-                self._set_state(running=False, status="blocked", preflight=preflight.to_dict())
+                self._set_state(
+                    running=False, status="blocked", preflight=preflight.to_dict()
+                )
                 return False
         except Exception as e:
             # Preflight failure should not block startup — fall through
             # to the legacy watch-only check below.
-            log_event("warning", "preflight_error",
-                      f"Preflight could not run: {str(e)[:160]}")
+            log_event(
+                "warning", "preflight_error", f"Preflight could not run: {str(e)[:160]}"
+            )
 
         # Legacy watch-only guard — kept as fallback in case preflight
         # import fails or is incomplete. The preflight system checks this
         # via check_wallet_can_sign() above, but we keep this as defense.
         try:
             from wallet import get_wallet_type
+
             if get_wallet_type() == "sage":
                 from wallet_sage import get_current_key
+
                 key = get_current_key() or {}
                 has_secrets = key.get("has_secrets", False)
                 if not has_secrets:
@@ -3582,7 +3909,8 @@ class BotLoop:
                         "wallet_signing",
                         "error",
                         "Wallet Cannot Sign",
-                        msg + ". Log in to a Sage wallet with secrets before starting or resuming the bot.",
+                        msg
+                        + ". Log in to a Sage wallet with secrets before starting or resuming the bot.",
                         action="open_wallet_picker",
                         action_label="Change Wallet",
                     )
@@ -3613,31 +3941,26 @@ class BotLoop:
         # Emit immediately (on the request thread) so the console and
         # system log have something to show before the background thread
         # finishes its slower startup sync.
-        log_event("info", "bot_starting",
-                  "Bot starting — syncing with wallet, please wait...")
+        log_event(
+            "info", "bot_starting", "Bot starting — syncing with wallet, please wait..."
+        )
 
         slog("STARTUP", "Launching bot-loop thread")
         # Main trading loop
         self._thread = threading.Thread(
-            target=self._run_loop,
-            daemon=True,
-            name="bot-loop"
+            target=self._run_loop, daemon=True, name="bot-loop"
         )
         self._thread.start()
 
         # Health monitor thread (V1 parity)
         self._health_thread = threading.Thread(
-            target=self._health_monitor_thread,
-            daemon=True,
-            name="health-monitor"
+            target=self._health_monitor_thread, daemon=True, name="health-monitor"
         )
         self._health_thread.start()
 
         # Price watcher thread (V1 parity)
         self._watcher_thread = threading.Thread(
-            target=self._price_watcher_thread,
-            daemon=True,
-            name="price-watcher"
+            target=self._price_watcher_thread, daemon=True, name="price-watcher"
         )
         self._watcher_thread.start()
 
@@ -3651,21 +3974,25 @@ class BotLoop:
         # self._mempool_watcher_needs_start. Previously this block
         # failed silently and the watcher never started for the session.
         self._mempool_watcher_needs_start = False
-        if _mempool_watcher_mod and getattr(cfg, "COINSET_ENABLED", True) and cfg.CAT_ASSET_ID:
+        if (
+            _mempool_watcher_mod
+            and getattr(cfg, "COINSET_ENABLED", True)
+            and cfg.CAT_ASSET_ID
+        ):
             started = self._try_start_mempool_watcher(log_skip=True)
             if not started:
                 self._mempool_watcher_needs_start = True
 
         # Coin watcher thread (lifecycle tracking)
         self._coin_watcher_thread = threading.Thread(
-            target=self._coin_watcher_thread_run,
-            daemon=True,
-            name="coin-watcher"
+            target=self._coin_watcher_thread_run, daemon=True, name="coin-watcher"
         )
         self._coin_watcher_thread.start()
         # If outbound Splash broadcasting is enabled, keep inbound listening on
         # as well so the listener stats and pair-specific intake stay live.
-        if getattr(cfg, "SPLASH_ENABLED", False) and not getattr(cfg, "SPLASH_RECEIVE_ENABLED", False):
+        if getattr(cfg, "SPLASH_ENABLED", False) and not getattr(
+            cfg, "SPLASH_RECEIVE_ENABLED", False
+        ):
             cfg.SPLASH_RECEIVE_ENABLED = True
             log_event(
                 "info",
@@ -3681,34 +4008,51 @@ class BotLoop:
         self._start_splash_receive()
 
         # V3: Auto-start Splash P2P node if enabled
-        if getattr(cfg, "SPLASH_ENABLED", False) and getattr(cfg, "SPLASH_AUTO_START", True):
+        if getattr(cfg, "SPLASH_ENABLED", False) and getattr(
+            cfg, "SPLASH_AUTO_START", True
+        ):
             try:
                 started = self.splash_node.start()
                 if started:
-                    log_event("info", "splash_node_auto",
-                              "Splash P2P node auto-started with bot")
+                    log_event(
+                        "info",
+                        "splash_node_auto",
+                        "Splash P2P node auto-started with bot",
+                    )
                 # If binary not found, splash_node.start() already logged the message
             except Exception as e:
-                log_event("warning", "splash_node_auto_failed",
-                          f"Failed to auto-start Splash node: {e}")
+                log_event(
+                    "warning",
+                    "splash_node_auto_failed",
+                    f"Failed to auto-start Splash node: {e}",
+                )
 
         # AMM monitor — starts background polling thread for live reserve data
         if getattr(cfg, "TIBET_PAIR_ID", "").strip():
             try:
                 self.amm_monitor.start()
             except Exception as _amm_err:
-                log_event("warning", "amm_monitor_start_failed",
-                          f"AMM Monitor could not start: {_amm_err}")
+                log_event(
+                    "warning",
+                    "amm_monitor_start_failed",
+                    f"AMM Monitor could not start: {_amm_err}",
+                )
 
         # Runtime monitor — tracks fill activity, conditions, diagnostics
         try:
             self.runtime_monitor.start()
         except Exception as _rm_err:
-            log_event("warning", "runtime_monitor_start_failed",
-                      f"Runtime monitor could not start: {_rm_err}")
+            log_event(
+                "warning",
+                "runtime_monitor_start_failed",
+                f"Runtime monitor could not start: {_rm_err}",
+            )
 
-        log_event("info", "bot_started",
-                  "Bot loop started (with health, price, coin, AMM, and runtime monitors)")
+        log_event(
+            "info",
+            "bot_started",
+            "Bot loop started (with health, price, coin, AMM, and runtime monitors)",
+        )
         return True
 
     def stop(self) -> bool:
@@ -3730,7 +4074,9 @@ class BotLoop:
         try:
             self.coin_manager.stop_topup(wait_secs=10)
         except Exception as e:
-            log_event("debug", "stop_topup_failed", f"stop_topup raised during shutdown: {e}")
+            log_event(
+                "debug", "stop_topup_failed", f"stop_topup raised during shutdown: {e}"
+            )
 
         # Wake the watcher event so price watcher thread exits promptly
         self._watcher_event.set()
@@ -3739,16 +4085,22 @@ class BotLoop:
         try:
             self.amm_monitor.stop()
         except Exception as e:
-            log_event("debug", "amm_monitor_stop_failed",
-                      f"AMM Monitor stop raised during shutdown: {e}")
+            log_event(
+                "debug",
+                "amm_monitor_stop_failed",
+                f"AMM Monitor stop raised during shutdown: {e}",
+            )
 
         # Stop mempool watcher
         if _mempool_watcher_mod:
             try:
                 _mempool_watcher_mod.stop_watcher()
             except Exception as e:
-                log_event("debug", "mempool_watcher_stop_failed",
-                          f"Mempool watcher stop raised during shutdown: {e}")
+                log_event(
+                    "debug",
+                    "mempool_watcher_stop_failed",
+                    f"Mempool watcher stop raised during shutdown: {e}",
+                )
 
         # Wait for current cycle to finish (max 30 seconds — ladder
         # creation needs time to bail out gracefully)
@@ -3768,22 +4120,33 @@ class BotLoop:
             if _t_ref and _t_ref.is_alive():
                 _t_ref.join(timeout=10)
                 if _t_ref.is_alive():
-                    log_event("warning", "thread_join_timeout",
-                              f"{_t_name} thread did not exit within 10s")
+                    log_event(
+                        "warning",
+                        "thread_join_timeout",
+                        f"{_t_name} thread did not exit within 10s",
+                    )
 
         # V3: Stop Splash node
         if self.splash_node.is_running():
             try:
                 self.splash_node.stop()
             except Exception as e:
-                log_event("debug", "splash_node_stop_failed",
-                          f"Splash node stop raised during shutdown: {e}")
+                log_event(
+                    "debug",
+                    "splash_node_stop_failed",
+                    f"Splash node stop raised during shutdown: {e}",
+                )
 
         self._set_state(status="stopped")
 
         # Clear all operational alerts so they don't linger on the GUI after stop
-        for alert_id in ("circuit_breaker", "bot_recovery", "cancel_retries",
-                         "buy_disabled", "sell_disabled"):
+        for alert_id in (
+            "circuit_breaker",
+            "bot_recovery",
+            "cancel_retries",
+            "buy_disabled",
+            "sell_disabled",
+        ):
             self._clear_alert(alert_id)
 
         log_event("info", "bot_stopped", "Bot loop stopped")
@@ -3794,7 +4157,11 @@ class BotLoop:
         return self._running
 
     def _current_splash_pair_label(self) -> str:
-        ticker = str(getattr(cfg, "CAT_TICKER_ID", "") or getattr(cfg, "CAT_NAME", "CAT")).strip().upper()
+        ticker = (
+            str(getattr(cfg, "CAT_TICKER_ID", "") or getattr(cfg, "CAT_NAME", "CAT"))
+            .strip()
+            .upper()
+        )
         if ticker.endswith("_XCH"):
             return ticker.replace("_XCH", "/XCH")
         return f"{ticker}/XCH"
@@ -3804,6 +4171,7 @@ class BotLoop:
         asset_id = str(getattr(cfg, "CAT_ASSET_ID", "") or "").strip().lower()
         try:
             from database import get_splash_incoming_stats
+
             stats = get_splash_incoming_stats(asset_id=asset_id)
         except Exception:
             stats = {
@@ -3843,21 +4211,28 @@ class BotLoop:
         """Return a wallet-native view_offer callable when available."""
         try:
             from wallet import get_wallet_type
+
             wallet_type = str(get_wallet_type() or "").strip().lower()
         except Exception:
-            wallet_type = str(getattr(cfg, "WALLET_TYPE", "sage") or "sage").strip().lower()
+            wallet_type = (
+                str(getattr(cfg, "WALLET_TYPE", "sage") or "sage").strip().lower()
+            )
 
         if wallet_type != "sage":
             return wallet_type, None
 
         try:
             from wallet_sage import view_offer as sage_view_offer
+
             return wallet_type, sage_view_offer
         except Exception as e:
             if not self._splash_receive_parser_warned:
                 self._splash_receive_parser_warned = True
-                log_event("warning", "splash_receive_parser",
-                          f"Incoming Splash parsing unavailable: {e}")
+                log_event(
+                    "warning",
+                    "splash_receive_parser",
+                    f"Incoming Splash parsing unavailable: {e}",
+                )
             return wallet_type, None
 
     def _process_splash_incoming_batch(self):
@@ -3868,8 +4243,7 @@ class BotLoop:
         from database import get_splash_incoming_offers, update_splash_incoming_status
 
         pending = get_splash_incoming_offers(
-            status="new",
-            limit=self._splash_receive_batch_size
+            status="new", limit=self._splash_receive_batch_size
         )
         if not pending:
             return
@@ -3881,7 +4255,9 @@ class BotLoop:
         if view_offer is None:
             if wallet_type != "sage":
                 for offer in pending:
-                    update_splash_incoming_status(offer["id"], "ignored", pair_hint="unsupported")
+                    update_splash_incoming_status(
+                        offer["id"], "ignored", pair_hint="unsupported"
+                    )
                 self._emit("splash_incoming", self.get_splash_receive_stats())
             return
 
@@ -3893,15 +4269,20 @@ class BotLoop:
             bech32 = str(offer.get("offer_bech32") or "").strip()
             if not offer_id or not bech32:
                 if offer_id:
-                    update_splash_incoming_status(offer_id, "ignored", pair_hint="invalid")
+                    update_splash_incoming_status(
+                        offer_id, "ignored", pair_hint="invalid"
+                    )
                     processed_any = True
                 continue
 
             try:
                 viewed = view_offer(bech32)
             except Exception as e:
-                log_event("debug", "splash_receive_view_error",
-                          f"Could not inspect inbound Splash offer {offer_id}: {e}")
+                log_event(
+                    "debug",
+                    "splash_receive_view_error",
+                    f"Could not inspect inbound Splash offer {offer_id}: {e}",
+                )
                 continue
 
             if not viewed:
@@ -3911,13 +4292,15 @@ class BotLoop:
             pair_hint = classified.get("pair_hint") or "unknown"
 
             if classified.get("relevant"):
-                update_splash_incoming_status(offer_id, "processed", pair_hint=pair_hint)
+                update_splash_incoming_status(
+                    offer_id, "processed", pair_hint=pair_hint
+                )
                 relevant_found += 1
                 processed_any = True
                 log_event(
                     "info",
                     "splash_incoming_relevant",
-                    f"Relevant inbound Splash offer ({classified.get('side', 'unknown')} {pair_label})"
+                    f"Relevant inbound Splash offer ({classified.get('side', 'unknown')} {pair_label})",
                 )
             else:
                 update_splash_incoming_status(offer_id, "ignored", pair_hint=pair_hint)
@@ -3957,15 +4340,18 @@ class BotLoop:
         log_event(
             "info",
             "splash_receive_started",
-            f"Splash receive watcher active (polling every {self._splash_receive_interval}s)"
+            f"Splash receive watcher active (polling every {self._splash_receive_interval}s)",
         )
 
         while self._running:
             try:
                 self._process_splash_incoming_batch()
             except Exception as e:
-                log_event("debug", "splash_receive_error",
-                          f"Splash receive watcher error: {e}")
+                log_event(
+                    "debug",
+                    "splash_receive_error",
+                    f"Splash receive watcher error: {e}",
+                )
 
             for _ in range(self._splash_receive_interval):
                 if not self._running:
@@ -3985,7 +4371,10 @@ class BotLoop:
         # Startup: sync state from wallet
         # Background threads wait for this to finish before writing to DB.
         self._startup_sync()
-        slog("STARTUP", "========== _startup_sync COMPLETE — releasing thread gates ==========")
+        slog(
+            "STARTUP",
+            "========== _startup_sync COMPLETE — releasing thread gates ==========",
+        )
         self._startup_complete.set()  # Ungate background threads
 
         self._set_state(status="running")
@@ -3996,8 +4385,11 @@ class BotLoop:
             try:
                 self._run_one_cycle()
             except Exception as e:
-                log_event("error", "loop_error",
-                          f"Error in bot loop cycle: {e}\n{traceback.format_exc()}")
+                log_event(
+                    "error",
+                    "loop_error",
+                    f"Error in bot loop cycle: {e}\n{traceback.format_exc()}",
+                )
 
             # Update timing
             self._last_loop_duration = time.time() - loop_start
@@ -4006,9 +4398,12 @@ class BotLoop:
             # This usually means a wallet RPC call is hanging. The cycle already
             # completed (or errored out) — this is purely diagnostic logging.
             if self._last_loop_duration > 300:
-                log_event("warning", "slow_iteration",
-                          f"Slow cycle: {self._last_loop_duration:.0f}s — possible RPC hang. "
-                          f"Normal cycles should complete in < {cfg.LOOP_SECONDS}s.")
+                log_event(
+                    "warning",
+                    "slow_iteration",
+                    f"Slow cycle: {self._last_loop_duration:.0f}s — possible RPC hang. "
+                    f"Normal cycles should complete in < {cfg.LOOP_SECONDS}s.",
+                )
             self._loop_count += 1
             self._set_state(loop_count=self._loop_count)
 
@@ -4019,11 +4414,16 @@ class BotLoop:
 
             if watcher_triggered and self._running:
                 with self._watcher_lock:
-                    watcher_info = (f"{self._watcher_data['direction']} "
-                                    f"({self._watcher_data['change_pct']:.3f}%)")
+                    watcher_info = (
+                        f"{self._watcher_data['direction']} "
+                        f"({self._watcher_data['change_pct']:.3f}%)"
+                    )
                     self._watcher_data["triggered"] = False
-                log_event("info", "watcher_wake",
-                          f"Fast wake — Tibet swap detected: {watcher_info}")
+                log_event(
+                    "info",
+                    "watcher_wake",
+                    f"Fast wake — Tibet swap detected: {watcher_info}",
+                )
 
             # Process mempool watcher signals (pre-emptive price intelligence)
             self._drain_mempool_signals(in_cycle=False)
@@ -4089,7 +4489,9 @@ class BotLoop:
         except Exception:
             return set()
 
-    def _pending_cancel_settle_counts(self, sides: tuple = ("buy", "sell")) -> Dict[str, int]:
+    def _pending_cancel_settle_counts(
+        self, sides: tuple = ("buy", "sell")
+    ) -> Dict[str, int]:
         counts: Dict[str, int] = {}
         for side in sides or ("buy", "sell"):
             side_norm = str(side or "").strip().lower()
@@ -4126,12 +4528,18 @@ class BotLoop:
             float(token_out) if token_out is not None else None,
         )
 
-    def _log_pending_cancel_notice(self, severity: str, event_type: str,
-                                   message: str, *, side: str = "",
-                                   pending_count: int = 0,
-                                   data: Optional[Dict] = None,
-                                   key: Optional[str] = None,
-                                   repeat_secs: Optional[float] = None) -> bool:
+    def _log_pending_cancel_notice(
+        self,
+        severity: str,
+        event_type: str,
+        message: str,
+        *,
+        side: str = "",
+        pending_count: int = 0,
+        data: Optional[Dict] = None,
+        key: Optional[str] = None,
+        repeat_secs: Optional[float] = None,
+    ) -> bool:
         """Log pending-cancel waits once per unchanged state.
 
         Wallet-active pending cancels can last several cycles. Repeating the
@@ -4150,7 +4558,9 @@ class BotLoop:
             if repeat_secs is not None
             else getattr(self, "_pending_cancel_notice_repeat_secs", 300.0)
         )
-        state = (getattr(self, "_pending_cancel_notice_seen", {}) or {}).get(notice_key) or {}
+        state = (getattr(self, "_pending_cancel_notice_seen", {}) or {}).get(
+            notice_key
+        ) or {}
         last_at = float(state.get("last_at") or 0.0)
         last_count = state.get("pending_count")
         try:
@@ -4179,7 +4589,9 @@ class BotLoop:
         }
         return True
 
-    def _defer_probe_launch_for_pending_cancel(self, launch_reason: Optional[str]) -> Optional[str]:
+    def _defer_probe_launch_for_pending_cancel(
+        self, launch_reason: Optional[str]
+    ) -> Optional[str]:
         if not launch_reason:
             return launch_reason
 
@@ -4201,7 +4613,9 @@ class BotLoop:
         )
         return None
 
-    def _filter_pending_cancel_wallet_ids_by_dexie(self, pending_by_side: Dict[str, set]) -> Dict[str, set]:
+    def _filter_pending_cancel_wallet_ids_by_dexie(
+        self, pending_by_side: Dict[str, set]
+    ) -> Dict[str, set]:
         """Drop Sage-lagged IDs once Dexie repeatedly reports terminal cancel.
 
         Sage can keep cancelled offers in the non-completed offer list after
@@ -4215,7 +4629,7 @@ class BotLoop:
             "buy": set((pending_by_side or {}).get("buy") or set()),
             "sell": set((pending_by_side or {}).get("sell") or set()),
         }
-        active_ids = (set(filtered["buy"]) | set(filtered["sell"]))
+        active_ids = set(filtered["buy"]) | set(filtered["sell"])
         seen = getattr(self, "_pending_cancel_dexie_terminal_seen", {}) or {}
         for tid in list(seen.keys()):
             if tid not in active_ids:
@@ -4231,7 +4645,9 @@ class BotLoop:
         )
         detail_timeout = max(
             0.5,
-            float(getattr(self, "_pending_cancel_dexie_detail_timeout_secs", 2.0) or 2.0),
+            float(
+                getattr(self, "_pending_cancel_dexie_detail_timeout_secs", 2.0) or 2.0
+            ),
         )
         now = time.time()
         checks = 0
@@ -4243,9 +4659,9 @@ class BotLoop:
             )
             for tid in ordered_ids:
                 entry = seen.get(tid) or {}
-                if (
-                    int(entry.get("hits") or 0) >= min_hits
-                    and entry.get("status") in (DEXIE_STATUS_CANCELLED, DEXIE_STATUS_EXPIRED)
+                if int(entry.get("hits") or 0) >= min_hits and entry.get("status") in (
+                    DEXIE_STATUS_CANCELLED,
+                    DEXIE_STATUS_EXPIRED,
                 ):
                     filtered[side].discard(tid)
                     continue
@@ -4257,9 +4673,12 @@ class BotLoop:
                 except Exception as e:
                     dexie_id = ""
                     seen.pop(tid, None)
-                    log_event("debug", "pending_cancel_dexie_lookup_failed",
-                              f"Could not load local offer {tid[:16]}... for "
-                              f"Dexie cancel-settle check: {e}")
+                    log_event(
+                        "debug",
+                        "pending_cancel_dexie_lookup_failed",
+                        f"Could not load local offer {tid[:16]}... for "
+                        f"Dexie cancel-settle check: {e}",
+                    )
 
                 if not dexie_id:
                     continue
@@ -4273,8 +4692,11 @@ class BotLoop:
                     )
                 except Exception as e:
                     seen.pop(tid, None)
-                    log_event("debug", "pending_cancel_dexie_lookup_failed",
-                              f"Could not fetch Dexie detail for {tid[:16]}...: {e}")
+                    log_event(
+                        "debug",
+                        "pending_cancel_dexie_lookup_failed",
+                        f"Could not fetch Dexie detail for {tid[:16]}...: {e}",
+                    )
                     continue
 
                 if not isinstance(dexie_offer, dict):
@@ -4296,12 +4718,14 @@ class BotLoop:
                     entry["hits"] = int(entry.get("hits") or 0) + 1
                 else:
                     entry["hits"] = 1
-                entry.update({
-                    "side": side,
-                    "status": status,
-                    "dexie_id": dexie_id,
-                    "last_seen": now,
-                })
+                entry.update(
+                    {
+                        "side": side,
+                        "status": status,
+                        "dexie_id": dexie_id,
+                        "last_seen": now,
+                    }
+                )
                 seen[tid] = entry
 
                 if int(entry.get("hits") or 0) < min_hits:
@@ -4309,7 +4733,9 @@ class BotLoop:
 
                 filtered[side].discard(tid)
                 if not entry.get("released_logged"):
-                    label = "cancelled" if status == DEXIE_STATUS_CANCELLED else "expired"
+                    label = (
+                        "cancelled" if status == DEXIE_STATUS_CANCELLED else "expired"
+                    )
                     log_event(
                         "info",
                         "pending_cancel_dexie_terminal_release",
@@ -4342,6 +4768,7 @@ class BotLoop:
                 continue
             try:
                 from datetime import datetime, timezone
+
                 dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
@@ -4352,7 +4779,9 @@ class BotLoop:
                 continue
         return now
 
-    def _track_pending_cancel_settle_watchdog(self, pending_by_side: Dict[str, set]) -> None:
+    def _track_pending_cancel_settle_watchdog(
+        self, pending_by_side: Dict[str, set]
+    ) -> None:
         """Queue stale wallet-active pending cancels back into cancel retries.
 
         The anti-stack guard treats wallet-visible / DB-cancelled offers as
@@ -4362,7 +4791,9 @@ class BotLoop:
         through OfferManager's retry path after a conservative settle window.
         """
         now = time.time()
-        retry_secs = float(getattr(self, "_pending_cancel_settle_retry_secs", 300.0) or 300.0)
+        retry_secs = float(
+            getattr(self, "_pending_cancel_settle_retry_secs", 300.0) or 300.0
+        )
         max_retries = int(getattr(self, "_pending_cancel_settle_max_retries", 5) or 5)
 
         active: Dict[str, str] = {}
@@ -4380,7 +4811,9 @@ class BotLoop:
             if tid not in active:
                 seen.pop(tid, None)
 
-        retry_map = getattr(getattr(self, "offer_manager", None), "_pending_cancel_retries", None)
+        retry_map = getattr(
+            getattr(self, "offer_manager", None), "_pending_cancel_retries", None
+        )
         exhausted_by_side: Dict[str, list] = {"buy": [], "sell": []}
         queued_by_side: Dict[str, list] = {"buy": [], "sell": []}
         for tid, side in active.items():
@@ -4401,11 +4834,13 @@ class BotLoop:
             retries = int(info.get("retries") or 0)
             if retries >= max_retries:
                 if not info.get("exhausted_logged"):
-                    exhausted_by_side.setdefault(side, []).append({
-                        "trade_id": tid,
-                        "age_secs": int(age),
-                        "retries": retries,
-                    })
+                    exhausted_by_side.setdefault(side, []).append(
+                        {
+                            "trade_id": tid,
+                            "age_secs": int(age),
+                            "retries": retries,
+                        }
+                    )
                     info["exhausted_logged"] = True
                 continue
 
@@ -4420,11 +4855,13 @@ class BotLoop:
                 }
                 info["last_retry"] = now
                 info["retries"] = retries + 1
-                queued_by_side.setdefault(side, []).append({
-                    "trade_id": tid,
-                    "age_secs": int(age),
-                    "retry_count": info["retries"],
-                })
+                queued_by_side.setdefault(side, []).append(
+                    {
+                        "trade_id": tid,
+                        "age_secs": int(age),
+                        "retry_count": info["retries"],
+                    }
+                )
 
         for side, entries in queued_by_side.items():
             if not entries:
@@ -4432,7 +4869,9 @@ class BotLoop:
             ages = [int(entry.get("age_secs") or 0) for entry in entries]
             min_age = min(ages) if ages else 0
             max_age = max(ages) if ages else 0
-            age_phrase = f"{min_age}s" if min_age == max_age else f"{min_age}-{max_age}s"
+            age_phrase = (
+                f"{min_age}s" if min_age == max_age else f"{min_age}-{max_age}s"
+            )
             log_event(
                 "info",
                 "pending_cancel_settle_retry_queued",
@@ -4472,9 +4911,16 @@ class BotLoop:
 
         self._pending_cancel_settle_seen = seen
 
-    def _remember_tibet_shock(self, *, direction: str, pct: float,
-                              sides: tuple, tiers: tuple, reason: str,
-                              at: Optional[float] = None) -> None:
+    def _remember_tibet_shock(
+        self,
+        *,
+        direction: str,
+        pct: float,
+        sides: tuple,
+        tiers: tuple,
+        reason: str,
+        at: Optional[float] = None,
+    ) -> None:
         try:
             self._last_tibet_shock = {
                 "at": float(at if at is not None else time.time()),
@@ -4487,10 +4933,15 @@ class BotLoop:
         except Exception:
             pass
 
-    def _record_shock_requote(self, side: str, mid_price: Decimal,
-                              source: str, severity: str,
-                              new_count: int = 0,
-                              replaced_count: int = 0) -> None:
+    def _record_shock_requote(
+        self,
+        side: str,
+        mid_price: Decimal,
+        source: str,
+        severity: str,
+        new_count: int = 0,
+        replaced_count: int = 0,
+    ) -> None:
         side_norm = str(side or "").strip().lower()
         if side_norm not in ("buy", "sell"):
             return
@@ -4510,14 +4961,17 @@ class BotLoop:
         except Exception:
             pass
 
-    def _recent_shock_requote_guard(self, side: str, direction: str,
-                                    new_price_xch) -> Optional[Dict]:
+    def _recent_shock_requote_guard(
+        self, side: str, direction: str, new_price_xch
+    ) -> Optional[Dict]:
         """Return recent reprice details when it already covers a shock."""
         side_norm = str(side or "").strip().lower()
         if side_norm not in ("buy", "sell"):
             return None
         try:
-            record = (getattr(self, "_last_shock_requote", {}) or {}).get(side_norm) or {}
+            record = (getattr(self, "_last_shock_requote", {}) or {}).get(
+                side_norm
+            ) or {}
             at = float(record.get("at") or 0)
             if at <= 0:
                 return None
@@ -4565,14 +5019,17 @@ class BotLoop:
         except Exception:
             return None
 
-    def _recent_same_price_shock_requote_guard(self, side: str,
-                                               requote_mid: Decimal) -> Optional[Dict]:
+    def _recent_same_price_shock_requote_guard(
+        self, side: str, requote_mid: Decimal
+    ) -> Optional[Dict]:
         """Return recent shock reprice details when Step 9 would repeat it."""
         side_norm = str(side or "").strip().lower()
         if side_norm not in ("buy", "sell"):
             return None
         try:
-            record = (getattr(self, "_last_shock_requote", {}) or {}).get(side_norm) or {}
+            record = (getattr(self, "_last_shock_requote", {}) or {}).get(
+                side_norm
+            ) or {}
             at = float(record.get("at") or 0)
             if at <= 0:
                 return None
@@ -4585,10 +5042,13 @@ class BotLoop:
             if age < 0 or age > guard_secs:
                 return None
 
-            if max(
-                int(record.get("new_count") or 0),
-                int(record.get("replaced_count") or 0),
-            ) <= 0:
+            if (
+                max(
+                    int(record.get("new_count") or 0),
+                    int(record.get("replaced_count") or 0),
+                )
+                <= 0
+            ):
                 return None
 
             quoted_mid = Decimal(str(record.get("mid_price") or "0"))
@@ -4598,9 +5058,12 @@ class BotLoop:
 
             drift_bps = abs(current_mid - quoted_mid) / quoted_mid * Decimal("10000")
             try:
-                inner_threshold = Decimal(str(
-                    getattr(cfg, "REQUOTE_DRIFT_INNER", Decimal("0.003")) or Decimal("0.003")
-                )) * Decimal("10000")
+                inner_threshold = Decimal(
+                    str(
+                        getattr(cfg, "REQUOTE_DRIFT_INNER", Decimal("0.003"))
+                        or Decimal("0.003")
+                    )
+                ) * Decimal("10000")
             except Exception:
                 inner_threshold = Decimal("30")
             allowed_bps = max(Decimal("5"), inner_threshold)
@@ -4655,8 +5118,9 @@ class BotLoop:
         except Exception:
             return None
 
-    def _defensive_cancel_tiers(self, tiers: tuple, reason: str,
-                                sides: tuple = ("buy", "sell")) -> int:
+    def _defensive_cancel_tiers(
+        self, tiers: tuple, reason: str, sides: tuple = ("buy", "sell")
+    ) -> int:
         """F83: bulk-cancel offers in the given tiers.
 
         Triggered when the mempool watcher detects a pool spend. The TIER
@@ -4695,29 +5159,39 @@ class BotLoop:
         try:
             from database import get_open_offers
             from config import cfg as _cfg
+
             asset_id = getattr(_cfg, "CAT_ASSET_ID", "") or ""
             buys = []
             sells = []
             if "buy" in sides_lc:
-                buys = [o for o in (get_open_offers(side="buy",
-                                                    cat_asset_id=asset_id) or [])
-                        if (o.get("tier") or "").lower() in tiers_lc]
+                buys = [
+                    o
+                    for o in (get_open_offers(side="buy", cat_asset_id=asset_id) or [])
+                    if (o.get("tier") or "").lower() in tiers_lc
+                ]
             if "sell" in sides_lc:
-                sells = [o for o in (get_open_offers(side="sell",
-                                                     cat_asset_id=asset_id) or [])
-                         if (o.get("tier") or "").lower() in tiers_lc]
-            tids = [o.get("trade_id") for o in (buys + sells)
-                    if o.get("trade_id")]
+                sells = [
+                    o
+                    for o in (get_open_offers(side="sell", cat_asset_id=asset_id) or [])
+                    if (o.get("tier") or "").lower() in tiers_lc
+                ]
+            tids = [o.get("trade_id") for o in (buys + sells) if o.get("trade_id")]
             tier_label = "+".join(tiers_lc)
             side_label = "+".join(sides_lc)
             if not tids:
-                log_event("info", "defensive_cancel_skip",
-                          f"Defensive cancel: no {tier_label} {side_label} offers "
-                          f"to cancel (reason={reason})")
+                log_event(
+                    "info",
+                    "defensive_cancel_skip",
+                    f"Defensive cancel: no {tier_label} {side_label} offers "
+                    f"to cancel (reason={reason})",
+                )
                 return 0
-            log_event("info", "defensive_cancel_start",
-                      f"Defensive cancel: firing on {len(tids)} {tier_label} {side_label} offers "
-                      f"({len(buys)} buy + {len(sells)} sell, reason={reason})")
+            log_event(
+                "info",
+                "defensive_cancel_start",
+                f"Defensive cancel: firing on {len(tids)} {tier_label} {side_label} offers "
+                f"({len(buys)} buy + {len(sells)} sell, reason={reason})",
+            )
             try:
                 results = self.offer_manager.cancel_offers(
                     tids,
@@ -4726,8 +5200,11 @@ class BotLoop:
                     skip_confirmation=True,
                 )
             except Exception as e:
-                log_event("warning", "defensive_cancel_call_failed",
-                          f"cancel_offers raised: {e}")
+                log_event(
+                    "warning",
+                    "defensive_cancel_call_failed",
+                    f"cancel_offers raised: {e}",
+                )
                 return 0
             if isinstance(results, dict):
                 successes = sum(
@@ -4747,8 +5224,11 @@ class BotLoop:
                 return successes
             return len(tids)
         except Exception as e:
-            log_event("warning", "defensive_cancel_failed",
-                      f"_defensive_cancel_tiers exception: {e}")
+            log_event(
+                "warning",
+                "defensive_cancel_failed",
+                f"_defensive_cancel_tiers exception: {e}",
+            )
             return 0
 
     def _record_confirmed_price_move(self, sig: Dict, in_cycle: bool) -> None:
@@ -4766,28 +5246,36 @@ class BotLoop:
 
             with self._watcher_lock:
                 self._watcher_data["triggered"] = True
-                self._watcher_data["change_pct"] = abs(float(sig.get("magnitude_pct", 0) or 0))
+                self._watcher_data["change_pct"] = abs(
+                    float(sig.get("magnitude_pct", 0) or 0)
+                )
                 self._watcher_data["direction"] = str(sig.get("direction", "") or "")
                 self._watcher_data["last_change_ts"] = now_ts
-                self._watcher_data["triggers"] = int(self._watcher_data.get("triggers", 0) or 0) + 1
+                self._watcher_data["triggers"] = (
+                    int(self._watcher_data.get("triggers", 0) or 0) + 1
+                )
                 if watcher_xch is not None:
                     self._watcher_data["last_xch_reserve"] = watcher_xch
                 if watcher_tok is not None:
                     self._watcher_data["last_token_reserve"] = watcher_tok
                 if sig.get("new_price_xch") is not None:
-                    self._watcher_data["last_confirmed_price_xch"] = str(sig.get("new_price_xch"))
+                    self._watcher_data["last_confirmed_price_xch"] = str(
+                        sig.get("new_price_xch")
+                    )
 
             injected = False
             if new_xch is not None and new_tok is not None:
                 inject = getattr(self.price_engine, "inject_tibet_reserves", None)
                 if callable(inject):
-                    injected = bool(inject(
-                        pair_id=sig.get("pair_id"),
-                        asset_id=getattr(cfg, "CAT_ASSET_ID", None),
-                        xch_reserve=new_xch,
-                        token_reserve=new_tok,
-                        fetched_at=now_ts,
-                    ))
+                    injected = bool(
+                        inject(
+                            pair_id=sig.get("pair_id"),
+                            asset_id=getattr(cfg, "CAT_ASSET_ID", None),
+                            xch_reserve=new_xch,
+                            token_reserve=new_tok,
+                            fetched_at=now_ts,
+                        )
+                    )
             if not injected:
                 invalidate = getattr(self.price_engine, "invalidate_tibet_cache", None)
                 if callable(invalidate):
@@ -4796,11 +5284,15 @@ class BotLoop:
             if in_cycle:
                 self._mempool_price_refresh_needed = True
         except Exception as e:
-            log_event("debug", "mempool_price_cache_refresh_failed",
-                      f"Could not refresh Tibet cache from confirmed reserves: {e}")
+            log_event(
+                "debug",
+                "mempool_price_cache_refresh_failed",
+                f"Could not refresh Tibet cache from confirmed reserves: {e}",
+            )
 
-    def _refresh_price_if_mempool_move_pending(self, mid_price: Decimal,
-                                               arb_gap: Decimal):
+    def _refresh_price_if_mempool_move_pending(
+        self, mid_price: Decimal, arb_gap: Decimal
+    ):
         """Refresh the current cycle's price after an in-cycle reserve move."""
         if not getattr(self, "_mempool_price_refresh_needed", False):
             return mid_price, arb_gap, None
@@ -4834,22 +5326,28 @@ class BotLoop:
                     "tibet_price": str(fresh_price.get("tibet_price", "")),
                 },
             )
-            self._emit("price_update", {
-                "mid_price": str(fresh_mid),
-                "dexie_price": str(fresh_price.get("dexie_price", "")),
-                "tibet_price": str(fresh_price.get("tibet_price", "")),
-                "arb_gap_bps": str(fresh_arb),
-                "spread_bps": self._bot_state.get("spread_bps", "0"),
-            })
+            self._emit(
+                "price_update",
+                {
+                    "mid_price": str(fresh_mid),
+                    "dexie_price": str(fresh_price.get("dexie_price", "")),
+                    "tibet_price": str(fresh_price.get("tibet_price", "")),
+                    "arb_gap_bps": str(fresh_arb),
+                    "spread_bps": self._bot_state.get("spread_bps", "0"),
+                },
+            )
             return fresh_mid, fresh_arb, fresh_price
         except Exception as e:
-            log_event("warning", "mempool_reprice_failed",
-                      f"Could not refresh price after confirmed reserve move: {e}")
+            log_event(
+                "warning",
+                "mempool_reprice_failed",
+                f"Could not refresh price after confirmed reserve move: {e}",
+            )
             return mid_price, arb_gap, None
 
-    def _refresh_cycle_price_after_mempool_move(self, price_data: Dict,
-                                                mid_price: Decimal,
-                                                arb_gap: Decimal):
+    def _refresh_cycle_price_after_mempool_move(
+        self, price_data: Dict, mid_price: Decimal, arb_gap: Decimal
+    ):
         """Refresh both cycle scalars and the source price_data dict."""
         refreshed_mid, refreshed_arb, fresh_price = (
             self._refresh_price_if_mempool_move_pending(mid_price, arb_gap)
@@ -4859,17 +5357,17 @@ class BotLoop:
         return price_data, refreshed_mid, refreshed_arb
 
     def _handle_tibet_shock_defensive_cancel(
-            self,
-            *,
-            pct: float,
-            direction: str,
-            sig: Dict,
-            reason_prefix: str,
-            done_event: str,
-            deferred_event: str,
-            below_event: str,
-            suppressed_event: str,
-            source_label: str,
+        self,
+        *,
+        pct: float,
+        direction: str,
+        sig: Dict,
+        reason_prefix: str,
+        done_event: str,
+        deferred_event: str,
+        below_event: str,
+        suppressed_event: str,
+        source_label: str,
     ) -> None:
         try:
             _min_edge = float(getattr(cfg, "MIN_EDGE_BPS", 100) or 100)
@@ -4879,10 +5377,13 @@ class BotLoop:
         action = evaluate_tibet_shock(pct, direction, cfg)
         trigger_pct = action.trigger_pct
         if not action.cancel:
-            log_event("info", below_event,
-                      f"{source_label} moved {pct:.3f}% - below defensive-cancel "
-                      f"trigger of {trigger_pct:.2f}% (scales with "
-                      f"MIN_EDGE_BPS={_min_edge:.0f}). Holding offers.")
+            log_event(
+                "info",
+                below_event,
+                f"{source_label} moved {pct:.3f}% - below defensive-cancel "
+                f"trigger of {trigger_pct:.2f}% (scales with "
+                f"MIN_EDGE_BPS={_min_edge:.0f}). Holding offers.",
+            )
             return
 
         tiers = action.tiers
@@ -4973,13 +5474,15 @@ class BotLoop:
 
         try:
             n = self._defensive_cancel_tiers(
-                tiers=tiers,
-                sides=tuple(cancel_sides),
-                reason=reason)
-            log_event("info", done_event,
-                      f"{source_label} {pct:.2f}% {direction} - "
-                      f"cancelled {n} {'+'.join(cancel_sides)} offers "
-                      f"across {'+'.join(tiers)}")
+                tiers=tiers, sides=tuple(cancel_sides), reason=reason
+            )
+            log_event(
+                "info",
+                done_event,
+                f"{source_label} {pct:.2f}% {direction} - "
+                f"cancelled {n} {'+'.join(cancel_sides)} offers "
+                f"across {'+'.join(tiers)}",
+            )
             try:
                 now_ts = time.time()
                 self._last_defensive_cancel = {
@@ -4998,8 +5501,11 @@ class BotLoop:
             except Exception:
                 pass
         except Exception as _dc_err:
-            log_event("warning", "mempool_defensive_cancel_failed",
-                      f"{source_label} defensive cancel failed: {_dc_err}")
+            log_event(
+                "warning",
+                "mempool_defensive_cancel_failed",
+                f"{source_label} defensive cancel failed: {_dc_err}",
+            )
 
     def _drain_mempool_signals(self, in_cycle: bool = False) -> None:
         """Drain pending mempool watcher signals and act on them.
@@ -5020,7 +5526,11 @@ class BotLoop:
             for sig in w.get_pending_signals():
                 sig_type = sig.get("type")
                 if sig_type == "imminent_swap":
-                    direction = str(sig.get("direction", "unknown") or "unknown").strip().lower()
+                    direction = (
+                        str(sig.get("direction", "unknown") or "unknown")
+                        .strip()
+                        .lower()
+                    )
                     pct = abs(float(sig.get("magnitude_pct", 0) or 0))
                     projected = (
                         sig.get("source") == "mempool_projected_reserves"
@@ -5046,19 +5556,22 @@ class BotLoop:
                     wake_msg = (
                         f"Mempool: pending pool-coin spend projected {direction} "
                         f"{pct:.3f}% - pre-confirm protection evaluated"
-                        if projected else
-                        "Mempool: pending pool-coin spend detected - "
+                        if projected
+                        else "Mempool: pending pool-coin spend detected - "
                         "waking bot; will evaluate magnitude once reserves confirm"
                     )
-                    log_event("info", "mempool_imminent_wake",
-                              wake_msg,
-                              data={
-                                  "pool_coin_id": (sig.get("pool_coin_id") or "")[:24],
-                                  "direction": direction,
-                                  "pct": pct,
-                                  "source": sig.get("source", ""),
-                                  "confidence": sig.get("confidence", ""),
-                              })
+                    log_event(
+                        "info",
+                        "mempool_imminent_wake",
+                        wake_msg,
+                        data={
+                            "pool_coin_id": (sig.get("pool_coin_id") or "")[:24],
+                            "direction": direction,
+                            "pct": pct,
+                            "source": sig.get("source", ""),
+                            "confidence": sig.get("confidence", ""),
+                        },
+                    )
                     # 2026-05-01: direction-aware mempool signals can cancel
                     # the vulnerable side before confirmation. Unknown
                     # signals stay wake-only because they have no magnitude
@@ -5078,10 +5591,16 @@ class BotLoop:
                         self._watcher_event.set()
                 elif sig_type == "fill_imminent":
                     coin_id = sig.get("coin_id", "?")[:16]
-                    log_event("info", "mempool_fill_wake",
-                              f"Mempool: offer coin {coin_id}... spent — "
-                              + ("processing fill detection now"
-                                 if in_cycle else "waking early for fill detection"))
+                    log_event(
+                        "info",
+                        "mempool_fill_wake",
+                        f"Mempool: offer coin {coin_id}... spent — "
+                        + (
+                            "processing fill detection now"
+                            if in_cycle
+                            else "waking early for fill detection"
+                        ),
+                    )
                     if not in_cycle:
                         # Wake the bot immediately so fill_tracker can
                         # confirm via wallet RPC and post a replacement
@@ -5091,9 +5610,12 @@ class BotLoop:
                     direction = sig.get("direction", "?")
                     pct_raw = sig.get("magnitude_pct", 0)
                     pct = abs(float(pct_raw or 0))
-                    log_event("info", "mempool_price_confirmed",
-                              f"Pool reserves confirmed: {direction} {pct:.3f}% "
-                              f"(XCH {sig.get('delta_xch', 0):+d} mojos)")
+                    log_event(
+                        "info",
+                        "mempool_price_confirmed",
+                        f"Pool reserves confirmed: {direction} {pct:.3f}% "
+                        f"(XCH {sig.get('delta_xch', 0):+d} mojos)",
+                    )
                     self._record_confirmed_price_move(sig, in_cycle=in_cycle)
                     # F82 (2026-04-18): defensive cancel on confirmed pool
                     # move. F81 only fired on imminent_swap which missed
@@ -5186,16 +5708,24 @@ class BotLoop:
                                 guarded_details = [
                                     {
                                         "side": _side,
-                                        "age_secs": round(float(_guard.get("age_secs") or 0), 1),
-                                        "remaining_bps": str(_guard.get("remaining_bps") or "0"),
-                                        "allowed_bps": str(_guard.get("allowed_bps") or "0"),
+                                        "age_secs": round(
+                                            float(_guard.get("age_secs") or 0), 1
+                                        ),
+                                        "remaining_bps": str(
+                                            _guard.get("remaining_bps") or "0"
+                                        ),
+                                        "allowed_bps": str(
+                                            _guard.get("allowed_bps") or "0"
+                                        ),
                                         "source": _guard.get("source", ""),
                                     }
                                     for _side, _guard in guarded_sides
                                 ]
                             except Exception:
                                 guarded_details = []
-                            guarded_label = "+".join(_side for _side, _guard in guarded_sides)
+                            guarded_label = "+".join(
+                                _side for _side, _guard in guarded_sides
+                            )
                             log_event(
                                 "info",
                                 "mempool_defensive_cancel_suppressed_recent_requote",
@@ -5220,13 +5750,15 @@ class BotLoop:
                             continue
                         try:
                             n = self._defensive_cancel_tiers(
-                                tiers=tiers,
-                                sides=tuple(cancel_sides),
-                                reason=reason)
-                            log_event("info", "mempool_defensive_cancel_done",
-                                      f"price_move {pct:.2f}% {direction} — "
-                                      f"cancelled {n} {'+'.join(cancel_sides)} offers "
-                                      f"across {'+'.join(tiers)}")
+                                tiers=tiers, sides=tuple(cancel_sides), reason=reason
+                            )
+                            log_event(
+                                "info",
+                                "mempool_defensive_cancel_done",
+                                f"price_move {pct:.2f}% {direction} — "
+                                f"cancelled {n} {'+'.join(cancel_sides)} offers "
+                                f"across {'+'.join(tiers)}",
+                            )
                             # Record the cancel so the next cycle's requote
                             # knows the tier was just cleared and defers to
                             # ladder-fill instead of treating it as cold-start.
@@ -5237,7 +5769,9 @@ class BotLoop:
                                 now_ts = time.time()
                                 self._last_defensive_cancel = {
                                     "at": now_ts,
-                                    "tiers": {(t, s) for t in tiers for s in cancel_sides},
+                                    "tiers": {
+                                        (t, s) for t in tiers for s in cancel_sides
+                                    },
                                     "reason": reason,
                                 }
                                 self._remember_tibet_shock(
@@ -5251,19 +5785,28 @@ class BotLoop:
                             except Exception:
                                 pass
                         except Exception as _dc_err:
-                            log_event("warning", "mempool_defensive_cancel_failed",
-                                      f"price_move defensive cancel failed: {_dc_err}")
+                            log_event(
+                                "warning",
+                                "mempool_defensive_cancel_failed",
+                                f"price_move defensive cancel failed: {_dc_err}",
+                            )
                     else:
-                        log_event("info", "mempool_price_move_below_trigger",
-                                  f"Pool moved {pct:.3f}% — below defensive-cancel "
-                                  f"trigger of {trigger_pct:.2f}% (scales with "
-                                  f"MIN_EDGE_BPS={_min_edge:.0f}). Holding offers.")
+                        log_event(
+                            "info",
+                            "mempool_price_move_below_trigger",
+                            f"Pool moved {pct:.3f}% — below defensive-cancel "
+                            f"trigger of {trigger_pct:.2f}% (scales with "
+                            f"MIN_EDGE_BPS={_min_edge:.0f}). Holding offers.",
+                        )
         except Exception as _drain_err:
             # F81: previously silent — meant we couldn't tell if the watcher
             # signal flow was broken. Now logged at warning so anomalies
             # surface in the events feed.
-            log_event("warning", "mempool_drain_failed",
-                      f"Failed to drain mempool signals: {_drain_err}")
+            log_event(
+                "warning",
+                "mempool_drain_failed",
+                f"Failed to drain mempool signals: {_drain_err}",
+            )
 
     # -------------------------------------------------------------------
     # Startup sync
@@ -5287,12 +5830,17 @@ class BotLoop:
                 log_event("error", "config_validation", f"CONFIG ERROR: {err}")
                 slog("STARTUP", f"[ERROR] CONFIG ERROR: {err}")
             if validation.get("errors"):
-                print(f"[STARTUP] {len(validation['errors'])} config error(s) — check settings")
+                print(
+                    f"[STARTUP] {len(validation['errors'])} config error(s) — check settings"
+                )
             if not validation["warnings"] and not validation["errors"]:
                 log_event("info", "config_validation", "Config validation OK")
         except Exception as e:
-            log_event("warning", "config_validation_failed",
-                      f"Config validation raised an exception: {e}")
+            log_event(
+                "warning",
+                "config_validation_failed",
+                f"Config validation raised an exception: {e}",
+            )
 
         # F18 (2026-04-08): startup self-test of external services.
         # Pings every external dependency the bot relies on (Sage,
@@ -5303,18 +5851,28 @@ class BotLoop:
         try:
             self._run_startup_self_test()
         except Exception as _self_test_err:
-            log_event("warning", "startup_self_test_failed",
-                      f"Startup self-test raised: {_self_test_err}")
+            log_event(
+                "warning",
+                "startup_self_test_failed",
+                f"Startup self-test raised: {_self_test_err}",
+            )
 
         # ── Clear stale reservations from previous runtime ──────────
         try:
             from reservation_manager import ReservationManager
+
             cleared = ReservationManager().expire_all()
             if cleared:
-                slog("STARTUP", f"Cleared {cleared} stale reservation(s) from previous runtime")
+                slog(
+                    "STARTUP",
+                    f"Cleared {cleared} stale reservation(s) from previous runtime",
+                )
         except Exception as e:
-            log_event("warning", "reservation_clear_failed",
-                      f"Could not clear stale reservations on startup: {e}")
+            log_event(
+                "warning",
+                "reservation_clear_failed",
+                f"Could not clear stale reservations on startup: {e}",
+            )
 
         # ── SAFETY: Verify CAT wallet_id → asset_id mapping ──────────
         # Prevents the bot from trading the WRONG token if get_wallets()
@@ -5323,25 +5881,35 @@ class BotLoop:
         # doesn't match, preventing costly wrong-token trades.
         try:
             from wallet import get_wallet_type
+
             if get_wallet_type() == "sage":
                 from wallet_sage import _resolve_asset_id, _get_cat_asset_id
+
                 resolved = _resolve_asset_id(cfg.CAT_WALLET_ID)
                 configured = _get_cat_asset_id()
                 if resolved and configured:
                     r_norm = resolved.lower().replace("0x", "").strip()
                     c_norm = configured.lower().replace("0x", "").strip()
                     if r_norm != c_norm:
-                        msg = (f"[SAFETY STOP] wallet_id {cfg.CAT_WALLET_ID} resolves to "
-                               f"asset {resolved[:20]}... but .env has {configured[:20]}... "
-                               f"— these are DIFFERENT tokens! Refusing to start.")
+                        msg = (
+                            f"[SAFETY STOP] wallet_id {cfg.CAT_WALLET_ID} resolves to "
+                            f"asset {resolved[:20]}... but .env has {configured[:20]}... "
+                            f"— these are DIFFERENT tokens! Refusing to start."
+                        )
                         log_event("error", "cat_mapping_mismatch", msg)
                         slog("STARTUP", msg)
                         self._running = False
-                        self._set_state(status="error", error="CAT asset_id mismatch — wrong token detected")
+                        self._set_state(
+                            status="error",
+                            error="CAT asset_id mismatch — wrong token detected",
+                        )
                         return
                     else:
-                        slog("STARTUP", f"[OK] CAT mapping verified: wallet_id {cfg.CAT_WALLET_ID} "
-                             f"-> {resolved[:20]}... matches .env config")
+                        slog(
+                            "STARTUP",
+                            f"[OK] CAT mapping verified: wallet_id {cfg.CAT_WALLET_ID} "
+                            f"-> {resolved[:20]}... matches .env config",
+                        )
         except Exception as e:
             slog("STARTUP", f"[WARN] CAT mapping check skipped: {e}")
 
@@ -5351,61 +5919,99 @@ class BotLoop:
             # This means it works for any wallet without needing .env config.
             try:
                 from wallet import get_next_address, get_wallet_type
+
                 addr_result = get_next_address(new_address=False)
                 if addr_result and addr_result.get("success"):
                     cfg.WALLET_ADDRESS = addr_result["address"]
-                    log_event("info", "wallet_address_detected",
-                              f"Wallet address: {cfg.WALLET_ADDRESS[:20]}...")
+                    log_event(
+                        "info",
+                        "wallet_address_detected",
+                        f"Wallet address: {cfg.WALLET_ADDRESS[:20]}...",
+                    )
 
-                    if (get_wallet_type() == "sage" and
-                            getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False)):
+                    if get_wallet_type() == "sage" and getattr(
+                        cfg, "SAGE_SET_CHANGE_ADDRESS", False
+                    ):
                         try:
-                            from wallet_sage import set_change_address as _sage_set_change_address
+                            from wallet_sage import (
+                                set_change_address as _sage_set_change_address,
+                            )
+
                             change_result = _sage_set_change_address(cfg.WALLET_ADDRESS)
                             if change_result and change_result.get("success"):
-                                log_event("success", "sage_change_address_set",
-                                          f"Sage change address set to "
-                                          f"{cfg.WALLET_ADDRESS[:20]}... "
-                                          f"for fingerprint {change_result.get('fingerprint')}")
+                                log_event(
+                                    "success",
+                                    "sage_change_address_set",
+                                    f"Sage change address set to "
+                                    f"{cfg.WALLET_ADDRESS[:20]}... "
+                                    f"for fingerprint {change_result.get('fingerprint')}",
+                                )
                             else:
-                                log_event("warning", "sage_change_address_failed",
-                                          f"Could not set Sage change address: "
-                                          f"{(change_result or {}).get('error', 'unknown_error')}")
+                                log_event(
+                                    "warning",
+                                    "sage_change_address_failed",
+                                    f"Could not set Sage change address: "
+                                    f"{(change_result or {}).get('error', 'unknown_error')}",
+                                )
                         except Exception as e:
-                            log_event("warning", "sage_change_address_failed",
-                                      f"Error setting Sage change address: {e}")
+                            log_event(
+                                "warning",
+                                "sage_change_address_failed",
+                                f"Error setting Sage change address: {e}",
+                            )
                 else:
-                    log_event("warning", "wallet_address_failed",
-                              "Could not auto-detect wallet address — "
-                              "Spacescan self-spend detection will be limited")
+                    log_event(
+                        "warning",
+                        "wallet_address_failed",
+                        "Could not auto-detect wallet address — "
+                        "Spacescan self-spend detection will be limited",
+                    )
             except Exception as e:
-                log_event("warning", "wallet_address_error",
-                          f"Wallet address detection failed: {e}")
+                log_event(
+                    "warning",
+                    "wallet_address_error",
+                    f"Wallet address detection failed: {e}",
+                )
 
             # ---- Auto-resolve CAT metadata (TIBET_PAIR_ID, CAT_TICKER_ID, CAT_NAME) ----
             # Given only CAT_ASSET_ID, queries TibetSwap to fill any empty derived fields.
             # Only fills fields that are unset in .env — never overwrites explicit config.
             try:
                 from cat_resolver import resolve_and_apply as _resolve_cat
+
                 _cat_meta = _resolve_cat(cfg)
                 if _cat_meta.get("pair_id"):
-                    slog("STARTUP", f"CAT metadata resolved — "
-                         f"pair_id={_cat_meta['pair_id'][:20]}... "
-                         f"ticker={_cat_meta.get('ticker_id')} "
-                         f"name={_cat_meta.get('name')}")
+                    slog(
+                        "STARTUP",
+                        f"CAT metadata resolved — "
+                        f"pair_id={_cat_meta['pair_id'][:20]}... "
+                        f"ticker={_cat_meta.get('ticker_id')} "
+                        f"name={_cat_meta.get('name')}",
+                    )
                 else:
-                    slog("STARTUP", "CAT metadata: token not found on TibetSwap "
-                         "(no pair/ticker auto-resolved — check CAT_TICKER_ID in .env)")
+                    slog(
+                        "STARTUP",
+                        "CAT metadata: token not found on TibetSwap "
+                        "(no pair/ticker auto-resolved — check CAT_TICKER_ID in .env)",
+                    )
             except Exception as e:
-                log_event("warning", "cat_resolver_failed",
-                          f"CAT metadata auto-resolution failed (non-critical): {e}")
+                log_event(
+                    "warning",
+                    "cat_resolver_failed",
+                    f"CAT metadata auto-resolution failed (non-critical): {e}",
+                )
 
             # Sync offers from wallet
-            log_event("info", "startup_wallet_sync", "Fetching offers from wallet RPC...")
+            log_event(
+                "info", "startup_wallet_sync", "Fetching offers from wallet RPC..."
+            )
             open_buys, open_sells, closed = self.offer_manager.sync_from_wallet()
-            log_event("info", "startup_wallet_result",
-                      f"Wallet returned: {len(open_buys)} open buys, "
-                      f"{len(open_sells)} open sells, {len(closed)} closed")
+            log_event(
+                "info",
+                "startup_wallet_result",
+                f"Wallet returned: {len(open_buys)} open buys, "
+                f"{len(open_sells)} open sells, {len(closed)} closed",
+            )
 
             # Set fill tracker baseline
             buy_ids = {o.get("trade_id", "") for o in open_buys if o.get("trade_id")}
@@ -5425,13 +6031,20 @@ class BotLoop:
             # that are no longer open in the wallet (cancelled, filled, expired).
             # Mark them as cancelled so the GUI doesn't show phantom offers.
             wallet_open_ids = buy_ids | sell_ids
-            slog("STARTUP", f"DB cleanup: wallet has {len(wallet_open_ids)} open offer IDs")
+            slog(
+                "STARTUP",
+                f"DB cleanup: wallet has {len(wallet_open_ids)} open offer IDs",
+            )
             try:
                 from database import get_open_offers, batch_cancel_stale_offers
+
                 db_open = get_open_offers()
-                log_event("info", "db_cleanup_start",
-                          f"DB has {len(db_open)} offers marked 'open', "
-                          f"wallet has {len(wallet_open_ids)} truly open")
+                log_event(
+                    "info",
+                    "db_cleanup_start",
+                    f"DB has {len(db_open)} offers marked 'open', "
+                    f"wallet has {len(wallet_open_ids)} truly open",
+                )
 
                 # Collect stale trade_ids (in DB but not in wallet)
                 stale_ids = []
@@ -5443,7 +6056,10 @@ class BotLoop:
                         stale_db_map[tid] = db_offer
 
                 if stale_ids:
-                    slog("STARTUP", f"Found {len(stale_ids)} stale offers — checking status")
+                    slog(
+                        "STARTUP",
+                        f"Found {len(stale_ids)} stale offers — checking status",
+                    )
                     # Check completed offers from wallet to distinguish fills from cancels.
                     # Offers that filled while the bot was down must be marked "filled"
                     # not "cancelled" — otherwise PnL is permanently wrong.
@@ -5453,6 +6069,7 @@ class BotLoop:
                     deferred_stale_ids = set()
                     try:
                         from wallet_sage import get_all_offers as sage_get_all
+
                         now_ts_cleanup = int(time.time())
                         remaining_stale = set(stale_ids)
                         completed_map: Dict[str, Dict] = {}
@@ -5477,15 +6094,20 @@ class BotLoop:
                             start_idx = page * page_size
                             end_idx = start_idx + page_size
                             try:
-                                page_offers = sage_get_all(
-                                    include_completed=True,
-                                    start=start_idx,
-                                    end=end_idx,
-                                ) or []
+                                page_offers = (
+                                    sage_get_all(
+                                        include_completed=True,
+                                        start=start_idx,
+                                        end=end_idx,
+                                    )
+                                    or []
+                                )
                             except Exception as _page_err:
-                                log_event("warning", "db_cleanup_page_failed",
-                                          f"Sage completed page {page} failed: "
-                                          f"{_page_err}")
+                                log_event(
+                                    "warning",
+                                    "db_cleanup_page_failed",
+                                    f"Sage completed page {page} failed: {_page_err}",
+                                )
                                 break
                             if not page_offers:
                                 break
@@ -5506,23 +6128,32 @@ class BotLoop:
                             # review — misclassifying offline fills as
                             # cancelled understates P&L and can rebuild
                             # inventory against the wrong baseline.
-                            log_event("critical", "db_cleanup_page_cap_hit",
-                                      f"Stale-offer pagination hit the "
-                                      f"{max_pages * page_size}-offer safety cap "
-                                      f"with {len(remaining_stale)} ids still "
-                                      f"unchecked after startup. The remainder "
-                                      f"will be treated as cancelled. MANUAL "
-                                      f"P&L RECONCILIATION RECOMMENDED — some "
-                                      f"of these may actually have filled while "
-                                      f"the bot was offline.",
-                                      data={"unresolved_count": len(remaining_stale),
-                                            "scanned_offers": max_pages * page_size,
-                                            "action": "manual_reconcile_pnl"})
+                            log_event(
+                                "critical",
+                                "db_cleanup_page_cap_hit",
+                                f"Stale-offer pagination hit the "
+                                f"{max_pages * page_size}-offer safety cap "
+                                f"with {len(remaining_stale)} ids still "
+                                f"unchecked after startup. The remainder "
+                                f"will be treated as cancelled. MANUAL "
+                                f"P&L RECONCILIATION RECOMMENDED — some "
+                                f"of these may actually have filled while "
+                                f"the bot was offline.",
+                                data={
+                                    "unresolved_count": len(remaining_stale),
+                                    "scanned_offers": max_pages * page_size,
+                                    "action": "manual_reconcile_pnl",
+                                },
+                            )
                         for tid in stale_ids:
                             sage_offer = completed_map.get(tid)
                             if sage_offer:
                                 status_val = sage_offer.get("status")
-                                status_text = str(status_val).upper() if isinstance(status_val, str) else ""
+                                status_text = (
+                                    str(status_val).upper()
+                                    if isinstance(status_val, str)
+                                    else ""
+                                )
                                 if status_val == 2 or status_text == "PENDING_CANCEL":
                                     pending_cancel_ids.add(tid)
                                     continue
@@ -5539,22 +6170,32 @@ class BotLoop:
                                 elif mapped is None:
                                     deferred_stale_ids.add(tid)
                     except Exception as e:
-                        log_event("warning", "db_cleanup_status_check_failed",
-                                  f"Could not check completed offers at startup: {e}")
+                        log_event(
+                            "warning",
+                            "db_cleanup_status_check_failed",
+                            f"Could not check completed offers at startup: {e}",
+                        )
 
-                    cancel_ids = [t for t in stale_ids
-                                  if t not in fill_ids
-                                  and t not in expire_ids
-                                  and t not in pending_cancel_ids
-                                  and t not in deferred_stale_ids]
+                    cancel_ids = [
+                        t
+                        for t in stale_ids
+                        if t not in fill_ids
+                        and t not in expire_ids
+                        and t not in pending_cancel_ids
+                        and t not in deferred_stale_ids
+                    ]
 
                     if fill_ids:
                         from database import update_offer_status
+
                         for tid in fill_ids:
                             update_offer_status(tid, "filled")
-                        log_event("info", "db_cleanup_fills_recovered",
-                                  f"Marked {len(fill_ids)} offers as filled "
-                                  f"(filled while bot was offline)")
+                        log_event(
+                            "info",
+                            "db_cleanup_fills_recovered",
+                            f"Marked {len(fill_ids)} offers as filled "
+                            f"(filled while bot was offline)",
+                        )
 
                     # Emit SSE fill events for offline fills + create fill rows
                     # so PnL matching works correctly without waiting for the
@@ -5562,37 +6203,59 @@ class BotLoop:
                     if fill_ids:
                         try:
                             from database import backfill_verified_fills_from_offers
+
                             _offline_fills = backfill_verified_fills_from_offers(
                                 limit=len(fill_ids) + 10
                             )
-                            for _off_fill in (_offline_fills or []):
-                                self._emit("fill", {
-                                    "side": _off_fill.get("side", ""),
-                                    "price": str(_off_fill.get("price_xch") or
-                                                 _off_fill.get("price") or ""),
-                                    "size_xch": str(_off_fill.get("xch_amount") or ""),
-                                    "tier": _off_fill.get("tier", ""),
-                                    "offline": True,
-                                })
+                            for _off_fill in _offline_fills or []:
+                                self._emit(
+                                    "fill",
+                                    {
+                                        "side": _off_fill.get("side", ""),
+                                        "price": str(
+                                            _off_fill.get("price_xch")
+                                            or _off_fill.get("price")
+                                            or ""
+                                        ),
+                                        "size_xch": str(
+                                            _off_fill.get("xch_amount") or ""
+                                        ),
+                                        "tier": _off_fill.get("tier", ""),
+                                        "offline": True,
+                                    },
+                                )
                             if _offline_fills:
-                                log_event("info", "offline_fill_sse_emitted",
-                                          f"Emitted SSE events for "
-                                          f"{len(_offline_fills)} offline fill(s)")
+                                log_event(
+                                    "info",
+                                    "offline_fill_sse_emitted",
+                                    f"Emitted SSE events for "
+                                    f"{len(_offline_fills)} offline fill(s)",
+                                )
                         except Exception as _sse_err:
-                            log_event("warning", "offline_fill_sse_failed",
-                                      f"Offline fill SSE emit failed (non-critical): "
-                                      f"{_sse_err}")
+                            log_event(
+                                "warning",
+                                "offline_fill_sse_failed",
+                                f"Offline fill SSE emit failed (non-critical): "
+                                f"{_sse_err}",
+                            )
 
                     if expire_ids:
                         from database import update_offer_status as _uos
+
                         for tid in expire_ids:
                             _uos(tid, "expired")
-                        log_event("info", "db_cleanup_expired",
-                                  f"Marked {len(expire_ids)} offers as expired")
+                        log_event(
+                            "info",
+                            "db_cleanup_expired",
+                            f"Marked {len(expire_ids)} offers as expired",
+                        )
 
                     if pending_cancel_ids:
                         try:
-                            from database import transition_offer as _to, mark_cancel_attempted as _mca
+                            from database import (
+                                transition_offer as _to,
+                                mark_cancel_attempted as _mca,
+                            )
                         except Exception:
                             _to = None
                             _mca = None
@@ -5607,39 +6270,59 @@ class BotLoop:
                                     _mca(tid)
                                 except Exception:
                                     pass
-                        log_event("info", "db_cleanup_pending_cancel_deferred",
-                                  f"Deferred {len(pending_cancel_ids)} stale offers still "
-                                  f"PENDING_CANCEL in Sage; pending-cancel verifier will reconcile")
+                        log_event(
+                            "info",
+                            "db_cleanup_pending_cancel_deferred",
+                            f"Deferred {len(pending_cancel_ids)} stale offers still "
+                            f"PENDING_CANCEL in Sage; pending-cancel verifier will reconcile",
+                        )
 
                     if deferred_stale_ids:
-                        log_event("warning", "db_cleanup_stale_deferred",
-                                  f"Deferred {len(deferred_stale_ids)} stale offers with "
-                                  f"non-terminal Sage status; leaving open for next wallet sync")
+                        log_event(
+                            "warning",
+                            "db_cleanup_stale_deferred",
+                            f"Deferred {len(deferred_stale_ids)} stale offers with "
+                            f"non-terminal Sage status; leaving open for next wallet sync",
+                        )
 
                     cleaned = batch_cancel_stale_offers(cancel_ids) if cancel_ids else 0
                     total_cleaned = cleaned + len(fill_ids) + len(expire_ids)
                     total_deferred = len(pending_cancel_ids) + len(deferred_stale_ids)
-                    slog("STARTUP", f"Cleanup result: {cleaned} cancelled, "
-                                    f"{len(fill_ids)} filled, {len(expire_ids)} expired, "
-                                    f"{total_deferred} deferred")
+                    slog(
+                        "STARTUP",
+                        f"Cleanup result: {cleaned} cancelled, "
+                        f"{len(fill_ids)} filled, {len(expire_ids)} expired, "
+                        f"{total_deferred} deferred",
+                    )
                     if total_cleaned == len(stale_ids):
-                        log_event("info", "db_cleanup_done",
-                                  f"Cleaned {total_cleaned} stale DB offers "
-                                  f"({cleaned} cancelled, {len(fill_ids)} filled, "
-                                  f"{len(expire_ids)} expired)")
+                        log_event(
+                            "info",
+                            "db_cleanup_done",
+                            f"Cleaned {total_cleaned} stale DB offers "
+                            f"({cleaned} cancelled, {len(fill_ids)} filled, "
+                            f"{len(expire_ids)} expired)",
+                        )
                     elif total_deferred:
-                        log_event("info", "db_cleanup_done",
-                                  f"Cleaned {total_cleaned}/{len(stale_ids)} stale DB offers "
-                                  f"({cleaned} cancelled, {len(fill_ids)} filled, "
-                                  f"{len(expire_ids)} expired, {total_deferred} deferred)")
+                        log_event(
+                            "info",
+                            "db_cleanup_done",
+                            f"Cleaned {total_cleaned}/{len(stale_ids)} stale DB offers "
+                            f"({cleaned} cancelled, {len(fill_ids)} filled, "
+                            f"{len(expire_ids)} expired, {total_deferred} deferred)",
+                        )
                     else:
-                        log_event("info", "db_cleanup_done",
-                                  f"Cleaned {total_cleaned}/{len(stale_ids)} stale DB offers "
-                                  f"(some failed due to DB lock)")
+                        log_event(
+                            "info",
+                            "db_cleanup_done",
+                            f"Cleaned {total_cleaned}/{len(stale_ids)} stale DB offers "
+                            f"(some failed due to DB lock)",
+                        )
                 else:
                     log_event("info", "db_cleanup_done", "No stale DB offers found")
             except Exception as e:
-                log_event("warning", "db_cleanup_failed", f"DB offer cleanup failed: {e}")
+                log_event(
+                    "warning", "db_cleanup_failed", f"DB offer cleanup failed: {e}"
+                )
 
             recovered_startup_trade_ids = set()
 
@@ -5648,28 +6331,34 @@ class BotLoop:
             # (e.g., DB was locked, bot crashed), import them now.
             try:
                 from database import recover_unknown_offers
+
                 all_wallet_offers = open_buys + open_sells
                 recovery = recover_unknown_offers(all_wallet_offers, cfg.CAT_ASSET_ID)
                 recovered_startup_trade_ids = {
-                    str(tid)
-                    for tid in recovery.get("trade_ids", [])
-                    if tid
+                    str(tid) for tid in recovery.get("trade_ids", []) if tid
                 }
                 if recovery.get("recovered", 0) > 0:
-                    log_event("info", "startup_offer_recovery",
-                              f"Recovered {recovery['recovered']} unknown offers from wallet "
-                              f"(skipped {recovery['skipped']}, errors {recovery['errors']})")
+                    log_event(
+                        "info",
+                        "startup_offer_recovery",
+                        f"Recovered {recovery['recovered']} unknown offers from wallet "
+                        f"(skipped {recovery['skipped']}, errors {recovery['errors']})",
+                    )
                     # Update wallet_open_ids with the newly recovered offers
                     for offer in all_wallet_offers:
                         tid = offer.get("trade_id", "")
                         if tid:
                             wallet_open_ids.add(tid)
                 else:
-                    log_event("info", "startup_offer_recovery",
-                              "No unknown offers — DB and wallet in sync")
+                    log_event(
+                        "info",
+                        "startup_offer_recovery",
+                        "No unknown offers — DB and wallet in sync",
+                    )
             except Exception as e:
-                log_event("warning", "startup_recovery_failed",
-                          f"Offer recovery failed: {e}")
+                log_event(
+                    "warning", "startup_recovery_failed", f"Offer recovery failed: {e}"
+                )
 
             def _push_startup_market_snapshot():
                 """Warm market intel and push a first dashboard snapshot early.
@@ -5683,8 +6372,11 @@ class BotLoop:
                     if self.market_intel:
                         self.market_intel.refresh_orderbook(force=True)
                 except Exception as e:
-                    log_event("debug", "startup_orderbook_refresh_failed",
-                              f"Startup orderbook refresh failed (non-critical): {e}")
+                    log_event(
+                        "debug",
+                        "startup_orderbook_refresh_failed",
+                        f"Startup orderbook refresh failed (non-critical): {e}",
+                    )
 
                 try:
                     offer_edges = self._get_live_offer_edges(open_buys, open_sells)
@@ -5694,26 +6386,39 @@ class BotLoop:
                     )
                     cached_intel = {}
                     try:
-                        cached_intel = self.market_intel.get_cached_data() if self.market_intel else {}
+                        cached_intel = (
+                            self.market_intel.get_cached_data()
+                            if self.market_intel
+                            else {}
+                        )
                     except Exception as e:
-                        log_event("debug", "startup_cached_intel_failed",
-                                  f"Startup cached intel fetch failed (non-critical): {e}")
+                        log_event(
+                            "debug",
+                            "startup_cached_intel_failed",
+                            f"Startup cached intel fetch failed (non-critical): {e}",
+                        )
                         cached_intel = {}
 
-                    self._emit("dashboard_update", {
-                        "market_health": health_data,
-                        "loop_count": self._loop_count,
-                        "open_buys": len(buy_ids),
-                        "open_sells": len(sell_ids),
-                        "mid_price": str(self._current_mid_price or Decimal("0")),
-                        "our_best_bid": offer_edges.get("our_best_bid", "0"),
-                        "our_best_ask": offer_edges.get("our_best_ask", "0"),
-                        "best_bid": str(cached_intel.get("best_bid", "0")),
-                        "best_ask": str(cached_intel.get("best_ask", "0")),
-                    })
+                    self._emit(
+                        "dashboard_update",
+                        {
+                            "market_health": health_data,
+                            "loop_count": self._loop_count,
+                            "open_buys": len(buy_ids),
+                            "open_sells": len(sell_ids),
+                            "mid_price": str(self._current_mid_price or Decimal("0")),
+                            "our_best_bid": offer_edges.get("our_best_bid", "0"),
+                            "our_best_ask": offer_edges.get("our_best_ask", "0"),
+                            "best_bid": str(cached_intel.get("best_bid", "0")),
+                            "best_ask": str(cached_intel.get("best_ask", "0")),
+                        },
+                    )
                 except Exception as e:
-                    log_event("debug", "startup_dashboard_update_failed",
-                              f"Startup dashboard update failed (non-critical): {e}")
+                    log_event(
+                        "debug",
+                        "startup_dashboard_update_failed",
+                        f"Startup dashboard update failed (non-critical): {e}",
+                    )
 
             # ---- Reload Dexie mappings + repost missing ----
             # The in-memory dexie_manager map is empty on startup.
@@ -5721,11 +6426,15 @@ class BotLoop:
             # 2) For offers WITHOUT dexie_id, repost to Dexie to get links
             try:
                 from database import get_trade_dexie_map, get_open_offers
+
                 db_dexie_map = get_trade_dexie_map(cfg.CAT_ASSET_ID)
                 if db_dexie_map:
                     self.dexie_manager._trade_dexie_map.update(db_dexie_map)
-                    log_event("info", "dexie_recovery",
-                              f"Loaded {len(db_dexie_map)} Dexie mappings from database")
+                    log_event(
+                        "info",
+                        "dexie_recovery",
+                        f"Loaded {len(db_dexie_map)} Dexie mappings from database",
+                    )
 
                 # Check for offers missing dexie_id — repost them
                 db_open = get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
@@ -5761,19 +6470,28 @@ class BotLoop:
                         )
 
                     if repost_count > 0:
-                        log_event("info", "dexie_repost",
-                                  f"Queued {repost_count} offers for Dexie posting "
-                                  f"(will post during loop cycles, "
-                                  f"{cfg.MAX_POSTS_PER_LOOP} per cycle)")
+                        log_event(
+                            "info",
+                            "dexie_repost",
+                            f"Queued {repost_count} offers for Dexie posting "
+                            f"(will post during loop cycles, "
+                            f"{cfg.MAX_POSTS_PER_LOOP} per cycle)",
+                        )
                         # DON'T flush here — let the normal loop cycle handle
                         # posting gradually via step 11. Flushing 80 offers
                         # during startup causes DB locking with concurrent reads.
                     elif not db_dexie_map:
-                        log_event("info", "dexie_recovery",
-                                  "No Dexie mappings found — will post on first cycle")
+                        log_event(
+                            "info",
+                            "dexie_recovery",
+                            "No Dexie mappings found — will post on first cycle",
+                        )
             except Exception as e:
-                log_event("warning", "dexie_recovery_failed",
-                          f"Failed to recover Dexie links: {e}")
+                log_event(
+                    "warning",
+                    "dexie_recovery_failed",
+                    f"Failed to recover Dexie links: {e}",
+                )
 
             # Warm orderbook + advisor context before the slower resume repost path.
             # This keeps Market Health / Advisor responsive during startup.
@@ -5804,17 +6522,26 @@ class BotLoop:
                         )
                     )
                     if _prep_active:
-                        log_event("info", "startup_coins_critical_prep_pending",
-                                  "Coin tiers below target — coin prep is "
-                                  "in flight or queued, will replenish.")
+                        log_event(
+                            "info",
+                            "startup_coins_critical_prep_pending",
+                            "Coin tiers below target — coin prep is "
+                            "in flight or queued, will replenish.",
+                        )
                     elif resumed_live_book:
-                        log_event("warning", "startup_spares_low",
-                                  "Spare coin buffers below target — active offers remain live; "
-                                  "topup and normal fills will replenish specific tiers over time.")
+                        log_event(
+                            "warning",
+                            "startup_spares_low",
+                            "Spare coin buffers below target — active offers remain live; "
+                            "topup and normal fills will replenish specific tiers over time.",
+                        )
                     else:
-                        log_event("warning", "startup_coins_unavailable",
-                                  "Coin pools missing required tier coins — run coin prep "
-                                  "before starting offers.")
+                        log_event(
+                            "warning",
+                            "startup_coins_unavailable",
+                            "Coin pools missing required tier coins — run coin prep "
+                            "before starting offers.",
+                        )
 
             # Per-tier spare summary — fires on EVERY start (cold or resume).
             # Shows exactly which tiers are below their spare_target so the user
@@ -5829,7 +6556,10 @@ class BotLoop:
                     _cat_rem = _ti.get("cat_spare_remaining", 0)
                     _xch_status = _ti.get("xch_status", "READY")
                     _cat_status = _ti.get("cat_status", "READY")
-                    if _xch_status in ("LOW", "EMPTY") or _cat_status in ("LOW", "EMPTY"):
+                    if _xch_status in ("LOW", "EMPTY") or _cat_status in (
+                        "LOW",
+                        "EMPTY",
+                    ):
                         _parts = []
                         if _xch_status in ("LOW", "EMPTY"):
                             _parts.append(
@@ -5851,11 +6581,14 @@ class BotLoop:
                         "spare target: "
                         + "; ".join(_tier_low_msgs)
                         + ". Proactive drip/topup will replenish toward the "
-                        "buffer while active offer slots stay usable."
+                        "buffer while active offer slots stay usable.",
                     )
             except Exception as _spare_check_err:
-                log_event("debug", "startup_spare_check_failed",
-                          f"Startup spare check error (non-critical): {_spare_check_err}")
+                log_event(
+                    "debug",
+                    "startup_spare_check_failed",
+                    f"Startup spare check error (non-critical): {_spare_check_err}",
+                )
 
             # V3: Startup collateral advisory — tells user how XCH is allocated
             try:
@@ -5863,14 +6596,13 @@ class BotLoop:
                 assessment = advisory.get("assessment", "UNKNOWN")
                 msg = advisory.get("message", "")
                 if assessment in ("CRITICAL", "LOW"):
-                    log_event("warning", "collateral_advisory",
-                              f"COLLATERAL ADVISORY: {msg}")
+                    log_event(
+                        "warning", "collateral_advisory", f"COLLATERAL ADVISORY: {msg}"
+                    )
                 else:
-                    log_event("info", "collateral_advisory",
-                              f"Collateral: {msg}")
+                    log_event("info", "collateral_advisory", f"Collateral: {msg}")
             except Exception as e:
-                log_event("warning", "advisory_failed",
-                          f"Startup advisory failed: {e}")
+                log_event("warning", "advisory_failed", f"Startup advisory failed: {e}")
 
             # ---- Old-style coin reconciliation — DISABLED (V4 fix) ----
             # This old approach was WRONG for Sage wallet: it used _xch_inventory
@@ -5881,26 +6613,36 @@ class BotLoop:
             #
             # The full reconcile below (owned-selectable=locked) handles this
             # correctly, so this block is no longer needed.
-            log_event("info", "coin_reconciliation",
-                      "Skipping old-style reconcile (replaced by full owned-selectable reconcile)")
+            log_event(
+                "info",
+                "coin_reconciliation",
+                "Skipping old-style reconcile (replaced by full owned-selectable reconcile)",
+            )
 
             # ---- Full coin reconcile + offer-to-coin linking ----
             # If offers were recovered above, we need to run the full
             # reconcile (owned + selectable) and link offers to locked coins.
             wallet_confirmed_locked = set()
             try:
-                from database import reconcile_coins_with_wallet, link_offers_to_locked_coins
+                from database import (
+                    reconcile_coins_with_wallet,
+                    link_offers_to_locked_coins,
+                )
                 from wallet import get_owned_coins, get_selectable_coins_map
 
-                xch_wid = cfg.WALLET_ID_XCH      # int — don't str(), Sage _is_cat_wallet needs int
-                cat_wid = cfg.CAT_WALLET_ID      # int
+                xch_wid = (
+                    cfg.WALLET_ID_XCH
+                )  # int — don't str(), Sage _is_cat_wallet needs int
+                cat_wid = cfg.CAT_WALLET_ID  # int
 
                 # V5 FIX: Try detailed endpoint first (has offer_id for direct linking)
                 _startup_detailed = False
                 try:
                     from wallet import get_wallet_type as _s_gwt
+
                     if _s_gwt() == "sage":
                         from wallet_sage import get_owned_coins_detailed
+
                         xch_detail = get_owned_coins_detailed(xch_wid)
                         cat_detail = get_owned_coins_detailed(cat_wid)
                         if xch_detail is not None and cat_detail is not None:
@@ -5910,19 +6652,26 @@ class BotLoop:
                             for cid, info in xch_detail.items():
                                 xch_owned[cid] = info["amount"]
                                 if info.get("offer_id"):
-                                    wallet_confirmed_locked.add(cid if cid.startswith("0x") else "0x" + cid)
+                                    wallet_confirmed_locked.add(
+                                        cid if cid.startswith("0x") else "0x" + cid
+                                    )
                                 else:
                                     xch_selectable[cid] = info["amount"]
                             cat_owned, cat_selectable = {}, {}
                             for cid, info in cat_detail.items():
                                 cat_owned[cid] = info["amount"]
                                 if info.get("offer_id"):
-                                    wallet_confirmed_locked.add(cid if cid.startswith("0x") else "0x" + cid)
+                                    wallet_confirmed_locked.add(
+                                        cid if cid.startswith("0x") else "0x" + cid
+                                    )
                                 else:
                                     cat_selectable[cid] = info["amount"]
                 except Exception as e:
-                    log_event("warning", "detailed_coin_fetch_failed",
-                              f"Detailed Sage coin fetch failed, falling back to basic mode: {e}")
+                    log_event(
+                        "warning",
+                        "detailed_coin_fetch_failed",
+                        f"Detailed Sage coin fetch failed, falling back to basic mode: {e}",
+                    )
 
                 if not _startup_detailed:
                     xch_owned = get_owned_coins(xch_wid) or {}
@@ -5934,26 +6683,35 @@ class BotLoop:
                 xch_stats = reconcile_coins_with_wallet(
                     wallet_selectable=xch_selectable,
                     wallet_owned=xch_owned,
-                    wallet_type='xch'
+                    wallet_type="xch",
                 )
                 # Reconcile CAT coins
                 cat_stats = reconcile_coins_with_wallet(
                     wallet_selectable=cat_selectable,
                     wallet_owned=cat_owned,
-                    wallet_type='cat'
+                    wallet_type="cat",
                 )
-                log_event("info", "startup_full_reconcile",
-                          f"Full reconcile: XCH({xch_stats}) CAT({cat_stats})")
+                log_event(
+                    "info",
+                    "startup_full_reconcile",
+                    f"Full reconcile: XCH({xch_stats}) CAT({cat_stats})",
+                )
 
                 # Link offers to locked coins (both sides per offer)
                 all_wallet_open = open_buys + open_sells
-                link_stats = link_offers_to_locked_coins(all_wallet_open, cfg.CAT_ASSET_ID)
-                log_event("info", "startup_offer_linking",
-                          f"Offer-coin linking: {link_stats}")
+                link_stats = link_offers_to_locked_coins(
+                    all_wallet_open, cfg.CAT_ASSET_ID
+                )
+                log_event(
+                    "info", "startup_offer_linking", f"Offer-coin linking: {link_stats}"
+                )
 
             except Exception as e:
-                log_event("warning", "startup_reconcile_link_failed",
-                          f"Full reconcile + link failed: {e}")
+                log_event(
+                    "warning",
+                    "startup_reconcile_link_failed",
+                    f"Full reconcile + link failed: {e}",
+                )
 
             # ---- Orphaned locked coin cleanup (V5 FIX) ----
             # Free any locked coins whose offers no longer exist.
@@ -5962,43 +6720,62 @@ class BotLoop:
             # V5: For Sage, build wallet_confirmed_locked set to prevent tug-of-war.
             try:
                 from database import cleanup_orphaned_locked_coins
+
                 # Build wallet_confirmed_locked for Sage
                 wallet_confirmed_locked = wallet_confirmed_locked or set()
                 try:
                     from wallet import get_wallet_type
+
                     if get_wallet_type() == "sage" and not wallet_confirmed_locked:
                         from wallet_sage import get_owned_coins_detailed
+
                         for _wid in [cfg.WALLET_ID_XCH, cfg.CAT_WALLET_ID]:
                             _detail = get_owned_coins_detailed(_wid)
                             if _detail:
                                 for _cid, _info in _detail.items():
                                     if _info.get("offer_id"):
-                                        store_id = _cid if _cid.startswith("0x") else "0x" + _cid
+                                        store_id = (
+                                            _cid
+                                            if _cid.startswith("0x")
+                                            else "0x" + _cid
+                                        )
                                         wallet_confirmed_locked.add(store_id)
                 except Exception as e:
-                    log_event("debug", "sage_locked_coin_fetch_failed",
-                              f"Sage locked coin set build failed (non-critical, proceeding without protection): {e}")
+                    log_event(
+                        "debug",
+                        "sage_locked_coin_fetch_failed",
+                        f"Sage locked coin set build failed (non-critical, proceeding without protection): {e}",
+                    )
                 orphan_stats = cleanup_orphaned_locked_coins(
-                    wallet_open_ids,
-                    wallet_confirmed_locked=wallet_confirmed_locked
+                    wallet_open_ids, wallet_confirmed_locked=wallet_confirmed_locked
                 )
                 if orphan_stats["total_freed"] > 0:
-                    log_event("info", "startup_orphan_cleanup",
-                              f"Freed {orphan_stats['total_freed']} orphaned locked coins "
-                              f"({orphan_stats['freed_no_trade']} no trade_id, "
-                              f"{orphan_stats['freed_stale_trade']} stale trade_id, "
-                              f"{orphan_stats.get('skipped_wallet_locked', 0)} wallet-protected)")
+                    log_event(
+                        "info",
+                        "startup_orphan_cleanup",
+                        f"Freed {orphan_stats['total_freed']} orphaned locked coins "
+                        f"({orphan_stats['freed_no_trade']} no trade_id, "
+                        f"{orphan_stats['freed_stale_trade']} stale trade_id, "
+                        f"{orphan_stats.get('skipped_wallet_locked', 0)} wallet-protected)",
+                    )
                 else:
-                    log_event("info", "startup_orphan_cleanup",
-                              "No orphaned locked coins found")
+                    log_event(
+                        "info",
+                        "startup_orphan_cleanup",
+                        "No orphaned locked coins found",
+                    )
             except Exception as e:
-                log_event("warning", "startup_orphan_cleanup_failed",
-                          f"Orphaned locked coin cleanup failed: {e}")
+                log_event(
+                    "warning",
+                    "startup_orphan_cleanup_failed",
+                    f"Orphaned locked coin cleanup failed: {e}",
+                )
 
             # ---- Sniper recovery ----
             # Restore sniper active IDs from database (they're memory-only in sniper.py)
             try:
                 from database import get_open_offers as _get_open_offers
+
                 sniper_offers = _get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
                 sniper_offers = [o for o in sniper_offers if o.get("tier") == "sniper"]
                 sniper_ids = [o["trade_id"] for o in sniper_offers if o.get("trade_id")]
@@ -6027,28 +6804,54 @@ class BotLoop:
                         ]
                         if candidates:
                             from datetime import datetime
+
                             anchor_ts = max(
-                                datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                                datetime.fromisoformat(
+                                    ts.replace("Z", "+00:00")
+                                ).timestamp()
                                 for ts in candidates
                             )
                     except Exception as e:
-                        log_event("debug", "sniper_anchor_ts_failed",
-                                  f"Sniper anchor timestamp parse failed (using now): {e}")
+                        log_event(
+                            "debug",
+                            "sniper_anchor_ts_failed",
+                            f"Sniper anchor timestamp parse failed (using now): {e}",
+                        )
                     with self._probe_lock:
-                        self._probe_state.update({
-                            "active": False,
-                            "buy_tid": latest_buy.get("trade_id") if latest_buy else None,
-                            "sell_tid": latest_sell.get("trade_id") if latest_sell else None,
-                            "buy_price": Decimal(str(latest_buy.get("price_xch") or 0)) if latest_buy else Decimal("0"),
-                            "sell_price": Decimal(str(latest_sell.get("price_xch") or 0)) if latest_sell else Decimal("0"),
-                            "confirmed_at": anchor_ts,
-                            "launched_at": anchor_ts,
-                        })
-                    log_event("info", "sniper_recovery",
-                              f"Recovered {len(sniper_ids)} active sniper offer IDs from DB")
+                        self._probe_state.update(
+                            {
+                                "active": False,
+                                "buy_tid": latest_buy.get("trade_id")
+                                if latest_buy
+                                else None,
+                                "sell_tid": latest_sell.get("trade_id")
+                                if latest_sell
+                                else None,
+                                "buy_price": Decimal(
+                                    str(latest_buy.get("price_xch") or 0)
+                                )
+                                if latest_buy
+                                else Decimal("0"),
+                                "sell_price": Decimal(
+                                    str(latest_sell.get("price_xch") or 0)
+                                )
+                                if latest_sell
+                                else Decimal("0"),
+                                "confirmed_at": anchor_ts,
+                                "launched_at": anchor_ts,
+                            }
+                        )
+                    log_event(
+                        "info",
+                        "sniper_recovery",
+                        f"Recovered {len(sniper_ids)} active sniper offer IDs from DB",
+                    )
             except Exception as e:
-                log_event("warning", "sniper_recovery_failed",
-                          f"Sniper ID recovery failed: {e}")
+                log_event(
+                    "warning",
+                    "sniper_recovery_failed",
+                    f"Sniper ID recovery failed: {e}",
+                )
 
             # ---- Gap closer recovery ----
             # Restore gap-closer IDs from database (memory-only in boost_manager)
@@ -6059,14 +6862,16 @@ class BotLoop:
             try:
                 # Strategy 1: DB open boost offers (ideal case)
                 boost_offers = _get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
-                boost_ids = [o["trade_id"] for o in boost_offers
-                             if o.get("tier") == "boost"]
+                boost_ids = [
+                    o["trade_id"] for o in boost_offers if o.get("tier") == "boost"
+                ]
 
                 # Strategy 2: If no open boost offers in DB, check ALL recent
                 # boost offers (any status) and cross-reference with wallet
                 if not boost_ids:
                     try:
                         from database import get_connection as _gc_conn
+
                         _db = _gc_conn()
                         # Find any boost-tier offers from last 4 hours
                         all_boost_rows = _db.execute(
@@ -6081,9 +6886,11 @@ class BotLoop:
                             if tid in wallet_open_ids:
                                 boost_ids.append(tid)
                         if boost_ids:
-                            print(f"   [BOOST] Found {len(boost_ids)} boost offers in wallet "
-                                  f"(DB status was not 'open' — recovered via cross-reference)",
-                                  flush=True)
+                            print(
+                                f"   [BOOST] Found {len(boost_ids)} boost offers in wallet "
+                                f"(DB status was not 'open' — recovered via cross-reference)",
+                                flush=True,
+                            )
                     except Exception as e2:
                         log_event("debug", "boost_crossref_failed", str(e2))
 
@@ -6098,6 +6905,7 @@ class BotLoop:
                     try:
                         import json as _json
                         from database import get_connection
+
                         db = get_connection()
                         row = db.execute(
                             "SELECT data FROM events "
@@ -6106,67 +6914,107 @@ class BotLoop:
                             "ORDER BY timestamp DESC LIMIT 1"
                         ).fetchone()
                         if row and row[0]:
-                            evt_data = _json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                            evt_data = (
+                                _json.loads(row[0])
+                                if isinstance(row[0], str)
+                                else row[0]
+                            )
                             recovered_spread = int(evt_data.get("spread_bps", 0))
                             recovered_floor = int(evt_data.get("arb_floor_bps", 0))
                             recovered_steps = int(evt_data.get("steps_taken", 0))
                     except Exception as e:
-                        log_event("debug", "gap_closer_recovery_db_failed",
-                                  f"Gap closer spread recovery from DB failed (non-critical): {e}")
+                        log_event(
+                            "debug",
+                            "gap_closer_recovery_db_failed",
+                            f"Gap closer spread recovery from DB failed (non-critical): {e}",
+                        )
 
                     if recovered_spread > 0:
                         self.boost_manager._gap_spread_bps = recovered_spread
                         self.boost_manager._arb_floor_bps = recovered_floor
                         self.boost_manager._steps_taken = recovered_steps
                         self.boost_manager._start_spread_bps = int(
-                            getattr(cfg, "BOOST_SPREAD_BPS", recovered_spread))
-                        log_event("info", "gap_closer_recovery",
-                                  f"Recovered {len(boost_ids)} gap-closer offers — "
-                                  f"resuming at {_bps_to_pct(recovered_spread)} (step {recovered_steps}, "
-                                  f"floor {_bps_to_pct(recovered_floor)})")
-                        print(f"[BOOST] Gap closer recovery: {len(boost_ids)} offers restored "
-                              f"at {_bps_to_pct(recovered_spread)} (step {recovered_steps})", flush=True)
+                            getattr(cfg, "BOOST_SPREAD_BPS", recovered_spread)
+                        )
+                        log_event(
+                            "info",
+                            "gap_closer_recovery",
+                            f"Recovered {len(boost_ids)} gap-closer offers — "
+                            f"resuming at {_bps_to_pct(recovered_spread)} (step {recovered_steps}, "
+                            f"floor {_bps_to_pct(recovered_floor)})",
+                        )
+                        print(
+                            f"[BOOST] Gap closer recovery: {len(boost_ids)} offers restored "
+                            f"at {_bps_to_pct(recovered_spread)} (step {recovered_steps})",
+                            flush=True,
+                        )
                     else:
                         # Fallback: no event data → use config default
-                        self.boost_manager._gap_spread_bps = getattr(cfg, "BOOST_SPREAD_BPS", 200)
-                        self.boost_manager._start_spread_bps = self.boost_manager._gap_spread_bps
-                        log_event("info", "gap_closer_recovery",
-                                  f"Recovered {len(boost_ids)} gap-closer offers from DB "
-                                  f"(spread data lost — starting fresh at {_bps_to_pct(self.boost_manager._gap_spread_bps)})")
-                        print(f"[BOOST] Gap closer recovery: {len(boost_ids)} offers restored "
-                              f"(will resume probing from default)", flush=True)
+                        self.boost_manager._gap_spread_bps = getattr(
+                            cfg, "BOOST_SPREAD_BPS", 200
+                        )
+                        self.boost_manager._start_spread_bps = (
+                            self.boost_manager._gap_spread_bps
+                        )
+                        log_event(
+                            "info",
+                            "gap_closer_recovery",
+                            f"Recovered {len(boost_ids)} gap-closer offers from DB "
+                            f"(spread data lost — starting fresh at {_bps_to_pct(self.boost_manager._gap_spread_bps)})",
+                        )
+                        print(
+                            f"[BOOST] Gap closer recovery: {len(boost_ids)} offers restored "
+                            f"(will resume probing from default)",
+                            flush=True,
+                        )
                 # Pre-register recovered boost IDs so fill tracker ignores
                 # them if they disappear during gap closer stepping
                 for tid in boost_ids:
                     self.offer_manager._bot_cancelled_ids.add(tid)
             except Exception as e:
-                log_event("warning", "gap_closer_recovery_failed",
-                          f"Gap closer ID recovery failed: {e}")
+                log_event(
+                    "warning",
+                    "gap_closer_recovery_failed",
+                    f"Gap closer ID recovery failed: {e}",
+                )
 
             # Safety net: ALL boost-tier offers from recent history should be
             # pre-cancelled so fill tracker ignores them if they disappear.
             # This catches offers in ANY status (open, cancelled, etc.)
             try:
                 from database import get_connection as _gc_conn2
+
                 _db2 = _gc_conn2()
                 all_boost_rows = _db2.execute(
                     "SELECT trade_id FROM offers "
                     "WHERE tier = 'boost' "
                     "AND created_at > datetime('now', '-4 hours')"
                 ).fetchall()
-                stale_boost_ids = [r[0] for r in all_boost_rows
-                                   if r[0] not in self.boost_manager._active_boost_ids]
+                stale_boost_ids = [
+                    r[0]
+                    for r in all_boost_rows
+                    if r[0] not in self.boost_manager._active_boost_ids
+                ]
                 for tid in stale_boost_ids:
                     self.offer_manager._bot_cancelled_ids.add(tid)
                 if stale_boost_ids:
-                    log_event("info", "boost_stale_protection",
-                              f"Pre-cancelled {len(stale_boost_ids)} stale boost offers "
-                              f"from fill tracker (any status)")
-                    print(f"   🛡️ Pre-cancelled {len(stale_boost_ids)} stale boost IDs "
-                          f"from fill detection", flush=True)
+                    log_event(
+                        "info",
+                        "boost_stale_protection",
+                        f"Pre-cancelled {len(stale_boost_ids)} stale boost offers "
+                        f"from fill tracker (any status)",
+                    )
+                    print(
+                        f"   🛡️ Pre-cancelled {len(stale_boost_ids)} stale boost IDs "
+                        f"from fill detection",
+                        flush=True,
+                    )
             except Exception as e:
-                log_event("debug", "boost_stale_protection_failed",
-                          f"Stale boost ID pre-cancel protection failed (non-critical): {e}")
+                log_event(
+                    "debug",
+                    "boost_stale_protection_failed",
+                    f"Stale boost ID pre-cancel protection failed (non-critical): {e}",
+                )
 
             # Load worker cancelled IDs (from any previous coin prep)
             worker_ids = self.coin_manager.get_worker_cancelled_ids()
@@ -6181,7 +7029,11 @@ class BotLoop:
             # Queue a background visibility/repost pass so startup can finish
             # promptly and the live loop can resume while Dexie/Splash catches up.
             total_offers = len(buy_ids) + len(sell_ids)
-            if total_offers > 0 and cfg.DEXIE_AUTO_POST and not self._startup_repost_done:
+            if (
+                total_offers > 0
+                and cfg.DEXIE_AUTO_POST
+                and not self._startup_repost_done
+            ):
                 self._startup_repost_done = True
                 self._schedule_repost_active_offers_to_dexie(
                     reason="startup_resume",
@@ -6210,7 +7062,10 @@ class BotLoop:
                     self.amm_monitor.notify_quoted_price(startup_mid, startup_mid)
                     self._current_mid_price = startup_mid
                     with self._probe_lock:
-                        if self._probe_state.get("confirmed_price") in (None, Decimal("0")):
+                        if self._probe_state.get("confirmed_price") in (
+                            None,
+                            Decimal("0"),
+                        ):
                             self._probe_state["confirmed_price"] = startup_mid
                     self._remember_probe_market_snapshot(
                         startup_mid,
@@ -6218,14 +7073,22 @@ class BotLoop:
                         startup_tibet,
                         "startup_baseline",
                     )
-                    baseline_msg = (f"📌 Requote baseline set: {startup_mid:.8f} XCH "
-                                    f"(enables requoting + emergency requote)")
+                    baseline_msg = (
+                        f"📌 Requote baseline set: {startup_mid:.8f} XCH "
+                        f"(enables requoting + emergency requote)"
+                    )
                     print(baseline_msg, flush=True)
                     log_event("info", "startup_baseline_price", baseline_msg)
                 else:
-                    print("[WARN] Could not set requote baseline -- mid_price is 0!", flush=True)
-                    log_event("warning", "startup_baseline_zero",
-                              "mid_price was 0 — requoting will be disabled until offers are created")
+                    print(
+                        "[WARN] Could not set requote baseline -- mid_price is 0!",
+                        flush=True,
+                    )
+                    log_event(
+                        "warning",
+                        "startup_baseline_zero",
+                        "mid_price was 0 — requoting will be disabled until offers are created",
+                    )
             except Exception as e:
                 err_msg = f"[WARN] Could not set baseline price: {e}"
                 print(err_msg, flush=True)
@@ -6233,34 +7096,49 @@ class BotLoop:
 
             # ---- V3: Initialize Coinset puzzle hash cache ----
             # Coinset requires a full node for puzzle hashes — skip for Sage light wallet
-            wallet_type = getattr(cfg, "WALLET_TYPE", "sage").lower().strip() \
-                if hasattr(cfg, "WALLET_TYPE") else os.getenv("WALLET_TYPE", "sage").lower().strip()
+            wallet_type = (
+                getattr(cfg, "WALLET_TYPE", "sage").lower().strip()
+                if hasattr(cfg, "WALLET_TYPE")
+                else os.getenv("WALLET_TYPE", "sage").lower().strip()
+            )
             if getattr(cfg, "COINSET_ENABLED", True) and wallet_type != "sage":
                 try:
                     ok = self.coinset_client.initialize_puzzle_hashes()
                     if ok:
-                        log_event("info", "coinset_ready",
-                                  "Coinset puzzle hash cache initialized — fast coin queries enabled")
+                        log_event(
+                            "info",
+                            "coinset_ready",
+                            "Coinset puzzle hash cache initialized — fast coin queries enabled",
+                        )
                         # Pass coinset client to coin_manager for use in queries
                         self.coin_manager._coinset_client = self.coinset_client
                     else:
-                        log_event("info", "coinset_init_skipped",
-                                  "Coinset initialization returned no puzzle hashes — "
-                                  "using wallet RPC for coin queries")
+                        log_event(
+                            "info",
+                            "coinset_init_skipped",
+                            "Coinset initialization returned no puzzle hashes — "
+                            "using wallet RPC for coin queries",
+                        )
                 except Exception as e:
-                    log_event("info", "coinset_init_error",
-                              f"Coinset initialization failed: {e} — "
-                              f"using wallet RPC for coin queries")
+                    log_event(
+                        "info",
+                        "coinset_init_error",
+                        f"Coinset initialization failed: {e} — "
+                        f"using wallet RPC for coin queries",
+                    )
 
             inv = self.coin_manager.get_inventory_summary()
-            log_event("info", "startup_sync_done",
-                      f"Synced: {len(buy_ids)} buys, {len(sell_ids)} sells | "
-                      f"Coins — XCH: {inv['xch_trading']} trading, "
-                      f"{inv['xch_reserve']} reserve ({inv['xch_reserve_total']}), "
-                      f"{inv['xch_small']} small | "
-                      f"CAT: {inv['cat_trading']} trading, "
-                      f"{inv['cat_reserve']} reserve ({inv['cat_reserve_total']}), "
-                      f"{inv['cat_small']} small")
+            log_event(
+                "info",
+                "startup_sync_done",
+                f"Synced: {len(buy_ids)} buys, {len(sell_ids)} sells | "
+                f"Coins — XCH: {inv['xch_trading']} trading, "
+                f"{inv['xch_reserve']} reserve ({inv['xch_reserve_total']}), "
+                f"{inv['xch_small']} small | "
+                f"CAT: {inv['cat_trading']} trading, "
+                f"{inv['cat_reserve']} reserve ({inv['cat_reserve_total']}), "
+                f"{inv['cat_small']} small",
+            )
 
             # Push early dashboard update so Command Centre populates immediately
             # instead of waiting for the first full cycle to complete (~90s).
@@ -6271,8 +7149,7 @@ class BotLoop:
             # Critical: do NOT continue trading without a proper baseline.
             # Flag the bot as stopped so the main loop exits immediately.
             self._running = False
-            self._set_state(status="error",
-                            error=f"Startup sync failed: {e}")
+            self._set_state(status="error", error=f"Startup sync failed: {e}")
             return
 
     # -------------------------------------------------------------------
@@ -6298,10 +7175,14 @@ class BotLoop:
         # ---- Step 0: Expire stale reservations ----
         try:
             from reservation_manager import ReservationManager
+
             ReservationManager().expire_stale()
         except Exception as e:
-            log_event("warning", "reservation_expire_failed",
-                      f"Could not expire stale reservations: {e}")
+            log_event(
+                "warning",
+                "reservation_expire_failed",
+                f"Could not expire stale reservations: {e}",
+            )
 
         # ---- Step 0b: Tick sweep coordinator (expire pending groups) ----
         try:
@@ -6320,9 +7201,11 @@ class BotLoop:
                 #   1. ARB_SWEEP_BUY/SELL classification (taker wallet known)
                 #   2. entry.side (fill side stamped by fill_tracker — always available)
                 #   3. Fallback: protect both, but for a shorter window
-                _prot_secs_known   = float(getattr(cfg, "SWEEP_PROTECTION_SECS",         90))
-                _prot_secs_unknown = float(getattr(cfg, "SWEEP_PROTECTION_UNKNOWN_SECS", 30))
-                _protected_sides: dict = {}   # side → expiry timestamp
+                _prot_secs_known = float(getattr(cfg, "SWEEP_PROTECTION_SECS", 90))
+                _prot_secs_unknown = float(
+                    getattr(cfg, "SWEEP_PROTECTION_UNKNOWN_SECS", 30)
+                )
+                _protected_sides: dict = {}  # side → expiry timestamp
                 for _entry in _sweep_evt.fills:
                     if _entry.classification == _FT.ARB_SWEEP_BUY:
                         # Arb bought from us → our SELL offers swept
@@ -6341,19 +7224,21 @@ class BotLoop:
                             )
                 self._sweep_protection.update(_protected_sides)
 
-                _prot_summary = {s: round(e - time.time()) for s, e in _protected_sides.items()}
+                _prot_summary = {
+                    s: round(e - time.time()) for s, e in _protected_sides.items()
+                }
                 log_event(
-                    "info", "sweep_detected",
+                    "info",
+                    "sweep_detected",
                     f"Sweep detected: {_sweep_evt.fill_count} fills in block "
                     f"{_sweep_evt.spent_block_index} — group {_sweep_evt.sweep_group_id}"
-                    + (f" — protecting {_prot_summary}"
-                       if _protected_sides else ""),
+                    + (f" — protecting {_prot_summary}" if _protected_sides else ""),
                     data={
-                        "sweep_group_id":    _sweep_evt.sweep_group_id,
+                        "sweep_group_id": _sweep_evt.sweep_group_id,
                         "spent_block_index": _sweep_evt.spent_block_index,
-                        "fill_count":        _sweep_evt.fill_count,
-                        "trade_ids":         _sweep_evt.trade_ids,
-                        "protected_sides":   _prot_summary,
+                        "fill_count": _sweep_evt.fill_count,
+                        "trade_ids": _sweep_evt.trade_ids,
+                        "protected_sides": _prot_summary,
                     },
                 )
         except Exception:
@@ -6404,13 +7289,16 @@ class BotLoop:
                         action_label="Stop Bot",
                     )
                     log_event(
-                        "critical", "rail_breach",
+                        "critical",
+                        "rail_breach",
                         f"Price rail breach detected — tripping price CB and "
                         f"cancelling stale offers ({_reason})",
                         data={
                             "direction": rail_dir,
                             "kind": rail_kind,
-                            "rejected_price": str(rail_price) if rail_price is not None else None,
+                            "rejected_price": str(rail_price)
+                            if rail_price is not None
+                            else None,
                         },
                     )
                     # _safeguard cancels ALL offers for a price CB. Without
@@ -6418,23 +7306,32 @@ class BotLoop:
                     # mid until the CB clears or the operator intervenes.
                     self._safeguard_offers_for_circuit_breaker()
                 except Exception as _e:
-                    log_event("error", "rail_breach_safeguard_failed",
-                              f"Rail breach safeguard failed: {_e}")
+                    log_event(
+                        "error",
+                        "rail_breach_safeguard_failed",
+                        f"Rail breach safeguard failed: {_e}",
+                    )
             # Oracle outage escalation (runs regardless of rail-breach path).
             # Only escalate once we have a prior success timestamp to measure
             # against — the first post-startup failure is not yet an outage.
             if prev_success > 0 and rail_dir not in ("above", "below"):
                 if outage_age >= hard_pause_threshold:
-                    log_event("critical", "price_outage_hard_pause",
-                              f"Oracle outage has lasted {outage_age:.0f}s "
-                              f"(>= {hard_pause_threshold}s hard-pause threshold). "
-                              f"Cancelling all offers and tripping the price CB "
-                              f"so the book does not stay exposed on a stale mid.",
-                              data={"outage_age_secs": outage_age,
-                                    "hard_pause_threshold": hard_pause_threshold})
+                    log_event(
+                        "critical",
+                        "price_outage_hard_pause",
+                        f"Oracle outage has lasted {outage_age:.0f}s "
+                        f"(>= {hard_pause_threshold}s hard-pause threshold). "
+                        f"Cancelling all offers and tripping the price CB "
+                        f"so the book does not stay exposed on a stale mid.",
+                        data={
+                            "outage_age_secs": outage_age,
+                            "hard_pause_threshold": hard_pause_threshold,
+                        },
+                    )
                     try:
                         self.risk_manager.trip_price_rail_breach(
-                            f"oracle outage >= {hard_pause_threshold}s")
+                            f"oracle outage >= {hard_pause_threshold}s"
+                        )
                         self._set_state(status="circuit_breaker")
                         self._emit_alert(
                             "circuit_breaker",
@@ -6447,16 +7344,24 @@ class BotLoop:
                         )
                         self._safeguard_offers_for_circuit_breaker()
                     except Exception as _e:
-                        log_event("error", "price_outage_safeguard_failed",
-                                  f"Oracle-outage safeguard failed: {_e}")
+                        log_event(
+                            "error",
+                            "price_outage_safeguard_failed",
+                            f"Oracle-outage safeguard failed: {_e}",
+                        )
                 elif outage_age >= stale_threshold:
-                    log_event("warning", "price_outage_stale",
-                              f"Oracle stale for {outage_age:.0f}s "
-                              f"(alert threshold {stale_threshold}s; hard pause "
-                              f"at {hard_pause_threshold}s). Offers still live "
-                              f"on last-known mid.",
-                              data={"outage_age_secs": outage_age,
-                                    "stale_threshold": stale_threshold})
+                    log_event(
+                        "warning",
+                        "price_outage_stale",
+                        f"Oracle stale for {outage_age:.0f}s "
+                        f"(alert threshold {stale_threshold}s; hard pause "
+                        f"at {hard_pause_threshold}s). Offers still live "
+                        f"on last-known mid.",
+                        data={
+                            "outage_age_secs": outage_age,
+                            "stale_threshold": stale_threshold,
+                        },
+                    )
                     try:
                         self._emit_alert(
                             "price_stale",
@@ -6468,8 +7373,11 @@ class BotLoop:
                             f"hard-pause automatically.",
                         )
                     except Exception as _alert_err:
-                        log_event("debug", "price_outage_alert_failed",
-                                  f"Price-stale alert emit failed: {_alert_err}")
+                        log_event(
+                            "debug",
+                            "price_outage_alert_failed",
+                            f"Price-stale alert emit failed: {_alert_err}",
+                        )
 
             # Run self-heal / reconcile passes even when we can't trade.
             # These are read/repair-only and do not create or requote offers,
@@ -6480,14 +7388,21 @@ class BotLoop:
             # so calling it here does not create extra load.
             try:
                 from bot_health import run_runtime_checks as _no_price_health
+
                 _no_price_health(auto_repair=True)
             except Exception as _hc_err:
-                log_event("debug", "no_price_self_heal_failed",
-                          f"Self-heal during oracle outage failed: {_hc_err}")
+                log_event(
+                    "debug",
+                    "no_price_self_heal_failed",
+                    f"Self-heal during oracle outage failed: {_hc_err}",
+                )
 
-            log_event("warning", "no_price",
-                      "Price rejected by safety guard — skipping cycle. "
-                      "Check HARD_MAX_PRICE_XCH / HARD_MIN_PRICE_XCH or dynamic band settings.")
+            log_event(
+                "warning",
+                "no_price",
+                "Price rejected by safety guard — skipping cycle. "
+                "Check HARD_MAX_PRICE_XCH / HARD_MIN_PRICE_XCH or dynamic band settings.",
+            )
             return
 
         mid_price = Decimal(str(price_data.get("mid_price", 0)))
@@ -6519,8 +7434,11 @@ class BotLoop:
         if self._last_pricing_success_ts > 0:
             gap = pricing_now - self._last_pricing_success_ts
             if gap > self._connectivity_gap_threshold:
-                log_event("info", "connectivity_recovery",
-                          f"Pricing recovered after {gap:.0f}s gap — rechecking Dexie visibility in the background")
+                log_event(
+                    "info",
+                    "connectivity_recovery",
+                    f"Pricing recovered after {gap:.0f}s gap — rechecking Dexie visibility in the background",
+                )
                 self._schedule_repost_active_offers_to_dexie(
                     reason="connectivity_recovery",
                 )
@@ -6542,39 +7460,54 @@ class BotLoop:
             print(f"   [WARN] Spread calc failed: {e}", flush=True)
             # Fallback: use config base spread so modal isn't stuck on zero
             try:
-                fallback = int(getattr(cfg, "BASE_SPREAD_BPS", 0) or getattr(cfg, "SPREAD_BPS", 0))
+                fallback = int(
+                    getattr(cfg, "BASE_SPREAD_BPS", 0) or getattr(cfg, "SPREAD_BPS", 0)
+                )
                 if fallback > 0:
                     self._set_state(spread_bps=str(fallback))
             except Exception as e2:
-                log_event("debug", "spread_fallback_failed",
-                          f"Spread fallback also failed: {e2}")
+                log_event(
+                    "debug",
+                    "spread_fallback_failed",
+                    f"Spread fallback also failed: {e2}",
+                )
 
         # Push price update to GUI (after spread calc so it's included)
-        self._emit("price_update", {
-            "mid_price": str(mid_price),
-            "dexie_price": str(price_data.get("dexie_price", "")),
-            "tibet_price": str(price_data.get("tibet_price", "")),
-            "arb_gap_bps": str(arb_gap),
-            "spread_bps": self._bot_state.get("spread_bps", "0"),
-        })
+        self._emit(
+            "price_update",
+            {
+                "mid_price": str(mid_price),
+                "dexie_price": str(price_data.get("dexie_price", "")),
+                "tibet_price": str(price_data.get("tibet_price", "")),
+                "arb_gap_bps": str(arb_gap),
+                "spread_bps": self._bot_state.get("spread_bps", "0"),
+            },
+        )
 
         # Terminal heartbeat — every loop (terminal is dev-only, GUI is for users)
         dexie_p = price_data.get("dexie_price", "")
         tibet_p = price_data.get("tibet_price", "")
-        print(f"\n{'='*70}", flush=True)
-        print(f"💓 Loop {self._loop_count} | mid: {mid_price:.8f} | "
-              f"arb gap: {_bps_to_pct(arb_gap)} | "
-              f"spread: {_bps_to_pct(self._bot_state.get('spread_bps', '0'))}", flush=True)
+        print(f"\n{'=' * 70}", flush=True)
+        print(
+            f"💓 Loop {self._loop_count} | mid: {mid_price:.8f} | "
+            f"arb gap: {_bps_to_pct(arb_gap)} | "
+            f"spread: {_bps_to_pct(self._bot_state.get('spread_bps', '0'))}",
+            flush=True,
+        )
 
         # Console heartbeat — user-visible cycle start
-        log_event("info", "cycle_start",
-                  f"Cycle #{self._loop_count} — mid price: {mid_price:.8f} XCH, "
-                  f"arb gap: {_bps_to_pct(arb_gap)}, spread: {_bps_to_pct(self._bot_state.get('spread_bps', '0'))}")
-        baseline_val = self._last_quoted_price.get('sell', Decimal('0'))
+        log_event(
+            "info",
+            "cycle_start",
+            f"Cycle #{self._loop_count} — mid price: {mid_price:.8f} XCH, "
+            f"arb gap: {_bps_to_pct(arb_gap)}, spread: {_bps_to_pct(self._bot_state.get('spread_bps', '0'))}",
+        )
+        baseline_val = self._last_quoted_price.get("sell", Decimal("0"))
         baseline_str = f"{baseline_val:.8f}" if baseline_val > 0 else "pending requote"
-        print(f"   Dexie: {dexie_p} | Tibet: {tibet_p} | "
-              f"baseline: {baseline_str}",
-              flush=True)
+        print(
+            f"   Dexie: {dexie_p} | Tibet: {tibet_p} | baseline: {baseline_str}",
+            flush=True,
+        )
 
         # ---- Step 1b: Refresh market intelligence (NEW — ecosystem) ----
         print("   [1b] Market intel...", end="", flush=True)
@@ -6583,10 +7516,15 @@ class BotLoop:
         try:
             intel_data = self.market_intel.refresh_orderbook()
             if intel_data:
-                print(f" competitor spread: {_bps_to_pct(intel_data.get('competitor_spread_bps', '0'))}, "
-                      f"thin side: {intel_data.get('thin_side', 'none')}", flush=True)
+                print(
+                    f" competitor spread: {_bps_to_pct(intel_data.get('competitor_spread_bps', '0'))}, "
+                    f"thin side: {intel_data.get('thin_side', 'none')}",
+                    flush=True,
+                )
                 payload = {
-                    "competitor_spread_bps": str(intel_data.get("competitor_spread_bps", "0")),
+                    "competitor_spread_bps": str(
+                        intel_data.get("competitor_spread_bps", "0")
+                    ),
                     "best_bid": str(intel_data.get("best_bid", "0")),
                     "best_ask": str(intel_data.get("best_ask", "0")),
                     "overall_best_bid": str(intel_data.get("overall_best_bid", "0")),
@@ -6603,18 +7541,27 @@ class BotLoop:
                         "health": self.splash_manager.check_health(),
                     }
                 except Exception as e:
-                    log_event("debug", "splash_stats_failed",
-                              f"Splash stats fetch failed (non-critical): {e}")
+                    log_event(
+                        "debug",
+                        "splash_stats_failed",
+                        f"Splash stats fetch failed (non-critical): {e}",
+                    )
                 try:
                     payload["splash_node"] = self.splash_node.get_status()
                 except Exception as e:
-                    log_event("debug", "splash_node_status_failed",
-                              f"Splash node status fetch failed (non-critical): {e}")
+                    log_event(
+                        "debug",
+                        "splash_node_status_failed",
+                        f"Splash node status fetch failed (non-critical): {e}",
+                    )
                 try:
                     payload["splash_receive"] = self.get_splash_receive_stats()
                 except Exception as e:
-                    log_event("debug", "splash_receive_stats_failed",
-                              f"Splash receive stats failed (non-critical): {e}")
+                    log_event(
+                        "debug",
+                        "splash_receive_stats_failed",
+                        f"Splash receive stats failed (non-critical): {e}",
+                    )
                 self._emit("market_intel", payload)
             else:
                 print(" no data", flush=True)
@@ -6644,19 +7591,27 @@ class BotLoop:
                 # Price CB: price is outside safe range — skip cycle entirely.
                 # No position should be built when price validity is in question.
                 print(" [CB] PRICE CB -- skipping cycle", flush=True)
-                log_event("warning", "circuit_breaker",
-                          "PRICE circuit breaker — skipping cycle (both sides halted)")
+                log_event(
+                    "warning",
+                    "circuit_breaker",
+                    "PRICE circuit breaker — skipping cycle (both sides halted)",
+                )
                 return
             else:
                 # Position CB: position is too large on one side.
                 # Cancel the accumulating side (done above) but CONTINUE the cycle
                 # so the correcting side can place new offers to reduce position.
                 blocked = self.risk_manager.get_circuit_breaker_blocked_side()
-                print(f" [CB] POSITION CB ({blocked} blocked) -- continuing correcting side",
-                      flush=True)
-                log_event("warning", "circuit_breaker_partial",
-                          f"POSITION circuit breaker — '{blocked}' side halted, "
-                          f"correcting side continues to reduce position")
+                print(
+                    f" [CB] POSITION CB ({blocked} blocked) -- continuing correcting side",
+                    flush=True,
+                )
+                log_event(
+                    "warning",
+                    "circuit_breaker_partial",
+                    f"POSITION circuit breaker — '{blocked}' side halted, "
+                    f"correcting side continues to reduce position",
+                )
                 # Fall through — cycle continues below
 
         else:
@@ -6675,8 +7630,12 @@ class BotLoop:
         self._wallet_sync_stale_cycle = not bool(wallet_sync_meta.get("fresh", True))
         self._last_live_offer_edges = self._get_live_offer_edges(open_buys, open_sells)
 
-        current_buy_ids = {o.get("trade_id", "") for o in open_buys if o.get("trade_id")}
-        current_sell_ids = {o.get("trade_id", "") for o in open_sells if o.get("trade_id")}
+        current_buy_ids = {
+            o.get("trade_id", "") for o in open_buys if o.get("trade_id")
+        }
+        current_sell_ids = {
+            o.get("trade_id", "") for o in open_sells if o.get("trade_id")
+        }
 
         # Compute DB-open subsets for cap check (wallet set may include zombie
         # offers: cancelled in DB but still active in Sage after a failed cancel
@@ -6687,24 +7646,28 @@ class BotLoop:
         # probes, sniper = arb snipes — both live in their own pools.
         try:
             from database import get_open_offers as _db_get_open
-            _db_buy_all  = [o for o in _db_get_open(side="buy")  if o.get("trade_id")]
+
+            _db_buy_all = [o for o in _db_get_open(side="buy") if o.get("trade_id")]
             _db_sell_all = [o for o in _db_get_open(side="sell") if o.get("trade_id")]
             _db_open_buy_ids = {
-                o["trade_id"] for o in _db_buy_all
+                o["trade_id"]
+                for o in _db_buy_all
                 if (o.get("tier") or "").lower() not in ("sniper", "boost")
             }
             _db_open_sell_ids = {
-                o["trade_id"] for o in _db_sell_all
+                o["trade_id"]
+                for o in _db_sell_all
                 if (o.get("tier") or "").lower() not in ("sniper", "boost")
             }
             # Sniper / boost offer IDs (DB-tracked) — exclude from wallet sets
             # so they don't appear as zombies and don't consume main-ladder
             # cap slots.
             _db_sniper_ids = {
-                o["trade_id"] for o in _db_buy_all + _db_sell_all
+                o["trade_id"]
+                for o in _db_buy_all + _db_sell_all
                 if (o.get("tier") or "").lower() in ("sniper", "boost")
             }
-            _main_wallet_buy_ids  = current_buy_ids  - _db_sniper_ids
+            _main_wallet_buy_ids = current_buy_ids - _db_sniper_ids
             _main_wallet_sell_ids = current_sell_ids - _db_sniper_ids
             _retired_db_only = self._retire_wallet_missing_db_offers(
                 _db_buy_all,
@@ -6718,25 +7681,33 @@ class BotLoop:
             )
             if _retired_db_only["buy"]:
                 _db_buy_all = [
-                    o for o in _db_buy_all
+                    o
+                    for o in _db_buy_all
                     if o.get("trade_id") not in _retired_db_only["buy"]
                 ]
             if _retired_db_only["sell"]:
                 _db_sell_all = [
-                    o for o in _db_sell_all
+                    o
+                    for o in _db_sell_all
                     if o.get("trade_id") not in _retired_db_only["sell"]
                 ]
             if _retired_db_only["buy"] or _retired_db_only["sell"]:
                 _db_open_buy_ids = {
-                    o["trade_id"] for o in _db_buy_all
+                    o["trade_id"]
+                    for o in _db_buy_all
                     if (o.get("tier") or "").lower() not in ("sniper", "boost")
                 }
                 _db_open_sell_ids = {
-                    o["trade_id"] for o in _db_sell_all
+                    o["trade_id"]
+                    for o in _db_sell_all
                     if (o.get("tier") or "").lower() not in ("sniper", "boost")
                 }
-            _zombie_buys  = len(_main_wallet_buy_ids)  - len(_db_open_buy_ids  & _main_wallet_buy_ids)
-            _zombie_sells = len(_main_wallet_sell_ids) - len(_db_open_sell_ids & _main_wallet_sell_ids)
+            _zombie_buys = len(_main_wallet_buy_ids) - len(
+                _db_open_buy_ids & _main_wallet_buy_ids
+            )
+            _zombie_sells = len(_main_wallet_sell_ids) - len(
+                _db_open_sell_ids & _main_wallet_sell_ids
+            )
             _pending_cancel_wallet_ids_by_side = {
                 "buy": _main_wallet_buy_ids - _db_open_buy_ids,
                 "sell": _main_wallet_sell_ids - _db_open_sell_ids,
@@ -6750,9 +7721,12 @@ class BotLoop:
                 self._pending_cancel_wallet_ids_by_side
             )
             if _zombie_buys > 0 or _zombie_sells > 0:
-                log_event("info", "zombie_wallet_offers",
-                          f"Wallet has {_zombie_buys} zombie buy / {_zombie_sells} zombie sell "
-                          f"offers (cancelled in DB, still active in Sage) — excluded from cap")
+                log_event(
+                    "info",
+                    "zombie_wallet_offers",
+                    f"Wallet has {_zombie_buys} zombie buy / {_zombie_sells} zombie sell "
+                    f"offers (cancelled in DB, still active in Sage) — excluded from cap",
+                )
         except Exception as _dbo_err:
             _db_open_buy_ids = current_buy_ids
             _db_open_sell_ids = current_sell_ids
@@ -6760,11 +7734,16 @@ class BotLoop:
                 "buy": set(),
                 "sell": set(),
             }
-            log_event("debug", "db_open_ids_fallback",
-                      f"DB-open cap filter failed (non-critical): {_dbo_err}")
+            log_event(
+                "debug",
+                "db_open_ids_fallback",
+                f"DB-open cap filter failed (non-critical): {_dbo_err}",
+            )
 
         # Remove recently-created offers now visible in wallet (prevents double-counting)
-        self.offer_manager.clean_visible_recently_created(current_buy_ids | current_sell_ids)
+        self.offer_manager.clean_visible_recently_created(
+            current_buy_ids | current_sell_ids
+        )
 
         # Prune closed sniper/boost offers so caps stay accurate
         all_open_ids = current_buy_ids | current_sell_ids
@@ -6787,12 +7766,16 @@ class BotLoop:
                 _sniper_tracked = set(self.sniper._active_snipe_ids)
             _orphan_snipes = (_sniper_tracked & all_open_ids) - _probe_known
             if _orphan_snipes:
-                log_event("info", "sniper_orphan_sweep",
-                          f"Sweep found {len(_orphan_snipes)} orphan sniper "
-                          f"offer(s) not tracked by probe state — cancelling")
+                log_event(
+                    "info",
+                    "sniper_orphan_sweep",
+                    f"Sweep found {len(_orphan_snipes)} orphan sniper "
+                    f"offer(s) not tracked by probe state — cancelling",
+                )
                 try:
                     self.offer_manager.cancel_offers(
-                        list(_orphan_snipes), reason="sniper_orphan_sweep",
+                        list(_orphan_snipes),
+                        reason="sniper_orphan_sweep",
                         skip_confirmation=True,
                     )
                     with self.sniper._snipe_lock:
@@ -6801,13 +7784,21 @@ class BotLoop:
                                 self.sniper._active_snipe_ids.remove(_tid)
                             self.sniper._active_snipe_sides.pop(_tid, None)
                 except Exception as _sweep_err:
-                    log_event("error", "sniper_orphan_sweep_failed",
-                              f"Failed to cancel orphan snipers: {_sweep_err}")
+                    log_event(
+                        "error",
+                        "sniper_orphan_sweep_failed",
+                        f"Failed to cancel orphan snipers: {_sweep_err}",
+                    )
         except Exception as _sweep_outer:
-            log_event("debug", "sniper_orphan_sweep_skipped",
-                      f"Orphan sweep skipped: {_sweep_outer}")
+            log_event(
+                "debug",
+                "sniper_orphan_sweep_skipped",
+                f"Orphan sweep skipped: {_sweep_outer}",
+            )
 
-        self._set_state(open_buys=len(current_buy_ids), open_sells=len(current_sell_ids))
+        self._set_state(
+            open_buys=len(current_buy_ids), open_sells=len(current_sell_ids)
+        )
 
         # ---- Update mempool watcher with current offer coin IDs ----
         # The watcher scans Coinset mempool every 5s for these specific coins.
@@ -6819,19 +7810,28 @@ class BotLoop:
                 if w:
                     all_open_offers = list(open_buys) + list(open_sells)
                     offer_coin_ids = {
-                        o.get("coin_id", "") for o in all_open_offers
+                        o.get("coin_id", "")
+                        for o in all_open_offers
                         if o.get("coin_id")
                     }
                     w.set_watched_offer_coins(offer_coin_ids)
             except Exception:
                 pass  # Non-critical — watcher degrades gracefully
 
-        print(f" {len(current_buy_ids)} buys, {len(current_sell_ids)} sells, {len(closed)} closed", flush=True)
-        log_event("info", "wallet_sync",
-                  f"Wallet: {len(current_buy_ids)} open buys, {len(current_sell_ids)} open sells, "
-                  f"{len(closed)} closed")
+        print(
+            f" {len(current_buy_ids)} buys, {len(current_sell_ids)} sells, {len(closed)} closed",
+            flush=True,
+        )
+        log_event(
+            "info",
+            "wallet_sync",
+            f"Wallet: {len(current_buy_ids)} open buys, {len(current_sell_ids)} open sells, "
+            f"{len(closed)} closed",
+        )
         if self._wallet_sync_stale_cycle:
-            err = str(wallet_sync_meta.get("last_error") or "wallet get_offers unavailable")
+            err = str(
+                wallet_sync_meta.get("last_error") or "wallet get_offers unavailable"
+            )
             cache_note = "cached" if wallet_sync_meta.get("using_cache") else "empty"
             if not self._wallet_sync_was_stale:
                 log_event(
@@ -6890,8 +7890,11 @@ class BotLoop:
             self._wallet_stale_streak = 0
             self._wallet_stale_first_at = 0
             if self._wallet_sync_was_stale:
-                log_event("info", "wallet_sync_live_again",
-                          "Wallet offer sync is fresh again — resuming normal trading actions")
+                log_event(
+                    "info",
+                    "wallet_sync_live_again",
+                    "Wallet offer sync is fresh again — resuming normal trading actions",
+                )
             self._clear_alert("wallet_offer_sync")
             self._wallet_sync_was_stale = False
 
@@ -6916,25 +7919,33 @@ class BotLoop:
         )
         print("   [4] Checking fills...", end="", flush=True)
         fill_result = self.fill_tracker.detect_fills(
-            current_buy_ids, current_sell_ids,
-            self.offer_manager._offer_details_cache
+            current_buy_ids, current_sell_ids, self.offer_manager._offer_details_cache
         )
 
         buy_fills = fill_result.get("buy_fills", [])
         sell_fills = fill_result.get("sell_fills", [])
 
         if buy_fills or sell_fills:
-            print(f" [FILL] {len(buy_fills)} buys, {len(sell_fills)} sells FILLED!", flush=True)
-            log_event("info", "fills_detected",
-                      f"Fills this cycle: {len(buy_fills)} buys, {len(sell_fills)} sells")
+            print(
+                f" [FILL] {len(buy_fills)} buys, {len(sell_fills)} sells FILLED!",
+                flush=True,
+            )
+            log_event(
+                "info",
+                "fills_detected",
+                f"Fills this cycle: {len(buy_fills)} buys, {len(sell_fills)} sells",
+            )
             # Push fill events to GUI instantly
             for fill in buy_fills + sell_fills:
-                self._emit("fill", {
-                    "side": fill.get("side", ""),
-                    "price": str(fill.get("price", "")),
-                    "size_xch": str(fill.get("size_xch", "")),
-                    "tier": fill.get("tier", ""),
-                })
+                self._emit(
+                    "fill",
+                    {
+                        "side": fill.get("side", ""),
+                        "price": str(fill.get("price", "")),
+                        "size_xch": str(fill.get("size_xch", "")),
+                        "tier": fill.get("tier", ""),
+                    },
+                )
             # Reset coin backoff on fills (new coins freed up)
             self.coin_manager.reset_backoff()
             # Coin snapshot after fills — coins consumed + new coins received
@@ -6945,7 +7956,9 @@ class BotLoop:
             # Without this, recorded fills change net_position but the
             # stale baseline drifts, spamming position_sanity_drift warnings.
             self._position_baseline_cat = None
-            self._clear_adaptive_target_backoff_for_confirmed_fills(buy_fills, sell_fills)
+            self._clear_adaptive_target_backoff_for_confirmed_fills(
+                buy_fills, sell_fills
+            )
             self._apply_immediate_sweep_protection(buy_fills, sell_fills)
 
         if not buy_fills and not sell_fills:
@@ -6967,10 +7980,14 @@ class BotLoop:
             if self.amm_monitor.is_available() and self._loop_count > 5:
                 amm_drift_bps = self.amm_monitor.get_drift_bps()
                 if amm_drift_bps is not None:
-                    _drift_threshold = Decimal(str(getattr(cfg, "AMM_DRIFT_REQUOTE_BPS", "80")))
+                    _drift_threshold = Decimal(
+                        str(getattr(cfg, "AMM_DRIFT_REQUOTE_BPS", "80"))
+                    )
                     if amm_drift_bps >= _drift_threshold:
                         _now = time.time()
-                        _cooldown = float(getattr(cfg, "REQUOTE_COOLDOWN_SECS", 60) or 60)
+                        _cooldown = float(
+                            getattr(cfg, "REQUOTE_COOLDOWN_SECS", 60) or 60
+                        )
 
                         # Per-side AMM-drift cooldown. Previously one shared
                         # scalar gated both sides, so a buy-side force set
@@ -6980,23 +7997,32 @@ class BotLoop:
                         # independently; fall back to the legacy scalar
                         # once on upgrade so operators mid-session don't
                         # get an immediate double-fire.
-                        if not isinstance(getattr(self, "_last_amm_drift_force_at", None), dict):
-                            _legacy = float(getattr(self, "_last_amm_drift_force_at", 0) or 0)
+                        if not isinstance(
+                            getattr(self, "_last_amm_drift_force_at", None), dict
+                        ):
+                            _legacy = float(
+                                getattr(self, "_last_amm_drift_force_at", 0) or 0
+                            )
                             self._last_amm_drift_force_at = {
-                                "buy": _legacy, "sell": _legacy,
+                                "buy": _legacy,
+                                "sell": _legacy,
                             }
 
                             # Determine which side is vulnerable based on price direction
                         try:
                             _amm_state = self.amm_monitor._state or {}
-                            _amm_price = Decimal(str(_amm_state.get("amm_price", 0) or 0))
+                            _amm_price = Decimal(
+                                str(_amm_state.get("amm_price", 0) or 0)
+                            )
                             if _amm_price > 0 and self._current_mid_price > 0:
                                 _target_sides = (
-                                    ["buy"] if _amm_price < self._current_mid_price
+                                    ["buy"]
+                                    if _amm_price < self._current_mid_price
                                     else ["sell"]
                                 )
                                 _direction_note = (
-                                    "price DOWN" if _amm_price < self._current_mid_price
+                                    "price DOWN"
+                                    if _amm_price < self._current_mid_price
                                     else "price UP"
                                 )
                             else:
@@ -7007,7 +8033,9 @@ class BotLoop:
                             _direction_note = "direction error"
 
                         for _target_side in _target_sides:
-                            _backoff_remaining = self._requote_backoff_remaining(_target_side)
+                            _backoff_remaining = self._requote_backoff_remaining(
+                                _target_side
+                            )
                             if _backoff_remaining > 0:
                                 log_event(
                                     "info",
@@ -7028,42 +8056,53 @@ class BotLoop:
                                 continue  # per-side cooldown active
                             if not self._force_requote.get(_target_side):
                                 log_event(
-                                    "info", "amm_drift_requote_triggered",
+                                    "info",
+                                    "amm_drift_requote_triggered",
                                     f"AMM drift {_bps_to_pct(amm_drift_bps)} "
                                     f"({_direction_note}) — forcing "
                                     f"{_target_side} requote",
-                                    data={"drift_bps": str(
-                                        amm_drift_bps.quantize(Decimal("0.1"))),
-                                          "side": _target_side},
+                                    data={
+                                        "drift_bps": str(
+                                            amm_drift_bps.quantize(Decimal("0.1"))
+                                        ),
+                                        "side": _target_side,
+                                    },
                                 )
                             self._force_requote[_target_side] = True
                             self._last_amm_drift_force_at[_target_side] = _now
         except Exception as _amm_drift_err:
-            log_event("debug", "amm_drift_check_error",
-                      f"AMM drift check error (non-critical): {_amm_drift_err}")
+            log_event(
+                "debug",
+                "amm_drift_check_error",
+                f"AMM drift check error (non-critical): {_amm_drift_err}",
+            )
 
         fills_hour = None
         try:
             from database import count_recent_fills
+
             fills_hour = count_recent_fills(hours=1)
             self.risk_manager.update_fill_rate(Decimal(str(fills_hour)))
         except Exception as e:
-            log_event("debug", "fill_rate_update_failed",
-                      f"Fill-rate update failed: {e}")
+            log_event(
+                "debug", "fill_rate_update_failed", f"Fill-rate update failed: {e}"
+            )
 
         # V3: Record trading pace after fill detection
         if buy_fills or sell_fills:
             try:
                 from database import record_trading_pace
+
                 if fills_hour is None:
                     from database import count_recent_fills
+
                     fills_hour = count_recent_fills(hours=1)
                 if fills_hour > getattr(cfg, "FILLS_PER_HOUR_BUSY", 10):
-                    pace = 'busy'
+                    pace = "busy"
                 elif fills_hour < getattr(cfg, "FILLS_PER_HOUR_SLOW", 2):
-                    pace = 'slow'
+                    pace = "slow"
                 else:
-                    pace = 'normal'
+                    pace = "normal"
                 active_count = len(current_buy_ids) + len(current_sell_ids)
                 record_trading_pace(fills_hour, pace, active_count)
                 # trading_pace log removed — pace shown in GUI + console
@@ -7076,9 +8115,11 @@ class BotLoop:
         matched = self.fill_tracker.match_round_trips()
         if matched:
             total_pnl = sum(m.get("pnl_xch", Decimal("0")) for m in matched)
-            log_event("info", "pnl_matched",
-                      f"Matched {len(matched)} round-trips, "
-                      f"total PnL: {total_pnl:+.8f} XCH")
+            log_event(
+                "info",
+                "pnl_matched",
+                f"Matched {len(matched)} round-trips, total PnL: {total_pnl:+.8f} XCH",
+            )
 
         # ---- Step 6: Update inventory ----
         print("   [6] Updating inventory...", end="", flush=True)
@@ -7096,34 +8137,43 @@ class BotLoop:
         expired = 0
         if (
             cfg.OFFER_EXPIRY_SECS > 0
-            and not getattr(self, '_graceful_in_progress', False)
+            and not getattr(self, "_graceful_in_progress", False)
             and not self._recovery_is_active()
         ):
             all_open = open_buys + open_sells
             expiring_tids = self.offer_manager.detect_expiring_offers(
-                all_open, refresh_before_secs=cfg.OFFER_REFRESH_BEFORE)
+                all_open, refresh_before_secs=cfg.OFFER_REFRESH_BEFORE
+            )
             # ── Incremental reaction: cap expiry refreshes per cycle ──
             _max_refresh = int(getattr(cfg, "CYCLE_MAX_EXPIRY_REFRESH", 4) or 4)
             if len(expiring_tids) > _max_refresh:
-                log_event("info", "step7_refresh_capped",
-                          f"Expiry refresh: {len(expiring_tids)} expiring but "
-                          f"capping at {_max_refresh} per cycle (rest deferred)")
+                log_event(
+                    "info",
+                    "step7_refresh_capped",
+                    f"Expiry refresh: {len(expiring_tids)} expiring but "
+                    f"capping at {_max_refresh} per cycle (rest deferred)",
+                )
                 expiring_tids = expiring_tids[:_max_refresh]
             if expiring_tids:
-                log_event("info", "step7_refresh",
-                          f"Pre-emptive refresh: cancelling {len(expiring_tids)} "
-                          f"offers expiring within {cfg.OFFER_REFRESH_BEFORE}s")
+                log_event(
+                    "info",
+                    "step7_refresh",
+                    f"Pre-emptive refresh: cancelling {len(expiring_tids)} "
+                    f"offers expiring within {cfg.OFFER_REFRESH_BEFORE}s",
+                )
                 # skip_confirmation=True: expiry refreshes happen every cycle;
                 # blocking 60-90s for coins to return would stall the loop.
                 cancel_result = self.offer_manager.cancel_offers(
-                    expiring_tids, reason="pre_emptive_refresh",
-                    skip_confirmation=True)
-                expired = sum(1 for r in cancel_result.values()
-                              if r and r.get("success"))
+                    expiring_tids, reason="pre_emptive_refresh", skip_confirmation=True
+                )
+                expired = sum(
+                    1 for r in cancel_result.values() if r and r.get("success")
+                )
                 # Update live counts so Step 10 sees the slots as free
                 # and creates replacements THIS loop, not next loop
-                cancelled_set = {tid for tid, r in cancel_result.items()
-                                 if r and r.get("success")}
+                cancelled_set = {
+                    tid for tid, r in cancel_result.items() if r and r.get("success")
+                }
                 current_buy_ids -= cancelled_set
                 current_sell_ids -= cancelled_set
         else:
@@ -7134,39 +8184,57 @@ class BotLoop:
         # Free tier users: balance checks are skipped (budget reserved for fill verification).
         # Pro tier users: runs every SPACESCAN_BALANCE_CHECK_EVERY_N loops.
         spacescan_check_every = getattr(cfg, "SPACESCAN_BALANCE_CHECK_EVERY_N", 10)
-        if (getattr(cfg, "SPACESCAN_ENABLED", False) and
-                self._loop_count > 0 and
-                self._loop_count % spacescan_check_every == 0):
+        if (
+            getattr(cfg, "SPACESCAN_ENABLED", False)
+            and self._loop_count > 0
+            and self._loop_count % spacescan_check_every == 0
+        ):
             try:
                 from spacescan import check_balance_discrepancy, should_check_balance
+
                 # Free tier: skip balance checks to preserve API budget for fills
                 if should_check_balance():
                     # Get wallet's reported balance
                     from wallet import get_wallet_balance
+
                     wallet_bal = get_wallet_balance(cfg.WALLET_ID_XCH)
                     wallet_xch = Decimal("0")
                     if wallet_bal and wallet_bal.get("success"):
                         _wb = wallet_bal.get("wallet_balance") or wallet_bal
-                        wallet_xch = Decimal(str(_wb.get("confirmed_wallet_balance", 0))) / Decimal("1000000000000")
+                        wallet_xch = Decimal(
+                            str(_wb.get("confirmed_wallet_balance", 0))
+                        ) / Decimal("1000000000000")
 
                     our_address = getattr(cfg, "WALLET_ADDRESS", "")
                     if our_address and wallet_xch > 0:
                         result = check_balance_discrepancy(our_address, wallet_xch)
                         if result.get("xch_ok"):
-                            log_event("debug", "spacescan_balance_ok",
-                                      f"Balance check OK — Wallet: {wallet_xch:.4f}, "
-                                      f"On-chain: {result.get('xch_onchain', '?')}")
+                            log_event(
+                                "debug",
+                                "spacescan_balance_ok",
+                                f"Balance check OK — Wallet: {wallet_xch:.4f}, "
+                                f"On-chain: {result.get('xch_onchain', '?')}",
+                            )
                         else:
-                            print(f"\n   [WARN] BALANCE MISMATCH! Wallet: {wallet_xch:.4f} XCH, "
-                                  f"On-chain: {result.get('xch_onchain', '?')} XCH", flush=True)
+                            print(
+                                f"\n   [WARN] BALANCE MISMATCH! Wallet: {wallet_xch:.4f} XCH, "
+                                f"On-chain: {result.get('xch_onchain', '?')} XCH",
+                                flush=True,
+                            )
                 else:
-                    log_event("debug", "spacescan_balance_skip",
-                              "Spacescan free tier — skipping balance check (budget reserved for fills)")
+                    log_event(
+                        "debug",
+                        "spacescan_balance_skip",
+                        "Spacescan free tier — skipping balance check (budget reserved for fills)",
+                    )
             except ImportError:
                 pass  # spacescan module not available
             except Exception as e:
-                log_event("debug", "spacescan_balance_error",
-                          f"Spacescan balance check failed: {e}")
+                log_event(
+                    "debug",
+                    "spacescan_balance_error",
+                    f"Spacescan balance check failed: {e}",
+                )
 
         # ---- Step 7c: Retry failed cancels (V1 parity) ----
         retried = self.offer_manager.retry_failed_cancels()
@@ -7181,10 +8249,14 @@ class BotLoop:
         # Update cancel retry alert
         pending_retries = len(self.offer_manager._pending_cancel_retries)
         if pending_retries > 0:
-            self._emit_alert("cancel_retries", "warning",
+            self._emit_alert(
+                "cancel_retries",
+                "warning",
                 f"{pending_retries} stuck cancel(s)",
                 "Some offers failed to cancel and are queued for retry.",
-                action="stop_bot", action_label="Stop Bot")
+                action="stop_bot",
+                action_label="Stop Bot",
+            )
         else:
             self._clear_alert("cancel_retries")
 
@@ -7254,18 +8326,20 @@ class BotLoop:
                 skip_confirmation=True,
             )
             cancelled = {
-                tid for tid, res in cancel_result.items()
-                if res and res.get("success")
+                tid for tid, res in cancel_result.items() if res and res.get("success")
             }
             failed = [tid for tid in live_probe_ids if tid not in cancelled]
 
             if cancelled:
                 current_buy_ids.difference_update(cancelled)
                 current_sell_ids.difference_update(cancelled)
-                self._set_state(open_buys=len(current_buy_ids), open_sells=len(current_sell_ids))
+                self._set_state(
+                    open_buys=len(current_buy_ids), open_sells=len(current_sell_ids)
+                )
                 with self.sniper._snipe_lock:
                     self.sniper._active_snipe_ids = [
-                        tid for tid in self.sniper._active_snipe_ids
+                        tid
+                        for tid in self.sniper._active_snipe_ids
                         if tid not in cancelled
                     ]
                     for tid in cancelled:
@@ -7297,14 +8371,22 @@ class BotLoop:
                     self._probe_state["attempt"] = 0
                     self._probe_state["last_wait_log_at"] = 0
                 if not retired:
-                    log_event("warning", "probe_retire_recovery_failed",
-                              "Recovery: probe offer cancel failed — step 8c will retry "
-                              "via sniper_cleanup. Main ladder will build around it.")
+                    log_event(
+                        "warning",
+                        "probe_retire_recovery_failed",
+                        "Recovery: probe offer cancel failed — step 8c will retry "
+                        "via sniper_cleanup. Main ladder will build around it.",
+                    )
             self._clear_alert("probe_status")
-            log_event("debug", "sniper_recovery_pause",
-                      "Recovery mode active — skipping sniper probe and gap-closer churn")
+            log_event(
+                "debug",
+                "sniper_recovery_pause",
+                "Recovery mode active — skipping sniper probe and gap-closer churn",
+            )
         elif not _sniper_on:
-            log_event("debug", "sniper_disabled", "Sniper disabled via config — skipping")
+            log_event(
+                "debug", "sniper_disabled", "Sniper disabled via config — skipping"
+            )
 
         # ---- Phase 2: CHECK existing probe results ----
         elif self._probe_state["active"]:
@@ -7331,7 +8413,9 @@ class BotLoop:
                 if remaining_hold > 0:
                     last_notice_at = float(probe.get("last_wait_log_at") or 0)
                     if (now_ts - last_notice_at) >= 5:
-                        probe_age = max(0.0, now_ts - float(probe.get("launched_at") or now_ts))
+                        probe_age = max(
+                            0.0, now_ts - float(probe.get("launched_at") or now_ts)
+                        )
                         log_event(
                             "info",
                             "probe_hold_wait",
@@ -7339,8 +8423,11 @@ class BotLoop:
                             f"{remaining_hold:.1f}s more before confirming",
                         )
                         probe["last_wait_log_at"] = now_ts
-                    log_event("debug", "probe_hold_status",
-                              "Probe pair still aging before main ladder deploy")
+                    log_event(
+                        "debug",
+                        "probe_hold_status",
+                        "Probe pair still aging before main ladder deploy",
+                    )
                 else:
                     # BOTH survived long enough — price confirmed.
                     # Keep probes live for a linger window so the main ladder
@@ -7358,18 +8445,27 @@ class BotLoop:
                     if confirmed_buffer > 0:
                         probe["safe_buffer_bps"] = confirmed_buffer
                     linger_secs = int(getattr(cfg, "SNIPER_LINGER_SECS", 600) or 0)
-                    log_event("info", "probe_confirmed",
-                              f"Both probes survived — price confirmed at Tibet "
-                              f"{probe['tibet_price']:.8f} (buffer {_bps_to_pct(confirmed_buffer)}). "
-                              f"Keeping probes live for {linger_secs}s while building "
-                              f"main offers behind them.")
-                    log_event("info", "probe_confirmed_status",
-                              "Price confirmed — deploying main offers behind live probes")
+                    log_event(
+                        "info",
+                        "probe_confirmed",
+                        f"Both probes survived — price confirmed at Tibet "
+                        f"{probe['tibet_price']:.8f} (buffer {_bps_to_pct(confirmed_buffer)}). "
+                        f"Keeping probes live for {linger_secs}s while building "
+                        f"main offers behind them.",
+                    )
+                    log_event(
+                        "info",
+                        "probe_confirmed_status",
+                        "Price confirmed — deploying main offers behind live probes",
+                    )
                     self._clear_alert("probe_status")
 
-            elif (
-                any(s.get("unverified") for s in ([buy_state] + ([sell_state] if sell_required else [])))
-                and not any(s.get("taken") for s in ([buy_state] + ([sell_state] if sell_required else [])))
+            elif any(
+                s.get("unverified")
+                for s in ([buy_state] + ([sell_state] if sell_required else []))
+            ) and not any(
+                s.get("taken")
+                for s in ([buy_state] + ([sell_state] if sell_required else []))
             ):
                 last_notice_at = float(probe.get("last_wait_log_at") or 0)
                 if (now_ts - last_notice_at) >= 5:
@@ -7386,8 +8482,11 @@ class BotLoop:
                         "main ladder deploy",
                     )
                     probe["last_wait_log_at"] = now_ts
-                log_event("debug", "probe_hold_status",
-                          "Probe pair still awaiting Dexie verification")
+                log_event(
+                    "debug",
+                    "probe_hold_status",
+                    "Probe pair still awaiting Dexie verification",
+                )
 
             else:
                 # At least one probe was taken — adjust and retry.
@@ -7443,11 +8542,17 @@ class BotLoop:
                 ):
                     taken_sides.append("sell")
 
-                log_event("info", "probe_retry",
-                          f"Probe attempt {attempt}: {'+'.join(taken_sides)} taken, "
-                          f"widening buffer to {_bps_to_pct(adjusted_buffer)}")
-                log_event("info", "probe_retry_status",
-                          f"Probe retry {attempt} — widening spread")
+                log_event(
+                    "info",
+                    "probe_retry",
+                    f"Probe attempt {attempt}: {'+'.join(taken_sides)} taken, "
+                    f"widening buffer to {_bps_to_pct(adjusted_buffer)}",
+                )
+                log_event(
+                    "info",
+                    "probe_retry_status",
+                    f"Probe retry {attempt} — widening spread",
+                )
                 self._clear_alert("probe_status")
 
                 new_sell_price = self._apply_probe_retry_backoff(
@@ -7468,13 +8573,15 @@ class BotLoop:
                 # CAT sniper creation when no CAT sniper coins exist
                 if sell_tid and not sell_alive:
                     sell_results = self.sniper.try_snipe_single(
-                        "sell", new_sell_price, arb_gap)
+                        "sell", new_sell_price, arb_gap
+                    )
                 # Retry buy only if taken (alive→gone) OR never placed
                 # (use truthy check to exclude empty-string trade_id "")
                 if (buy_tid and not buy_alive) or not buy_tid:
                     self.sniper._last_snipe_time = 0  # Reset cooldown
                     buy_results = self.sniper.try_snipe_single(
-                        "buy", new_buy_price, arb_gap)
+                        "buy", new_buy_price, arb_gap
+                    )
 
                 # Update probe state
                 probe["attempt"] = attempt
@@ -7503,7 +8610,9 @@ class BotLoop:
                     )
                     current_buy_ids = probe_result["buy_ids"]
                     current_sell_ids = probe_result["sell_ids"]
-                    sniper_fired = sniper_fired or probe_result.get("sniper_fired", False)
+                    sniper_fired = sniper_fired or probe_result.get(
+                        "sniper_fired", False
+                    )
 
         # ---- Phase 1: LAUNCH new probe (empty book or material market shift) ----
         # The arb-gap gate is intended for *rearm* triggers (price_move,
@@ -7556,16 +8665,18 @@ class BotLoop:
                     # with progressively tighter values until a probe gets
                     # taken. Otherwise use the comfortable default.
                     if launch_reason.startswith("floor_tighten"):
-                        step = max(1, int(getattr(cfg, "SNIPER_FLOOR_TIGHTEN_STEP_BPS", 15)))
+                        step = max(
+                            1, int(getattr(cfg, "SNIPER_FLOOR_TIGHTEN_STEP_BPS", 15))
+                        )
                         prev_buffer = int(
                             self._probe_state.get("tightening_buffer_bps")
                             or getattr(cfg, "SNIPER_BUFFER_BPS", 50)
                         )
                         sniper_buffer_bps = Decimal(str(max(1, prev_buffer - step)))
                     else:
-                        sniper_buffer_bps = Decimal(str(
-                            getattr(cfg, "SNIPER_BUFFER_BPS", 50)
-                        ))
+                        sniper_buffer_bps = Decimal(
+                            str(getattr(cfg, "SNIPER_BUFFER_BPS", 50))
+                        )
                     probe_prices = self._get_market_aware_probe_prices(
                         tibet_p,
                         sniper_buffer_bps,
@@ -7576,13 +8687,19 @@ class BotLoop:
                     book_bid = probe_prices["overall_best_bid"]
                     book_ask = probe_prices["overall_best_ask"]
 
-                    log_event("info", "probe_launch",
-                              f"Launching price probe — {launch_reason}: "
-                              f"buy={buy_price:.8f}, sell={sell_price:.8f} "
-                              f"(Tibet={tibet_p:.8f}, Dexie={dexie_p:.8f}, "
-                              f"book_bid={book_bid:.8f}, book_ask={book_ask:.8f})")
-                    log_event("info", "probe_launch_status",
-                              "Probing market — testing edge prices...")
+                    log_event(
+                        "info",
+                        "probe_launch",
+                        f"Launching price probe — {launch_reason}: "
+                        f"buy={buy_price:.8f}, sell={sell_price:.8f} "
+                        f"(Tibet={tibet_p:.8f}, Dexie={dexie_p:.8f}, "
+                        f"book_bid={book_bid:.8f}, book_ask={book_ask:.8f})",
+                    )
+                    log_event(
+                        "info",
+                        "probe_launch_status",
+                        "Probing market — testing edge prices...",
+                    )
                     self._clear_alert("probe_status")
 
                     total_snipes = 0
@@ -7607,8 +8724,12 @@ class BotLoop:
                         if _probe_cycle_valid[0]:  # Only write if cycle not abandoned
                             _probe_results[side] = result
 
-                    sell_thread = threading.Thread(target=_fire_probe, args=("sell", sell_price))
-                    buy_thread = threading.Thread(target=_fire_probe, args=("buy", buy_price))
+                    sell_thread = threading.Thread(
+                        target=_fire_probe, args=("sell", sell_price)
+                    )
+                    buy_thread = threading.Thread(
+                        target=_fire_probe, args=("buy", buy_price)
+                    )
                     sell_thread.start()
                     buy_thread.start()
                     sell_thread.join(timeout=30)
@@ -7618,11 +8739,14 @@ class BotLoop:
 
                     if cycle_abandoned:
                         _probe_cycle_valid[0] = False
-                        log_event("warning", "probe_thread_timeout",
-                                  f"Probe thread(s) timed out after 30s "
-                                  f"(sell_alive={sell_thread.is_alive()}, "
-                                  f"buy_alive={buy_thread.is_alive()}) — "
-                                  f"cycle abandoned.")
+                        log_event(
+                            "warning",
+                            "probe_thread_timeout",
+                            f"Probe thread(s) timed out after 30s "
+                            f"(sell_alive={sell_thread.is_alive()}, "
+                            f"buy_alive={buy_thread.is_alive()}) — "
+                            f"cycle abandoned.",
+                        )
                         sell_results = None
                         buy_results = None
                     else:
@@ -7648,32 +8772,34 @@ class BotLoop:
                     if total_snipes > 0:
                         sniper_fired = True
                         with self._probe_lock:
-                            self._probe_state.update({
-                                "active": True,
-                                "buy_tid": buy_tid,
-                                "sell_tid": sell_tid,
-                                "buy_price": buy_price,
-                                "sell_price": sell_price,
-                                "tibet_price": tibet_p,
-                                "attempt": 0,
-                                "max_attempts": 5,
-                                "confirmed_price": None,
-                                "confirmed_at": 0,
-                                "launched_at": time.time(),
-                                "last_wait_log_at": 0,
-                                # Track the buffer this probe is testing so the
-                                # next floor_tighten round can shrink from it.
-                                "tightening_buffer_bps": int(sniper_buffer_bps),
-                                # Reset convergence on a fresh launch (price_move
-                                # or arb_gap_shift). Floor-tighten rounds inherit
-                                # the previous safe_buffer_bps via _get_sniper_…
-                                "safe_buffer_bps": (
-                                    self._probe_state.get("safe_buffer_bps", 0)
-                                    if launch_reason.startswith("floor_tighten")
-                                    else 0
-                                ),
-                                "floor_converged": False,
-                            })
+                            self._probe_state.update(
+                                {
+                                    "active": True,
+                                    "buy_tid": buy_tid,
+                                    "sell_tid": sell_tid,
+                                    "buy_price": buy_price,
+                                    "sell_price": sell_price,
+                                    "tibet_price": tibet_p,
+                                    "attempt": 0,
+                                    "max_attempts": 5,
+                                    "confirmed_price": None,
+                                    "confirmed_at": 0,
+                                    "launched_at": time.time(),
+                                    "last_wait_log_at": 0,
+                                    # Track the buffer this probe is testing so the
+                                    # next floor_tighten round can shrink from it.
+                                    "tightening_buffer_bps": int(sniper_buffer_bps),
+                                    # Reset convergence on a fresh launch (price_move
+                                    # or arb_gap_shift). Floor-tighten rounds inherit
+                                    # the previous safe_buffer_bps via _get_sniper_…
+                                    "safe_buffer_bps": (
+                                        self._probe_state.get("safe_buffer_bps", 0)
+                                        if launch_reason.startswith("floor_tighten")
+                                        else 0
+                                    ),
+                                    "floor_converged": False,
+                                }
+                            )
                         self._remember_probe_market_snapshot(
                             mid_price,
                             arb_gap,
@@ -7689,7 +8815,9 @@ class BotLoop:
                         )
                         current_buy_ids = probe_result["buy_ids"]
                         current_sell_ids = probe_result["sell_ids"]
-                        sniper_fired = sniper_fired or probe_result.get("sniper_fired", False)
+                        sniper_fired = sniper_fired or probe_result.get(
+                            "sniper_fired", False
+                        )
 
                     # Cancel any orphan sniper offers that landed during an
                     # abandoned cycle. These are sniper IDs that appeared
@@ -7702,13 +8830,17 @@ class BotLoop:
                         _probe_tids.add(sell_tid)
                     _orphan_tids = _new_snipe_ids - _probe_tids
                     if _orphan_tids:
-                        log_event("info", "probe_orphan_cleanup",
-                                  f"Cancelling {len(_orphan_tids)} orphan probe offer(s) "
-                                  f"that landed after cycle abandonment or race: "
-                                  f"{[t[:16] + '...' for t in _orphan_tids]}")
+                        log_event(
+                            "info",
+                            "probe_orphan_cleanup",
+                            f"Cancelling {len(_orphan_tids)} orphan probe offer(s) "
+                            f"that landed after cycle abandonment or race: "
+                            f"{[t[:16] + '...' for t in _orphan_tids]}",
+                        )
                         try:
                             self.offer_manager.cancel_offers(
-                                list(_orphan_tids), reason="probe_orphan_cleanup",
+                                list(_orphan_tids),
+                                reason="probe_orphan_cleanup",
                                 skip_confirmation=True,
                             )
                             # Also prune from sniper's tracking so the cap
@@ -7719,20 +8851,29 @@ class BotLoop:
                                         self.sniper._active_snipe_ids.remove(_tid)
                                     self.sniper._active_snipe_sides.pop(_tid, None)
                         except Exception as _orphan_err:
-                            log_event("error", "probe_orphan_cleanup_failed",
-                                      f"Failed to cancel orphan probe offers: {_orphan_err}")
+                            log_event(
+                                "error",
+                                "probe_orphan_cleanup_failed",
+                                f"Failed to cancel orphan probe offers: {_orphan_err}",
+                            )
 
         elif arb_gap > cfg.SNIPER_MIN_GAP_BPS and not launch_reason:
-            log_event("debug", "sniper_no_swap",
-                      f"Arb gap {_bps_to_pct(arb_gap)} but no fresh sniper trigger "
-                      f"(startup or material market shift) — keeping sniper idle")
+            log_event(
+                "debug",
+                "sniper_no_swap",
+                f"Arb gap {_bps_to_pct(arb_gap)} but no fresh sniper trigger "
+                f"(startup or material market shift) — keeping sniper idle",
+            )
 
         # ---- Step 8b: Re-evaluate prices after sniper ----
         # If the sniper just fired, the market has moved. Fetch fresh prices
         # so the main offer batch (Step 10) uses post-snipe pricing.
         if sniper_fired:
-            log_event("info", "post_snipe_reprice",
-                      "Sniper fired — re-fetching prices before creating main offer batch")
+            log_event(
+                "info",
+                "post_snipe_reprice",
+                "Sniper fired — re-fetching prices before creating main offer batch",
+            )
             fresh_price = self.price_engine.get_price(
                 cfg.CAT_ASSET_ID, cfg.CAT_DECIMALS, cfg.CAT_TICKER_ID
             )
@@ -7747,18 +8888,24 @@ class BotLoop:
                 arb_gap = Decimal(str(fresh_price.get("arb_gap_bps", 0)))
                 self.risk_manager.update_arb_gap(arb_gap)
 
-                log_event("info", "post_snipe_price",
-                          f"Post-snipe price: {old_mid:.8f} → {fresh_mid:.8f} "
-                          f"(arb gap now {_bps_to_pct(arb_gap)})")
+                log_event(
+                    "info",
+                    "post_snipe_price",
+                    f"Post-snipe price: {old_mid:.8f} → {fresh_mid:.8f} "
+                    f"(arb gap now {_bps_to_pct(arb_gap)})",
+                )
 
                 # Push updated price to GUI
-                self._emit("price_update", {
-                    "mid_price": str(mid_price),
-                    "dexie_price": str(fresh_price.get("dexie_price", "")),
-                    "tibet_price": str(fresh_price.get("tibet_price", "")),
-                    "arb_gap_bps": str(arb_gap),
-                    "spread_bps": self._bot_state.get("spread_bps", "0"),
-                })
+                self._emit(
+                    "price_update",
+                    {
+                        "mid_price": str(mid_price),
+                        "dexie_price": str(fresh_price.get("dexie_price", "")),
+                        "tibet_price": str(fresh_price.get("tibet_price", "")),
+                        "arb_gap_bps": str(arb_gap),
+                        "spread_bps": self._bot_state.get("spread_bps", "0"),
+                    },
+                )
 
         # ---- Step 8b2: Emergency requote of stale offers on price shock ----
         # When a TibetSwap swap causes a large arb gap, old offers on the
@@ -7771,9 +8918,7 @@ class BotLoop:
         # suppressed (startup, cooldown, cap) but stale offers still need
         # emergency requoting. Triggers on: recent swap + large arb gap.
         emergency_requote_triggered = (
-            recent_swap
-            and arb_gap > cfg.ARB_ALERT_THRESHOLD_BPS
-            and mid_price > 0
+            recent_swap and arb_gap > cfg.ARB_ALERT_THRESHOLD_BPS and mid_price > 0
         )
         if emergency_requote_triggered and not recovery_active_now:
             for eq_side in ["sell", "buy"]:
@@ -7786,9 +8931,8 @@ class BotLoop:
 
                 move_bps = abs(mid_price - last_q) / last_q * Decimal("10000")
 
-                is_vulnerable = (
-                    (eq_side == "sell" and mid_price > last_q) or
-                    (eq_side == "buy" and mid_price < last_q)
+                is_vulnerable = (eq_side == "sell" and mid_price > last_q) or (
+                    eq_side == "buy" and mid_price < last_q
                 )
 
                 if is_vulnerable and move_bps > cfg.ARB_ALERT_THRESHOLD_BPS:
@@ -7825,17 +8969,27 @@ class BotLoop:
                             },
                         )
                         continue
-                    msg = (f"[EMERGENCY] requote of {eq_side} side -- "
-                           f"price shock {_bps_to_pct(move_bps)} "
-                           f"({last_q:.8f} -> {mid_price:.8f}, "
-                           f"arb gap: {_bps_to_pct(arb_gap)})")
+                    msg = (
+                        f"[EMERGENCY] requote of {eq_side} side -- "
+                        f"price shock {_bps_to_pct(move_bps)} "
+                        f"({last_q:.8f} -> {mid_price:.8f}, "
+                        f"arb gap: {_bps_to_pct(arb_gap)})"
+                    )
                     print(msg, flush=True)  # Terminal-visible
                     log_event("warning", "emergency_requote", msg)
 
                     spread = self.risk_manager.get_adjusted_spread(eq_side)
                     requote_mid = self._get_probe_anchored_mid(eq_side, mid_price)
-                    price_cap = self._get_probe_price_boundary(eq_side) if eq_side == "buy" else None
-                    price_floor = self._get_probe_price_boundary(eq_side) if eq_side == "sell" else None
+                    price_cap = (
+                        self._get_probe_price_boundary(eq_side)
+                        if eq_side == "buy"
+                        else None
+                    )
+                    price_floor = (
+                        self._get_probe_price_boundary(eq_side)
+                        if eq_side == "sell"
+                        else None
+                    )
                     if requote_mid != mid_price:
                         log_event(
                             "info",
@@ -7843,9 +8997,12 @@ class BotLoop:
                             f"Anchoring {eq_side} emergency requote to probe edge: "
                             f"mid {mid_price:.8f} -> {requote_mid:.8f}",
                         )
-                    _live_ids = current_buy_ids if eq_side == "buy" else current_sell_ids
+                    _live_ids = (
+                        current_buy_ids if eq_side == "buy" else current_sell_ids
+                    )
                     requote_result = self.offer_manager.requote_side(
-                        eq_side, requote_mid,
+                        eq_side,
+                        requote_mid,
                         dexie_manager=self.dexie_manager,
                         risk_manager=self.risk_manager,
                         spread_fraction=spread,
@@ -7908,12 +9065,16 @@ class BotLoop:
                             source="emergency_requote",
                             severity="emergency",
                             new_count=len(new_offers),
-                            replaced_count=replaced if isinstance(requote_result, dict) else len(new_offers),
+                            replaced_count=replaced
+                            if isinstance(requote_result, dict)
+                            else len(new_offers),
                         )
                         self._requoted_this_cycle.add(eq_side)
                         self._force_requote[eq_side] = False
-                        done_msg = (f"[OK] Emergency requote {eq_side}: "
-                                    f"{len(new_offers)} new offers at {requote_mid:.8f}")
+                        done_msg = (
+                            f"[OK] Emergency requote {eq_side}: "
+                            f"{len(new_offers)} new offers at {requote_mid:.8f}"
+                        )
                         print(done_msg, flush=True)  # Terminal-visible
                         log_event("info", "emergency_requote_done", done_msg)
                     else:
@@ -7924,14 +9085,19 @@ class BotLoop:
                             )
                             event_level = "info"
                         else:
-                            skipped_msg = (f"[WARN] Emergency requote {eq_side}: "
-                                           f"0 new offers produced — backing off "
-                                           f"so wallet settlement/reconcile can catch up")
+                            skipped_msg = (
+                                f"[WARN] Emergency requote {eq_side}: "
+                                f"0 new offers produced — backing off "
+                                f"so wallet settlement/reconcile can catch up"
+                            )
                             event_level = "warning"
                         print(skipped_msg, flush=True)
-                        log_event(event_level, "emergency_requote_retry_eligible",
-                                  skipped_msg,
-                                  data={"side": eq_side})
+                        log_event(
+                            event_level,
+                            "emergency_requote_retry_eligible",
+                            skipped_msg,
+                            data={"side": eq_side},
+                        )
 
         # ---- Step 8c-pre: Monitor confirmed probes — do not auto re-fire ----
         # Once discovery is done, the main ladder should take over. If an edge
@@ -7949,11 +9115,13 @@ class BotLoop:
         _has_probe_tid = bool(
             self._probe_state.get("buy_tid") or self._probe_state.get("sell_tid")
         )
-        if (not recovery_active_now
-                and not self._probe_state.get("active", False)
-                and self._probe_state.get("confirmed_price")
-                and _has_probe_tid
-                and self._loop_count >= 3):
+        if (
+            not recovery_active_now
+            and not self._probe_state.get("active", False)
+            and self._probe_state.get("confirmed_price")
+            and _has_probe_tid
+            and self._loop_count >= 3
+        ):
             # Check if any probe was taken (disappeared from wallet)
             all_open = current_buy_ids | current_sell_ids
             _probe_buy = self._probe_state.get("buy_tid")
@@ -7985,43 +9153,55 @@ class BotLoop:
         # Discovery probes are temporary edge markers. Leave them up long enough
         # for the main ladder to settle behind them, then remove them whether the
         # arb gap has closed or not.
-        if (not recovery_active_now
-                and not sniper_fired
-                and self.sniper._active_snipe_ids
-                and not self._probe_state.get("active", False)
-                and self._loop_count >= 3
-                and self._probe_cleanup_seconds_remaining(
-                    self._probe_state, time.time()
-                ) <= 0):
+        if (
+            not recovery_active_now
+            and not sniper_fired
+            and self.sniper._active_snipe_ids
+            and not self._probe_state.get("active", False)
+            and self._loop_count >= 3
+            and self._probe_cleanup_seconds_remaining(self._probe_state, time.time())
+            <= 0
+        ):
             snipe_ids_to_cancel = list(self.sniper._active_snipe_ids)
             cleanup_reason = (
                 "gap_closed"
                 if arb_gap <= cfg.ARB_ALERT_THRESHOLD_BPS
                 else "linger_elapsed"
             )
-            log_event("info", "sniper_cleanup",
-                      f"Sniper edge window ended ({cleanup_reason}) — cancelling "
-                      f"{len(snipe_ids_to_cancel)} sniper offers")
+            log_event(
+                "info",
+                "sniper_cleanup",
+                f"Sniper edge window ended ({cleanup_reason}) — cancelling "
+                f"{len(snipe_ids_to_cancel)} sniper offers",
+            )
             try:
                 # skip_confirmation=True: sniper cleanup is routine maintenance;
                 # blocking 60-90s for coins freezes the cycle unnecessarily.
                 result = self.offer_manager.cancel_offers(
-                    snipe_ids_to_cancel, reason="sniper_cleanup",
-                    skip_confirmation=True)
+                    snipe_ids_to_cancel, reason="sniper_cleanup", skip_confirmation=True
+                )
                 cancelled_ids = [
-                    tid for tid, res in (result or {}).items()
+                    tid
+                    for tid, res in (result or {}).items()
                     if res and res.get("success")
                 ]
                 failed_ids = [
-                    tid for tid, res in (result or {}).items()
+                    tid
+                    for tid, res in (result or {}).items()
                     if not (res and res.get("success"))
                 ]
                 cancelled = len(cancelled_ids)
-                log_event("info", "sniper_cleaned",
-                          f"Cancelled {cancelled}/{len(snipe_ids_to_cancel)} sniper offers"
-                          + (" — coins freed for main offer batch" if cancelled else "")
-                          + (f"; {len(failed_ids)} still active and queued for retry"
-                             if failed_ids else ""))
+                log_event(
+                    "info",
+                    "sniper_cleaned",
+                    f"Cancelled {cancelled}/{len(snipe_ids_to_cancel)} sniper offers"
+                    + (" — coins freed for main offer batch" if cancelled else "")
+                    + (
+                        f"; {len(failed_ids)} still active and queued for retry"
+                        if failed_ids
+                        else ""
+                    ),
+                )
                 if cancelled > 0:
                     for tid in cancelled_ids:
                         if self._probe_state.get("buy_tid") == tid:
@@ -8033,22 +9213,30 @@ class BotLoop:
                 # Keep failed sniper IDs tracked until retry or wallet sync removes them.
                 self.sniper._active_snipe_ids = failed_ids
             except Exception as e:
-                log_event("warning", "sniper_cleanup_failed",
-                          f"Failed to cancel sniper offers: {e}")
+                log_event(
+                    "warning",
+                    "sniper_cleanup_failed",
+                    f"Failed to cancel sniper offers: {e}",
+                )
 
         # ---- Step 8d: Close the Gap — adaptive spread probing ----
-        if (not recovery_active_now
-                and not sniper_fired
-                and self.sniper._active_snipe_ids
-                and not self._probe_state.get("active", False)
-                and self._loop_count >= 3):
+        if (
+            not recovery_active_now
+            and not sniper_fired
+            and self.sniper._active_snipe_ids
+            and not self._probe_state.get("active", False)
+            and self._loop_count >= 3
+        ):
             linger_remaining = self._probe_cleanup_seconds_remaining(
                 self._probe_state, time.time()
             )
             if linger_remaining > 0:
-                log_event("debug", "sniper_cleanup_wait",
-                          f"Sniper linger active â€” keeping probes live for "
-                          f"{linger_remaining:.1f}s more before cleanup")
+                log_event(
+                    "debug",
+                    "sniper_cleanup_wait",
+                    f"Sniper linger active â€” keeping probes live for "
+                    f"{linger_remaining:.1f}s more before cleanup",
+                )
 
         if self.boost_manager._boost_active and not recovery_active_now:
             # 1. Keep offers alive and centred on price
@@ -8061,16 +9249,25 @@ class BotLoop:
             # create locks coins) which can invalidate the topup's transaction.
             if self.coin_manager.is_busy():
                 stepped = False
-                log_event("debug", "gap_closer_skip_busy",
-                          "Gap closer step skipped — coin topup in progress")
+                log_event(
+                    "debug",
+                    "gap_closer_skip_busy",
+                    "Gap closer step skipped — coin topup in progress",
+                )
             else:
                 stepped = self.boost_manager.step_tighter(arb_gap)
 
             # 2b. If probe was arbed, check if inner-tier offers are exposed
             if self.boost_manager.consume_inner_vulnerability_flag():
-                log_event("warning", "inner_vulnerability_check",
-                          "Gap closer probe arbed — checking inner-tier offers for exposure")
-                print("   [8d] ⚠️ Probe arbed — triggering EMERGENCY inner check", flush=True)
+                log_event(
+                    "warning",
+                    "inner_vulnerability_check",
+                    "Gap closer probe arbed — checking inner-tier offers for exposure",
+                )
+                print(
+                    "   [8d] ⚠️ Probe arbed — triggering EMERGENCY inner check",
+                    flush=True,
+                )
                 # Force an emergency requote of inner tiers on the next step 9
                 self._force_requote["buy"] = True
                 self._force_requote["sell"] = True
@@ -8090,19 +9287,24 @@ class BotLoop:
                 # loop (15-20 min), blocking further steps.  The cascade replaces
                 # stale offers in small batches across multiple fast loops instead.
                 self._emit("boost", state)
-                print(f"   [8d] Gap closer step {state['steps_taken']}: "
-                      f"now {_bps_to_pct(state['current_spread_bps'])} "
-                      f"(floor: {_bps_to_pct(state['arb_floor_bps'])}) — "
-                      f"cascade will tighten main book",
-                      flush=True)
+                print(
+                    f"   [8d] Gap closer step {state['steps_taken']}: "
+                    f"now {_bps_to_pct(state['current_spread_bps'])} "
+                    f"(floor: {_bps_to_pct(state['arb_floor_bps'])}) — "
+                    f"cascade will tighten main book",
+                    flush=True,
+                )
 
             if converged:
                 # Convergence changed — cascade will handle replacing stale offers
                 # in small batches.  Same reasoning: full requote blocks the loop.
                 factor = self.boost_manager.get_convergence_factor()
                 self._emit("boost", state)
-                print(f"   [8d] Main book converging — now {factor*100:.0f}% of original — "
-                      f"cascade will tighten main book", flush=True)
+                print(
+                    f"   [8d] Main book converging — now {factor * 100:.0f}% of original — "
+                    f"cascade will tighten main book",
+                    flush=True,
+                )
 
             # 4. Cascade: after probe survives ~60s, replace stale main
             #    book offers with tighter ones behind the proven level.
@@ -8110,7 +9312,9 @@ class BotLoop:
             #    Never wipes the orderbook. Works in batches per cycle.
             cascaded = False
             if not stepped and not converged and self.boost_manager.should_cascade():
-                if not self.coin_manager.is_busy() and not getattr(self, '_graceful_in_progress', False):
+                if not self.coin_manager.is_busy() and not getattr(
+                    self, "_graceful_in_progress", False
+                ):
                     cascade_result = self.boost_manager.cascade_main_book(
                         mid_price, open_buys, open_sells
                     )
@@ -8122,16 +9326,20 @@ class BotLoop:
                         self._emit("boost", state)
                         tc = cascade_result.get("total_created", 0)
                         tk = cascade_result.get("total_cancelled", 0)
-                        print(f"   [8d] CASCADE: +{tc} new, -{tk} stale "
-                              f"(probe at {_bps_to_pct(state['current_spread_bps'])})",
-                              flush=True)
+                        print(
+                            f"   [8d] CASCADE: +{tc} new, -{tk} stale "
+                            f"(probe at {_bps_to_pct(state['current_spread_bps'])})",
+                            flush=True,
+                        )
 
             if not refreshed and not stepped and not converged and not cascaded:
-                print(f"   [8d] Gap closer: {_bps_to_pct(state['current_spread_bps'])} "
-                      f"({state['steps_taken']} steps, "
-                      f"floor: {_bps_to_pct(state['arb_floor_bps'])}, "
-                      f"next step in {state['secs_until_step']}s)",
-                      flush=True)
+                print(
+                    f"   [8d] Gap closer: {_bps_to_pct(state['current_spread_bps'])} "
+                    f"({state['steps_taken']} steps, "
+                    f"floor: {_bps_to_pct(state['arb_floor_bps'])}, "
+                    f"next step in {state['secs_until_step']}s)",
+                    flush=True,
+                )
 
         # ---- Step 9: Requote if price moved or forced by convergence ----
         self._set_cycle_step("step9_requote")
@@ -8154,6 +9362,7 @@ class BotLoop:
         _reserve_skip_create = False
         try:
             from wallet import get_wallet_balance as _get_wallet_balance
+
             _xch_reserve = getattr(cfg, "XCH_RESERVE", Decimal("0"))
             _cat_reserve = getattr(cfg, "CAT_RESERVE", Decimal("0"))
 
@@ -8164,16 +9373,24 @@ class BotLoop:
                 try:
                     _xch_bal = _extract_wallet_balance_or_defer(_xch_bal_raw)
                 except _ReserveCheckDeferred as _defer:
-                    log_event("warning", "reserve_check_skipped",
-                              f"XCH reserve check skipped: {_defer} (will retry next cycle)")
+                    log_event(
+                        "warning",
+                        "reserve_check_skipped",
+                        f"XCH reserve check skipped: {_defer} (will retry next cycle)",
+                    )
                     raise
-                _xch_total = Decimal(str(_xch_bal.get("confirmed_wallet_balance", 0))) / Decimal("1000000000000")
+                _xch_total = Decimal(
+                    str(_xch_bal.get("confirmed_wallet_balance", 0))
+                ) / Decimal("1000000000000")
                 _xch_near_floor = _xch_reserve * Decimal("1.05")
 
                 if _xch_total <= _xch_reserve:
-                    log_event("error", "reserve_floor_breached",
-                              f"XCH balance ({_xch_total:.4f}) ≤ XCH_RESERVE ({_xch_reserve}) — "
-                              f"cancelling all open offers to protect reserve")
+                    log_event(
+                        "error",
+                        "reserve_floor_breached",
+                        f"XCH balance ({_xch_total:.4f}) ≤ XCH_RESERVE ({_xch_reserve}) — "
+                        f"cancelling all open offers to protect reserve",
+                    )
                     # Distinct XCH alert id so it doesn't collide with the
                     # CAT path's alert and overwrite operator-facing
                     # context mid-triage when both reserves are stressed.
@@ -8188,14 +9405,19 @@ class BotLoop:
                     )
                     _all_open = list(current_buy_ids | current_sell_ids)
                     if _all_open:
-                        self.offer_manager.cancel_offers(_all_open, reason="reserve_floor_breached", force_storm=True)
+                        self.offer_manager.cancel_offers(
+                            _all_open, reason="reserve_floor_breached", force_storm=True
+                        )
                         current_buy_ids.clear()
                         current_sell_ids.clear()
                     _reserve_skip_create = True
                 elif _xch_total <= _xch_near_floor:
-                    log_event("warning", "reserve_floor_near",
-                              f"XCH balance ({_xch_total:.4f}) approaching reserve floor "
-                              f"({_xch_reserve}) — skipping offer creation")
+                    log_event(
+                        "warning",
+                        "reserve_floor_near",
+                        f"XCH balance ({_xch_total:.4f}) approaching reserve floor "
+                        f"({_xch_reserve}) — skipping offer creation",
+                    )
                     self._emit_alert(
                         "reserve_floor_xch",
                         "warning",
@@ -8217,17 +9439,26 @@ class BotLoop:
                 try:
                     _cat_bal = _extract_wallet_balance_or_defer(_cat_bal_raw)
                 except _ReserveCheckDeferred as _defer:
-                    log_event("warning", "reserve_check_skipped",
-                              f"CAT reserve check skipped: {_defer} (will retry next cycle)")
+                    log_event(
+                        "warning",
+                        "reserve_check_skipped",
+                        f"CAT reserve check skipped: {_defer} (will retry next cycle)",
+                    )
                     raise
                 _cat_scale = Decimal(10) ** Decimal(str(cfg.CAT_DECIMALS))
-                _cat_total = Decimal(str(_cat_bal.get("confirmed_wallet_balance", 0))) / _cat_scale
+                _cat_total = (
+                    Decimal(str(_cat_bal.get("confirmed_wallet_balance", 0)))
+                    / _cat_scale
+                )
                 _cat_near_floor = _cat_reserve * Decimal("1.05")
 
                 if _cat_total <= _cat_reserve:
-                    log_event("error", "reserve_floor_breached",
-                              f"CAT balance ({_cat_total:,.2f}) ≤ CAT_RESERVE ({_cat_reserve}) — "
-                              f"cancelling all open offers to protect reserve")
+                    log_event(
+                        "error",
+                        "reserve_floor_breached",
+                        f"CAT balance ({_cat_total:,.2f}) ≤ CAT_RESERVE ({_cat_reserve}) — "
+                        f"cancelling all open offers to protect reserve",
+                    )
                     self._emit_alert(
                         "reserve_floor_cat",
                         "error",
@@ -8239,14 +9470,19 @@ class BotLoop:
                     )
                     _all_open = list(current_buy_ids | current_sell_ids)
                     if _all_open:
-                        self.offer_manager.cancel_offers(_all_open, reason="reserve_floor_breached", force_storm=True)
+                        self.offer_manager.cancel_offers(
+                            _all_open, reason="reserve_floor_breached", force_storm=True
+                        )
                         current_buy_ids.clear()
                         current_sell_ids.clear()
                     _reserve_skip_create = True
                 elif _cat_total <= _cat_near_floor:
-                    log_event("warning", "reserve_floor_near",
-                              f"CAT balance ({_cat_total:,.2f}) approaching reserve floor "
-                              f"({_cat_reserve}) — skipping offer creation")
+                    log_event(
+                        "warning",
+                        "reserve_floor_near",
+                        f"CAT balance ({_cat_total:,.2f}) approaching reserve floor "
+                        f"({_cat_reserve}) — skipping offer creation",
+                    )
                     self._emit_alert(
                         "reserve_floor_cat",
                         "warning",
@@ -8264,40 +9500,54 @@ class BotLoop:
             # since the breach is unverified.
             pass
         except Exception as _rf_err:
-            log_event("debug", "reserve_floor_check_error",
-                      f"Reserve floor check failed (non-fatal): {_rf_err}")
+            log_event(
+                "debug",
+                "reserve_floor_check_error",
+                f"Reserve floor check failed (non-fatal): {_rf_err}",
+            )
 
         # ---- Step 10: Create new offers if needed ----
         self._set_cycle_step("step10_create_offers")
         # Cap is based on DB-open count (_db_open_*_ids) so zombie wallet offers
         # (cancelled in DB, still active in Sage) don't falsely fill the cap.
         # Both branches of the try/except above guarantee these are defined.
-        print(f"   [10] Offers: buys {len(_db_open_buy_ids)}/{cfg.MAX_ACTIVE_BUY_OFFERS}, "
-              f"sells {len(_db_open_sell_ids)}/{cfg.MAX_ACTIVE_SELL_OFFERS}", flush=True)
+        print(
+            f"   [10] Offers: buys {len(_db_open_buy_ids)}/{cfg.MAX_ACTIVE_BUY_OFFERS}, "
+            f"sells {len(_db_open_sell_ids)}/{cfg.MAX_ACTIVE_SELL_OFFERS}",
+            flush=True,
+        )
         # step10 count log removed — console print covers this
         if _reserve_skip_create:
-            log_event("info", "step10_skipped_reserve",
-                      "Skipping offer creation — reserve floor guard active")
+            log_event(
+                "info",
+                "step10_skipped_reserve",
+                "Skipping offer creation — reserve floor guard active",
+            )
             return
 
         # Sweep protection: skip re-posting on sides swept in the last cycle.
         # The dynamic AMM buffer has already widened; once it expires the bot
         # will requote at the wider buffer.  Log once per side, clear expired.
         _now = time.time()
-        _skip_buy  = _now < self._sweep_protection.get("buy",  0)
+        _skip_buy = _now < self._sweep_protection.get("buy", 0)
         _skip_sell = _now < self._sweep_protection.get("sell", 0)
         for _s in ("buy", "sell"):
             if _now >= self._sweep_protection.get(_s, 0):
                 self._sweep_protection.pop(_s, None)
         if _skip_buy or _skip_sell:
-            _skipped = [s for s, skip in (("buy", _skip_buy), ("sell", _skip_sell)) if skip]
-            log_event("info", "sweep_protection_active",
-                      f"Sweep protection: skipping {_skipped} offer creation this cycle",
-                      data={"protected_sides": _skipped})
+            _skipped = [
+                s for s, skip in (("buy", _skip_buy), ("sell", _skip_sell)) if skip
+            ]
+            log_event(
+                "info",
+                "sweep_protection_active",
+                f"Sweep protection: skipping {_skipped} offer creation this cycle",
+                data={"protected_sides": _skipped},
+            )
 
         self._create_offers_if_needed(
             mid_price,
-            len(_db_open_buy_ids),   # DB-open count (excludes zombie wallet offers)
+            len(_db_open_buy_ids),  # DB-open count (excludes zombie wallet offers)
             len(_db_open_sell_ids),  # DB-open count (excludes zombie wallet offers)
             current_buy_ids=_db_open_buy_ids,
             current_sell_ids=_db_open_sell_ids,
@@ -8326,12 +9576,10 @@ class BotLoop:
             # Sage) before passing to trim so the trim doesn't count those against
             # the cap and cancel freshly-created real offers.
             _db_filtered_buys = [
-                o for o in open_buys
-                if o.get("trade_id") in _db_open_buy_ids
+                o for o in open_buys if o.get("trade_id") in _db_open_buy_ids
             ]
             _db_filtered_sells = [
-                o for o in open_sells
-                if o.get("trade_id") in _db_open_sell_ids
+                o for o in open_sells if o.get("trade_id") in _db_open_sell_ids
             ]
             trimmed = self.offer_manager.trim_excess_offers(
                 mid_price,
@@ -8339,8 +9587,11 @@ class BotLoop:
                 wallet_sells=_db_filtered_sells,
             )
             if trimmed > 0:
-                log_event("info", "trim_excess_done",
-                          f"Trim pass cancelled {trimmed} excess offer(s)")
+                log_event(
+                    "info",
+                    "trim_excess_done",
+                    f"Trim pass cancelled {trimmed} excess offer(s)",
+                )
                 # F14 fix (2026-04-08): track trim activity. Repeated trim
                 # firing means create-first requote is leaving offers
                 # behind faster than they can be cancelled — likely a
@@ -8348,11 +9599,14 @@ class BotLoop:
                 # if we trim >5 cycles in a row.
                 self._trim_streak = getattr(self, "_trim_streak", 0) + 1
                 if self._trim_streak >= 5:
-                    log_event("warning", "trim_excess_sustained",
-                              f"Trim pass has fired for {self._trim_streak} "
-                              f"consecutive cycles — create-first requote may "
-                              f"be leaking offers. Investigate cancel latency "
-                              f"or pause requotes.")
+                    log_event(
+                        "warning",
+                        "trim_excess_sustained",
+                        f"Trim pass has fired for {self._trim_streak} "
+                        f"consecutive cycles — create-first requote may "
+                        f"be leaking offers. Investigate cancel latency "
+                        f"or pause requotes.",
+                    )
                     self._emit_alert(
                         "trim_sustained",
                         "warning",
@@ -8367,13 +9621,18 @@ class BotLoop:
                     self._trim_streak = 0
                     self._clear_alert("trim_sustained")
         except Exception as e:
-            log_event("warning", "trim_excess_error",
-                      f"Trim excess pass failed (non-fatal): {e}")
+            log_event(
+                "warning",
+                "trim_excess_error",
+                f"Trim excess pass failed (non-fatal): {e}",
+            )
 
         # ---- Step 12b: Recovery mode evaluation ----
         # Subtract any confirmed probe slots so the probe offer doesn't inflate
         # the apparent buy count and mask a genuine under-target condition.
-        _probe_offsets = self._confirmed_probe_slot_offsets(current_buy_ids, current_sell_ids)
+        _probe_offsets = self._confirmed_probe_slot_offsets(
+            current_buy_ids, current_sell_ids
+        )
         self._evaluate_recovery_mode(
             mid_price,
             max(0, len(current_buy_ids) - _probe_offsets["buy"]),
@@ -8388,14 +9647,17 @@ class BotLoop:
         self.risk_manager.record_snapshot(mid_price=mid_price)
 
         # ---- Step 15: Push full state to GUI ----
-        self._emit("state", {
-            "loop_count": self._loop_count,
-            "mid_price": str(mid_price),
-            "open_buys": len(current_buy_ids),
-            "open_sells": len(current_sell_ids),
-            "status": self._bot_state.get("status", "running"),
-            "spread_bps": self._bot_state.get("spread_bps", "0"),
-        })
+        self._emit(
+            "state",
+            {
+                "loop_count": self._loop_count,
+                "mid_price": str(mid_price),
+                "open_buys": len(current_buy_ids),
+                "open_sells": len(current_sell_ids),
+                "status": self._bot_state.get("status", "running"),
+                "spread_bps": self._bot_state.get("spread_bps", "0"),
+            },
+        )
 
         # Push dashboard command centre update (market health + performance)
         try:
@@ -8428,22 +9690,27 @@ class BotLoop:
             except Exception:
                 pass
 
-            self._emit("dashboard_update", {
-                "market_health": health_data,
-                "loop_count": self._loop_count,
-                "uptime_secs": int(time.time() - self._start_time) if self._start_time else 0,
-                "last_loop_time": round(self._last_loop_duration, 2),
-                "open_buys": len(current_buy_ids),
-                "open_sells": len(current_sell_ids),
-                "mid_price": str(mid_price),
-                "competitor_spread_bps": _competitor_bps,
-                "fills_per_hour": _fills_hr,
-                "net_position": _net_pos,
-                "our_best_bid": offer_edges.get("our_best_bid", "0"),
-                "our_best_ask": offer_edges.get("our_best_ask", "0"),
-                "best_bid": _best_bid,
-                "best_ask": _best_ask,
-            })
+            self._emit(
+                "dashboard_update",
+                {
+                    "market_health": health_data,
+                    "loop_count": self._loop_count,
+                    "uptime_secs": int(time.time() - self._start_time)
+                    if self._start_time
+                    else 0,
+                    "last_loop_time": round(self._last_loop_duration, 2),
+                    "open_buys": len(current_buy_ids),
+                    "open_sells": len(current_sell_ids),
+                    "mid_price": str(mid_price),
+                    "competitor_spread_bps": _competitor_bps,
+                    "fills_per_hour": _fills_hr,
+                    "net_position": _net_pos,
+                    "our_best_bid": offer_edges.get("our_best_bid", "0"),
+                    "our_best_ask": offer_edges.get("our_best_ask", "0"),
+                    "best_bid": _best_bid,
+                    "best_ask": _best_ask,
+                },
+            )
         except Exception as e:
             print(f"   [15] Dashboard emit error: {e}", flush=True)
 
@@ -8454,10 +9721,13 @@ class BotLoop:
         fill_count = len(buy_fills) + len(sell_fills)
         fill_str = f", {fill_count} fills!" if fill_count > 0 else ""
         expired_str = f", {expired} expired" if expired > 0 else ""
-        log_event("success", "cycle_complete",
-                  f"Cycle #{self._loop_count} complete — "
-                  f"{len(current_buy_ids)}b/{len(current_sell_ids)}s active"
-                  f"{fill_str}{expired_str}")
+        log_event(
+            "success",
+            "cycle_complete",
+            f"Cycle #{self._loop_count} complete — "
+            f"{len(current_buy_ids)}b/{len(current_sell_ids)}s active"
+            f"{fill_str}{expired_str}",
+        )
         # F27: clear step name on cycle exit so the SLA watchdog doesn't
         # alert on the inter-cycle sleep period
         self._set_cycle_step("idle")
@@ -8484,8 +9754,9 @@ class BotLoop:
         # Only allow creation when migration is idle or done
         return phase not in ("idle", "done")
 
-    def _maybe_finalize_graceful_migration(self, current_buy_ids: set = None,
-                                           current_sell_ids: set = None):
+    def _maybe_finalize_graceful_migration(
+        self, current_buy_ids: set = None, current_sell_ids: set = None
+    ):
         """Release graceful migration only after cancelled IDs are truly gone."""
         if not getattr(self, "_graceful_in_progress", False):
             return
@@ -8524,8 +9795,9 @@ class BotLoop:
         migration["remaining_cancel_count"] = len(remaining_ids)
 
         if remaining_ids:
-            if (not self.offer_manager._pending_cancel_retries
-                    and not migration.get("stalled_logged", False)):
+            if not self.offer_manager._pending_cancel_retries and not migration.get(
+                "stalled_logged", False
+            ):
                 log_event(
                     "warning",
                     "config_migration_stalled",
@@ -8549,23 +9821,30 @@ class BotLoop:
             "Graceful config migration fully completed after cancel verification",
         )
 
-    def _handle_requoting(self, mid_price: Decimal,
-                          current_buy_ids: set, current_sell_ids: set):
+    def _handle_requoting(
+        self, mid_price: Decimal, current_buy_ids: set, current_sell_ids: set
+    ):
         """Check if offers need requoting due to price movement or forced convergence."""
         if not cfg.AUTO_REQUOTE:
             return
 
         if self._recovery_is_active():
-            log_event("debug", "requote_skip_recovery",
-                      "Recovery mode active — skipping non-essential requotes")
+            log_event(
+                "debug",
+                "requote_skip_recovery",
+                "Recovery mode active — skipping non-essential requotes",
+            )
             return
 
         # Don't requote while graceful config migration is running — the migration
         # thread is already cancelling offers and competing for the wallet causes
         # cancel failures and 90-second timeouts on both sides.
-        if getattr(self, '_graceful_in_progress', False):
-            log_event("debug", "requote_skip",
-                      "Graceful config migration in progress — skipping requote")
+        if getattr(self, "_graceful_in_progress", False):
+            log_event(
+                "debug",
+                "requote_skip",
+                "Graceful config migration in progress — skipping requote",
+            )
             return
 
         # Don't requote while coin operations are running (prep/topup)
@@ -8593,26 +9872,36 @@ class BotLoop:
                         mid_price = fresh_mid
                         self._current_mid_price = mid_price
                         self._set_state(mid_price=str(mid_price))
-                        log_event("info", "requote_price_refresh",
-                                  f"Refreshed mid_price before forced requote: "
-                                  f"{old_mid:.8f} -> {mid_price:.8f}",
-                                  data={"old_mid": str(old_mid),
-                                        "new_mid": str(mid_price)})
+                        log_event(
+                            "info",
+                            "requote_price_refresh",
+                            f"Refreshed mid_price before forced requote: "
+                            f"{old_mid:.8f} -> {mid_price:.8f}",
+                            data={"old_mid": str(old_mid), "new_mid": str(mid_price)},
+                        )
                         # Push updated price to GUI
-                        self._emit("price_update", {
-                            "mid_price": str(mid_price),
-                            "dexie_price": str(fresh_price.get("dexie_price", "")),
-                            "tibet_price": str(fresh_price.get("tibet_price", "")),
-                            "arb_gap_bps": str(fresh_price.get("arb_gap_bps", "0")),
-                            "spread_bps": self._bot_state.get("spread_bps", "0"),
-                        })
+                        self._emit(
+                            "price_update",
+                            {
+                                "mid_price": str(mid_price),
+                                "dexie_price": str(fresh_price.get("dexie_price", "")),
+                                "tibet_price": str(fresh_price.get("tibet_price", "")),
+                                "arb_gap_bps": str(fresh_price.get("arb_gap_bps", "0")),
+                                "spread_bps": self._bot_state.get("spread_bps", "0"),
+                            },
+                        )
             except Exception as _e:
-                log_event("warning", "requote_price_refresh_failed",
-                          f"Could not refresh price before requote: {_e}")
+                log_event(
+                    "warning",
+                    "requote_price_refresh_failed",
+                    f"Could not refresh price before requote: {_e}",
+                )
 
         # Track requote time budget — don't let requotes block the loop forever
         _requote_start_time = time.time()
-        _REQUOTE_TIME_BUDGET_SECS = float(getattr(cfg, "REQUOTE_TIME_BUDGET_SECS", 30) or 30)
+        _REQUOTE_TIME_BUDGET_SECS = float(
+            getattr(cfg, "REQUOTE_TIME_BUDGET_SECS", 30) or 30
+        )
 
         # Sniper probe active: only defer requoting on SIDES that currently
         # have a live probe offer. The other side can still requote — it's
@@ -8638,9 +9927,12 @@ class BotLoop:
         _stale_streak = int(self._recovery_state.get("wallet_stale_streak", 0))
         _stale_limit = getattr(cfg, "WALLET_STALE_CREATE_LIMIT", 3)
         if self._wallet_sync_stale_cycle and _stale_streak >= _stale_limit:
-            log_event("warning", "stale_wallet_requote_blocked",
-                      f"Wallet sync stale for {_stale_streak} consecutive cycles — "
-                      f"blocking requote until data is fresh")
+            log_event(
+                "warning",
+                "stale_wallet_requote_blocked",
+                f"Wallet sync stale for {_stale_streak} consecutive cycles — "
+                f"blocking requote until data is fresh",
+            )
             return
 
         for side in ["buy", "sell"]:
@@ -8652,10 +9944,13 @@ class BotLoop:
             # If buy-side requote took 20s, defer sell to next cycle.
             _requote_elapsed = time.time() - _requote_start_time
             if _requote_elapsed > _REQUOTE_TIME_BUDGET_SECS:
-                log_event("info", "requote_time_budget",
-                          f"Requote time budget reached ({_requote_elapsed:.1f}s > "
-                          f"{_REQUOTE_TIME_BUDGET_SECS}s) - deferring {side} to "
-                          f"next cycle while wallet/Dexie settle")
+                log_event(
+                    "info",
+                    "requote_time_budget",
+                    f"Requote time budget reached ({_requote_elapsed:.1f}s > "
+                    f"{_REQUOTE_TIME_BUDGET_SECS}s) - deferring {side} to "
+                    f"next cycle while wallet/Dexie settle",
+                )
                 # Keep the force flag so it fires next cycle
                 break
 
@@ -8674,8 +9969,11 @@ class BotLoop:
             except Exception as _e:
                 # Fail-safe: if the check itself errors, log and continue
                 # (don't lock the bot out of requoting due to a CB read bug)
-                log_event("warning", "requote_cb_check_failed",
-                          f"should_enable_side({side}) raised {_e} — proceeding")
+                log_event(
+                    "warning",
+                    "requote_cb_check_failed",
+                    f"should_enable_side({side}) raised {_e} — proceeding",
+                )
 
             last_price = self._last_quoted_price.get(side, Decimal("0"))
             forced = self._force_requote.get(side, False)
@@ -8701,8 +9999,10 @@ class BotLoop:
 
             # Check if requote needed — graduated severity check
             from reaction_strategy import (
-                RequoteSeverity, tiers_for_severity,
+                RequoteSeverity,
+                tiers_for_severity,
             )
+
             severity = RequoteSeverity.NONE
 
             # Compare apples-to-apples: the deployed baseline is probe-
@@ -8725,27 +10025,41 @@ class BotLoop:
                 if last_price > 0:
                     _move_frac = abs(compare_mid - last_price) / last_price
                     from reaction_strategy import classify_drift
+
                     severity = classify_drift(
                         _move_frac,
-                        inner_threshold=getattr(cfg, "REQUOTE_DRIFT_INNER", Decimal("0.003")),
-                        mid_threshold=getattr(cfg, "REQUOTE_DRIFT_MID", Decimal("0.008")),
-                        full_threshold=getattr(cfg, "REQUOTE_DRIFT_FULL", Decimal("0.02")),
-                        emergency_threshold=getattr(cfg, "REQUOTE_DRIFT_EMERGENCY", Decimal("0.05")),
+                        inner_threshold=getattr(
+                            cfg, "REQUOTE_DRIFT_INNER", Decimal("0.003")
+                        ),
+                        mid_threshold=getattr(
+                            cfg, "REQUOTE_DRIFT_MID", Decimal("0.008")
+                        ),
+                        full_threshold=getattr(
+                            cfg, "REQUOTE_DRIFT_FULL", Decimal("0.02")
+                        ),
+                        emergency_threshold=getattr(
+                            cfg, "REQUOTE_DRIFT_EMERGENCY", Decimal("0.05")
+                        ),
                     )
                     if severity == RequoteSeverity.NONE:
                         # Pressure has already resolved (price converged
                         # back to last quoted). Clear the force instead
                         # of running a no-value requote.
-                        log_event("debug", "force_requote_stale_cleared",
-                                  f"{side} forced requote cleared — current "
-                                  f"drift resolved back to last quoted price "
-                                  f"({last_price:.8f} vs {compare_mid:.8f})")
+                        log_event(
+                            "debug",
+                            "force_requote_stale_cleared",
+                            f"{side} forced requote cleared — current "
+                            f"drift resolved back to last quoted price "
+                            f"({last_price:.8f} vs {compare_mid:.8f})",
+                        )
                         self._force_requote[side] = False
                         continue
                 else:
                     severity = RequoteSeverity.FULL
             else:
-                severity = self.offer_manager.should_requote_graduated(side, compare_mid, last_price)
+                severity = self.offer_manager.should_requote_graduated(
+                    side, compare_mid, last_price
+                )
 
             should_requote = severity != RequoteSeverity.NONE
 
@@ -8769,9 +10083,13 @@ class BotLoop:
                         "will restore any temporarily missing slots",
                         data={
                             "side": side,
-                            "age_secs": round(float(_same_price_guard.get("age_secs") or 0), 1),
+                            "age_secs": round(
+                                float(_same_price_guard.get("age_secs") or 0), 1
+                            ),
                             "drift_bps": str(_same_price_guard.get("drift_bps") or "0"),
-                            "allowed_bps": str(_same_price_guard.get("allowed_bps") or "0"),
+                            "allowed_bps": str(
+                                _same_price_guard.get("allowed_bps") or "0"
+                            ),
                             "source": _same_price_guard.get("source", ""),
                             "severity": severity.value,
                             "forced": bool(forced),
@@ -8852,13 +10170,18 @@ class BotLoop:
                     )
                     continue
 
-                reason = (f"convergence tightening [{severity.value}]"
-                          if forced
-                          else f"price moved {last_price:.8f} -> {compare_mid:.8f} [{severity.value}]")
+                reason = (
+                    f"convergence tightening [{severity.value}]"
+                    if forced
+                    else f"price moved {last_price:.8f} -> {compare_mid:.8f} [{severity.value}]"
+                )
                 print(f"\n   [REQUOTE] {side} side ({reason})", flush=True)
-                log_event("info", "requoting",
-                          f"Requoting {side} side ({reason})",
-                          data={"severity": severity.value})
+                log_event(
+                    "info",
+                    "requoting",
+                    f"Requoting {side} side ({reason})",
+                    data={"severity": severity.value},
+                )
 
                 # Keep the force flag LIT across spread/requote work so that
                 # an exception, wallet RPC abort, or "no spares" short-circuit
@@ -8873,8 +10196,12 @@ class BotLoop:
                 spread = self.risk_manager.get_adjusted_spread(side)
                 # compare_mid is already probe-anchored — reuse it
                 requote_mid = compare_mid
-                price_cap = self._get_probe_price_boundary(side) if side == "buy" else None
-                price_floor = self._get_probe_price_boundary(side) if side == "sell" else None
+                price_cap = (
+                    self._get_probe_price_boundary(side) if side == "buy" else None
+                )
+                price_floor = (
+                    self._get_probe_price_boundary(side) if side == "sell" else None
+                )
                 if requote_mid != mid_price:
                     log_event(
                         "info",
@@ -8903,18 +10230,24 @@ class BotLoop:
                         _overlap = _allowed_tiers & _inflight
                         if _overlap:
                             _allowed_tiers = _allowed_tiers - _inflight
-                            log_event("info", "requote_skip_inflight_tiers",
-                                      f"Skipping {sorted(_overlap)} tier(s) for "
-                                      f"{side} — defensive cancel in flight "
-                                      f"(ladder-fill will restore them)")
+                            log_event(
+                                "info",
+                                "requote_skip_inflight_tiers",
+                                f"Skipping {sorted(_overlap)} tier(s) for "
+                                f"{side} — defensive cancel in flight "
+                                f"(ladder-fill will restore them)",
+                            )
                     # If the overlap drained the tier set, there's nothing
                     # for this requote to do. Defer cleanly instead of
                     # falling into the requote path with an empty filter.
                     if not _allowed_tiers:
-                        log_event("info", "requote_deferred_inflight",
-                                  f"All {severity.value} tiers for {side} "
-                                  f"are already being handled by a defensive "
-                                  f"cancel — no requote needed this cycle")
+                        log_event(
+                            "info",
+                            "requote_deferred_inflight",
+                            f"All {severity.value} tiers for {side} "
+                            f"are already being handled by a defensive "
+                            f"cancel — no requote needed this cycle",
+                        )
                         # Advance baselines so the drift check doesn't
                         # re-fire the same decision next cycle.
                         self._last_quoted_price[side] = requote_mid
@@ -8923,16 +10256,20 @@ class BotLoop:
 
                 _live_ids_req = current_buy_ids if side == "buy" else current_sell_ids
                 requote_result = self.offer_manager.requote_side(
-                    side, requote_mid, dexie_manager=self.dexie_manager,
+                    side,
+                    requote_mid,
+                    dexie_manager=self.dexie_manager,
                     risk_manager=self.risk_manager,
                     spread_fraction=spread,
                     price_cap=price_cap,
                     price_floor=price_floor,
                     live_offer_ids=_live_ids_req,
                     max_offers=_max_offers,
-                    allowed_tiers=_allowed_tiers if severity not in (
-                        RequoteSeverity.FULL, RequoteSeverity.EMERGENCY) else None,
-                    force_cancel_storm=severity in (
+                    allowed_tiers=_allowed_tiers
+                    if severity not in (RequoteSeverity.FULL, RequoteSeverity.EMERGENCY)
+                    else None,
+                    force_cancel_storm=severity
+                    in (
                         RequoteSeverity.FULL,
                         RequoteSeverity.EMERGENCY,
                     ),
@@ -8953,13 +10290,13 @@ class BotLoop:
                     replaced_count = int(requote_result.get("replaced_count", 0) or 0)
                     target_count_trunc = int(requote_result.get("target_count", 0) or 0)
                     original_target = int(
-                        requote_result.get("original_target_count",
-                                           target_count_trunc) or 0
+                        requote_result.get("original_target_count", target_count_trunc)
+                        or 0
                     )
                     tier_filter_drained = bool(
                         requote_result.get("tier_filter_drained", False)
                     )
-                    made_progress = (replaced_count > 0 or len(new_offers) > 0)
+                    made_progress = replaced_count > 0 or len(new_offers) > 0
 
                     if requote_result.get("fully_replaced"):
                         # True full replace: advance baselines + refresh
@@ -8976,40 +10313,53 @@ class BotLoop:
                         # because at least some offers moved to the new
                         # mid. The remaining offers will be picked up by
                         # the trim/ladder-fill paths.
-                        log_event("info", "requote_incomplete",
-                                  f"{side} requote partial: replaced "
-                                  f"{replaced_count}/{target_count_trunc} offers "
-                                  f"(original target {original_target}); advancing baseline")
+                        log_event(
+                            "info",
+                            "requote_incomplete",
+                            f"{side} requote partial: replaced "
+                            f"{replaced_count}/{target_count_trunc} offers "
+                            f"(original target {original_target}); advancing baseline",
+                        )
                         self._last_quoted_price[side] = requote_mid
                         self._last_quoted_plain_mid[side] = mid_price  # F67
                         self._ladder_grid_mid[side] = requote_mid
                         self._ladder_anchor_plain_mid[side] = mid_price
                     elif tier_filter_drained:
-                        log_event("info", "requote_scope_empty",
-                                  f"{side} requote had no matching tier slots left "
-                                  f"to replace (target {target_count_trunc}, "
-                                  f"original {original_target}); the active "
-                                  f"cancel/rebuild path is already handling it.",
-                                  data={"side": side,
-                                        "replaced": replaced_count,
-                                        "target": target_count_trunc,
-                                        "original_target": original_target,
-                                        "tier_filter_drained": tier_filter_drained})
+                        log_event(
+                            "info",
+                            "requote_scope_empty",
+                            f"{side} requote had no matching tier slots left "
+                            f"to replace (target {target_count_trunc}, "
+                            f"original {original_target}); the active "
+                            f"cancel/rebuild path is already handling it.",
+                            data={
+                                "side": side,
+                                "replaced": replaced_count,
+                                "target": target_count_trunc,
+                                "original_target": original_target,
+                                "tier_filter_drained": tier_filter_drained,
+                            },
+                        )
                     else:
                         # Zero progress. Do NOT advance baselines — that
                         # used to hide stale exposed offers from drift
                         # detection for a full cycle. Leave the force
                         # flag set so the next cycle retries.
-                        log_event("warning", "requote_no_progress",
-                                  f"{side} requote made zero progress "
-                                  f"(target {target_count_trunc}, original {original_target}) "
-                                  f"— backing off so wallet state can settle "
-                                  f"before retrying.",
-                                  data={"side": side,
-                                        "replaced": replaced_count,
-                                        "target": target_count_trunc,
-                                        "original_target": original_target,
-                                        "tier_filter_drained": tier_filter_drained})
+                        log_event(
+                            "warning",
+                            "requote_no_progress",
+                            f"{side} requote made zero progress "
+                            f"(target {target_count_trunc}, original {original_target}) "
+                            f"— backing off so wallet state can settle "
+                            f"before retrying.",
+                            data={
+                                "side": side,
+                                "replaced": replaced_count,
+                                "target": target_count_trunc,
+                                "original_target": original_target,
+                                "tier_filter_drained": tier_filter_drained,
+                            },
+                        )
                         if forced or severity == RequoteSeverity.EMERGENCY:
                             self._set_requote_failure_backoff(
                                 side,
@@ -9022,7 +10372,9 @@ class BotLoop:
                             )
                 else:
                     # Legacy return format (list)
-                    new_offers = requote_result if isinstance(requote_result, list) else []
+                    new_offers = (
+                        requote_result if isinstance(requote_result, list) else []
+                    )
                     made_progress = bool(new_offers)
                     if made_progress:
                         self._last_quoted_price[side] = requote_mid
@@ -9045,7 +10397,10 @@ class BotLoop:
                 # the requote never touched.  Marking the side "requoted" on a
                 # zero-offer result would pin the ladder at its current depth
                 # until the next price move.
-                if made_progress and severity in (RequoteSeverity.FULL, RequoteSeverity.EMERGENCY):
+                if made_progress and severity in (
+                    RequoteSeverity.FULL,
+                    RequoteSeverity.EMERGENCY,
+                ):
                     self._record_shock_requote(
                         side,
                         requote_mid,
@@ -9069,8 +10424,11 @@ class BotLoop:
                             try:
                                 self.splash_manager.queue_post(bech32, trade_id)
                             except Exception as _se:
-                                log_event("warning", "requote_splash_queue_failed",
-                                          f"Splash queue failed for {trade_id}: {_se}")
+                                log_event(
+                                    "warning",
+                                    "requote_splash_queue_failed",
+                                    f"Splash queue failed for {trade_id}: {_se}",
+                                )
 
                 _buy_q = self._last_quoted_price.get("buy")
                 _sell_q = self._last_quoted_price.get("sell")
@@ -9099,8 +10457,12 @@ class BotLoop:
         side_norm = str(side or "").strip().lower()
         signature = "; ".join(reasons or ["unknown"])
         try:
-            last = (getattr(self, "_last_create_disabled_log", {}) or {}).get(side_norm) or {}
-            cooldown = float(getattr(self, "_create_disabled_log_cooldown", 60.0) or 60.0)
+            last = (getattr(self, "_last_create_disabled_log", {}) or {}).get(
+                side_norm
+            ) or {}
+            cooldown = float(
+                getattr(self, "_create_disabled_log_cooldown", 60.0) or 60.0
+            )
             now = time.time()
             if (
                 str(last.get("signature") or "") == signature
@@ -9130,13 +10492,17 @@ class BotLoop:
             },
         )
 
-    def _create_offers_if_needed(self, mid_price: Decimal,
-                                  current_buy_count: int, current_sell_count: int,
-                                  current_buy_ids=None, current_sell_ids=None,
-                                  arb_gap: Decimal = Decimal("0"),
-                                  skip_buy: bool = False,
-                                  skip_sell: bool = False,
-):
+    def _create_offers_if_needed(
+        self,
+        mid_price: Decimal,
+        current_buy_count: int,
+        current_sell_count: int,
+        current_buy_ids=None,
+        current_sell_ids=None,
+        arb_gap: Decimal = Decimal("0"),
+        skip_buy: bool = False,
+        skip_sell: bool = False,
+    ):
         """Create new offers if we're below target count."""
         recovery_active = self._recovery_is_active()
 
@@ -9154,42 +10520,63 @@ class BotLoop:
         # side actually needs a refill.
         def _skip_level(also_under_target: bool) -> str:
             return "info" if also_under_target else "debug"
-        _buy_under = (cfg.ENABLE_BUY and not skip_buy
-                      and int(current_buy_count or 0) < int(cfg.MAX_ACTIVE_BUY_OFFERS))
-        _sell_under = (cfg.ENABLE_SELL and not skip_sell
-                       and int(current_sell_count or 0) < int(cfg.MAX_ACTIVE_SELL_OFFERS))
+
+        _buy_under = (
+            cfg.ENABLE_BUY
+            and not skip_buy
+            and int(current_buy_count or 0) < int(cfg.MAX_ACTIVE_BUY_OFFERS)
+        )
+        _sell_under = (
+            cfg.ENABLE_SELL
+            and not skip_sell
+            and int(current_sell_count or 0) < int(cfg.MAX_ACTIVE_SELL_OFFERS)
+        )
         _any_under = bool(_buy_under or _sell_under)
 
         if cfg.DRY_RUN:
-            log_event(_skip_level(_any_under), "create_skip_dry_run",
-                      "DRY_RUN is on — not creating offers")
+            log_event(
+                _skip_level(_any_under),
+                "create_skip_dry_run",
+                "DRY_RUN is on — not creating offers",
+            )
             return
 
         # Don't create offers while graceful migration is cancelling old ones —
         # new offers would just get cancelled by the migration thread.
         if self._graceful_creation_blocked():
-            log_event(_skip_level(_any_under), "create_skip_graceful_migration",
-                      "Graceful config migration in progress — not creating offers")
+            log_event(
+                _skip_level(_any_under),
+                "create_skip_graceful_migration",
+                "Graceful config migration in progress — not creating offers",
+            )
             return
 
         # Don't create main offers while sniper probe is still being confirmed.
         # Wait for probes to survive one loop before deploying the main book.
         if self._probe_state.get("active", False) and not recovery_active:
-            log_event(_skip_level(_any_under), "create_skip_probe_active",
-                      "Sniper probe active — waiting for confirmation before main offers",
-                      data={"probe_state": dict(self._probe_state)})
+            log_event(
+                _skip_level(_any_under),
+                "create_skip_probe_active",
+                "Sniper probe active — waiting for confirmation before main offers",
+                data={"probe_state": dict(self._probe_state)},
+            )
             return
 
         needs_main_ladder = _any_under
         if needs_main_ladder:
-            current_buy_ids, current_sell_ids, probe_rearmed = self._revalidate_confirmed_probe_edges(
-                current_buy_ids=current_buy_ids,
-                current_sell_ids=current_sell_ids,
-                arb_gap=arb_gap,
+            current_buy_ids, current_sell_ids, probe_rearmed = (
+                self._revalidate_confirmed_probe_edges(
+                    current_buy_ids=current_buy_ids,
+                    current_sell_ids=current_sell_ids,
+                    arb_gap=arb_gap,
+                )
             )
             if probe_rearmed:
-                log_event(_skip_level(_any_under), "create_skip_probe_rearmed",
-                          "Confirmed probe edge disappeared — waiting for re-test before main offers")
+                log_event(
+                    _skip_level(_any_under),
+                    "create_skip_probe_rearmed",
+                    "Confirmed probe edge disappeared — waiting for re-test before main offers",
+                )
                 return
 
         current_buy_count = len(current_buy_ids or set())
@@ -9197,13 +10584,19 @@ class BotLoop:
 
         # Don't create while coin operations are running
         if self.coin_manager.is_busy():
-            log_event(_skip_level(_any_under), "create_skip_coin_mgr_busy",
-                      "Coin manager busy — not creating offers")
+            log_event(
+                _skip_level(_any_under),
+                "create_skip_coin_mgr_busy",
+                "Coin manager busy — not creating offers",
+            )
             return
 
         if recovery_active and self._wallet_sync_stale_cycle:
-            log_event(_skip_level(_any_under), "recovery_create_wait",
-                      "Recovery mode waiting for a fresh wallet view before creating offers")
+            log_event(
+                _skip_level(_any_under),
+                "recovery_create_wait",
+                "Recovery mode waiting for a fresh wallet view before creating offers",
+            )
             return
 
         # Stale wallet data guard — applies outside recovery mode too.
@@ -9214,9 +10607,12 @@ class BotLoop:
         _stale_streak = int(self._recovery_state.get("wallet_stale_streak", 0))
         _stale_limit = getattr(cfg, "WALLET_STALE_CREATE_LIMIT", 3)
         if self._wallet_sync_stale_cycle and _stale_streak >= _stale_limit:
-            log_event("warning", "stale_wallet_create_blocked",
-                      f"Wallet sync stale for {_stale_streak} consecutive cycles — "
-                      f"blocking new offer creation until data is fresh")
+            log_event(
+                "warning",
+                "stale_wallet_create_blocked",
+                f"Wallet sync stale for {_stale_streak} consecutive cycles — "
+                f"blocking new offer creation until data is fresh",
+            )
             return
 
         # Default path creates buy/sell ladders in parallel because they spend
@@ -9244,8 +10640,12 @@ class BotLoop:
                 self._clear_alert(f"{_side}_position_paused")
         buy_target = int(adaptive_targets.get("buy", 0) or 0)
         sell_target = int(adaptive_targets.get("sell", 0) or 0)
-        _buy_under = bool(cfg.ENABLE_BUY and not skip_buy and effective_buy_count < buy_target)
-        _sell_under = bool(cfg.ENABLE_SELL and not skip_sell and effective_sell_count < sell_target)
+        _buy_under = bool(
+            cfg.ENABLE_BUY and not skip_buy and effective_buy_count < buy_target
+        )
+        _sell_under = bool(
+            cfg.ENABLE_SELL and not skip_sell and effective_sell_count < sell_target
+        )
         _any_under = bool(_buy_under or _sell_under)
         # Skip creation on sides that were requoted this cycle — the
         # requote already consumed spare coins and created what it could.
@@ -9255,70 +10655,110 @@ class BotLoop:
         _rq = getattr(self, "_requoted_this_cycle", set())
         if "buy" in _rq:
             skip_buy = True
-            log_event(_skip_level(_buy_under), "create_skip_requoted",
-                      "Skipping buy creation — already requoted this cycle",
-                      data={"side": "buy",
-                            "effective_count": effective_buy_count,
-                            "target": int(buy_target),
-                            "recently_created": self.offer_manager.get_recently_created_count("buy")})
+            log_event(
+                _skip_level(_buy_under),
+                "create_skip_requoted",
+                "Skipping buy creation — already requoted this cycle",
+                data={
+                    "side": "buy",
+                    "effective_count": effective_buy_count,
+                    "target": int(buy_target),
+                    "recently_created": self.offer_manager.get_recently_created_count(
+                        "buy"
+                    ),
+                },
+            )
         if "sell" in _rq:
             skip_sell = True
-            log_event(_skip_level(_sell_under), "create_skip_requoted",
-                      "Skipping sell creation — already requoted this cycle",
-                      data={"side": "sell",
-                            "effective_count": effective_sell_count,
-                            "target": int(sell_target),
-                            "recently_created": self.offer_manager.get_recently_created_count("sell")})
+            log_event(
+                _skip_level(_sell_under),
+                "create_skip_requoted",
+                "Skipping sell creation — already requoted this cycle",
+                data={
+                    "side": "sell",
+                    "effective_count": effective_sell_count,
+                    "target": int(sell_target),
+                    "recently_created": self.offer_manager.get_recently_created_count(
+                        "sell"
+                    ),
+                },
+            )
 
         _pending_buy_settle = self._pending_cancel_wallet_ids("buy")
         if _pending_buy_settle and not skip_buy:
             skip_buy = True
-            log_event(_skip_level(_buy_under), "create_skip_pending_cancel_settle",
-                      f"Skipping buy creation - {len(_pending_buy_settle)} "
-                      f"wallet-active pending cancel(s) still settling",
-                      data={"side": "buy",
-                            "pending_count": len(_pending_buy_settle),
-                            "effective_count": effective_buy_count,
-                            "target": int(buy_target)})
+            log_event(
+                _skip_level(_buy_under),
+                "create_skip_pending_cancel_settle",
+                f"Skipping buy creation - {len(_pending_buy_settle)} "
+                f"wallet-active pending cancel(s) still settling",
+                data={
+                    "side": "buy",
+                    "pending_count": len(_pending_buy_settle),
+                    "effective_count": effective_buy_count,
+                    "target": int(buy_target),
+                },
+            )
 
         _pending_sell_settle = self._pending_cancel_wallet_ids("sell")
         if _pending_sell_settle and not skip_sell:
             skip_sell = True
-            log_event(_skip_level(_sell_under), "create_skip_pending_cancel_settle",
-                      f"Skipping sell creation - {len(_pending_sell_settle)} "
-                      f"wallet-active pending cancel(s) still settling",
-                      data={"side": "sell",
-                            "pending_count": len(_pending_sell_settle),
-                            "effective_count": effective_sell_count,
-                            "target": int(sell_target)})
+            log_event(
+                _skip_level(_sell_under),
+                "create_skip_pending_cancel_settle",
+                f"Skipping sell creation - {len(_pending_sell_settle)} "
+                f"wallet-active pending cancel(s) still settling",
+                data={
+                    "side": "sell",
+                    "pending_count": len(_pending_sell_settle),
+                    "effective_count": effective_sell_count,
+                    "target": int(sell_target),
+                },
+            )
 
         _buy_backoff = self._requote_backoff_remaining("buy")
         if _buy_backoff > 0:
             skip_buy = True
-            log_event(_skip_level(_buy_under), "create_skip_requote_backoff",
-                      f"Skipping buy creation — requote failure backoff has "
-                      f"{_buy_backoff:.0f}s remaining",
-                      data={"side": "buy",
-                            "remaining_secs": round(_buy_backoff, 1),
-                            "effective_count": effective_buy_count,
-                            "target": int(buy_target)})
+            log_event(
+                _skip_level(_buy_under),
+                "create_skip_requote_backoff",
+                f"Skipping buy creation — requote failure backoff has "
+                f"{_buy_backoff:.0f}s remaining",
+                data={
+                    "side": "buy",
+                    "remaining_secs": round(_buy_backoff, 1),
+                    "effective_count": effective_buy_count,
+                    "target": int(buy_target),
+                },
+            )
         _sell_backoff = self._requote_backoff_remaining("sell")
         if _sell_backoff > 0:
             skip_sell = True
-            log_event(_skip_level(_sell_under), "create_skip_requote_backoff",
-                      f"Skipping sell creation — requote failure backoff has "
-                      f"{_sell_backoff:.0f}s remaining",
-                      data={"side": "sell",
-                            "remaining_secs": round(_sell_backoff, 1),
-                            "effective_count": effective_sell_count,
-                            "target": int(sell_target)})
+            log_event(
+                _skip_level(_sell_under),
+                "create_skip_requote_backoff",
+                f"Skipping sell creation — requote failure backoff has "
+                f"{_sell_backoff:.0f}s remaining",
+                data={
+                    "side": "sell",
+                    "remaining_secs": round(_sell_backoff, 1),
+                    "effective_count": effective_sell_count,
+                    "target": int(sell_target),
+                },
+            )
 
-        buy_enabled  = (cfg.ENABLE_BUY  and not skip_buy
-                        and effective_buy_count  < buy_target
-                        and self.risk_manager.should_enable_side("buy",  mid_price))
-        sell_enabled = (cfg.ENABLE_SELL and not skip_sell
-                        and effective_sell_count < sell_target
-                        and self.risk_manager.should_enable_side("sell", mid_price))
+        buy_enabled = (
+            cfg.ENABLE_BUY
+            and not skip_buy
+            and effective_buy_count < buy_target
+            and self.risk_manager.should_enable_side("buy", mid_price)
+        )
+        sell_enabled = (
+            cfg.ENABLE_SELL
+            and not skip_sell
+            and effective_sell_count < sell_target
+            and self.risk_manager.should_enable_side("sell", mid_price)
+        )
 
         # 2026-04-22: when a side is under target but disabled, log the
         # reason at info-level so a stalled refill is diagnosable from the
@@ -9407,15 +10847,15 @@ class BotLoop:
             #               detection. Invariant of probe state so probes
             #               toggling on/off never fakes drift.
             _current_count_on_side = (
-                len(current_buy_ids or set()) if side == "buy"
+                len(current_buy_ids or set())
+                if side == "buy"
                 else len(current_sell_ids or set())
             )
             _grid = self._ladder_grid_mid.get(side, Decimal("0")) or Decimal("0")
-            _plain_anchor = (
-                self._ladder_anchor_plain_mid.get(side, Decimal("0"))
-                or Decimal("0")
-            )
-            _is_full_rebuild = (_current_count_on_side == 0)
+            _plain_anchor = self._ladder_anchor_plain_mid.get(
+                side, Decimal("0")
+            ) or Decimal("0")
+            _is_full_rebuild = _current_count_on_side == 0
             ladder_mid_price = probe_anchored_mid
             if _is_full_rebuild or _grid <= 0 or _plain_anchor <= 0:
                 # Stamp BOTH anchors at this build. grid_mid captures
@@ -9423,15 +10863,20 @@ class BotLoop:
                 # plain_mid is the baseline for drift checks.
                 self._ladder_grid_mid[side] = probe_anchored_mid
                 self._ladder_anchor_plain_mid[side] = mid_price
-                log_event("debug", "ladder_anchor_set",
-                          f"{side} ladder anchor set: grid={probe_anchored_mid:.8f} "
-                          f"plain={mid_price:.8f} "
-                          f"(full build — {_current_count_on_side} live offers)")
+                log_event(
+                    "debug",
+                    "ladder_anchor_set",
+                    f"{side} ladder anchor set: grid={probe_anchored_mid:.8f} "
+                    f"plain={mid_price:.8f} "
+                    f"(full build — {_current_count_on_side} live offers)",
+                )
             else:
                 # Replacement: check drift of current plain mid vs the
                 # stored plain anchor (invariant of probe state).
                 try:
-                    drift_pct = abs(mid_price - _plain_anchor) / _plain_anchor * Decimal("100")
+                    drift_pct = (
+                        abs(mid_price - _plain_anchor) / _plain_anchor * Decimal("100")
+                    )
                 except Exception:
                     drift_pct = Decimal("0")
                 if drift_pct > self._ladder_anchor_drift_pct and recovery_active:
@@ -9452,11 +10897,14 @@ class BotLoop:
                     _recovery_anchor_drift_refill_sides.add(side)
                     ladder_mid_price = probe_anchored_mid
                 elif drift_pct > self._ladder_anchor_drift_pct:
-                    log_event("info", "ladder_anchor_drift",
-                              f"{side} ladder anchor drift {drift_pct:.2f}% > "
-                              f"{self._ladder_anchor_drift_pct}% threshold "
-                              f"(plain anchor {_plain_anchor:.8f} vs current plain "
-                              f"{mid_price:.8f}) — flagging requote to realign ladder")
+                    log_event(
+                        "info",
+                        "ladder_anchor_drift",
+                        f"{side} ladder anchor drift {drift_pct:.2f}% > "
+                        f"{self._ladder_anchor_drift_pct}% threshold "
+                        f"(plain anchor {_plain_anchor:.8f} vs current plain "
+                        f"{mid_price:.8f}) — flagging requote to realign ladder",
+                    )
                     try:
                         self._force_requote[side] = True
                     except Exception:
@@ -9473,7 +10921,9 @@ class BotLoop:
                     ladder_mid_price = _grid
 
             price_cap = self._get_probe_price_boundary(side) if side == "buy" else None
-            price_floor = self._get_probe_price_boundary(side) if side == "sell" else None
+            price_floor = (
+                self._get_probe_price_boundary(side) if side == "sell" else None
+            )
             _parallel_mid[side] = ladder_mid_price
             # Pass live wallet IDs so replenishment can filter out DB offers
             # that have expired but haven't been reconciled yet (Step 13 runs
@@ -9488,7 +10938,8 @@ class BotLoop:
                 live_offer_ids=_live_ids,
             )[:needed]
             offers = self.offer_manager.create_ladder(
-                ladder_mid_price, side,
+                ladder_mid_price,
+                side,
                 num_offers=len(slot_sequence) or needed,
                 spread_fraction=spread,
                 risk_manager=self.risk_manager,
@@ -9497,7 +10948,8 @@ class BotLoop:
                 slot_sequence=slot_sequence or None,
                 price_cap=price_cap,
                 price_floor=price_floor,
-                interpolate_refill_prices=side not in _recovery_anchor_drift_refill_sides,
+                interpolate_refill_prices=side
+                not in _recovery_anchor_drift_refill_sides,
             )
             _parallel_results[side] = offers or []
 
@@ -9515,12 +10967,19 @@ class BotLoop:
                 work_items.append(("buy", buy_needed, buy_spread))
             self._clear_alert("buy_disabled")
         else:
-            if cfg.ENABLE_BUY and effective_buy_count < buy_target and not self.risk_manager.should_enable_side("buy", mid_price):
-                self._emit_alert("buy_disabled", "warning",
+            if (
+                cfg.ENABLE_BUY
+                and effective_buy_count < buy_target
+                and not self.risk_manager.should_enable_side("buy", mid_price)
+            ):
+                self._emit_alert(
+                    "buy_disabled",
+                    "warning",
                     "Buys disabled — position limit",
                     "Too much CAT held. Sell offers only until position reduces.",
                     action="view_position",
-                    action_label="View Position")
+                    action_label="View Position",
+                )
 
         if sell_enabled:
             sell_needed = max(0, sell_target - effective_sell_count)
@@ -9529,12 +10988,19 @@ class BotLoop:
                 work_items.append(("sell", sell_needed, sell_spread))
             self._clear_alert("sell_disabled")
         else:
-            if cfg.ENABLE_SELL and effective_sell_count < sell_target and not self.risk_manager.should_enable_side("sell", mid_price):
-                self._emit_alert("sell_disabled", "warning",
+            if (
+                cfg.ENABLE_SELL
+                and effective_sell_count < sell_target
+                and not self.risk_manager.should_enable_side("sell", mid_price)
+            ):
+                self._emit_alert(
+                    "sell_disabled",
+                    "warning",
                     "Sells disabled — position limit",
                     "Too much XCH held. Buy offers only until position reduces.",
                     action="view_position",
-                    action_label="View Position")
+                    action_label="View Position",
+                )
 
         if getattr(cfg, "LADDER_CREATE_GLOBAL_SERIAL", False) or recovery_active:
             if recovery_active:
@@ -9584,19 +11050,26 @@ class BotLoop:
             if zombies:
                 for t, age in zombies:
                     log_event(
-                        "critical", "ladder_thread_zombie",
+                        "critical",
+                        "ladder_thread_zombie",
                         f"Ladder thread {t.name!r} has been alive for "
                         f"{age:.0f}s (> {_zombie_age_ceiling:.0f}s zombie "
                         f"ceiling). Proceeding with a fresh ladder build; "
                         f"the stuck thread is now a daemon zombie and will "
                         f"be released when its wallet RPC returns.",
-                        data={"thread": t.name, "age_secs": age,
-                              "ceiling_secs": _zombie_age_ceiling},
+                        data={
+                            "thread": t.name,
+                            "age_secs": age,
+                            "ceiling_secs": _zombie_age_ceiling,
+                        },
                     )
             if live_now:
                 names = ", ".join(t.name for t in live_now)
-                log_event("warning", "ladder_overlap_skip",
-                          f"Skipping ladder creation — previous threads still alive: {names}")
+                log_event(
+                    "warning",
+                    "ladder_overlap_skip",
+                    f"Skipping ladder creation — previous threads still alive: {names}",
+                )
                 # Count as a stall so recovery escalates if threads stay hung
                 if work_items:
                     self._mark_recovery_create_stall()
@@ -9623,11 +11096,14 @@ class BotLoop:
             for t in threads:
                 t.join(timeout=60)  # 60s timeout; wallet RPC hung = don't block forever
                 if t.is_alive():
-                    log_event("warning", "ladder_thread_timeout",
-                              f"Ladder creation thread {t.name!r} still alive after 60s timeout — "
-                              f"wallet RPC may be hung; continuing main loop "
-                              f"(will be escalated to zombie at "
-                              f"{_zombie_age_ceiling:.0f}s if it stays stuck)")
+                    log_event(
+                        "warning",
+                        "ladder_thread_timeout",
+                        f"Ladder creation thread {t.name!r} still alive after 60s timeout — "
+                        f"wallet RPC may be hung; continuing main loop "
+                        f"(will be escalated to zombie at "
+                        f"{_zombie_age_ceiling:.0f}s if it stays stuck)",
+                    )
 
         # Process results from both sides
         _notify_amm_after_create = False
@@ -9697,9 +11173,12 @@ class BotLoop:
                 fresh_mid = fresh["mid_price"]
                 self._current_mid_price = fresh_mid
                 self._set_state(mid_price=str(fresh_mid))
-                log_event("info", "post_create_market_observed",
-                          f"Observed market after creation: {fresh_mid:.8f} "
-                          f"(keeping deployed quote baselines)")
+                log_event(
+                    "info",
+                    "post_create_market_observed",
+                    f"Observed market after creation: {fresh_mid:.8f} "
+                    f"(keeping deployed quote baselines)",
+                )
 
     # -------------------------------------------------------------------
     # Coin management
@@ -9741,12 +11220,13 @@ class BotLoop:
             q_len = len(getattr(self.dexie_manager, "_queue", []) or [])
             if q_len > 0:
                 print(f"   [11] Posting {q_len} offers to Dexie...", end="", flush=True)
-                log_event("debug", "dexie_flush_start", f"Flushing {q_len} offers to Dexie...")
+                log_event(
+                    "debug", "dexie_flush_start", f"Flushing {q_len} offers to Dexie..."
+                )
             result = self.dexie_manager.flush_queue()
             if q_len > 0:
                 print(f" {result}", flush=True)
-                log_event("info", "dexie_flush_result",
-                          f"Dexie flush: {result}")
+                log_event("info", "dexie_flush_result", f"Dexie flush: {result}")
             else:
                 print("   [11] Dexie queue empty", flush=True)
         else:
@@ -9758,14 +11238,22 @@ class BotLoop:
             try:
                 splash_q = len(getattr(self.splash_manager, "_queue", []) or [])
                 if splash_q > 0:
-                    print(f"   [11b] Broadcasting {splash_q} offers to Splash...", end="", flush=True)
-                    log_event("debug", "splash_flush_start",
-                              f"Broadcasting {splash_q} offers to Splash...")
+                    print(
+                        f"   [11b] Broadcasting {splash_q} offers to Splash...",
+                        end="",
+                        flush=True,
+                    )
+                    log_event(
+                        "debug",
+                        "splash_flush_start",
+                        f"Broadcasting {splash_q} offers to Splash...",
+                    )
                 result = self.splash_manager.flush_queue()
                 if splash_q > 0:
                     print(f" {result}", flush=True)
-                    log_event("info", "splash_flush_result",
-                              f"Splash broadcast: {result}")
+                    log_event(
+                        "info", "splash_flush_result", f"Splash broadcast: {result}"
+                    )
                 else:
                     print("   [11b] Splash queue empty", flush=True)
             except Exception as e:
@@ -9780,24 +11268,29 @@ class BotLoop:
             return False
         try:
             from database import get_oversized_locked_offers
+
             base_ratio = float(getattr(cfg, "COIN_MAX_SIZE_RATIO", 1.5) or 1.5)
             fallback_ratio = float(
-                getattr(cfg, "COIN_OVERSIZE_FALLBACK_RATIO", 2.0)
-                or 2.0
+                getattr(cfg, "COIN_OVERSIZE_FALLBACK_RATIO", 2.0) or 2.0
             )
             flagged = get_oversized_locked_offers(
                 max_ratio=max(base_ratio, fallback_ratio),
                 cat_decimals=int(getattr(cfg, "CAT_DECIMALS", 3) or 3),
             )
         except Exception as e:
-            log_event("debug", "oversized_coin_reclaim_scan_failed",
-                      f"Oversized locked coin scan failed: {e}")
+            log_event(
+                "debug",
+                "oversized_coin_reclaim_scan_failed",
+                f"Oversized locked coin scan failed: {e}",
+            )
             return False
 
         if not flagged:
             return False
 
-        trade_ids = sorted({str(row.get("trade_id") or "") for row in flagged if row.get("trade_id")})
+        trade_ids = sorted(
+            {str(row.get("trade_id") or "") for row in flagged if row.get("trade_id")}
+        )
         if not trade_ids:
             return False
 
@@ -9808,7 +11301,9 @@ class BotLoop:
                 if row.get("wallet_type") == "xch":
                     amount_str = f"{Decimal(amount) / Decimal('1000000000000'):.4f} XCH"
                 else:
-                    scale = Decimal(10) ** Decimal(int(getattr(cfg, "CAT_DECIMALS", 3) or 3))
+                    scale = Decimal(10) ** Decimal(
+                        int(getattr(cfg, "CAT_DECIMALS", 3) or 3)
+                    )
                     amount_str = f"{Decimal(amount) / scale:.2f} CAT"
                 previews.append(
                     f"{str(row.get('trade_id'))[:12]}... {row.get('side')}/{row.get('tier')} "
@@ -9833,8 +11328,11 @@ class BotLoop:
             )
             return True
         except Exception as e:
-            log_event("warning", "oversized_coin_reclaim_failed",
-                      f"Failed to cancel oversized-coin offers: {e}")
+            log_event(
+                "warning",
+                "oversized_coin_reclaim_failed",
+                f"Failed to cancel oversized-coin offers: {e}",
+            )
             return False
 
     def _handle_coins(self, active_buy_count: int, active_sell_count: int):
@@ -9863,18 +11361,29 @@ class BotLoop:
             if not self.coin_manager.is_busy():
                 self.coin_manager.update_coin_counts()
             if self.coin_manager.needs_coin_prep(active_buy_count, active_sell_count):
-                log_event("info", "coin_prep_trigger_recovery",
-                          "Coins critically low during recovery — forcing runtime top-up "
-                          "to break coin-exhaustion deadlock")
-                self.coin_manager.start_topup(active_buy_count, active_sell_count, is_drip=False)
+                log_event(
+                    "info",
+                    "coin_prep_trigger_recovery",
+                    "Coins critically low during recovery — forcing runtime top-up "
+                    "to break coin-exhaustion deadlock",
+                )
+                self.coin_manager.start_topup(
+                    active_buy_count, active_sell_count, is_drip=False
+                )
             elif self.coin_manager.needs_topup(active_buy_count, active_sell_count):
-                log_event("info", "topup_trigger_recovery",
-                          "Tier coin shortage during recovery — running topup to "
-                          "restore genuinely low spare pools")
+                log_event(
+                    "info",
+                    "topup_trigger_recovery",
+                    "Tier coin shortage during recovery — running topup to "
+                    "restore genuinely low spare pools",
+                )
                 self.coin_manager.start_topup(active_buy_count, active_sell_count)
             else:
-                log_event("debug", "coin_ops_skip_recovery",
-                          "Recovery mode active — skipping topup/prep until the book is healthy")
+                log_event(
+                    "debug",
+                    "coin_ops_skip_recovery",
+                    "Recovery mode active — skipping topup/prep until the book is healthy",
+                )
             return
 
         # Re-check coins after startup — Sage needs time to report all coins.
@@ -9888,10 +11397,16 @@ class BotLoop:
             self.coin_manager.snapshot_coins("startup_recheck")
             self._emit_coin_update("startup_recheck")
             readiness = self.coin_manager.coin_readiness_report()
-            print(f"   [COINS] Startup coin re-check: {readiness.get('overall_status', '?')}", flush=True)
-            log_event("info", "startup_coin_recheck",
-                      f"Re-checked coins after wallet settled: "
-                      f"{readiness.get('overall_status', 'UNKNOWN')}")
+            print(
+                f"   [COINS] Startup coin re-check: {readiness.get('overall_status', '?')}",
+                flush=True,
+            )
+            log_event(
+                "info",
+                "startup_coin_recheck",
+                f"Re-checked coins after wallet settled: "
+                f"{readiness.get('overall_status', 'UNKNOWN')}",
+            )
 
         # Update coin counts + inventory every loop
         self.coin_manager.update_coin_counts()
@@ -9912,18 +11427,24 @@ class BotLoop:
         fast_reconcile_requested = False
         try:
             from coin_manager import consume_fast_reconcile
+
             fast_reconcile_requested = consume_fast_reconcile()
         except Exception:
             pass
-        if (fast_reconcile_requested
-                or self.coin_manager._reconcile_counter >= reconcile_every):
+        if (
+            fast_reconcile_requested
+            or self.coin_manager._reconcile_counter >= reconcile_every
+        ):
             reconcile = getattr(self.coin_manager, "reconcile_with_wallet", None)
             if callable(reconcile):
                 reconcile()
                 self.coin_manager._reconcile_counter = 0
             if fast_reconcile_requested:
-                log_event("info", "fast_reconcile_applied",
-                          "Reconcile fast-path triggered by a recent cancel")
+                log_event(
+                    "info",
+                    "fast_reconcile_applied",
+                    "Reconcile fast-path triggered by a recent cancel",
+                )
 
         # Log coin inventory every 10 loops (gives a running picture)
         if self._loop_count % 10 == 0:
@@ -9951,28 +11472,38 @@ class BotLoop:
         #   as ERROR noise on every startup.
         # Both states produce noise that masks real issues.
         _probe_active = bool((getattr(self, "_probe_state", None) or {}).get("active"))
-        if (self._loop_count % 10 == 0
-                and not self._recovery_is_active()
-                and not _probe_active):
+        if (
+            self._loop_count % 10 == 0
+            and not self._recovery_is_active()
+            and not _probe_active
+        ):
             try:
                 self._run_ladder_watchdog()
             except Exception as _wd_err:
-                log_event("debug", "watchdog_failed",
-                          f"Ladder watchdog raised (non-fatal): {_wd_err}")
+                log_event(
+                    "debug",
+                    "watchdog_failed",
+                    f"Ladder watchdog raised (non-fatal): {_wd_err}",
+                )
 
         # Tier-size drift monitor: every 10 cycles, check whether prepared
         # coin sizes still match the live tier targets. Smart Settings sizes
         # coins for the price at prep time; persistent price drift means a
         # re-prep is required. Read-only — just log + alert.
-        if (self._loop_count % 10 == 0
-                and not self._recovery_is_active()
-                and not _probe_active
-                and not self.coin_manager.is_busy()):
+        if (
+            self._loop_count % 10 == 0
+            and not self._recovery_is_active()
+            and not _probe_active
+            and not self.coin_manager.is_busy()
+        ):
             try:
                 self._check_tier_size_drift()
             except Exception as _drift_err:
-                log_event("debug", "tier_size_drift_check_failed",
-                          f"Tier size drift check raised (non-fatal): {_drift_err}")
+                log_event(
+                    "debug",
+                    "tier_size_drift_check_failed",
+                    f"Tier size drift check raised (non-fatal): {_drift_err}",
+                )
 
         # Periodic WAL checkpoint truncate. SQLite's autocheckpoint can
         # stall when a long-lived reader connection holds an old snapshot,
@@ -9984,6 +11515,7 @@ class BotLoop:
         if self._loop_count > 0 and self._loop_count % 20 == 0:
             try:
                 from database import checkpoint_wal
+
                 result = checkpoint_wal("TRUNCATE")
                 if result:
                     busy = int(result.get("busy", 0) or 0)
@@ -9994,14 +11526,18 @@ class BotLoop:
                         # a snapshot. Worth surfacing at info level so we
                         # spot it before it compounds into corruption.
                         log_event(
-                            "info", "database_wal_checkpoint",
+                            "info",
+                            "database_wal_checkpoint",
                             f"Periodic WAL checkpoint: busy={busy}, "
                             f"log_pages={log_pages}, "
-                            f"checkpointed={result.get('checkpointed')}"
+                            f"checkpointed={result.get('checkpointed')}",
                         )
             except Exception as _ckpt_err:
-                log_event("debug", "database_wal_checkpoint_failed",
-                          f"Periodic WAL checkpoint raised (non-fatal): {_ckpt_err}")
+                log_event(
+                    "debug",
+                    "database_wal_checkpoint_failed",
+                    f"Periodic WAL checkpoint raised (non-fatal): {_ckpt_err}",
+                )
 
         # Skip coin operations for first 2 loops — wallet needs time to settle
         # after startup. Sage especially returns incomplete coin data initially.
@@ -10024,9 +11560,12 @@ class BotLoop:
             settle_elapsed = time.time() - self._last_bulk_create_time
             if settle_elapsed < self._coin_settle_grace_secs:
                 if self._loop_count % 3 == 0:  # Log periodically
-                    log_event("info", "coin_settle_wait",
-                              f"Waiting for wallet to settle ({int(settle_elapsed)}/"
-                              f"{self._coin_settle_grace_secs}s) — skipping coin checks")
+                    log_event(
+                        "info",
+                        "coin_settle_wait",
+                        f"Waiting for wallet to settle ({int(settle_elapsed)}/"
+                        f"{self._coin_settle_grace_secs}s) — skipping coin checks",
+                    )
                 return
 
         # Early-cycle topup suppression — don't trigger topup in the first N loops.
@@ -10046,9 +11585,14 @@ class BotLoop:
 
         # Tier 1: Full coin prep check — total coins critically low
         if self.coin_manager.needs_coin_prep(active_buy_count, active_sell_count):
-            log_event("info", "coin_prep_trigger",
-                      "TOTAL coins critically low — starting auto coin top-up")
-            self.coin_manager.start_topup(active_buy_count, active_sell_count, is_drip=False)
+            log_event(
+                "info",
+                "coin_prep_trigger",
+                "TOTAL coins critically low — starting auto coin top-up",
+            )
+            self.coin_manager.start_topup(
+                active_buy_count, active_sell_count, is_drip=False
+            )
             return
 
         # Tier 2: Lightweight topup — free coins running low
@@ -10056,12 +11600,11 @@ class BotLoop:
         # path, True for drip path); start_topup with no is_drip arg preserves
         # that, so the worker uses the matching action threshold.
         if self.coin_manager.needs_topup(active_buy_count, active_sell_count):
-            if (
-                bool(getattr(self.coin_manager, "_topup_is_drip", False))
-                and self._defer_drip_topup_for_offer_rebuild(
-                    active_buy_count,
-                    active_sell_count,
-                )
+            if bool(
+                getattr(self.coin_manager, "_topup_is_drip", False)
+            ) and self._defer_drip_topup_for_offer_rebuild(
+                active_buy_count,
+                active_sell_count,
             ):
                 return
             if self._defer_spare_topup_until_source_available(
@@ -10069,16 +11612,24 @@ class BotLoop:
                 active_sell_count,
             ):
                 return
-            log_event("info", "topup_trigger",
-                      "Starting coin top-up to replenish free coins (existing offers stay active)...")
+            log_event(
+                "info",
+                "topup_trigger",
+                "Starting coin top-up to replenish free coins (existing offers stay active)...",
+            )
             self.coin_manager.start_topup(active_buy_count, active_sell_count)
             return
 
         # Tier 3: Runtime health check — every 5 loops, independent check
         if self.coin_manager.check_runtime_health(active_buy_count, active_sell_count):
-            log_event("info", "health_topup_trigger",
-                      "Runtime health check triggered coin top-up")
-            self.coin_manager.start_topup(active_buy_count, active_sell_count, is_drip=False)
+            log_event(
+                "info",
+                "health_topup_trigger",
+                "Runtime health check triggered coin top-up",
+            )
+            self.coin_manager.start_topup(
+                active_buy_count, active_sell_count, is_drip=False
+            )
             return
 
         # Check coin prep worker status (may have finished in background)
@@ -10110,8 +11661,11 @@ class BotLoop:
         try:
             self._check_background_thread_liveness()
         except Exception as _live_err:
-            log_event("warning", "thread_liveness_check_failed",
-                      f"Background thread liveness check failed: {_live_err}")
+            log_event(
+                "warning",
+                "thread_liveness_check_failed",
+                f"Background thread liveness check failed: {_live_err}",
+            )
 
         # F16 fix (2026-04-08): bot loop heartbeat metric. Track the
         # last successful cycle completion timestamp and warn if a cycle
@@ -10122,8 +11676,11 @@ class BotLoop:
         try:
             self._check_bot_loop_heartbeat()
         except Exception as _hb_err:
-            log_event("warning", "loop_heartbeat_check_failed",
-                      f"Bot loop heartbeat check failed: {_hb_err}")
+            log_event(
+                "warning",
+                "loop_heartbeat_check_failed",
+                f"Bot loop heartbeat check failed: {_hb_err}",
+            )
 
         # F27 (2026-04-08): per-step SLA timer. Detects single steps
         # that hang on a slow RPC or deadlock without aborting the
@@ -10131,8 +11688,11 @@ class BotLoop:
         try:
             self._check_step_sla()
         except Exception as _sla_err:
-            log_event("warning", "step_sla_check_failed",
-                      f"Per-step SLA check failed: {_sla_err}")
+            log_event(
+                "warning",
+                "step_sla_check_failed",
+                f"Per-step SLA check failed: {_sla_err}",
+            )
 
         # F17 fix (2026-04-08): daily DB-vs-wallet deep reconciliation.
         # Runs once per 24h. Cross-checks every fill in the DB against
@@ -10142,8 +11702,11 @@ class BotLoop:
         try:
             self._maybe_run_daily_reconcile()
         except Exception as _rec_err:
-            log_event("warning", "daily_reconcile_failed",
-                      f"Daily reconciliation failed: {_rec_err}")
+            log_event(
+                "warning",
+                "daily_reconcile_failed",
+                f"Daily reconciliation failed: {_rec_err}",
+            )
 
         # F22 (2026-04-08): WAL size monitoring + auto-checkpoint.
         # Long-running bots can build up large WAL files when checkpoints
@@ -10153,8 +11716,9 @@ class BotLoop:
         try:
             self._check_wal_size()
         except Exception as _wal_err:
-            log_event("warning", "wal_check_failed",
-                      f"WAL size check failed: {_wal_err}")
+            log_event(
+                "warning", "wal_check_failed", f"WAL size check failed: {_wal_err}"
+            )
 
         # F23 (2026-04-08): atomic offer-coin link recovery sweep.
         # add_offer + lock_coin run as separate transactions, so a
@@ -10165,8 +11729,11 @@ class BotLoop:
         try:
             self._repair_unlinked_offer_coins()
         except Exception as _repair_err:
-            log_event("warning", "offer_coin_repair_failed",
-                      f"Offer-coin link repair failed: {_repair_err}")
+            log_event(
+                "warning",
+                "offer_coin_repair_failed",
+                f"Offer-coin link repair failed: {_repair_err}",
+            )
 
         # F19 (2026-04-08): position sanity check. Verify the bot's
         # running net position estimate matches the wallet's actual
@@ -10175,8 +11742,11 @@ class BotLoop:
         try:
             self._check_position_sanity()
         except Exception as _pos_err:
-            log_event("warning", "position_sanity_check_failed",
-                      f"Position sanity check failed: {_pos_err}")
+            log_event(
+                "warning",
+                "position_sanity_check_failed",
+                f"Position sanity check failed: {_pos_err}",
+            )
 
         # F76 (2026-04-18): runtime health verifier. Cross-checks the bot's
         # DB against external sources of truth (Dexie, Sage). Currently
@@ -10186,25 +11756,35 @@ class BotLoop:
         # via the single-offer path with a priority fee.
         try:
             from bot_health import run_runtime_checks
+
             health = run_runtime_checks(auto_repair=True)
             if health.repaired:
                 _repaired_names = health.repaired_check_names
                 _names_txt = ", ".join(_repaired_names) if _repaired_names else "?"
-                log_event("info", "bot_health_repaired",
-                          f"bot_health repaired {health.repaired} anomalies "
-                          f"in {_names_txt} ({health.summary})",
-                          data={"repaired_checks": _repaired_names})
+                log_event(
+                    "info",
+                    "bot_health_repaired",
+                    f"bot_health repaired {health.repaired} anomalies "
+                    f"in {_names_txt} ({health.summary})",
+                    data={"repaired_checks": _repaired_names},
+                )
             elif health.anomalies:
                 if self._should_log_bot_health_anomalies(health):
                     _anom_names = health.anomaly_check_names
                     _anom_txt = ", ".join(_anom_names) if _anom_names else "?"
-                    log_event("info", "bot_health_anomalies",
-                              f"bot_health found {health.anomalies} anomalies "
-                              f"in {_anom_txt} ({health.summary})",
-                              data={"anomaly_checks": _anom_names})
+                    log_event(
+                        "info",
+                        "bot_health_anomalies",
+                        f"bot_health found {health.anomalies} anomalies "
+                        f"in {_anom_txt} ({health.summary})",
+                        data={"anomaly_checks": _anom_names},
+                    )
         except Exception as _hc_err:
-            log_event("warning", "bot_health_check_failed",
-                      f"Runtime health check failed: {_hc_err}")
+            log_event(
+                "warning",
+                "bot_health_check_failed",
+                f"Runtime health check failed: {_hc_err}",
+            )
 
         # F21 (2026-04-08): lifecycle FSM observability snapshot.
         # Logs noop-transition counts so misuse of the state machine
@@ -10215,6 +11795,7 @@ class BotLoop:
                 get_lifecycle_observability_stats,
                 reset_lifecycle_observability_stats,
             )
+
             stats = get_lifecycle_observability_stats()
             noops = stats.get("noop_transitions", {})
             invalids = stats.get("invalid_signals", {})
@@ -10239,13 +11820,17 @@ class BotLoop:
                     )
                 reset_lifecycle_observability_stats()
         except Exception as _lc_err:
-            log_event("debug", "lifecycle_observability_failed",
-                      f"Lifecycle observability check failed: {_lc_err}")
+            log_event(
+                "debug",
+                "lifecycle_observability_failed",
+                f"Lifecycle observability check failed: {_lc_err}",
+            )
 
         # Prune Dexie mappings — use DB open offers instead of re-fetching from wallet
         # (sync_from_wallet already ran in the main cycle)
         try:
             from database import get_open_offers
+
             db_open = get_open_offers()
             active_ids = {o["trade_id"] for o in db_open if o.get("trade_id")}
         except Exception:
@@ -10261,6 +11846,7 @@ class BotLoop:
         if getattr(cfg, "SPLASH_RECEIVE_ENABLED", False):
             try:
                 from database import prune_splash_incoming
+
                 prune_splash_incoming(max_age_hours=24)
             except Exception:
                 pass
@@ -10272,6 +11858,7 @@ class BotLoop:
                 cleanup_old_trading_pace,
                 cleanup_old_events,
             )
+
             cleanup_old_pool_snapshots(days=30)
             cleanup_old_trading_pace(days=7)
             # Events table was growing unbounded on long-running installs —
@@ -10285,10 +11872,13 @@ class BotLoop:
         # - Locked coins whose offers were cancelled outside the bot
         # - Divergence between locked count and open offer count
         try:
-            from database import (coin_sanity_check, cleanup_orphaned_locked_coins,
-                                  get_open_offers as _hk_get_open_offers,
-                                  batch_cancel_stale_offers as _hk_batch_cancel_stale_offers,
-                                  get_locked_coin_ids_for_trade as _hk_get_locked_coin_ids_for_trade)
+            from database import (
+                coin_sanity_check,
+                cleanup_orphaned_locked_coins,
+                get_open_offers as _hk_get_open_offers,
+                batch_cancel_stale_offers as _hk_batch_cancel_stale_offers,
+                get_locked_coin_ids_for_trade as _hk_get_locked_coin_ids_for_trade,
+            )
 
             # Sanity check: locked vs offers
             db_open = _hk_get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
@@ -10301,32 +11891,41 @@ class BotLoop:
                 _hk_wallet_locked = set()
                 try:
                     from wallet import get_wallet_type as _hk_gwt
+
                     if _hk_gwt() == "sage":
                         from wallet_sage import get_owned_coins_detailed
+
                         for _wid in [cfg.WALLET_ID_XCH, cfg.CAT_WALLET_ID]:
                             _detail = get_owned_coins_detailed(_wid)
                             if _detail:
                                 for _cid, _info in _detail.items():
                                     if _info.get("offer_id"):
-                                        _sid = _cid if _cid.startswith("0x") else "0x" + _cid
+                                        _sid = (
+                                            _cid
+                                            if _cid.startswith("0x")
+                                            else "0x" + _cid
+                                        )
                                         _hk_wallet_locked.add(_sid)
                 except Exception:
                     pass
                 orphan_stats = cleanup_orphaned_locked_coins(
-                    wallet_open_ids,
-                    wallet_confirmed_locked=_hk_wallet_locked
+                    wallet_open_ids, wallet_confirmed_locked=_hk_wallet_locked
                 )
                 if orphan_stats["total_freed"] > 0:
-                    log_event("info", "housekeeping_orphan_cleanup",
-                              f"Freed {orphan_stats['total_freed']} orphaned locked coins "
-                              f"during housekeeping")
+                    log_event(
+                        "info",
+                        "housekeeping_orphan_cleanup",
+                        f"Freed {orphan_stats['total_freed']} orphaned locked coins "
+                        f"during housekeeping",
+                    )
 
             # If the DB still has offers marked open that are not in the
             # wallet-open set and no longer have locked coins, retire those
             # stale rows so the dashboard stays aligned during long runs.
             stale_db_ids = []
             recent_ids = {
-                tid for tid, ts in self.offer_manager._recently_created.items()
+                tid
+                for tid, ts in self.offer_manager._recently_created.items()
                 if tid and (now - float(ts or 0)) < 45
             }
             for db_offer in db_open:
@@ -10342,7 +11941,10 @@ class BotLoop:
                     _ca = db_offer.get("created_at", "")
                     if _ca:
                         from datetime import datetime as _dt_cls
-                        _created_ts = _dt_cls.strptime(_ca, "%Y-%m-%d %H:%M:%S").timestamp()
+
+                        _created_ts = _dt_cls.strptime(
+                            _ca, "%Y-%m-%d %H:%M:%S"
+                        ).timestamp()
                         offer_age_s = now - _created_ts
                 except Exception:
                     pass
@@ -10350,9 +11952,12 @@ class BotLoop:
                 if has_locked and offer_age_s <= 120:
                     continue
                 if has_locked and offer_age_s > 120:
-                    log_event("info", "stale_offer_cleanup",
-                              f"Cleaned up stale DB offer {tid[:16]}... "
-                              f"(not in wallet after {int(offer_age_s)}s, had locked coins)")
+                    log_event(
+                        "info",
+                        "stale_offer_cleanup",
+                        f"Cleaned up stale DB offer {tid[:16]}... "
+                        f"(not in wallet after {int(offer_age_s)}s, had locked coins)",
+                    )
                 stale_db_ids.append(tid)
 
             if stale_db_ids:
@@ -10365,8 +11970,11 @@ class BotLoop:
                         f"(not open in wallet and no locked coin remained)",
                     )
         except Exception as hk_e:
-            log_event("debug", "housekeeping_sanity_failed",
-                      f"Coin sanity check failed: {hk_e}")
+            log_event(
+                "debug",
+                "housekeeping_sanity_failed",
+                f"Coin sanity check failed: {hk_e}",
+            )
 
         # ---- Sage offer cleanup (F47, 2026-04-09): CONSERVATIVE PURGE ----
         #
@@ -10405,10 +12013,13 @@ class BotLoop:
         # (which is visible in Recommendations) and leave it alone.
         try:
             from wallet import get_wallet_type
+
             if get_wallet_type() == "sage":
                 from wallet import sage_delete_offer
-                all_sage_offers = get_all_offers(include_completed=True,
-                                                  start=0, end=500)
+
+                all_sage_offers = get_all_offers(
+                    include_completed=True, start=0, end=500
+                )
                 if all_sage_offers:
                     # SAFE = only explicit cancellations and expirations.
                     # 'FAILED' / 'PENDING_CANCEL' are intentionally excluded
@@ -10431,7 +12042,7 @@ class BotLoop:
 
                     to_delete = []
                     anomalies = 0
-                    new_anomalies = 0   # only first-time occurrences
+                    new_anomalies = 0  # only first-time occurrences
                     now_ts = int(time.time())
                     # Per-session set — each unique trade_id is only
                     # warned about once.  Stored on self so it survives
@@ -10462,8 +12073,11 @@ class BotLoop:
                         # reports them active. Must be >=24h past expiry.
                         if not is_safe_status:
                             valid_times = offer.get("valid_times") or {}
-                            max_time = (valid_times.get("max_time", 0) or
-                                        offer.get("max_time", 0) or 0)
+                            max_time = (
+                                valid_times.get("max_time", 0)
+                                or offer.get("max_time", 0)
+                                or 0
+                            )
                             if max_time and int(max_time) > 0:
                                 seconds_past_expiry = now_ts - int(max_time)
                                 if seconds_past_expiry >= MIN_AGE_SECS:
@@ -10482,7 +12096,9 @@ class BotLoop:
                         # back to our local DB timestamps.
                         local_offer = get_offer(trade_id)
                         age_secs = 0
-                        sage_ct = offer.get("creation_timestamp") or offer.get("created_at_height")
+                        sage_ct = offer.get("creation_timestamp") or offer.get(
+                            "created_at_height"
+                        )
                         if sage_ct:
                             try:
                                 age_secs = now_ts - int(sage_ct)
@@ -10491,6 +12107,7 @@ class BotLoop:
                         if age_secs <= 0 and local_offer:
                             try:
                                 from datetime import datetime as _dt
+
                                 created_raw = str(local_offer.get("created_at") or "")
                                 if created_raw:
                                     _created = _dt.strptime(
@@ -10544,15 +12161,17 @@ class BotLoop:
                             continue
 
                         # All three gates passed.
-                        to_delete.append((
-                            trade_id,
-                            map_sage_terminal_offer_status(
-                                status_val,
-                                sage_offer=offer,
-                                local_offer=local_offer,
-                                now_ts=now_ts,
-                            ),
-                        ))
+                        to_delete.append(
+                            (
+                                trade_id,
+                                map_sage_terminal_offer_status(
+                                    status_val,
+                                    sage_offer=offer,
+                                    local_offer=local_offer,
+                                    now_ts=now_ts,
+                                ),
+                            )
+                        )
 
                     if to_delete:
                         deleted = 0
@@ -10568,14 +12187,20 @@ class BotLoop:
                                         pass
                             time.sleep(0.05)
                         if deleted > 0:
-                            log_event("info", "sage_offer_cleanup",
-                                      f"Deleted {deleted}/{len(to_delete)} "
-                                      f"safe-to-delete (cancelled/expired >24h, "
-                                      f"DB-verified) offers from Sage")
+                            log_event(
+                                "info",
+                                "sage_offer_cleanup",
+                                f"Deleted {deleted}/{len(to_delete)} "
+                                f"safe-to-delete (cancelled/expired >24h, "
+                                f"DB-verified) offers from Sage",
+                            )
                             if status_updates > 0:
-                                log_event("debug", "sage_offer_cleanup_db",
-                                          f"Updated {status_updates} local offer "
-                                          f"statuses during Sage cleanup")
+                                log_event(
+                                    "debug",
+                                    "sage_offer_cleanup_db",
+                                    f"Updated {status_updates} local offer "
+                                    f"statuses during Sage cleanup",
+                                )
                     if anomalies > 0:
                         # Only emit the summary when there are NEW (first-seen)
                         # anomalies this cycle.  Known anomalies are silently
@@ -10627,9 +12252,7 @@ class BotLoop:
                                 else ""
                             )
                             price_part = (
-                                f" at {price:.8f}"
-                                if isinstance(price, float)
-                                else ""
+                                f" at {price:.8f}" if isinstance(price, float) else ""
                             )
                             fill_msg = (
                                 f"Sage confirmed {side_label} fill for {trade_preview}..."
@@ -10654,8 +12277,9 @@ class BotLoop:
                                 },
                             )
         except Exception as sage_e:
-            log_event("debug", "sage_cleanup_failed",
-                      f"Sage offer cleanup failed: {sage_e}")
+            log_event(
+                "debug", "sage_cleanup_failed", f"Sage offer cleanup failed: {sage_e}"
+            )
 
         log_event("debug", "housekeeping", "Periodic housekeeping completed")
 
@@ -10724,8 +12348,11 @@ class BotLoop:
                 pass
             try:
                 restart_fn()
-                log_event("info", "background_thread_restarted",
-                          f"Successfully restarted background thread '{name}'")
+                log_event(
+                    "info",
+                    "background_thread_restarted",
+                    f"Successfully restarted background thread '{name}'",
+                )
                 # Clear the "crashed" banner and raise a transient
                 # "recovered" banner so the operator sees the outcome —
                 # previously the original crash banner stayed up whether
@@ -10879,10 +12506,16 @@ class BotLoop:
         Recommendations panel + an API endpoint can show them later.
         """
         import requests as _req
+
         results: Dict[str, Dict] = {}
 
-        def _check_http(name: str, url: str, timeout: float = 5.0,
-                        method: str = "GET", json_body=None) -> Dict:
+        def _check_http(
+            name: str,
+            url: str,
+            timeout: float = 5.0,
+            method: str = "GET",
+            json_body=None,
+        ) -> Dict:
             """F32 (2026-04-08): a server is REACHABLE if it answers at all,
             even with a 4xx. The previous version treated 404 as "down",
             which falsely flagged Spacescan because the path used in the
@@ -10902,27 +12535,40 @@ class BotLoop:
                 # 2xx/3xx clearly OK; 4xx means reachable; 5xx means server problem
                 if r.status_code < 500:
                     return {
-                        "name": name, "url": url, "ok": True,
+                        "name": name,
+                        "url": url,
+                        "ok": True,
                         "status_code": r.status_code,
                         "error": None,
                     }
                 return {
-                    "name": name, "url": url, "ok": False,
+                    "name": name,
+                    "url": url,
+                    "ok": False,
                     "status_code": r.status_code,
                     "error": f"HTTP {r.status_code} (server error)",
                 }
             except _req.exceptions.Timeout:
                 return {"name": name, "url": url, "ok": False, "error": "timeout"}
             except _req.exceptions.ConnectionError as e:
-                return {"name": name, "url": url, "ok": False,
-                        "error": f"connection refused ({type(e).__name__})"}
+                return {
+                    "name": name,
+                    "url": url,
+                    "ok": False,
+                    "error": f"connection refused ({type(e).__name__})",
+                }
             except Exception as e:
-                return {"name": name, "url": url, "ok": False,
-                        "error": f"{type(e).__name__}: {str(e)[:80]}"}
+                return {
+                    "name": name,
+                    "url": url,
+                    "ok": False,
+                    "error": f"{type(e).__name__}: {str(e)[:80]}",
+                }
 
         # 1. Sage RPC — already checked by sync, but report explicitly
         try:
             from wallet import get_wallet_sync_status
+
             sage_info = get_wallet_sync_status() or {}
             sage_ok = bool(sage_info.get("reachable") or sage_info.get("synced"))
             results["sage"] = {
@@ -10938,7 +12584,9 @@ class BotLoop:
             }
         except Exception as e:
             results["sage"] = {
-                "name": "Sage Wallet RPC", "ok": False, "critical": True,
+                "name": "Sage Wallet RPC",
+                "ok": False,
+                "critical": True,
                 "missing_if_down": "EVERYTHING (see above).",
                 "error": f"check failed: {e}",
             }
@@ -10946,8 +12594,10 @@ class BotLoop:
         # 2. TibetSwap API — pricing source
         # F32 fix: use the real /pairs endpoint that price_engine actually
         # consumes (was /router which doesn't exist on tibetswap.io v2).
-        tibet_url = str(getattr(cfg, "TIBET_API_BASE", "https://api.v2.tibetswap.io")
-                        or "https://api.v2.tibetswap.io")
+        tibet_url = str(
+            getattr(cfg, "TIBET_API_BASE", "https://api.v2.tibetswap.io")
+            or "https://api.v2.tibetswap.io"
+        )
         r = _check_http("TibetSwap API", f"{tibet_url}/pairs?skip=0&limit=1")
         r["missing_if_down"] = (
             "Real-time price feed. Bot will fall back to Dexie-only pricing "
@@ -10960,9 +12610,13 @@ class BotLoop:
         # F32 fix: use the real /v1/offers endpoint that dexie_manager and
         # market_intel actually consume (was /v2/prices/tickers which is
         # a different surface and may not exist on the v1 base).
-        dexie_url = str(getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
-                        or "https://api.dexie.space")
-        r = _check_http("Dexie API", f"{dexie_url.rstrip('/')}/v1/offers?compact=true&page_size=1")
+        dexie_url = str(
+            getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
+            or "https://api.dexie.space"
+        )
+        r = _check_http(
+            "Dexie API", f"{dexie_url.rstrip('/')}/v1/offers?compact=true&page_size=1"
+        )
         r["missing_if_down"] = (
             "Offer posting to Dexie + competitor orderbook intelligence. "
             "Offers will still be created on-chain but won't be visible on "
@@ -10977,8 +12631,10 @@ class BotLoop:
         # /get_blockchain_state is the real endpoint coinset_client + tx_fees
         # both consume.
         if getattr(cfg, "COINSET_ENABLED", True):
-            coinset_url = str(getattr(cfg, "COINSET_API_URL", "https://api.coinset.org")
-                              or "https://api.coinset.org")
+            coinset_url = str(
+                getattr(cfg, "COINSET_API_URL", "https://api.coinset.org")
+                or "https://api.coinset.org"
+            )
             r = _check_http(
                 "Coinset API",
                 f"{coinset_url.rstrip('/')}/get_blockchain_state",
@@ -10995,7 +12651,9 @@ class BotLoop:
             results["coinset"] = r
         else:
             results["coinset"] = {
-                "name": "Coinset API", "ok": True, "skipped": True,
+                "name": "Coinset API",
+                "ok": True,
+                "skipped": True,
                 "missing_if_down": "n/a (disabled in config)",
                 "critical": False,
             }
@@ -11008,9 +12666,10 @@ class BotLoop:
         # which is what we care about. Our improved _check_http treats any
         # non-5xx as reachable.
         if getattr(cfg, "SPACESCAN_ENABLED", False):
-            spacescan_url = str(getattr(cfg, "SPACESCAN_API_BASE",
-                                        "https://api.spacescan.io")
-                                or "https://api.spacescan.io")
+            spacescan_url = str(
+                getattr(cfg, "SPACESCAN_API_BASE", "https://api.spacescan.io")
+                or "https://api.spacescan.io"
+            )
             r = _check_http(
                 "Spacescan API",
                 f"{spacescan_url.rstrip('/')}/",
@@ -11025,7 +12684,9 @@ class BotLoop:
             results["spacescan"] = r
         else:
             results["spacescan"] = {
-                "name": "Spacescan API", "ok": True, "skipped": True,
+                "name": "Spacescan API",
+                "ok": True,
+                "skipped": True,
                 "missing_if_down": "n/a (disabled in config)",
                 "critical": False,
             }
@@ -11033,15 +12694,18 @@ class BotLoop:
         # 6. SQLite DB writability
         try:
             from database import log_event as _le
+
             _le("debug", "self_test_db_write", "Self-test DB write probe")
             results["database"] = {
-                "name": "SQLite Database", "ok": True,
+                "name": "SQLite Database",
+                "ok": True,
                 "missing_if_down": "Bot CANNOT operate without DB writes.",
                 "critical": True,
             }
         except Exception as e:
             results["database"] = {
-                "name": "SQLite Database", "ok": False,
+                "name": "SQLite Database",
+                "ok": False,
                 "error": f"{type(e).__name__}: {e}",
                 "missing_if_down": "Bot CANNOT operate without DB writes.",
                 "critical": True,
@@ -11049,22 +12713,30 @@ class BotLoop:
 
         # ── Process results ──
         self._startup_self_test_results = results
-        all_ok = all(r.get("ok", False) for r in results.values()
-                     if not r.get("skipped", False))
+        all_ok = all(
+            r.get("ok", False) for r in results.values() if not r.get("skipped", False)
+        )
         critical_failures = [
-            r for r in results.values()
-            if not r.get("ok", False) and r.get("critical", False)
+            r
+            for r in results.values()
+            if not r.get("ok", False)
+            and r.get("critical", False)
             and not r.get("skipped", False)
         ]
         warn_failures = [
-            r for r in results.values()
-            if not r.get("ok", False) and not r.get("critical", False)
+            r
+            for r in results.values()
+            if not r.get("ok", False)
+            and not r.get("critical", False)
             and not r.get("skipped", False)
         ]
 
         if all_ok:
-            log_event("info", "self_test_pass",
-                      "Startup self-test PASSED — all external services reachable")
+            log_event(
+                "info",
+                "self_test_pass",
+                "Startup self-test PASSED — all external services reachable",
+            )
             return
 
         # Report each failure with what's missing
@@ -11090,8 +12762,11 @@ class BotLoop:
                 pass
 
         # Final summary
-        ok_count = sum(1 for r in results.values()
-                       if r.get("ok", False) and not r.get("skipped", False))
+        ok_count = sum(
+            1
+            for r in results.values()
+            if r.get("ok", False) and not r.get("skipped", False)
+        )
         total = sum(1 for r in results.values() if not r.get("skipped", False))
         log_event(
             "warning" if warn_failures and not critical_failures else "error",
@@ -11128,9 +12803,12 @@ class BotLoop:
 
         # Above threshold — force a checkpoint and track the streak
         self._wal_oversize_streak = getattr(self, "_wal_oversize_streak", 0) + 1
-        log_event("info", "wal_oversize_checkpoint",
-                  f"WAL is {size_mb:.1f} MB (>{threshold_mb} MB threshold) — "
-                  f"forcing TRUNCATE checkpoint (streak {self._wal_oversize_streak})")
+        log_event(
+            "info",
+            "wal_oversize_checkpoint",
+            f"WAL is {size_mb:.1f} MB (>{threshold_mb} MB threshold) — "
+            f"forcing TRUNCATE checkpoint (streak {self._wal_oversize_streak})",
+        )
         ok = force_wal_checkpoint()
         post_size_mb = get_wal_size_mb()
 
@@ -11157,8 +12835,11 @@ class BotLoop:
                 except Exception:
                     pass
         else:
-            log_event("info", "wal_checkpoint_succeeded",
-                      f"WAL shrunk from {size_mb:.1f} MB to {post_size_mb:.1f} MB")
+            log_event(
+                "info",
+                "wal_checkpoint_succeeded",
+                f"WAL shrunk from {size_mb:.1f} MB to {post_size_mb:.1f} MB",
+            )
 
     def _check_position_sanity(self) -> None:
         """F19: position sanity check.
@@ -11180,10 +12861,14 @@ class BotLoop:
         if getattr(self, "_position_baseline_cat", None) is None:
             try:
                 _bal_raw = get_wallet_balance(cfg.CAT_WALLET_ID)
-                _bal = (_bal_raw.get("wallet_balance") or _bal_raw) if _bal_raw else None
+                _bal = (
+                    (_bal_raw.get("wallet_balance") or _bal_raw) if _bal_raw else None
+                )
                 if _bal:
                     _scale = Decimal(10) ** Decimal(str(cfg.CAT_DECIMALS))
-                    _baseline = Decimal(str(_bal.get("confirmed_wallet_balance", 0))) / _scale
+                    _baseline = (
+                        Decimal(str(_bal.get("confirmed_wallet_balance", 0))) / _scale
+                    )
                     self._position_baseline_cat = _baseline
                     # F48 (2026-04-09): also snapshot the bot's current
                     # all-time net position so the sanity check compares
@@ -11192,12 +12877,17 @@ class BotLoop:
                         _net_at_baseline = self.risk_manager._net_position_cat
                     except Exception:
                         _net_at_baseline = Decimal("0")
-                    self._position_baseline_net_cat = Decimal(str(_net_at_baseline or 0))
+                    self._position_baseline_net_cat = Decimal(
+                        str(_net_at_baseline or 0)
+                    )
                     self._position_baseline_at = time.time()
-                    log_event("debug", "position_baseline_set",
-                              f"Position sanity baseline: wallet={_baseline:.2f} CAT, "
-                              f"bot_net={self._position_baseline_net_cat:+.2f} CAT "
-                              f"at session start")
+                    log_event(
+                        "debug",
+                        "position_baseline_set",
+                        f"Position sanity baseline: wallet={_baseline:.2f} CAT, "
+                        f"bot_net={self._position_baseline_net_cat:+.2f} CAT "
+                        f"at session start",
+                    )
             except Exception:
                 pass
             return  # First call only sets baseline; check on next housekeeping tick
@@ -11205,11 +12895,15 @@ class BotLoop:
         # Read current wallet CAT balance
         try:
             _cat_raw = get_wallet_balance(cfg.CAT_WALLET_ID)
-            _cat_bal = (_cat_raw.get("wallet_balance") or _cat_raw) if _cat_raw else None
+            _cat_bal = (
+                (_cat_raw.get("wallet_balance") or _cat_raw) if _cat_raw else None
+            )
             if not _cat_bal:
                 return
             _scale = Decimal(10) ** Decimal(str(cfg.CAT_DECIMALS))
-            _current_cat = Decimal(str(_cat_bal.get("confirmed_wallet_balance", 0))) / _scale
+            _current_cat = (
+                Decimal(str(_cat_bal.get("confirmed_wallet_balance", 0))) / _scale
+            )
         except Exception:
             return
 
@@ -11238,7 +12932,7 @@ class BotLoop:
         # net position has changed since the baseline was taken. This
         # catches both the reconcile case and the new-fills case.
         _baseline_age = time.time() - (self._position_baseline_at or 0)
-        _net_changed = (net_position_cat != baseline_net)
+        _net_changed = net_position_cat != baseline_net
         if (
             _net_changed
             and _baseline_age > 60
@@ -11290,9 +12984,7 @@ class BotLoop:
             )
             if deposit_match is not None:
                 try:
-                    amount_cat = (
-                        Decimal(str(deposit_match["amount_mojos"])) / _scale
-                    )
+                    amount_cat = Decimal(str(deposit_match["amount_mojos"])) / _scale
                 except Exception:
                     amount_cat = delta
                 coin_id = str(deposit_match.get("coin_id") or "")
@@ -11377,8 +13069,9 @@ class BotLoop:
                 """
             ).fetchall()
         except Exception as e:
-            log_event("debug", "offer_coin_repair_query_failed",
-                      f"Repair query failed: {e}")
+            log_event(
+                "debug", "offer_coin_repair_query_failed", f"Repair query failed: {e}"
+            )
             return
 
         if not rows:
@@ -11400,13 +13093,14 @@ class BotLoop:
         wallet_open_ids = None
         try:
             from wallet import get_all_offers
+
             _open = get_all_offers(include_completed=False, start=0, end=500) or []
             wallet_open_ids = {
                 (o.get("trade_id") or "").lower()
                 for o in _open
                 if o.get("trade_id")
-                and str(o.get("status", "")).lower() not in
-                   ("cancelled", "canceled", "completed", "expired", "failed")
+                and str(o.get("status", "")).lower()
+                not in ("cancelled", "canceled", "completed", "expired", "failed")
             }
         except Exception:
             wallet_open_ids = None  # Unknown — fall back to old behaviour
@@ -11438,10 +13132,13 @@ class BotLoop:
                 pass
 
         if repaired > 0:
-            log_event("info", "offer_coin_link_repaired",
-                      f"Repaired {repaired} offer-coin link(s) where the offer "
-                      f"existed but the coin row wasn't marked locked. Indicates "
-                      f"a previous lock_coin call failed silently.")
+            log_event(
+                "info",
+                "offer_coin_link_repaired",
+                f"Repaired {repaired} offer-coin link(s) where the offer "
+                f"existed but the coin row wasn't marked locked. Indicates "
+                f"a previous lock_coin call failed silently.",
+            )
         if orphan_closed > 0:
             retry_backoff = max(
                 0.0,
@@ -11459,15 +13156,18 @@ class BotLoop:
                         current_until,
                         now + retry_backoff,
                     )
-            log_event("info", "offer_coin_orphan_closed",
-                      f"Closed {orphan_closed} DB offer(s) that no longer exist "
-                      f"in the wallet — breaks the re-lock/free loop on dead "
-                      f"sniper/ladder offers.",
-                      data={
-                          "buy": orphan_closed_by_side["buy"],
-                          "sell": orphan_closed_by_side["sell"],
-                          "adaptive_backoff_secs": retry_backoff,
-                      })
+            log_event(
+                "info",
+                "offer_coin_orphan_closed",
+                f"Closed {orphan_closed} DB offer(s) that no longer exist "
+                f"in the wallet — breaks the re-lock/free loop on dead "
+                f"sniper/ladder offers.",
+                data={
+                    "buy": orphan_closed_by_side["buy"],
+                    "sell": orphan_closed_by_side["sell"],
+                    "adaptive_backoff_secs": retry_backoff,
+                },
+            )
 
     def _maybe_run_daily_reconcile(self) -> None:
         """Run a deep DB↔wallet reconciliation once per 24 hours.
@@ -11482,8 +13182,9 @@ class BotLoop:
         if last and (now - last) < 86400:  # 24 hours
             return
 
-        log_event("info", "daily_reconcile_start",
-                  "Daily DB↔wallet reconciliation starting")
+        log_event(
+            "info", "daily_reconcile_start", "Daily DB↔wallet reconciliation starting"
+        )
         self._last_daily_reconcile_at = now
 
         try:
@@ -11516,8 +13217,11 @@ class BotLoop:
                     f"No new rows inserted.",
                 )
             if created_count == 0 and upgraded_count == 0:
-                log_event("info", "daily_reconcile_clean",
-                          "Daily reconcile: no missing fills found (PnL is in sync)")
+                log_event(
+                    "info",
+                    "daily_reconcile_clean",
+                    "Daily reconcile: no missing fills found (PnL is in sync)",
+                )
 
             # F62 (2026-04-09): if the backfill changed the all-time net
             # position, the position-sanity baseline snapshot is now stale.
@@ -11542,37 +13246,45 @@ class BotLoop:
                     "updated the fills table — will re-snap next tick.",
                 )
         except Exception as _bf_err:
-            log_event("warning", "daily_reconcile_backfill_failed",
-                      f"Daily reconcile backfill step failed: {_bf_err}")
+            log_event(
+                "warning",
+                "daily_reconcile_backfill_failed",
+                f"Daily reconcile backfill step failed: {_bf_err}",
+            )
 
         # Sanity check: number of open offers in DB vs in wallet
         try:
             from database import get_open_offers as _ro_get_open_offers
+
             db_open = _ro_get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
             db_count = len(db_open)
             wallet_offers = get_all_offers(include_completed=False, start=0, end=500)
             if wallet_offers:
                 terminal_statuses = (
-                    "cancelled", "canceled", "completed", "expired", "failed"
+                    "cancelled",
+                    "canceled",
+                    "completed",
+                    "expired",
+                    "failed",
                 )
                 open_wallet_offers = [
-                    o for o in wallet_offers
+                    o
+                    for o in wallet_offers
                     if str(o.get("status", "")).lower() not in terminal_statuses
                 ]
                 wallet_open = len(open_wallet_offers)
                 wallet_open_ids = {
                     str(
-                        o.get("trade_id")
-                        or o.get("offer_id")
-                        or o.get("id")
-                        or ""
+                        o.get("trade_id") or o.get("offer_id") or o.get("id") or ""
                     ).lower()
                     for o in open_wallet_offers
                 }
                 if abs(db_count - wallet_open) > 2:
                     grace = max(
                         15.0,
-                        float(getattr(cfg, "DB_ONLY_OFFER_CONFIRM_GRACE_SECS", 90) or 90),
+                        float(
+                            getattr(cfg, "DB_ONLY_OFFER_CONFIRM_GRACE_SECS", 90) or 90
+                        ),
                     )
                     now_ts = time.time()
                     recent_db_only = []
@@ -11580,7 +13292,10 @@ class BotLoop:
                         tid = str((offer or {}).get("trade_id") or "").lower()
                         if not tid or tid in wallet_open_ids:
                             continue
-                        if str((offer or {}).get("tier") or "").lower() in ("sniper", "boost"):
+                        if str((offer or {}).get("tier") or "").lower() in (
+                            "sniper",
+                            "boost",
+                        ):
                             continue
                         if self._offer_age_seconds(offer, now_ts) < grace:
                             recent_db_only.append(tid)
@@ -11608,12 +13323,18 @@ class BotLoop:
                             f"Recommend investigating offers table.",
                         )
                 else:
-                    log_event("info", "daily_reconcile_count_ok",
-                              f"Daily reconcile count check OK: DB={db_count}, "
-                              f"wallet={wallet_open}")
+                    log_event(
+                        "info",
+                        "daily_reconcile_count_ok",
+                        f"Daily reconcile count check OK: DB={db_count}, "
+                        f"wallet={wallet_open}",
+                    )
         except Exception as _cnt_err:
-            log_event("debug", "daily_reconcile_count_skipped",
-                      f"Daily reconcile count check skipped: {_cnt_err}")
+            log_event(
+                "debug",
+                "daily_reconcile_count_skipped",
+                f"Daily reconcile count check skipped: {_cnt_err}",
+            )
 
         # F24 (2026-04-08): daily Spacescan fill spot-check.
         # Pick a random sample of recent fills from the DB and re-verify
@@ -11624,8 +13345,11 @@ class BotLoop:
             try:
                 self._spot_check_recent_fills()
             except Exception as _sc_err:
-                log_event("debug", "daily_spot_check_failed",
-                          f"Daily Spacescan spot-check failed: {_sc_err}")
+                log_event(
+                    "debug",
+                    "daily_spot_check_failed",
+                    f"Daily Spacescan spot-check failed: {_sc_err}",
+                )
 
     def _spot_check_recent_fills(self) -> None:
         """F24 (2026-04-08): random Spacescan re-verification of recent fills.
@@ -11662,8 +13386,11 @@ class BotLoop:
             return
 
         if not rows:
-            log_event("debug", "spot_check_skip_no_fills",
-                      "Spot-check skipped: no fills in last 24h")
+            log_event(
+                "debug",
+                "spot_check_skip_no_fills",
+                "Spot-check skipped: no fills in last 24h",
+            )
             return
 
         sample_size = min(5, len(rows))
@@ -11676,8 +13403,11 @@ class BotLoop:
             our_address = ""
 
         if not our_address:
-            log_event("debug", "spot_check_skip_no_address",
-                      "Spot-check skipped: could not determine wallet address")
+            log_event(
+                "debug",
+                "spot_check_skip_no_address",
+                "Spot-check skipped: could not determine wallet address",
+            )
             return
 
         verified = 0
@@ -11705,8 +13435,11 @@ class BotLoop:
                         f"coin was either unspent or spent back to us. Investigate "
                         f"the original verification path — this fill should NOT "
                         f"be in PnL.",
-                        data={"trade_id": tid, "fill_id": row["fill_id"],
-                              "side": row["side"]},
+                        data={
+                            "trade_id": tid,
+                            "fill_id": row["fill_id"],
+                            "side": row["side"],
+                        },
                     )
                 else:
                     unknown += 1
@@ -11863,15 +13596,20 @@ class BotLoop:
                 if not all_open:
                     return
                 # Use legacy path for offers without DB bech32
-                db_offers = [{"trade_id": o.get("trade_id", ""),
-                              "offer_bech32": None,
-                              "dexie_id": None,
-                              "side": o.get("side", "")} for o in all_open]
+                db_offers = [
+                    {
+                        "trade_id": o.get("trade_id", ""),
+                        "offer_bech32": None,
+                        "dexie_id": None,
+                        "side": o.get("side", ""),
+                    }
+                    for o in all_open
+                ]
 
             # Split into: already posted (skip), have bech32 (fast), need RPC (slow)
             skip_count = 0
-            fast_queue = []   # Have bech32 in DB, just need to post to Dexie
-            slow_queue = []   # Missing bech32, need wallet RPC
+            fast_queue = []  # Have bech32 in DB, just need to post to Dexie
+            slow_queue = []  # Missing bech32, need wallet RPC
 
             for offer in db_offers:
                 trade_id = offer.get("trade_id", "")
@@ -11888,7 +13626,8 @@ class BotLoop:
                     if bech32:
                         with self.dexie_manager._lock:
                             self.dexie_manager._posted_fingerprints.add(
-                                self.dexie_manager._fingerprint(bech32))
+                                self.dexie_manager._fingerprint(bech32)
+                            )
                     continue
 
                 if bech32:
@@ -11920,41 +13659,57 @@ class BotLoop:
             # Slow path: fetch bech32 from wallet RPC for offers without it
             if slow_queue:
                 from wallet import get_offer_bech32
+
                 for trade_id in slow_queue:
                     try:
                         bech32 = get_offer_bech32(trade_id)
                         if bech32:
                             self.dexie_manager.queue_post(bech32, trade_id, force=True)
                             if getattr(cfg, "SPLASH_ENABLED", False):
-                                self.splash_manager.queue_post(bech32, trade_id, force=True)
+                                self.splash_manager.queue_post(
+                                    bech32, trade_id, force=True
+                                )
                             count += 1
                             # Save to DB for next time
                             try:
                                 from database import update_offer_bech32
+
                                 update_offer_bech32(trade_id, bech32)
                             except Exception:
                                 pass
                             time.sleep(0.3)  # Gentle on wallet RPC
                     except Exception as e:
-                        log_event("debug", "repost_error",
-                                  f"Error getting bech32 for {trade_id[:16]}...: {e}")
+                        log_event(
+                            "debug",
+                            "repost_error",
+                            f"Error getting bech32 for {trade_id[:16]}...: {e}",
+                        )
 
             if count > 0:
                 self.dexie_manager.flush_queue(flush_all=True)
-                log_event("info", "dexie_repost_done",
-                          f"Re-posted {count} offers to Dexie"
-                          + (" in the background " if background else " ")
-                          + f"({len(fast_queue)} fast + {len(slow_queue)} via RPC, "
-                          f"{skip_count} already live)")
+                log_event(
+                    "info",
+                    "dexie_repost_done",
+                    f"Re-posted {count} offers to Dexie"
+                    + (" in the background " if background else " ")
+                    + f"({len(fast_queue)} fast + {len(slow_queue)} via RPC, "
+                    f"{skip_count} already live)",
+                )
                 # Also broadcast to Splash if enabled (V3)
                 if getattr(cfg, "SPLASH_ENABLED", False):
                     self.splash_manager.flush_queue(flush_all=True)
-                    log_event("info", "splash_repost_done",
-                              f"Confirmed {count} offers over Splash"
-                              + (" in the background" if background else ""))
+                    log_event(
+                        "info",
+                        "splash_repost_done",
+                        f"Confirmed {count} offers over Splash"
+                        + (" in the background" if background else ""),
+                    )
             else:
-                log_event("info", "dexie_repost_done",
-                          f"All {skip_count} offers already live on Dexie — nothing to repost")
+                log_event(
+                    "info",
+                    "dexie_repost_done",
+                    f"All {skip_count} offers already live on Dexie — nothing to repost",
+                )
 
         except Exception as e:
             log_event("error", "dexie_repost_failed", f"Dexie repost failed: {e}")
@@ -11979,7 +13734,11 @@ class BotLoop:
             return
 
         key = get_current_key()
-        live_fp = str(key.get("fingerprint")) if key and key.get("fingerprint") is not None else None
+        live_fp = (
+            str(key.get("fingerprint"))
+            if key and key.get("fingerprint") is not None
+            else None
+        )
         if not live_fp:
             # Can't tell — Sage might be restarting. Leave the alert state
             # alone; downstream health checks will surface the outage.
@@ -12033,9 +13792,17 @@ class BotLoop:
         self._startup_complete.wait(timeout=120)
         slog("THREAD", "health-monitor gate released — starting work")
         log_thread_start("health-monitor")
-        startup_wallet_type = str(os.getenv("WALLET_TYPE", "sage") or "sage").strip().lower()
-        monitor_label = "Sage wallet" if startup_wallet_type == "sage" else "Chia wallet/full node"
-        log_event("info", "health_monitor", f"{monitor_label} health monitor started (checking every 15s)")
+        startup_wallet_type = (
+            str(os.getenv("WALLET_TYPE", "sage") or "sage").strip().lower()
+        )
+        monitor_label = (
+            "Sage wallet" if startup_wallet_type == "sage" else "Chia wallet/full node"
+        )
+        log_event(
+            "info",
+            "health_monitor",
+            f"{monitor_label} health monitor started (checking every 15s)",
+        )
 
         while self._running:
             try:
@@ -12051,12 +13818,18 @@ class BotLoop:
 
                 wallet_info = health.get("wallet", {}) or {}
                 node_info = health.get("node", {}) or {}
-                wallet_type = str(
-                    health.get("wallet_type")
-                    or os.getenv("WALLET_TYPE", "sage")
-                    or "sage"
-                ).strip().lower()
-                wallet_sync_state = str(wallet_info.get("sync_state") or "").strip().lower()
+                wallet_type = (
+                    str(
+                        health.get("wallet_type")
+                        or os.getenv("WALLET_TYPE", "sage")
+                        or "sage"
+                    )
+                    .strip()
+                    .lower()
+                )
+                wallet_sync_state = (
+                    str(wallet_info.get("sync_state") or "").strip().lower()
+                )
                 # Only treat Sage as "service ok" when the RPC explicitly
                 # says synced. Previously "unknown" was accepted which let
                 # a failing get_sync_status RPC look healthy — operators
@@ -12070,30 +13843,49 @@ class BotLoop:
                     and wallet_sync_state == "synced"
                 )
                 effective_status = health.get("status", "unknown")
-                effective_healthy = bool(health.get("healthy")) or sage_wallet_service_ok
+                effective_healthy = (
+                    bool(health.get("healthy")) or sage_wallet_service_ok
+                )
 
                 with self._chia_health_lock:
                     self._chia_health["status"] = effective_status
-                    self._chia_health["wallet_sync_state"] = wallet_sync_state or "unknown"
-                    self._chia_health["wallet_reachable"] = wallet_info.get("reachable", False)
-                    self._chia_health["wallet_synced"] = wallet_info.get("synced", False)
+                    self._chia_health["wallet_sync_state"] = (
+                        wallet_sync_state or "unknown"
+                    )
+                    self._chia_health["wallet_reachable"] = wallet_info.get(
+                        "reachable", False
+                    )
+                    self._chia_health["wallet_synced"] = wallet_info.get(
+                        "synced", False
+                    )
                     self._chia_health["node_synced"] = node_info.get("synced", False)
                     self._chia_health["last_check"] = time.time()
 
                 if effective_healthy:
                     if self._consecutive_unhealthy > 0:
-                        was_down = self._consecutive_unhealthy * self._health_check_interval
-                        service_label = "Sage wallet" if wallet_type == "sage" else "Chia services"
-                        log_event("success", "chia_recovered",
-                                  f"{service_label} recovered (was unhealthy for {was_down}s)")
-                        self._emit("health", {"status": "recovered", "downtime_secs": was_down})
+                        was_down = (
+                            self._consecutive_unhealthy * self._health_check_interval
+                        )
+                        service_label = (
+                            "Sage wallet" if wallet_type == "sage" else "Chia services"
+                        )
+                        log_event(
+                            "success",
+                            "chia_recovered",
+                            f"{service_label} recovered (was unhealthy for {was_down}s)",
+                        )
+                        self._emit(
+                            "health", {"status": "recovered", "downtime_secs": was_down}
+                        )
                     self._consecutive_unhealthy = 0
                     with self._chia_health_lock:
                         self._chia_health["consecutive_failures"] = 0
                 else:
                     self._consecutive_unhealthy += 1
                     with self._chia_health_lock:
-                        self._chia_health["consecutive_failures"] = self._consecutive_unhealthy
+                        self._chia_health["consecutive_failures"] = (
+                            self._consecutive_unhealthy
+                        )
                     secs = self._consecutive_unhealthy * self._health_check_interval
 
                     # Build descriptive reason
@@ -12114,9 +13906,12 @@ class BotLoop:
                     # (cycle 1) because it silently blocks fills and TX submissions.
                     if wallet_type == "sage" and wallet_sync_state == "no_peers":
                         if self._consecutive_unhealthy == 1:
-                            log_event("warning", "wallet_no_peers",
-                                      "Sage wallet has no network peers — fill detection "
-                                      "and offer submission are paused.")
+                            log_event(
+                                "warning",
+                                "wallet_no_peers",
+                                "Sage wallet has no network peers — fill detection "
+                                "and offer submission are paused.",
+                            )
                         self._emit_alert(
                             "wallet_no_peers",
                             "warning",
@@ -12131,13 +13926,24 @@ class BotLoop:
                         self._clear_alert("wallet_no_peers")
 
                     if self._consecutive_unhealthy == 1:
-                        health_label = "Sage wallet" if wallet_type == "sage" else "Chia health"
-                        log_event("warning", "chia_unhealthy",
-                                  f"{health_label}: {effective_status}{reason_str}")
-                    elif self._consecutive_unhealthy >= 4 and self._consecutive_unhealthy % 4 == 0:
+                        health_label = (
+                            "Sage wallet" if wallet_type == "sage" else "Chia health"
+                        )
+                        log_event(
+                            "warning",
+                            "chia_unhealthy",
+                            f"{health_label}: {effective_status}{reason_str}",
+                        )
+                    elif (
+                        self._consecutive_unhealthy >= 4
+                        and self._consecutive_unhealthy % 4 == 0
+                    ):
                         still_label = "Sage wallet" if wallet_type == "sage" else "Chia"
-                        log_event("warning", "chia_still_unhealthy",
-                                  f"{still_label} still unhealthy ({secs}s){reason_str}")
+                        log_event(
+                            "warning",
+                            "chia_still_unhealthy",
+                            f"{still_label} still unhealthy ({secs}s){reason_str}",
+                        )
 
                     # After threshold, emit critical alert
                     if secs >= self._auto_restart_threshold:
@@ -12145,21 +13951,32 @@ class BotLoop:
                         if time_since_last >= self._auto_restart_cooldown:
                             self._last_auto_restart_time = time.time()
                             self._consecutive_unhealthy = 0
-                            restart_label = "Sage wallet" if wallet_type == "sage" else "Chia"
-                            log_event("error", "chia_restart_needed",
-                                      f"{restart_label} unhealthy for {secs}s ({', '.join(reasons) or 'unknown'}) "
-                                      f"— manual restart recommended")
-                            self._emit("health", {
-                                "status": "restart_needed",
-                                "unhealthy_secs": secs,
-                                "reasons": reasons,
-                            })
+                            restart_label = (
+                                "Sage wallet" if wallet_type == "sage" else "Chia"
+                            )
+                            log_event(
+                                "error",
+                                "chia_restart_needed",
+                                f"{restart_label} unhealthy for {secs}s ({', '.join(reasons) or 'unknown'}) "
+                                f"— manual restart recommended",
+                            )
+                            self._emit(
+                                "health",
+                                {
+                                    "status": "restart_needed",
+                                    "unhealthy_secs": secs,
+                                    "reasons": reasons,
+                                },
+                            )
 
-                    self._emit("health", {
-                        "status": effective_status,
-                        "consecutive_failures": self._consecutive_unhealthy,
-                        "unhealthy_secs": secs,
-                    })
+                    self._emit(
+                        "health",
+                        {
+                            "status": effective_status,
+                            "consecutive_failures": self._consecutive_unhealthy,
+                            "unhealthy_secs": secs,
+                        },
+                    )
 
             except Exception as e:
                 log_event("debug", "health_error", f"Health check error: {e}")
@@ -12195,11 +14012,16 @@ class BotLoop:
         log_thread_start("price-watcher")
 
         if not cfg.CAT_ASSET_ID:
-            log_event("info", "watcher_disabled", "Price watcher disabled — no CAT_ASSET_ID")
+            log_event(
+                "info", "watcher_disabled", "Price watcher disabled — no CAT_ASSET_ID"
+            )
             return
 
-        log_event("info", "watcher_started",
-                  f"Fast price watcher active (polling Tibet every {self._watcher_interval}s)")
+        log_event(
+            "info",
+            "watcher_started",
+            f"Fast price watcher active (polling Tibet every {self._watcher_interval}s)",
+        )
 
         consecutive_errors = 0
         session = requests.Session()
@@ -12217,8 +14039,11 @@ class BotLoop:
                 if xch_res is None or token_res is None:
                     consecutive_errors += 1
                     if consecutive_errors >= 5 and consecutive_errors % 10 == 0:
-                        log_event("debug", "watcher_error",
-                                  f"Tibet API unreachable ({consecutive_errors} consecutive failures)")
+                        log_event(
+                            "debug",
+                            "watcher_error",
+                            f"Tibet API unreachable ({consecutive_errors} consecutive failures)",
+                        )
                     time.sleep(self._watcher_interval)
                     continue
 
@@ -12240,11 +14065,17 @@ class BotLoop:
                         # Compare reserves
                         if prev_xch > 0 and prev_token > 0:
                             xch_change = abs(xch_res - prev_xch) / prev_xch * 100
-                            token_change = abs(token_res - prev_token) / prev_token * 100
+                            token_change = (
+                                abs(token_res - prev_token) / prev_token * 100
+                            )
                             change_pct = max(xch_change, token_change)
 
                             if change_pct >= self._watcher_min_change_pct:
-                                direction = "buy_pressure" if xch_res > prev_xch else "sell_pressure"
+                                direction = (
+                                    "buy_pressure"
+                                    if xch_res > prev_xch
+                                    else "sell_pressure"
+                                )
 
                                 self._watcher_data["triggered"] = True
                                 self._watcher_data["change_pct"] = change_pct
@@ -12252,8 +14083,10 @@ class BotLoop:
                                 self._watcher_data["last_change_ts"] = time.time()
                                 self._watcher_data["triggers"] += 1
 
-                                swap_msg = (f"🔔 Tibet swap detected! Reserves moved {change_pct:.3f}% "
-                                            f"({direction}) — waking bot for immediate requote")
+                                swap_msg = (
+                                    f"🔔 Tibet swap detected! Reserves moved {change_pct:.3f}% "
+                                    f"({direction}) — waking bot for immediate requote"
+                                )
                                 print(swap_msg, flush=True)
                                 log_event("info", "tibet_swap_detected", swap_msg)
 
@@ -12304,7 +14137,7 @@ class BotLoop:
                 pairs = resp.json()
                 normalized = cfg.CAT_ASSET_ID.lower().strip()
                 cat_decimals = int(getattr(cfg, "CAT_DECIMALS", 3) or 3)
-                cat_scale = 10 ** cat_decimals
+                cat_scale = 10**cat_decimals
                 for pair in pairs:
                     pair_asset = str(pair.get("short_name", "")).lower().strip()
                     pair_asset_id = str(pair.get("asset_id", "")).lower().strip()
@@ -12340,8 +14173,11 @@ class BotLoop:
         self._startup_complete.wait(timeout=120)
         slog("THREAD", "coin-watcher gate released — starting work")
         log_thread_start("coin-watcher")
-        log_event("info", "coin_watcher_started",
-                  f"Coin watcher active (polling every {self._coin_watcher_interval}s)")
+        log_event(
+            "info",
+            "coin_watcher_started",
+            f"Coin watcher active (polling every {self._coin_watcher_interval}s)",
+        )
 
         from coin_manager import _coin_id_from_record, _extract_coin_records
         from wallet import get_spendable_coins_rpc
@@ -12363,8 +14199,12 @@ class BotLoop:
                 snapshot_reliable = self._is_coin_watcher_snapshot_reliable(
                     xch_result, cat_result
                 )
-                xch_records = _extract_coin_records(xch_result) if snapshot_reliable else []
-                cat_records = _extract_coin_records(cat_result) if snapshot_reliable else []
+                xch_records = (
+                    _extract_coin_records(xch_result) if snapshot_reliable else []
+                )
+                cat_records = (
+                    _extract_coin_records(cat_result) if snapshot_reliable else []
+                )
 
                 # Build current wallet snapshot
                 wallet_coins = {}
@@ -12406,8 +14246,7 @@ class BotLoop:
                 )
 
             except Exception as e:
-                log_event("debug", "coin_watcher_error",
-                          f"Coin watcher error: {e}")
+                log_event("debug", "coin_watcher_error", f"Coin watcher error: {e}")
 
             # Sleep in 1s increments for clean exit
             for _ in range(self._coin_watcher_interval):
@@ -12430,38 +14269,64 @@ class BotLoop:
 
         return True
 
-    def _handle_coin_watcher_snapshot(self, current_snapshot: Dict, db_state: Dict,
-                                      *, snapshot_reliable: bool) -> None:
+    def _handle_coin_watcher_snapshot(
+        self, current_snapshot: Dict, db_state: Dict, *, snapshot_reliable: bool
+    ) -> None:
         """Log coin watcher changes without poisoning the baseline on stale RPC data."""
         if not snapshot_reliable:
             self._log_coin_watcher_stale_snapshot_skip()
             return
 
         if not self._coin_snapshot:
-            xch_free = sum(1 for c in current_snapshot.values()
-                           if c["wallet_type"] == "xch" and c.get("source") == "wallet")
-            xch_locked = sum(1 for c in current_snapshot.values()
-                             if c["wallet_type"] == "xch" and c.get("source") == "db_locked")
-            cat_free = sum(1 for c in current_snapshot.values()
-                           if c["wallet_type"] == "cat" and c.get("source") == "wallet")
-            cat_locked = sum(1 for c in current_snapshot.values()
-                             if c["wallet_type"] == "cat" and c.get("source") == "db_locked")
-            xch_total_mojos = sum(c["amount"] for c in current_snapshot.values()
-                                  if c["wallet_type"] == "xch")
-            cat_total_mojos = sum(c["amount"] for c in current_snapshot.values()
-                                  if c["wallet_type"] == "cat")
-            log_event("info", "coin_watcher_baseline",
-                      f"[CoinWatch] Baseline established: "
-                      f"XCH {xch_free} free + {xch_locked} locked "
-                      f"({xch_total_mojos / 1_000_000_000_000:.4f} XCH) | "
-                      f"CAT {cat_free} free + {cat_locked} locked "
-                      f"({cat_total_mojos} mojos) | "
-                      f"{len(current_snapshot)} coins tracked",
-                      data={"xch_free": xch_free, "xch_locked": xch_locked,
-                            "xch_total_mojos": xch_total_mojos,
-                            "cat_free": cat_free, "cat_locked": cat_locked,
-                            "cat_total_mojos": cat_total_mojos,
-                            "total_tracked": len(current_snapshot)})
+            xch_free = sum(
+                1
+                for c in current_snapshot.values()
+                if c["wallet_type"] == "xch" and c.get("source") == "wallet"
+            )
+            xch_locked = sum(
+                1
+                for c in current_snapshot.values()
+                if c["wallet_type"] == "xch" and c.get("source") == "db_locked"
+            )
+            cat_free = sum(
+                1
+                for c in current_snapshot.values()
+                if c["wallet_type"] == "cat" and c.get("source") == "wallet"
+            )
+            cat_locked = sum(
+                1
+                for c in current_snapshot.values()
+                if c["wallet_type"] == "cat" and c.get("source") == "db_locked"
+            )
+            xch_total_mojos = sum(
+                c["amount"]
+                for c in current_snapshot.values()
+                if c["wallet_type"] == "xch"
+            )
+            cat_total_mojos = sum(
+                c["amount"]
+                for c in current_snapshot.values()
+                if c["wallet_type"] == "cat"
+            )
+            log_event(
+                "info",
+                "coin_watcher_baseline",
+                f"[CoinWatch] Baseline established: "
+                f"XCH {xch_free} free + {xch_locked} locked "
+                f"({xch_total_mojos / 1_000_000_000_000:.4f} XCH) | "
+                f"CAT {cat_free} free + {cat_locked} locked "
+                f"({cat_total_mojos} mojos) | "
+                f"{len(current_snapshot)} coins tracked",
+                data={
+                    "xch_free": xch_free,
+                    "xch_locked": xch_locked,
+                    "xch_total_mojos": xch_total_mojos,
+                    "cat_free": cat_free,
+                    "cat_locked": cat_locked,
+                    "cat_total_mojos": cat_total_mojos,
+                    "total_tracked": len(current_snapshot),
+                },
+            )
             self._coin_snapshot = current_snapshot
             return
 
@@ -12470,9 +14335,12 @@ class BotLoop:
         )
 
         for change in changes:
-            log_event(change["severity"], change["event_type"],
-                      change["message"],
-                      data=change.get("data"))
+            log_event(
+                change["severity"],
+                change["event_type"],
+                change["message"],
+                data=change.get("data"),
+            )
 
         self._coin_snapshot = current_snapshot
 
@@ -12482,13 +14350,17 @@ class BotLoop:
             return
 
         self._coin_watcher_stale_log_last = now
-        log_event("info", "coin_watcher_stale_snapshot_skipped",
-                  "[CoinWatch] Skipping coin lifecycle check while wallet "
-                  "coin RPC data is stale or unavailable",
-                  data={"wallet_sync_stale": self._wallet_sync_stale_cycle})
+        log_event(
+            "info",
+            "coin_watcher_stale_snapshot_skipped",
+            "[CoinWatch] Skipping coin lifecycle check while wallet "
+            "coin RPC data is stale or unavailable",
+            data={"wallet_sync_stale": self._wallet_sync_stale_cycle},
+        )
 
-    def _detect_coin_changes(self, old_snapshot: Dict, new_snapshot: Dict,
-                              db_state: Dict) -> list:
+    def _detect_coin_changes(
+        self, old_snapshot: Dict, new_snapshot: Dict, db_state: Dict
+    ) -> list:
         """Compare old vs new coin snapshots and return change events.
 
         Returns list of dicts with severity, event_type, message.
@@ -12511,15 +14383,23 @@ class BotLoop:
                 db_info = db_state.get(cid, {})
                 desig = db_info.get("designation", "unknown")
                 tier = db_info.get("assigned_tier", "none")
-                changes.append({
-                    "severity": "info",
-                    "event_type": "coin_watcher_new",
-                    "message": (f"[CoinWatch] NEW {wt} coin {cid[:16]}... ({amt_str})"
-                                f" | {desig}/{tier}"),
-                    "data": {"coin_id": cid, "amount_mojos": info["amount"],
-                             "wallet_type": info["wallet_type"],
-                             "designation": desig, "assigned_tier": tier},
-                })
+                changes.append(
+                    {
+                        "severity": "info",
+                        "event_type": "coin_watcher_new",
+                        "message": (
+                            f"[CoinWatch] NEW {wt} coin {cid[:16]}... ({amt_str})"
+                            f" | {desig}/{tier}"
+                        ),
+                        "data": {
+                            "coin_id": cid,
+                            "amount_mojos": info["amount"],
+                            "wallet_type": info["wallet_type"],
+                            "designation": desig,
+                            "assigned_tier": tier,
+                        },
+                    }
+                )
 
         # Detect DISAPPEARED coins (in old snapshot, not in new)
         for cid, info in old_snapshot.items():
@@ -12529,14 +14409,21 @@ class BotLoop:
                     amt_str = f"{info['amount'] / 1_000_000_000_000:.4f} XCH"
                 else:
                     amt_str = f"{info['amount']} mojos"
-                changes.append({
-                    "severity": "info",
-                    "event_type": "coin_watcher_gone",
-                    "message": (f"[CoinWatch] GONE {wt} coin {cid[:16]}... ({amt_str})"
-                                f" — left the current wallet snapshot"),
-                    "data": {"coin_id": cid, "amount_mojos": info["amount"],
-                             "wallet_type": info["wallet_type"]},
-                })
+                changes.append(
+                    {
+                        "severity": "info",
+                        "event_type": "coin_watcher_gone",
+                        "message": (
+                            f"[CoinWatch] GONE {wt} coin {cid[:16]}... ({amt_str})"
+                            f" — left the current wallet snapshot"
+                        ),
+                        "data": {
+                            "coin_id": cid,
+                            "amount_mojos": info["amount"],
+                            "wallet_type": info["wallet_type"],
+                        },
+                    }
+                )
 
         # Detect STATUS CHANGES (coin exists in both but source changed)
         for cid in new_snapshot:
@@ -12546,19 +14433,28 @@ class BotLoop:
                 if old_src != new_src:
                     wt = new_snapshot[cid]["wallet_type"].upper()
                     if new_snapshot[cid]["wallet_type"] == "xch":
-                        amt_str = f"{new_snapshot[cid]['amount'] / 1_000_000_000_000:.4f} XCH"
+                        amt_str = (
+                            f"{new_snapshot[cid]['amount'] / 1_000_000_000_000:.4f} XCH"
+                        )
                     else:
                         amt_str = f"{new_snapshot[cid]['amount']} mojos"
-                    changes.append({
-                        "severity": "info",
-                        "event_type": "coin_watcher_status",
-                        "message": (f"[CoinWatch] {wt} coin {cid[:16]}... ({amt_str})"
-                                    f" source changed: {old_src} → {new_src}"),
-                        "data": {"coin_id": cid,
-                                 "amount_mojos": new_snapshot[cid]["amount"],
-                                 "wallet_type": new_snapshot[cid]["wallet_type"],
-                                 "old_source": old_src, "new_source": new_src},
-                    })
+                    changes.append(
+                        {
+                            "severity": "info",
+                            "event_type": "coin_watcher_status",
+                            "message": (
+                                f"[CoinWatch] {wt} coin {cid[:16]}... ({amt_str})"
+                                f" source changed: {old_src} → {new_src}"
+                            ),
+                            "data": {
+                                "coin_id": cid,
+                                "amount_mojos": new_snapshot[cid]["amount"],
+                                "wallet_type": new_snapshot[cid]["wallet_type"],
+                                "old_source": old_src,
+                                "new_source": new_src,
+                            },
+                        }
+                    )
 
         return changes
 
@@ -12579,8 +14475,7 @@ class BotLoop:
         from database import get_open_offers
         from wallet import get_all_offers, cancel_offers_batch
 
-        log_event("info", "orphan_cleanup_start",
-                  "Starting orphaned offer cleanup...")
+        log_event("info", "orphan_cleanup_start", "Starting orphaned offer cleanup...")
 
         result = {
             "wallet_count": 0,
@@ -12594,8 +14489,9 @@ class BotLoop:
             # Step 1: Get all active offers from wallet
             wallet_offers = get_all_offers(include_completed=False, start=0, end=500)
             if wallet_offers is None:
-                log_event("warning", "orphan_cleanup_failed",
-                          "Could not fetch wallet offers")
+                log_event(
+                    "warning", "orphan_cleanup_failed", "Could not fetch wallet offers"
+                )
                 result["error"] = "Wallet returned None"
                 return result
 
@@ -12617,9 +14513,12 @@ class BotLoop:
             result["orphan_count"] = len(orphan_ids)
             result["orphan_ids"] = [tid[:16] + "..." for tid in orphan_ids]
 
-            log_event("info", "orphan_cleanup_found",
-                      f"Found {len(orphan_ids)} orphaned offers "
-                      f"(wallet={len(wallet_ids)}, db={len(db_ids)})")
+            log_event(
+                "info",
+                "orphan_cleanup_found",
+                f"Found {len(orphan_ids)} orphaned offers "
+                f"(wallet={len(wallet_ids)}, db={len(db_ids)})",
+            )
 
             if not orphan_ids:
                 log_event("info", "orphan_cleanup_done", "No orphaned offers found")
@@ -12633,38 +14532,51 @@ class BotLoop:
             all_cancel_results = {}
 
             for i in range(0, total, BATCH_SIZE):
-                batch = orphan_ids[i:i + BATCH_SIZE]
+                batch = orphan_ids[i : i + BATCH_SIZE]
                 done = min(i + BATCH_SIZE, total)
-                log_event("info", "orphan_cancel_batch",
-                          f"Cancelling orphan batch {done}/{total}...")
+                log_event(
+                    "info",
+                    "orphan_cancel_batch",
+                    f"Cancelling orphan batch {done}/{total}...",
+                )
 
                 batch_results = cancel_offers_batch(batch, secure=True)
                 all_cancel_results.update(batch_results)
 
                 # Summary for this batch
-                successes = sum(1 for r in batch_results.values()
-                                if r and r.get("success"))
+                successes = sum(
+                    1 for r in batch_results.values() if r and r.get("success")
+                )
                 failures = len(batch_results) - successes
-                log_event("info", "orphan_cancel_batch_result",
-                          f"Batch {done}/{total}: {successes} confirmed, "
-                          f"{failures} failed")
+                log_event(
+                    "info",
+                    "orphan_cancel_batch_result",
+                    f"Batch {done}/{total}: {successes} confirmed, {failures} failed",
+                )
 
                 if i + BATCH_SIZE < total:
                     time.sleep(BATCH_DELAY)
 
             result["cancel_results"] = {
                 "total": total,
-                "confirmed": sum(1 for r in all_cancel_results.values()
-                                 if r and r.get("success")),
-                "failed": sum(1 for r in all_cancel_results.values()
-                              if not r or not r.get("success")),
+                "confirmed": sum(
+                    1 for r in all_cancel_results.values() if r and r.get("success")
+                ),
+                "failed": sum(
+                    1
+                    for r in all_cancel_results.values()
+                    if not r or not r.get("success")
+                ),
             }
 
-            log_event("info", "orphan_cleanup_done",
-                      f"Orphan cleanup complete: "
-                      f"{result['cancel_results']['confirmed']}/{total} "
-                      f"confirmed cancelled, "
-                      f"{result['cancel_results']['failed']} failed")
+            log_event(
+                "info",
+                "orphan_cleanup_done",
+                f"Orphan cleanup complete: "
+                f"{result['cancel_results']['confirmed']}/{total} "
+                f"confirmed cancelled, "
+                f"{result['cancel_results']['failed']} failed",
+            )
 
         except Exception as e:
             log_event("error", "orphan_cleanup_error", f"Cleanup failed: {e}")
@@ -12695,11 +14607,17 @@ class BotLoop:
         Returns dict with status and details.
         """
         if not self._running:
-            return {"status": "error", "message": "Bot not running — just restart with new config"}
+            return {
+                "status": "error",
+                "message": "Bot not running — just restart with new config",
+            }
 
         # Guard against concurrent graceful applies (e.g. rapid slider changes)
-        if getattr(self, '_graceful_in_progress', False):
-            return {"status": "skipped", "message": "Graceful apply already in progress"}
+        if getattr(self, "_graceful_in_progress", False):
+            return {
+                "status": "skipped",
+                "message": "Graceful apply already in progress",
+            }
         self._graceful_in_progress = True
 
         log_event("info", "config_migration", "Starting graceful config migration...")
@@ -12710,22 +14628,37 @@ class BotLoop:
             # The next bot loop cycle will create new offers using the new config,
             # so there's no coverage gap.
             cfg.reload()
-            log_event("info", "config_migration", "Config reloaded — new settings active")
+            log_event(
+                "info", "config_migration", "Config reloaded — new settings active"
+            )
 
             # ── Step 2: Sync current offers ──
             open_buys, open_sells, _ = self.offer_manager.sync_from_wallet()
             total = len(open_buys) + len(open_sells)
 
             if total == 0:
-                log_event("info", "config_migration", "No active offers — config applied directly")
+                log_event(
+                    "info",
+                    "config_migration",
+                    "No active offers — config applied directly",
+                )
                 self._graceful_in_progress = False
-                return {"status": "ok", "message": "Config reloaded, no offers to migrate"}
+                return {
+                    "status": "ok",
+                    "message": "Config reloaded, no offers to migrate",
+                }
 
             if total <= 4:
-                log_event("info", "config_migration",
-                          f"Only {total} offers — config applied, bot will requote naturally")
+                log_event(
+                    "info",
+                    "config_migration",
+                    f"Only {total} offers — config applied, bot will requote naturally",
+                )
                 self._graceful_in_progress = False
-                return {"status": "ok", "message": "Config reloaded, few offers will requote naturally"}
+                return {
+                    "status": "ok",
+                    "message": "Config reloaded, few offers will requote naturally",
+                }
 
             # ── Step 3: Sort by distance from mid price, keep 2 tightest per side ──
             mid_price = self._current_mid_price
@@ -12736,13 +14669,16 @@ class BotLoop:
 
             if mid_price <= 0:
                 self._graceful_in_progress = False
-                return {"status": "ok", "message": "No price available — config reloaded, will requote naturally"}
+                return {
+                    "status": "ok",
+                    "message": "No price available — config reloaded, will requote naturally",
+                }
 
             keep_per_side = 2
 
             def sort_by_distance(offers):
                 """Sort offers by distance from mid price (tightest first)."""
-                cat_scale = 10 ** cfg.CAT_DECIMALS
+                cat_scale = 10**cfg.CAT_DECIMALS
                 decorated = []
                 for o in offers:
                     summary = o.get("summary", {})
@@ -12758,7 +14694,11 @@ class BotLoop:
                     if xch_mojos > 0 and cat_mojos > 0:
                         xch_val = xch_mojos / 1e12
                         cat_val = cat_mojos / cat_scale
-                        offer_price = Decimal(str(xch_val / cat_val)) if cat_val > 0 else Decimal("999")
+                        offer_price = (
+                            Decimal(str(xch_val / cat_val))
+                            if cat_val > 0
+                            else Decimal("999")
+                        )
                     else:
                         offer_price = Decimal("999")
                     distance = abs(offer_price - mid_price)
@@ -12774,13 +14714,22 @@ class BotLoop:
             cancel_buy = sorted_buys[keep_per_side:]
             cancel_sell = sorted_sells[keep_per_side:]
 
-            retain_buy_ids = [o.get("trade_id") for o in retain_buy if o.get("trade_id")]
-            retain_sell_ids = [o.get("trade_id") for o in retain_sell if o.get("trade_id")]
-            cancel_ids = [o.get("trade_id") for o in cancel_buy + cancel_sell if o.get("trade_id")]
+            retain_buy_ids = [
+                o.get("trade_id") for o in retain_buy if o.get("trade_id")
+            ]
+            retain_sell_ids = [
+                o.get("trade_id") for o in retain_sell if o.get("trade_id")
+            ]
+            cancel_ids = [
+                o.get("trade_id") for o in cancel_buy + cancel_sell if o.get("trade_id")
+            ]
 
-            log_event("info", "config_migration",
-                      f"Keeping {len(retain_buy_ids)}b + {len(retain_sell_ids)}s core offers, "
-                      f"queuing {len(cancel_ids)} outer offers for batched cancellation")
+            log_event(
+                "info",
+                "config_migration",
+                f"Keeping {len(retain_buy_ids)}b + {len(retain_sell_ids)}s core offers, "
+                f"queuing {len(cancel_ids)} outer offers for batched cancellation",
+            )
 
             # ── Step 4: Store protected IDs ──
             self._graceful_migration = {
@@ -12809,9 +14758,12 @@ class BotLoop:
                     daemon=True,
                 )
                 cancel_thread.start()
-                log_event("info", "config_migration",
-                          f"Background cancel started — {len(cancel_ids)} offers "
-                          f"in batches of 5")
+                log_event(
+                    "info",
+                    "config_migration",
+                    f"Background cancel started — {len(cancel_ids)} offers "
+                    f"in batches of 5",
+                )
             else:
                 self._graceful_migration["phase"] = "done"
                 self._graceful_migration["active"] = False
@@ -12829,7 +14781,10 @@ class BotLoop:
             # Config was already reloaded in Step 1, so new settings are active
             self._graceful_migration = {"active": False}
             self._graceful_in_progress = False
-            return {"status": "partial", "message": f"Migration partially failed ({e}), config is reloaded"}
+            return {
+                "status": "partial",
+                "message": f"Migration partially failed ({e}), config is reloaded",
+            }
 
     def _batched_cancel_worker(self, cancel_ids: list):
         """Background worker: cancel offers in small batches with pauses.
@@ -12847,15 +14802,21 @@ class BotLoop:
         failed = 0
         aborted_reason = ""
 
-        log_event("info", "batched_cancel",
-                  f"Starting batched cancel: {total} offers, "
-                  f"batch size {BATCH_SIZE}, delay {BATCH_DELAY}s")
+        log_event(
+            "info",
+            "batched_cancel",
+            f"Starting batched cancel: {total} offers, "
+            f"batch size {BATCH_SIZE}, delay {BATCH_DELAY}s",
+        )
 
         try:
             for i in range(0, total, BATCH_SIZE):
                 if not self._running:
-                    log_event("warning", "batched_cancel",
-                              f"Bot stopped — aborting cancel after {done}/{total}")
+                    log_event(
+                        "warning",
+                        "batched_cancel",
+                        f"Bot stopped — aborting cancel after {done}/{total}",
+                    )
                     aborted_reason = "bot stopped"
                     break
 
@@ -12885,30 +14846,40 @@ class BotLoop:
                         )
                         break
                     # CB cleared — continue with the cancel
-                    log_event("info", "batched_cancel",
-                              f"Circuit breaker cleared after {_cb_wait}s — resuming cancel")
+                    log_event(
+                        "info",
+                        "batched_cancel",
+                        f"Circuit breaker cleared after {_cb_wait}s — resuming cancel",
+                    )
 
-                batch = cancel_ids[i:i + BATCH_SIZE]
+                batch = cancel_ids[i : i + BATCH_SIZE]
                 batch_num = (i // BATCH_SIZE) + 1
                 total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
-                log_event("info", "batched_cancel",
-                          f"Batch {batch_num}/{total_batches}: cancelling {len(batch)} offers")
+                log_event(
+                    "info",
+                    "batched_cancel",
+                    f"Batch {batch_num}/{total_batches}: cancelling {len(batch)} offers",
+                )
 
                 try:
                     results = self.offer_manager.cancel_offers(
                         batch, reason="config_migration"
                     )
                     batch_successes = sum(
-                        1 for tid in batch
+                        1
+                        for tid in batch
                         if results.get(tid) and results[tid].get("success")
                     )
                     batch_failures = len(batch) - batch_successes
                     done += batch_successes
                     failed += batch_failures
                 except Exception as e:
-                    log_event("warning", "batched_cancel",
-                              f"Batch {batch_num} error: {e} — continuing with next batch")
+                    log_event(
+                        "warning",
+                        "batched_cancel",
+                        f"Batch {batch_num} error: {e} — continuing with next batch",
+                    )
                     failed += len(batch)
 
                 # Update migration progress
@@ -12936,18 +14907,27 @@ class BotLoop:
 
         if aborted_reason:
             remaining = max(0, total - done)
-            log_event("warning", "batched_cancel_done",
-                      f"Batched cancel stopped early: {done} cancelled, {failed} failed, "
-                      f"{remaining} left live out of {total} ({aborted_reason})")
+            log_event(
+                "warning",
+                "batched_cancel_done",
+                f"Batched cancel stopped early: {done} cancelled, {failed} failed, "
+                f"{remaining} left live out of {total} ({aborted_reason})",
+            )
         elif failed > 0:
-            log_event("warning", "batched_cancel_done",
-                      f"Batched cancel queued retries: {done} cancelled, {failed} failed "
-                      f"out of {total}; waiting for retry confirmation before migration unlocks.")
+            log_event(
+                "warning",
+                "batched_cancel_done",
+                f"Batched cancel queued retries: {done} cancelled, {failed} failed "
+                f"out of {total}; waiting for retry confirmation before migration unlocks.",
+            )
         else:
-            log_event("info", "batched_cancel_done",
-                      f"Batched cancel complete: {done} cancelled, {failed} failed "
-                      f"out of {total}. Waiting for wallet verification before "
-                      f"migration unlocks.")
+            log_event(
+                "info",
+                "batched_cancel_done",
+                f"Batched cancel complete: {done} cancelled, {failed} failed "
+                f"out of {total}. Waiting for wallet verification before "
+                f"migration unlocks.",
+            )
 
     # -------------------------------------------------------------------
     # State queries (for API/GUI)
@@ -12972,6 +14952,7 @@ class BotLoop:
         state["dexie"] = self.dexie_manager.get_stats()
         try:
             from database import get_fills
+
             recent_fills = get_fills(
                 cat_asset_id=cfg.CAT_ASSET_ID,
                 limit=10,
@@ -13015,6 +14996,7 @@ class BotLoop:
             xch_reserve_coins = self.coin_manager._xch_inventory.get("reserve", [])
             if xch_reserve_coins:
                 from coin_manager import _coin_amount
+
                 total_reserve_mojos = sum(_coin_amount(c) for c in xch_reserve_coins)
                 state["reserve_total_xch"] = f"{total_reserve_mojos / 1e12:.4f}"
             else:
@@ -13030,6 +15012,7 @@ class BotLoop:
         # Add wallet type info
         try:
             from wallet import get_wallet_type
+
             state["wallet_type"] = get_wallet_type()
         except Exception:
             state["wallet_type"] = "unknown"
@@ -13085,13 +15068,18 @@ class BotLoop:
                 "pending_cancel": len(self._pending_cancel_wallet_ids(side)),
             }
 
-        retry_map = getattr(getattr(self, "offer_manager", None), "_pending_cancel_retries", {}) or {}
+        retry_map = (
+            getattr(getattr(self, "offer_manager", None), "_pending_cancel_retries", {})
+            or {}
+        )
         return {
             "mid_price": str(mid_price),
             "thresholds": thresholds,
             "batch_size": int(getattr(cfg, "REQUOTE_BATCH_SIZE", 0) or 0),
             "cooldown_secs": int(getattr(cfg, "REQUOTE_COOLDOWN_SECS", 0) or 0),
-            "pending_cancel_total": sum(int(v.get("pending_cancel", 0) or 0) for v in sides.values()),
+            "pending_cancel_total": sum(
+                int(v.get("pending_cancel", 0) or 0) for v in sides.values()
+            ),
             "pending_cancel_retries": len(retry_map),
             "sides": sides,
         }

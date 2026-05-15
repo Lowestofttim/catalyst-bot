@@ -9,6 +9,7 @@ import unittest
 # Minimal fakes
 # ---------------------------------------------------------------------------
 
+
 class _FakeConn:
     def __init__(self):
         self.updates = []
@@ -31,7 +32,7 @@ def _install_fakes():
     fake_config = types.ModuleType("config")
     fake_config.cfg = types.SimpleNamespace(
         SWEEP_WINDOW_SECS=15.0,
-        SWEEP_MIN_FILLS=2,   # tests exercise the 2-fill boundary explicitly
+        SWEEP_MIN_FILLS=2,  # tests exercise the 2-fill boundary explicitly
     )
     sys.modules["config"] = fake_config
 
@@ -42,35 +43,37 @@ def _install_fakes():
     fake_fill_classifier = types.ModuleType("fill_classifier")
 
     class _FakeType:
-        RETAIL        = "retail"
+        RETAIL = "retail"
         ARB_SWEEP_BUY = "arb_sweep_buy"
-        ARB_SWEEP_SELL= "arb_sweep_sell"
-        DEXIE_COMBINED= "dexie_combined"
-        UNKNOWN       = "unknown"
+        ARB_SWEEP_SELL = "arb_sweep_sell"
+        DEXIE_COMBINED = "dexie_combined"
+        UNKNOWN = "unknown"
 
     fake_fill_classifier.FillType = _FakeType
     sys.modules["fill_classifier"] = fake_fill_classifier
 
 
-def _make_cls(trade_id, classification="unknown", block_idx=None,
-              taker_ph=None, side=None):
+def _make_cls(
+    trade_id, classification="unknown", block_idx=None, taker_ph=None, side=None
+):
     """Build a minimal FillClassification-like object."""
 
     class _Cls:
         pass
 
     c = _Cls()
-    c.trade_id           = trade_id
-    c.classification     = classification
-    c.spent_block_index  = block_idx
-    c.taker_puzzle_hash  = taker_ph
-    c.side               = side
+    c.trade_id = trade_id
+    c.classification = classification
+    c.spent_block_index = block_idx
+    c.taker_puzzle_hash = taker_ph
+    c.side = side
     return c
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class SweepCoordinatorTests(unittest.TestCase):
     def setUp(self):
@@ -79,6 +82,7 @@ class SweepCoordinatorTests(unittest.TestCase):
         _install_fakes()
         sys.modules.pop("sweep_coordinator", None)
         import sweep_coordinator
+
         self.sc_mod = sweep_coordinator
         self.sc_mod.reset_coordinator()
 
@@ -153,7 +157,7 @@ class SweepCoordinatorTests(unittest.TestCase):
         for i in range(3):
             sc.process_fill(i, _make_cls(f"t{i}", block_idx=600))
         sc.tick()
-        first_drain  = sc.drain_sweep_events()
+        first_drain = sc.drain_sweep_events()
         second_drain = sc.drain_sweep_events()
         self.assertEqual(len(first_drain), 1)
         self.assertEqual(second_drain, [])
@@ -172,8 +176,11 @@ class SweepCoordinatorTests(unittest.TestCase):
         sc.drain_sweep_events()
 
         # Both fills should have triggered DB UPDATE with dexie_combined
-        sql_updates = [p for sql, p in _fake_conn.updates
-                       if "fill_classification" in sql and "dexie_combined" in str(p)]
+        sql_updates = [
+            p
+            for sql, p in _fake_conn.updates
+            if "fill_classification" in sql and "dexie_combined" in str(p)
+        ]
         self.assertEqual(len(sql_updates), 2)
 
     def test_already_classified_fills_not_reclassified(self):
@@ -188,16 +195,14 @@ class SweepCoordinatorTests(unittest.TestCase):
 
         # Should NOT have any dexie_combined updates
         dexie_combined_updates = [
-            p for sql, p in _fake_conn.updates
+            p
+            for sql, p in _fake_conn.updates
             if "fill_classification" in sql and "dexie_combined" in str(p)
         ]
         self.assertEqual(dexie_combined_updates, [])
 
         # But SHOULD have sweep_group_id updates
-        group_updates = [
-            p for sql, p in _fake_conn.updates
-            if "sweep_group_id" in sql
-        ]
+        group_updates = [p for sql, p in _fake_conn.updates if "sweep_group_id" in sql]
         self.assertGreater(len(group_updates), 0)
 
     # ------------------------------------------------------------------
@@ -267,7 +272,7 @@ class SweepCoordinatorTests(unittest.TestCase):
 
     def test_side_none_when_not_provided(self):
         sc = self.sc_mod.SweepCoordinator(window_secs=0.0)
-        cls1 = _make_cls("t1", block_idx=1300)   # no side kwarg
+        cls1 = _make_cls("t1", block_idx=1300)  # no side kwarg
         cls2 = _make_cls("t2", block_idx=1300)
         sc.process_fill(1, cls1)
         sc.process_fill(2, cls2)

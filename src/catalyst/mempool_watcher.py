@@ -31,6 +31,7 @@ from database import log_event
 # Coin-ID computation (Chia CLVM encoding)
 # ---------------------------------------------------------------------------
 
+
 def _encode_amount(amount: int) -> bytes:
     """Encode a Chia coin amount to bytes (big-endian, minimal, unsigned)."""
     if amount == 0:
@@ -89,7 +90,8 @@ def _find_same_puzzle_amount_change(
         return None
 
     matching_removals = [
-        coin for coin in removals
+        coin
+        for coin in removals
         if isinstance(coin, dict) and _coin_amount(coin) == current_amount
     ]
     if not matching_removals:
@@ -173,7 +175,9 @@ def infer_pending_pool_move(
         if old_tok and new_tok and old_tok > 0 and new_tok > 0:
             old_price = Decimal(old_xch) / Decimal(old_tok)
             new_price = Decimal(new_xch) / Decimal(new_tok)
-            projected_signed_pct = ((new_price - old_price) / old_price) * Decimal("100")
+            projected_signed_pct = ((new_price - old_price) / old_price) * Decimal(
+                "100"
+            )
             projected_mag = abs(projected_signed_pct)
             xch_mag = abs(xch_signed_pct)
             plausible_ceiling = max(Decimal("0.5"), xch_mag * Decimal("6"))
@@ -217,6 +221,7 @@ def infer_pending_pool_move(
 # Main class
 # ---------------------------------------------------------------------------
 
+
 class MempoolWatcher:
     """Background watcher for TibetSwap pool reserve changes.
 
@@ -224,9 +229,9 @@ class MempoolWatcher:
     each bot cycle via get_pending_signals().
     """
 
-    TIBET_POLL_INTERVAL = 3      # seconds between Tibet reserve checks (tightened 2026-04-22 — confirmed-move defensive cancel is now our primary defense since imminent_swap no longer mass-cancels, so we want direction info fast)
-    MEMPOOL_POLL_INTERVAL = 2    # seconds between Coinset mempool checks (tightened 2026-04-22 after a fill slipped between 5s polls)
-    SIGNAL_MAX_AGE = 120         # drop stale signals older than 2 minutes
+    TIBET_POLL_INTERVAL = 3  # seconds between Tibet reserve checks (tightened 2026-04-22 — confirmed-move defensive cancel is now our primary defense since imminent_swap no longer mass-cancels, so we want direction info fast)
+    MEMPOOL_POLL_INTERVAL = 2  # seconds between Coinset mempool checks (tightened 2026-04-22 after a fill slipped between 5s polls)
+    SIGNAL_MAX_AGE = 120  # drop stale signals older than 2 minutes
     MIN_SIGNAL_MAGNITUDE = 0.05  # ignore moves < 0.05% to suppress noise
 
     def __init__(
@@ -281,7 +286,7 @@ class MempoolWatcher:
         self._fill_warn_misses: int = 0
 
         # Known state of the Tibet pool
-        self._pool_coin_id: Optional[str] = None   # last_coin_id_on_chain
+        self._pool_coin_id: Optional[str] = None  # last_coin_id_on_chain
         self._xch_reserve: Optional[int] = None
         self._tok_reserve: Optional[int] = None
 
@@ -338,8 +343,11 @@ class MempoolWatcher:
         )
         self._reserve_thread.start()
         self._mempool_thread.start()
-        log_event("info", "mempool_watcher_started",
-                  f"MempoolWatcher started for pair {self._pair_id[:16]}...")
+        log_event(
+            "info",
+            "mempool_watcher_started",
+            f"MempoolWatcher started for pair {self._pair_id[:16]}...",
+        )
 
     def stop(self) -> None:
         """Signal background threads to stop."""
@@ -357,8 +365,7 @@ class MempoolWatcher:
         now = time.time()
         with self._lock:
             fresh = [
-                s for s in self._signals
-                if (now - s["timestamp"]) < self.SIGNAL_MAX_AGE
+                s for s in self._signals if (now - s["timestamp"]) < self.SIGNAL_MAX_AGE
             ]
             self._signals = []
             return fresh
@@ -424,6 +431,7 @@ class MempoolWatcher:
     def _reserve_poll_loop(self) -> None:
         """Poll Tibet for reserve changes. Fires 'price_move' signals."""
         import requests as _req
+
         session = _req.Session()
 
         # First fetch to initialise baseline (no signal on first run)
@@ -465,12 +473,18 @@ class MempoolWatcher:
                     self._tok_reserve = new_tok
 
                 # Emit a signal only when reserves actually changed
-                if emit_signal and old_xch is not None and (
-                    new_xch != old_xch or new_tok != old_tok
+                if (
+                    emit_signal
+                    and old_xch is not None
+                    and (new_xch != old_xch or new_tok != old_tok)
                 ):
                     self._emit_price_move_signal(
-                        old_xch, old_tok, new_xch, new_tok,
-                        old_coin, new_coin,
+                        old_xch,
+                        old_tok,
+                        new_xch,
+                        new_tok,
+                        old_coin,
+                        new_coin,
                     )
                 break
 
@@ -478,20 +492,26 @@ class MempoolWatcher:
             # F81: surface errors at debug so persistent failures are visible
             # via the trace log without spamming the events feed.
             try:
-                log_event("debug", "mempool_watcher_reserve_fetch_failed",
-                          f"Tibet reserve fetch failed: {_e}")
+                log_event(
+                    "debug",
+                    "mempool_watcher_reserve_fetch_failed",
+                    f"Tibet reserve fetch failed: {_e}",
+                )
             except Exception:
                 pass
 
     def _emit_price_move_signal(
         self,
-        old_xch: int, old_tok: int,
-        new_xch: int, new_tok: int,
-        old_coin: str, new_coin: str,
+        old_xch: int,
+        old_tok: int,
+        new_xch: int,
+        new_tok: int,
+        old_coin: str,
+        new_coin: str,
     ) -> None:
         """Calculate price direction + magnitude and push a price_move signal."""
         try:
-            factor = 10 ** self._cat_decimals
+            factor = 10**self._cat_decimals
             old_price = Decimal(old_xch) / Decimal(old_tok) / Decimal(factor)
             new_price = Decimal(new_xch) / Decimal(new_tok) / Decimal(factor)
 
@@ -525,9 +545,12 @@ class MempoolWatcher:
                 self._signals.append(signal)
             self._wake_bot()
 
-            log_event("info", "mempool_price_move",
-                      f"Pool reserve change: {direction} {abs(pct_change):.3f}% "
-                      f"(XCH {old_xch}→{new_xch}, TOK {old_tok}→{new_tok})")
+            log_event(
+                "info",
+                "mempool_price_move",
+                f"Pool reserve change: {direction} {abs(pct_change):.3f}% "
+                f"(XCH {old_xch}→{new_xch}, TOK {old_tok}→{new_tok})",
+            )
         except Exception:
             pass
 
@@ -538,6 +561,7 @@ class MempoolWatcher:
     def _mempool_poll_loop(self) -> None:
         """Poll Coinset mempool for pending spends of the pool coin."""
         import requests as _req
+
         session = _req.Session()
 
         # Stagger slightly behind reserve thread
@@ -561,8 +585,11 @@ class MempoolWatcher:
             # is no longer considered "already warned" — fresh signal can fire.
             now = time.time()
             ttl = self._fill_warn_ttl_secs
-            expired = [cid for cid, ts in self._fill_warned_coin_ids.items()
-                       if (now - ts) >= ttl]
+            expired = [
+                cid
+                for cid, ts in self._fill_warned_coin_ids.items()
+                if (now - ts) >= ttl
+            ]
             for cid in expired:
                 self._fill_warned_coin_ids.pop(cid, None)
             already_warned_fills = set(self._fill_warned_coin_ids.keys())
@@ -625,8 +652,11 @@ class MempoolWatcher:
         except Exception as _e:
             # F81: surface errors at debug so persistent failures are visible
             try:
-                log_event("debug", "mempool_watcher_poll_failed",
-                          f"Mempool poll ({source_name}) failed: {_e}")
+                log_event(
+                    "debug",
+                    "mempool_watcher_poll_failed",
+                    f"Mempool poll ({source_name}) failed: {_e}",
+                )
             except Exception:
                 pass
             return  # network error, retry next interval
@@ -694,16 +724,22 @@ class MempoolWatcher:
             self._wake_bot()
 
             if projected:
-                log_event("info", "mempool_swap_detected",
-                          f"PENDING swap detected in mempool for pool coin "
-                          f"{current_pool_coin[:16]}... - projected "
-                          f"{projected['direction']} {projected['magnitude_pct']:.3f}% "
-                          f"(XCH {xch_res}->{projected['new_xch_reserve']}); "
-                          "pre-confirm protection window open.")
+                log_event(
+                    "info",
+                    "mempool_swap_detected",
+                    f"PENDING swap detected in mempool for pool coin "
+                    f"{current_pool_coin[:16]}... - projected "
+                    f"{projected['direction']} {projected['magnitude_pct']:.3f}% "
+                    f"(XCH {xch_res}->{projected['new_xch_reserve']}); "
+                    "pre-confirm protection window open.",
+                )
             else:
-                log_event("info", "mempool_swap_detected",
-                          f"PENDING swap detected in mempool for pool coin "
-                          f"{current_pool_coin[:16]}... — pre-emptive sniper window open.")
+                log_event(
+                    "info",
+                    "mempool_swap_detected",
+                    f"PENDING swap detected in mempool for pool coin "
+                    f"{current_pool_coin[:16]}... — pre-emptive sniper window open.",
+                )
 
         # --- Emit fill_imminent signals for our offer coins ---
         if fill_hits:
@@ -725,9 +761,12 @@ class MempoolWatcher:
                     self._signals.append(signal)
                 self._wake_bot()
 
-                log_event("info", "mempool_fill_detected",
-                          f"Offer coin {coin_id[:16]}... appears in mempool — "
-                          f"fill likely pending, waking bot early.")
+                log_event(
+                    "info",
+                    "mempool_fill_detected",
+                    f"Offer coin {coin_id[:16]}... appears in mempool — "
+                    f"fill likely pending, waking bot early.",
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -752,13 +791,25 @@ def get_or_create_watcher(
     with _watcher_lock:
         if _watcher_instance is None:
             from config import cfg
-            coinset_url = str(getattr(cfg, "COINSET_API_URL", "https://api.coinset.org") or "")
+
+            coinset_url = str(
+                getattr(cfg, "COINSET_API_URL", "https://api.coinset.org") or ""
+            )
             coinset_timeout = int(getattr(cfg, "COINSET_TIMEOUT", 5) or 5)
-            tibet_url = str(getattr(cfg, "TIBET_API_BASE", "https://api.v2.tibetswap.io") or "https://api.v2.tibetswap.io")
+            tibet_url = str(
+                getattr(cfg, "TIBET_API_BASE", "https://api.v2.tibetswap.io")
+                or "https://api.v2.tibetswap.io"
+            )
             fn_enabled = bool(getattr(cfg, "FULL_NODE_ENABLED", False))
-            fn_url = str(getattr(cfg, "FULL_NODE_RPC_URL", "") or "") if fn_enabled else ""
-            fn_cert = str(getattr(cfg, "FULL_NODE_CERT_PATH", "") or "") if fn_enabled else ""
-            fn_key = str(getattr(cfg, "FULL_NODE_KEY_PATH", "") or "") if fn_enabled else ""
+            fn_url = (
+                str(getattr(cfg, "FULL_NODE_RPC_URL", "") or "") if fn_enabled else ""
+            )
+            fn_cert = (
+                str(getattr(cfg, "FULL_NODE_CERT_PATH", "") or "") if fn_enabled else ""
+            )
+            fn_key = (
+                str(getattr(cfg, "FULL_NODE_KEY_PATH", "") or "") if fn_enabled else ""
+            )
             fn_timeout = int(getattr(cfg, "FULL_NODE_TIMEOUT", 5) or 5)
             _watcher_instance = MempoolWatcher(
                 pair_id=pair_id,
@@ -775,10 +826,13 @@ def get_or_create_watcher(
             )
             if _watcher_instance._full_node_active:
                 try:
-                    log_event("info", "mempool_watcher_full_node_source",
-                              f"Mempool watcher using local full node at "
-                              f"{fn_url} (cert configured). Zero-indexer-lag "
-                              f"mempool poll active.")
+                    log_event(
+                        "info",
+                        "mempool_watcher_full_node_source",
+                        f"Mempool watcher using local full node at "
+                        f"{fn_url} (cert configured). Zero-indexer-lag "
+                        f"mempool poll active.",
+                    )
                 except Exception:
                     pass
         elif wake_callback and not _watcher_instance._wake_callback:
@@ -787,11 +841,13 @@ def get_or_create_watcher(
         return _watcher_instance
 
 
-def start_watcher(pair_id: str, asset_id: str, cat_decimals: int = 3,
-                  wake_callback=None) -> MempoolWatcher:
+def start_watcher(
+    pair_id: str, asset_id: str, cat_decimals: int = 3, wake_callback=None
+) -> MempoolWatcher:
     """Convenience: get-or-create and start the watcher."""
-    w = get_or_create_watcher(pair_id, asset_id, cat_decimals,
-                              wake_callback=wake_callback)
+    w = get_or_create_watcher(
+        pair_id, asset_id, cat_decimals, wake_callback=wake_callback
+    )
     if not w.is_running():
         w.start()
     return w

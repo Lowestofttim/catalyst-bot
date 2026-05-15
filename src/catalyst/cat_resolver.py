@@ -24,19 +24,23 @@ from database import log_event
 try:
     from api_call_tracker import record as _record_api_call
 except Exception:
+
     def _record_api_call(*args, **kwargs):
         return None
+
 
 # Module-level cache so resolver only hits the network once per process.
 _cache: Optional[Dict] = None
 _cache_lock = threading.Lock()
 _last_resolve_at: float = 0
-_CACHE_TTL_SECS = 300   # 5 minutes — refresh if bot is long-running
+_CACHE_TTL_SECS = 300  # 5 minutes — refresh if bot is long-running
 
 
-def resolve_cat_metadata(asset_id: str,
-                         tibet_api_base: str = "https://api.v2.tibetswap.io",
-                         timeout: int = 10) -> Dict:
+def resolve_cat_metadata(
+    asset_id: str,
+    tibet_api_base: str = "https://api.v2.tibetswap.io",
+    timeout: int = 10,
+) -> Dict:
     """Query TibetSwap to resolve CAT metadata from asset_id.
 
     Returns dict with keys: pair_id, ticker_id, name, short_name, verified.
@@ -77,8 +81,11 @@ def resolve_cat_metadata(asset_id: str,
                         result["ticker_id"] = f"{result['short_name']}_XCH"
                     break
     except Exception as e:
-        log_event("warning", "cat_resolver_token_fetch_failed",
-                  f"CAT resolver: could not fetch token metadata from Tibet: {e}")
+        log_event(
+            "warning",
+            "cat_resolver_token_fetch_failed",
+            f"CAT resolver: could not fetch token metadata from Tibet: {e}",
+        )
 
     # --- Step 2: Pair ID ---
     try:
@@ -103,8 +110,11 @@ def resolve_cat_metadata(asset_id: str,
                         result["ticker_id"] = f"{result['short_name']}_XCH"
                     break
     except Exception as e:
-        log_event("warning", "cat_resolver_pair_fetch_failed",
-                  f"CAT resolver: could not fetch pair data from Tibet: {e}")
+        log_event(
+            "warning",
+            "cat_resolver_pair_fetch_failed",
+            f"CAT resolver: could not fetch pair data from Tibet: {e}",
+        )
 
     return result
 
@@ -129,13 +139,19 @@ def resolve_and_apply(cfg_obj, force: bool = False) -> Dict:
     # Return cached result unless stale or forced
     with _cache_lock:
         now = time.time()
-        if not force and _cache is not None and (now - _last_resolve_at) < _CACHE_TTL_SECS:
+        if (
+            not force
+            and _cache is not None
+            and (now - _last_resolve_at) < _CACHE_TTL_SECS
+        ):
             _apply_to_cfg(_cache, cfg_obj)
             return dict(_cache)
 
     # Fetch fresh
-    tibet_base = str(getattr(cfg_obj, "TIBET_API_BASE",
-                              "https://api.v2.tibetswap.io") or "https://api.v2.tibetswap.io")
+    tibet_base = str(
+        getattr(cfg_obj, "TIBET_API_BASE", "https://api.v2.tibetswap.io")
+        or "https://api.v2.tibetswap.io"
+    )
     tibet_timeout = int(getattr(cfg_obj, "TIBET_TIMEOUT", 10) or 10)
 
     metadata = resolve_cat_metadata(asset_id, tibet_base, tibet_timeout)
@@ -185,11 +201,16 @@ def _apply_to_cfg(metadata: Dict, cfg_obj) -> None:
             skipped.append(f"CAT_NAME (already: {current})")
 
     if applied or skipped:
-        log_event("info", "cat_resolver_applied",
-                  f"CAT metadata resolved from TibetSwap — "
-                  f"applied: [{', '.join(applied) or 'none'}] | "
-                  f"kept .env: [{', '.join(skipped) or 'none'}]")
+        log_event(
+            "info",
+            "cat_resolver_applied",
+            f"CAT metadata resolved from TibetSwap — "
+            f"applied: [{', '.join(applied) or 'none'}] | "
+            f"kept .env: [{', '.join(skipped) or 'none'}]",
+        )
     else:
-        log_event("debug", "cat_resolver_noop",
-                  "CAT resolver: no metadata found or all fields already set")
-
+        log_event(
+            "debug",
+            "cat_resolver_noop",
+            "CAT resolver: no metadata found or all fields already set",
+        )

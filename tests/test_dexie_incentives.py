@@ -131,11 +131,14 @@ class TestBase58(unittest.TestCase):
         self.assertEqual(len(h), 44)
         # Should only contain bitcoin alphabet chars
         for ch in h:
-            self.assertIn(ch, "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+            self.assertIn(
+                ch, "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+            )
 
 
 try:
     import chia.util.bech32m as _bech32m_mod  # noqa: F401
+
     _CHIA_AVAILABLE = True
 except ImportError:
     _CHIA_AVAILABLE = False
@@ -145,6 +148,7 @@ except ImportError:
 class TestPuzzleHashToAddress(unittest.TestCase):
     def test_round_trip(self):
         from chia.util.bech32m import decode_puzzle_hash
+
         ph = "8b9b8c0e7f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c"
         # Force the mainnet prefix without poking the wallet.
         with patch("dexie_claims._network_prefix", return_value="xch"):

@@ -22,6 +22,7 @@ Legacy fallback (pre-F62 configs without ``BUY_*_SIZE_XCH``) still applies
 the reverse-buy flip against the shared ``<TIER>_SIZE_XCH`` fields because
 those legacy values had an inner=biggest convention.
 """
+
 import os
 import sys
 import unittest
@@ -31,23 +32,54 @@ from decimal import Decimal
 class _StubCfg:
     """Minimal cfg object with just the fields config helpers need."""
 
-    def __init__(self, *, reversed_buy: bool,
-                 buy_inner=None, buy_mid=None, buy_outer=None, buy_extreme=None,
-                 sell_inner=None, sell_mid=None, sell_outer=None, sell_extreme=None,
-                 inner=None, mid=None, outer=None, extreme=None):
+    def __init__(
+        self,
+        *,
+        reversed_buy: bool,
+        buy_inner=None,
+        buy_mid=None,
+        buy_outer=None,
+        buy_extreme=None,
+        sell_inner=None,
+        sell_mid=None,
+        sell_outer=None,
+        sell_extreme=None,
+        inner=None,
+        mid=None,
+        outer=None,
+        extreme=None,
+    ):
         self.BUY_LADDER_REVERSED = reversed_buy
-        self.BUY_INNER_SIZE_XCH = Decimal(buy_inner) if buy_inner is not None else Decimal("0")
-        self.BUY_MID_SIZE_XCH = Decimal(buy_mid) if buy_mid is not None else Decimal("0")
-        self.BUY_OUTER_SIZE_XCH = Decimal(buy_outer) if buy_outer is not None else Decimal("0")
-        self.BUY_EXTREME_SIZE_XCH = Decimal(buy_extreme) if buy_extreme is not None else Decimal("0")
-        self.SELL_INNER_SIZE_XCH = Decimal(sell_inner) if sell_inner is not None else Decimal("0")
-        self.SELL_MID_SIZE_XCH = Decimal(sell_mid) if sell_mid is not None else Decimal("0")
-        self.SELL_OUTER_SIZE_XCH = Decimal(sell_outer) if sell_outer is not None else Decimal("0")
-        self.SELL_EXTREME_SIZE_XCH = Decimal(sell_extreme) if sell_extreme is not None else Decimal("0")
+        self.BUY_INNER_SIZE_XCH = (
+            Decimal(buy_inner) if buy_inner is not None else Decimal("0")
+        )
+        self.BUY_MID_SIZE_XCH = (
+            Decimal(buy_mid) if buy_mid is not None else Decimal("0")
+        )
+        self.BUY_OUTER_SIZE_XCH = (
+            Decimal(buy_outer) if buy_outer is not None else Decimal("0")
+        )
+        self.BUY_EXTREME_SIZE_XCH = (
+            Decimal(buy_extreme) if buy_extreme is not None else Decimal("0")
+        )
+        self.SELL_INNER_SIZE_XCH = (
+            Decimal(sell_inner) if sell_inner is not None else Decimal("0")
+        )
+        self.SELL_MID_SIZE_XCH = (
+            Decimal(sell_mid) if sell_mid is not None else Decimal("0")
+        )
+        self.SELL_OUTER_SIZE_XCH = (
+            Decimal(sell_outer) if sell_outer is not None else Decimal("0")
+        )
+        self.SELL_EXTREME_SIZE_XCH = (
+            Decimal(sell_extreme) if sell_extreme is not None else Decimal("0")
+        )
         self.INNER_SIZE_XCH = Decimal(inner) if inner is not None else Decimal("0")
         self.MID_SIZE_XCH = Decimal(mid) if mid is not None else Decimal("0")
         self.OUTER_SIZE_XCH = Decimal(outer) if outer is not None else Decimal("0")
-        self.EXTREME_SIZE_XCH = Decimal(extreme) if extreme is not None else Decimal("0")
+        self.EXTREME_SIZE_XCH = (
+            Decimal(extreme) if extreme is not None else Decimal("0")
+        )
 
 
 class GetBuyTierSizePositionIndexedTests(unittest.TestCase):
@@ -62,29 +94,37 @@ class GetBuyTierSizePositionIndexedTests(unittest.TestCase):
 
     def setUp(self):
         import config
+
         self._real_cfg = config.cfg
 
     def tearDown(self):
         import config
+
         config.cfg = self._real_cfg
 
     def _patch_cfg(self, stub):
         import config
+
         config.cfg = stub
 
     # ── Non-reverse: inner POSITION has the biggest size ──────────────
 
     def test_non_reversed_returns_field_directly(self):
         from config import get_buy_tier_size_xch
+
         # Normal ladder: inner (near mid) = biggest, extreme (far) = smallest
-        self._patch_cfg(_StubCfg(
-            reversed_buy=False,
-            buy_inner="2.0876", buy_mid="1.1598",
-            buy_outer="0.6379", buy_extreme="0.29",
-        ))
-        self.assertEqual(get_buy_tier_size_xch("inner"),   Decimal("2.0876"))
-        self.assertEqual(get_buy_tier_size_xch("mid"),     Decimal("1.1598"))
-        self.assertEqual(get_buy_tier_size_xch("outer"),   Decimal("0.6379"))
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=False,
+                buy_inner="2.0876",
+                buy_mid="1.1598",
+                buy_outer="0.6379",
+                buy_extreme="0.29",
+            )
+        )
+        self.assertEqual(get_buy_tier_size_xch("inner"), Decimal("2.0876"))
+        self.assertEqual(get_buy_tier_size_xch("mid"), Decimal("1.1598"))
+        self.assertEqual(get_buy_tier_size_xch("outer"), Decimal("0.6379"))
         self.assertEqual(get_buy_tier_size_xch("extreme"), Decimal("0.29"))
 
     # ── Reverse-buy: Smart Defaults stores SMALL in BUY_INNER_SIZE_XCH ─
@@ -100,14 +140,20 @@ class GetBuyTierSizePositionIndexedTests(unittest.TestCase):
         correct small value.
         """
         from config import get_buy_tier_size_xch
-        self._patch_cfg(_StubCfg(
-            reversed_buy=True,
-            # Reverse convention (swap applied at storage): inner=small, extreme=big
-            buy_inner="0.29", buy_mid="0.6379",
-            buy_outer="1.1598", buy_extreme="2.0876",
-        ))
+
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=True,
+                # Reverse convention (swap applied at storage): inner=small, extreme=big
+                buy_inner="0.29",
+                buy_mid="0.6379",
+                buy_outer="1.1598",
+                buy_extreme="2.0876",
+            )
+        )
         self.assertEqual(
-            get_buy_tier_size_xch("inner"), Decimal("0.29"),
+            get_buy_tier_size_xch("inner"),
+            Decimal("0.29"),
             "Under reverse-buy, BUY_INNER_SIZE_XCH stores the (small) inner-"
             "position offer size; the getter must return it as-is.",
         )
@@ -118,25 +164,36 @@ class GetBuyTierSizePositionIndexedTests(unittest.TestCase):
         from mid. Smart Defaults writes that large value into
         ``BUY_EXTREME_SIZE_XCH`` directly."""
         from config import get_buy_tier_size_xch
-        self._patch_cfg(_StubCfg(
-            reversed_buy=True,
-            buy_inner="0.29", buy_mid="0.6379",
-            buy_outer="1.1598", buy_extreme="2.0876",
-        ))
+
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=True,
+                buy_inner="0.29",
+                buy_mid="0.6379",
+                buy_outer="1.1598",
+                buy_extreme="2.0876",
+            )
+        )
         self.assertEqual(
-            get_buy_tier_size_xch("extreme"), Decimal("2.0876"),
+            get_buy_tier_size_xch("extreme"),
+            Decimal("2.0876"),
             "Under reverse-buy, BUY_EXTREME_SIZE_XCH stores the (large) "
             "extreme-position offer size; the getter must return it as-is.",
         )
 
     def test_reversed_mid_outer_return_stored_values(self):
         from config import get_buy_tier_size_xch
-        self._patch_cfg(_StubCfg(
-            reversed_buy=True,
-            buy_inner="0.29", buy_mid="0.6379",
-            buy_outer="1.1598", buy_extreme="2.0876",
-        ))
-        self.assertEqual(get_buy_tier_size_xch("mid"),   Decimal("0.6379"))
+
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=True,
+                buy_inner="0.29",
+                buy_mid="0.6379",
+                buy_outer="1.1598",
+                buy_extreme="2.0876",
+            )
+        )
+        self.assertEqual(get_buy_tier_size_xch("mid"), Decimal("0.6379"))
         self.assertEqual(get_buy_tier_size_xch("outer"), Decimal("1.1598"))
 
     # ── Legacy fallback path (pre-F62 configs) still flips ───────────
@@ -147,32 +204,48 @@ class GetBuyTierSizePositionIndexedTests(unittest.TestCase):
         storage only ever held inner=biggest values, so the flip is needed
         to get the reversed shape."""
         from config import get_buy_tier_size_xch
-        self._patch_cfg(_StubCfg(
-            reversed_buy=True,
-            inner="2.0", mid="1.0", outer="0.5", extreme="0.25",
-        ))
+
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=True,
+                inner="2.0",
+                mid="1.0",
+                outer="0.5",
+                extreme="0.25",
+            )
+        )
         # Position inner under reverse → legacy extreme size (small)
-        self.assertEqual(get_buy_tier_size_xch("inner"),   Decimal("0.25"))
+        self.assertEqual(get_buy_tier_size_xch("inner"), Decimal("0.25"))
         self.assertEqual(get_buy_tier_size_xch("extreme"), Decimal("2.0"))
 
     def test_legacy_fallback_non_reverse(self):
         from config import get_buy_tier_size_xch
-        self._patch_cfg(_StubCfg(
-            reversed_buy=False,
-            inner="2.0", mid="1.0", outer="0.5", extreme="0.25",
-        ))
-        self.assertEqual(get_buy_tier_size_xch("inner"),   Decimal("2.0"))
+
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=False,
+                inner="2.0",
+                mid="1.0",
+                outer="0.5",
+                extreme="0.25",
+            )
+        )
+        self.assertEqual(get_buy_tier_size_xch("inner"), Decimal("2.0"))
         self.assertEqual(get_buy_tier_size_xch("extreme"), Decimal("0.25"))
 
     # ── Sell side never flips ─────────────────────────────────────────
 
     def test_sell_side_ignores_reverse_buy(self):
         from config import get_sell_tier_size_xch
-        self._patch_cfg(_StubCfg(
-            reversed_buy=True,  # should NOT affect sell
-            sell_inner="2.0876", sell_extreme="0.29",
-        ))
-        self.assertEqual(get_sell_tier_size_xch("inner"),   Decimal("2.0876"))
+
+        self._patch_cfg(
+            _StubCfg(
+                reversed_buy=True,  # should NOT affect sell
+                sell_inner="2.0876",
+                sell_extreme="0.29",
+            )
+        )
+        self.assertEqual(get_sell_tier_size_xch("inner"), Decimal("2.0876"))
         self.assertEqual(get_sell_tier_size_xch("extreme"), Decimal("0.29"))
 
 

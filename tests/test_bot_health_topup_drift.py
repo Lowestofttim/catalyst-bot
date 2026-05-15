@@ -90,11 +90,12 @@ class TopupBudgetDriftTests(unittest.TestCase):
     def test_no_drift_passes_cleanly(self):
         """Counter within tolerance → pass, no repair, no anomaly."""
         cfg = bot_health.cfg
-        with patch.object(cfg, "TOPUP_POOL_XCH", Decimal("60")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")), \
-             patch("database.get_setting",
-                   return_value=str(40 * 10**12)), \
-             patch("bot_health._reserve_mojos", return_value=20 * 10**12):
+        with (
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("60")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")),
+            patch("database.get_setting", return_value=str(40 * 10**12)),
+            patch("bot_health._reserve_mojos", return_value=20 * 10**12),
+        ):
             # Budget 60 XCH, reserve 20 XCH, observed spend = 40 XCH.
             # Stored = 40 XCH → drift=0 → pass.
             check = bot_health.check_topup_budget_drift(auto_repair=True)
@@ -119,12 +120,13 @@ class TopupBudgetDriftTests(unittest.TestCase):
         def _fake_set(key, value):
             stored[key] = value
 
-        with patch.object(cfg, "TOPUP_POOL_XCH", Decimal("63.6378")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")), \
-             patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set), \
-             patch("bot_health._reserve_mojos",
-                   return_value=17_552_200_000_000):
+        with (
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("63.6378")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")),
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+            patch("bot_health._reserve_mojos", return_value=17_552_200_000_000),
+        ):
             check = bot_health.check_topup_budget_drift(auto_repair=True)
 
         self.assertEqual(check.anomaly_count, 1)
@@ -137,7 +139,7 @@ class TopupBudgetDriftTests(unittest.TestCase):
         """CAT counter drift heals without touching XCH counter."""
         cfg = bot_health.cfg
         stored = {
-            "topup_pool_cat_spent_mojos": str(500_000_000),   # 500k CAT
+            "topup_pool_cat_spent_mojos": str(500_000_000),  # 500k CAT
             "topup_pool_xch_spent_mojos": str(10_000_000_000_000),  # 10 XCH
         }
 
@@ -150,12 +152,14 @@ class TopupBudgetDriftTests(unittest.TestCase):
         def _reserve(wallet_type):
             return 100_000 if wallet_type == "cat" else 0  # 100 CAT × 10^3 scale
 
-        with patch.object(cfg, "TOPUP_POOL_CAT", Decimal("300")), \
-             patch.object(cfg, "TOPUP_POOL_XCH", Decimal("0")), \
-             patch.object(cfg, "CAT_DECIMALS", 3), \
-             patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set), \
-             patch("bot_health._reserve_mojos", side_effect=_reserve):
+        with (
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("300")),
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("0")),
+            patch.object(cfg, "CAT_DECIMALS", 3),
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+            patch("bot_health._reserve_mojos", side_effect=_reserve),
+        ):
             # Budget 300 CAT × 1000 = 300,000 mojos, reserve 100,000.
             # Observed spend = 200,000. Stored = 500,000 → drift = 300,000.
             check = bot_health.check_topup_budget_drift(auto_repair=True)
@@ -164,8 +168,7 @@ class TopupBudgetDriftTests(unittest.TestCase):
         self.assertEqual(check.repaired_count, 1)
         self.assertEqual(stored["topup_pool_cat_spent_mojos"], str(200_000))
         # XCH must remain untouched.
-        self.assertEqual(stored["topup_pool_xch_spent_mojos"],
-                         str(10_000_000_000_000))
+        self.assertEqual(stored["topup_pool_xch_spent_mojos"], str(10_000_000_000_000))
 
     # ------------------------------------------------------------------
     # Auto-repair gating
@@ -182,12 +185,13 @@ class TopupBudgetDriftTests(unittest.TestCase):
         def _fake_set(key, value):
             stored[key] = value
 
-        with patch.object(cfg, "TOPUP_POOL_XCH", Decimal("63.6378")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")), \
-             patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set), \
-             patch("bot_health._reserve_mojos",
-                   return_value=17_552_200_000_000):
+        with (
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("63.6378")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")),
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+            patch("bot_health._reserve_mojos", return_value=17_552_200_000_000),
+        ):
             check = bot_health.check_topup_budget_drift(auto_repair=False)
 
         self.assertEqual(check.status, "warn")
@@ -195,8 +199,7 @@ class TopupBudgetDriftTests(unittest.TestCase):
         self.assertEqual(check.anomaly_count, 1)
         self.assertEqual(check.repaired_count, 0)
         # Unchanged.
-        self.assertEqual(stored["topup_pool_xch_spent_mojos"],
-                         str(62_544_900_000_000))
+        self.assertEqual(stored["topup_pool_xch_spent_mojos"], str(62_544_900_000_000))
 
     # ------------------------------------------------------------------
     # Invariants
@@ -215,26 +218,28 @@ class TopupBudgetDriftTests(unittest.TestCase):
         def _fake_set(key, value):
             stored[key] = value
 
-        with patch.object(cfg, "TOPUP_POOL_XCH", Decimal("60")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")), \
-             patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set), \
-             patch("bot_health._reserve_mojos",
-                   return_value=20 * 10**12):  # reserve 20 → observed 40
+        with (
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("60")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")),
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+            patch("bot_health._reserve_mojos", return_value=20 * 10**12),
+        ):  # reserve 20 → observed 40
             check = bot_health.check_topup_budget_drift(auto_repair=True)
 
         # stored=10, observed=40, drift=-30 (negative) → no action
         self.assertEqual(check.anomaly_count, 0)
-        self.assertEqual(stored["topup_pool_xch_spent_mojos"],
-                         str(10_000_000_000_000))
+        self.assertEqual(stored["topup_pool_xch_spent_mojos"], str(10_000_000_000_000))
 
     def test_unlimited_budget_skips_check(self):
         """TOPUP_POOL_XCH=0 means unlimited — drift is meaningless there."""
         cfg = bot_health.cfg
-        with patch.object(cfg, "TOPUP_POOL_XCH", Decimal("0")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")), \
-             patch("database.get_setting", return_value=str(99 * 10**12)), \
-             patch("bot_health._reserve_mojos", return_value=0):
+        with (
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("0")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")),
+            patch("database.get_setting", return_value=str(99 * 10**12)),
+            patch("bot_health._reserve_mojos", return_value=0),
+        ):
             check = bot_health.check_topup_budget_drift(auto_repair=True)
 
         self.assertEqual(check.anomaly_count, 0)

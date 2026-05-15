@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -50,9 +51,9 @@ class _FlaskBase(unittest.TestCase):
 # 1. GET /api/inventory
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestInventory(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self.client.get("/api/inventory", environ_base=self._LOOPBACK)
@@ -79,9 +80,9 @@ class TestInventory(_FlaskBase):
 # 2. GET /api/risk/spreads
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestRiskSpreads(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self.client.get("/api/risk/spreads", environ_base=self._LOOPBACK)
@@ -96,9 +97,14 @@ class TestRiskSpreads(_FlaskBase):
         with patch.object(api_server, "bot", _make_bot()):
             resp = self.client.get("/api/risk/spreads", environ_base=self._LOOPBACK)
         body = resp.get_json()
-        for key in ("buy_spread_bps", "sell_spread_bps",
-                    "buy_spread_pct", "sell_spread_pct",
-                    "dynamic_enabled", "inventory_enabled"):
+        for key in (
+            "buy_spread_bps",
+            "sell_spread_bps",
+            "buy_spread_pct",
+            "sell_spread_pct",
+            "dynamic_enabled",
+            "inventory_enabled",
+        ):
             self.assertIn(key, body)
 
     def test_get_adjusted_spread_called_for_both_sides(self):

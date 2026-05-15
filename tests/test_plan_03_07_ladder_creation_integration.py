@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     from database import upsert_coin, get_free_coins, init_database
+
     _SKIP_DB = None
 except ModuleNotFoundError as exc:
     _db = None
@@ -25,6 +26,7 @@ except ModuleNotFoundError as exc:
 
 try:
     from ladder_planner import plan_ladder, SlotStatus, LadderPlan
+
     _SKIP_LP = None
 except ModuleNotFoundError as exc:
     plan_ladder = None
@@ -35,19 +37,19 @@ except ModuleNotFoundError as exc:
 # Tier size constants (mojos) — match typical smart-defaults values
 # ---------------------------------------------------------------------------
 
-_INNER_XCH  = 1_000_000_000_000   # 1 XCH
-_MID_XCH    = 2_000_000_000_000   # 2 XCH
-_OUTER_XCH  = 4_000_000_000_000   # 4 XCH
+_INNER_XCH = 1_000_000_000_000  # 1 XCH
+_MID_XCH = 2_000_000_000_000  # 2 XCH
+_OUTER_XCH = 4_000_000_000_000  # 4 XCH
 _EXTREME_XCH = 8_000_000_000_000  # 8 XCH
 
 _TIER_SIZES = {
-    "inner":   _INNER_XCH,
-    "mid":     _MID_XCH,
-    "outer":   _OUTER_XCH,
+    "inner": _INNER_XCH,
+    "mid": _MID_XCH,
+    "outer": _OUTER_XCH,
     "extreme": _EXTREME_XCH,
 }
 
-_MID_PRICE = Decimal("0.001")   # 0.001 XCH per CAT
+_MID_PRICE = Decimal("0.001")  # 0.001 XCH per CAT
 
 
 def _slot_prices(n: int) -> list:
@@ -58,6 +60,7 @@ def _slot_prices(n: int) -> list:
 # ---------------------------------------------------------------------------
 # Temp-DB base class
 # ---------------------------------------------------------------------------
+
 
 class _TempDB(unittest.TestCase):
     def setUp(self):
@@ -95,20 +98,21 @@ class _TempDB(unittest.TestCase):
             pass
 
     def _add_xch_coin(self, coin_id: str, amount: int, tier: str = "inner"):
-        upsert_coin(coin_id, "xch", amount,
-                    tier=tier, designation="tier_trading", status="free")
+        upsert_coin(
+            coin_id, "xch", amount, tier=tier, designation="tier_trading", status="free"
+        )
 
 
 # ---------------------------------------------------------------------------
 # 1. DB → get_free_coins → plan_ladder wiring
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_LP is not None,
-    f"dependencies unavailable: db={_SKIP_DB} lp={_SKIP_LP}"
+    f"dependencies unavailable: db={_SKIP_DB} lp={_SKIP_LP}",
 )
 class TestLadderCreationFromDB(_TempDB):
-
     def test_empty_db_produces_all_no_coin_slots(self):
         coins = get_free_coins("xch")
         plan = plan_ladder(
@@ -160,7 +164,7 @@ class TestLadderCreationFromDB(_TempDB):
 
     def test_mixed_tiers_assigned_to_correct_slots(self):
         self._add_xch_coin("0xinner_a", _INNER_XCH, "inner")
-        self._add_xch_coin("0xmid_a",   _MID_XCH,   "mid")
+        self._add_xch_coin("0xmid_a", _MID_XCH, "mid")
         self._add_xch_coin("0xouter_a", _OUTER_XCH, "outer")
 
         coins = get_free_coins("xch")
@@ -231,11 +235,21 @@ class TestLadderCreationFromDB(_TempDB):
         self.assertEqual(len(plan.consumed_coin_ids), 1)
 
     def test_sell_side_uses_cat_coins(self):
-        upsert_coin("0xcat_a", "cat", 1_000_000, tier="inner",
-                    designation="tier_trading", status="free")
+        upsert_coin(
+            "0xcat_a",
+            "cat",
+            1_000_000,
+            tier="inner",
+            designation="tier_trading",
+            status="free",
+        )
 
-        cat_tier_sizes = {"inner": 1_000_000, "mid": 2_000_000,
-                          "outer": 4_000_000, "extreme": 8_000_000}
+        cat_tier_sizes = {
+            "inner": 1_000_000,
+            "mid": 2_000_000,
+            "outer": 4_000_000,
+            "extreme": 8_000_000,
+        }
         coins = get_free_coins("cat")
         plan = plan_ladder(
             side="sell",
@@ -253,18 +267,19 @@ class TestLadderCreationFromDB(_TempDB):
 # 2. Plan viability and summary
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_LP is not None,
-    f"dependencies unavailable: db={_SKIP_DB} lp={_SKIP_LP}"
+    f"dependencies unavailable: db={_SKIP_DB} lp={_SKIP_LP}",
 )
 class TestLadderPlanViability(_TempDB):
-
     def test_fully_stocked_plan_is_viable(self):
         for i in range(4):
             self._add_xch_coin(f"0xfull{i}", _INNER_XCH, "inner")
         coins = get_free_coins("xch")
         plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 4},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(4),
@@ -275,7 +290,8 @@ class TestLadderPlanViability(_TempDB):
     def test_empty_plan_is_not_viable(self):
         coins = get_free_coins("xch")
         plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 4},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(4),
@@ -289,7 +305,8 @@ class TestLadderPlanViability(_TempDB):
             self._add_xch_coin(f"0xn{i}", _INNER_XCH, "inner")
         coins = get_free_coins("xch")
         plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 10},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(10),
@@ -304,7 +321,8 @@ class TestLadderPlanViability(_TempDB):
             self._add_xch_coin(f"0xm{i}", _INNER_XCH, "inner")
         coins = get_free_coins("xch")
         plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 10},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(10),
@@ -317,7 +335,8 @@ class TestLadderPlanViability(_TempDB):
             self._add_xch_coin(f"0xs{i}", _INNER_XCH, "inner")
         coins = get_free_coins("xch")
         plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 3, "mid": 2},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(5),
@@ -334,9 +353,10 @@ class TestLadderPlanViability(_TempDB):
 # 3. Full bot-start cycle: DB populated → plan → verify no double-allocation
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_LP is not None,
-    f"dependencies unavailable: db={_SKIP_DB} lp={_SKIP_LP}"
+    f"dependencies unavailable: db={_SKIP_DB} lp={_SKIP_LP}",
 )
 class TestBotStartLadderCycle(_TempDB):
     """Simulates a bot-start scenario: two-sided ladder planning from DB."""
@@ -348,21 +368,29 @@ class TestBotStartLadderCycle(_TempDB):
         # CAT coins for sell ladder
         cat_tier_sizes = {"inner": 1_000_000}
         for i in range(3):
-            upsert_coin(f"0xsell{i}", "cat", 1_000_000, tier="inner",
-                        designation="tier_trading", status="free")
+            upsert_coin(
+                f"0xsell{i}",
+                "cat",
+                1_000_000,
+                tier="inner",
+                designation="tier_trading",
+                status="free",
+            )
 
-        buy_coins  = get_free_coins("xch")
+        buy_coins = get_free_coins("xch")
         sell_coins = get_free_coins("cat")
 
         buy_plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 3},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(3),
             available_coins=buy_coins,
         )
         sell_plan = plan_ladder(
-            side="sell", mid_price=_MID_PRICE,
+            side="sell",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 3},
             tier_sizes_asset_mojos=cat_tier_sizes,
             slot_prices=_slot_prices(3),
@@ -372,19 +400,20 @@ class TestBotStartLadderCycle(_TempDB):
         self.assertEqual(buy_plan.ready_count(), 3)
         self.assertEqual(sell_plan.ready_count(), 3)
         # No coin overlap between sides
-        buy_ids  = set(buy_plan.consumed_coin_ids)
+        buy_ids = set(buy_plan.consumed_coin_ids)
         sell_ids = set(sell_plan.consumed_coin_ids)
         self.assertEqual(buy_ids & sell_ids, set())
 
     def test_tier_filtered_query_matches_plan_input(self):
         # Add coins at various tiers
         self._add_xch_coin("0xi0", _INNER_XCH, "inner")
-        self._add_xch_coin("0xm0", _MID_XCH,   "mid")
+        self._add_xch_coin("0xm0", _MID_XCH, "mid")
         self._add_xch_coin("0xo0", _OUTER_XCH, "outer")
 
         all_coins = get_free_coins("xch")
         plan = plan_ladder(
-            side="buy", mid_price=_MID_PRICE,
+            side="buy",
+            mid_price=_MID_PRICE,
             tier_counts={"inner": 1, "mid": 1, "outer": 1},
             tier_sizes_asset_mojos=_TIER_SIZES,
             slot_prices=_slot_prices(3),
@@ -394,7 +423,7 @@ class TestBotStartLadderCycle(_TempDB):
         self.assertTrue(plan.is_viable())
         assigned = {s.tier: s.coin_id for s in plan.slots if s.coin_id}
         self.assertEqual(assigned["inner"], "0xi0")
-        self.assertEqual(assigned["mid"],   "0xm0")
+        self.assertEqual(assigned["mid"], "0xm0")
         self.assertEqual(assigned["outer"], "0xo0")
 
 

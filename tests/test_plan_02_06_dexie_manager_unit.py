@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 try:
     import dexie_manager as _dm
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _dm = None
@@ -23,6 +24,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Minimal cfg stub
 # ---------------------------------------------------------------------------
+
 
 class _FakeCfg:
     DEXIE_POST_ENABLED = True
@@ -34,6 +36,7 @@ class _FakeCfg:
 # ---------------------------------------------------------------------------
 # Base class: fresh DexieManager + cfg patch per test
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"dexie_manager unavailable: {_SKIP}")
 class _DM(unittest.TestCase):
@@ -49,6 +52,7 @@ class _DM(unittest.TestCase):
 # ===========================================================================
 # queue_post
 # ===========================================================================
+
 
 class TestQueuePost(_DM):
     def test_valid_offer_queued(self):
@@ -86,6 +90,7 @@ class TestQueuePost(_DM):
 # purge_trade_ids
 # ===========================================================================
 
+
 class TestPurgeTradeIds(_DM):
     def setUp(self):
         super().setUp()
@@ -116,6 +121,7 @@ class TestPurgeTradeIds(_DM):
 # flush_queue — disabled / empty paths (no HTTP)
 # ===========================================================================
 
+
 class TestFlushQueueNoHTTP(_DM):
     def test_disabled_returns_disabled_flag(self):
         _dm.cfg.DEXIE_POST_ENABLED = False
@@ -140,6 +146,7 @@ class TestFlushQueueNoHTTP(_DM):
 # get_dexie_id / get_dexie_link
 # ===========================================================================
 
+
 class TestGetDexieIdAndLink(_DM):
     def test_get_dexie_id_returns_none_when_missing(self):
         self.assertIsNone(self.dm.get_dexie_id("t1"))
@@ -162,12 +169,21 @@ class TestGetDexieIdAndLink(_DM):
 # get_stats
 # ===========================================================================
 
+
 class TestGetStats(_DM):
     def test_stats_has_expected_keys(self):
         stats = self.dm.get_stats()
-        for key in ("total_posted", "total_failed", "total_skipped",
-                    "queue_size", "tracked_mappings", "fingerprints_cached",
-                    "session_posted", "session_failed", "hydrated_from_db"):
+        for key in (
+            "total_posted",
+            "total_failed",
+            "total_skipped",
+            "queue_size",
+            "tracked_mappings",
+            "fingerprints_cached",
+            "session_posted",
+            "session_failed",
+            "hydrated_from_db",
+        ):
             self.assertIn(key, stats, f"Missing key: {key}")
 
     def test_empty_manager_all_zeros(self):
@@ -199,6 +215,7 @@ class TestGetStats(_DM):
 # ===========================================================================
 # prune_mappings
 # ===========================================================================
+
 
 class TestPruneMappings(_DM):
     @patch("dexie_manager.log_event")
@@ -238,6 +255,7 @@ class TestPruneMappings(_DM):
 # _fingerprint (static)
 # ===========================================================================
 
+
 class TestFingerprint(unittest.TestCase):
     @unittest.skipIf(_SKIP is not None, f"dexie_manager unavailable: {_SKIP}")
     def test_returns_hex_string(self):
@@ -271,6 +289,7 @@ class TestFingerprint(unittest.TestCase):
 # _safe_json (static)
 # ===========================================================================
 
+
 class TestSafeJson(unittest.TestCase):
     @unittest.skipIf(_SKIP is not None, f"dexie_manager unavailable: {_SKIP}")
     def test_returns_json_on_valid_response(self):
@@ -291,6 +310,7 @@ class TestSafeJson(unittest.TestCase):
 # ===========================================================================
 # compute_v3_trade_metrics (via cache injection)
 # ===========================================================================
+
 
 class TestComputeV3TradeMetrics(_DM):
     def _inject_trades(self, ticker_id, trades):
@@ -335,8 +355,8 @@ class TestComputeV3TradeMetrics(_DM):
     def test_excludes_old_trades_by_hours(self, _mock_log):
         now = time.time()
         trades = [
-            {"price": "1.0", "timestamp": now - 100},           # recent
-            {"price": "2.0", "timestamp": now - 7 * 3600},      # older than 1h
+            {"price": "1.0", "timestamp": now - 100},  # recent
+            {"price": "2.0", "timestamp": now - 7 * 3600},  # older than 1h
         ]
         self.dm._v3_trades_cache["T4"] = {"trades": trades, "fetched_at": now}
         result = self.dm.compute_v3_trade_metrics("T4", hours=1.0)

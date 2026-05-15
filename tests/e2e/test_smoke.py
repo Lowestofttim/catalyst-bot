@@ -14,6 +14,7 @@ Run with:
 Anything that requires a real Sage connection should live in a separate
 file (e.g. `test_full_setup.py`) marked accordingly.
 """
+
 from __future__ import annotations
 
 import re
@@ -72,8 +73,13 @@ def test_dismissing_disclaimer_reveals_wallet_gate(app_page):
     try:
         connect.first.wait_for(state="visible", timeout=7_000)
     except PlaywrightTimeoutError:
-        expect(wallet_not_open).to_contain_text("Sage wallet isn't running", timeout=10_000)
-    assert connect.first.is_visible() or "Sage wallet isn't running" in wallet_not_open.text_content()
+        expect(wallet_not_open).to_contain_text(
+            "Sage wallet isn't running", timeout=10_000
+        )
+    assert (
+        connect.first.is_visible()
+        or "Sage wallet isn't running" in wallet_not_open.text_content()
+    )
 
 
 def test_primary_nav_tabs_present(app_page):
@@ -149,7 +155,8 @@ def test_no_console_errors_on_initial_load(app_page):
     # SSE/network-related errors are expected when there's no real Sage —
     # filter those out so the test is meaningful.
     real_errors = [
-        e for e in errors
+        e
+        for e in errors
         if "EventSource" not in e
         and "Failed to fetch" not in e
         and "NetworkError" not in e

@@ -46,9 +46,7 @@ SECRET_ASSIGNMENT_RE = re.compile(
     """
 )
 
-PEM_PRIVATE_KEY_RE = re.compile(
-    rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
-)
+PEM_PRIVATE_KEY_RE = re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 
 PLACEHOLDER_MARKERS = (
     "example",
@@ -130,9 +128,7 @@ def main() -> int:
             value = match.group(2).strip()
             if _looks_like_placeholder(value):
                 continue
-            failures.append(
-                f"possible hardcoded secret: {path.as_posix()}:{line_no}"
-            )
+            failures.append(f"possible hardcoded secret: {path.as_posix()}:{line_no}")
 
     if failures:
         print("Tracked secret scan failed:")

@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # Try to load config
 try:
     from config import cfg
+
     CONFIG_LOADED = True
 except Exception as e:
     CONFIG_LOADED = False
@@ -78,6 +79,7 @@ def test(name: str, status: str, detail: str = "") -> None:
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+
 def timed_request(
     method: str,
     url: str,
@@ -92,7 +94,9 @@ def timed_request(
         if method.upper() == "GET":
             resp = requests.get(url, headers=headers, timeout=timeout, verify=verify)
         elif method.upper() == "POST":
-            resp = requests.post(url, headers=headers, json=json_data, timeout=timeout, verify=verify)
+            resp = requests.post(
+                url, headers=headers, json=json_data, timeout=timeout, verify=verify
+            )
         else:
             return None, (time.time() - start) * 1000
 
@@ -113,7 +117,9 @@ def timed_request(
         return None, elapsed
 
 
-def sage_rpc(endpoint: str, payload: dict = None, timeout: int = 5) -> Tuple[Optional[Dict], float]:
+def sage_rpc(
+    endpoint: str, payload: dict = None, timeout: int = 5
+) -> Tuple[Optional[Dict], float]:
     """Make an RPC call to Sage using the same http.client+ssl method as the bot.
     Returns (response_dict, elapsed_ms) or (None, elapsed_ms).
     """
@@ -145,8 +151,12 @@ def sage_rpc(endpoint: str, payload: dict = None, timeout: int = 5) -> Tuple[Opt
 
         body = json.dumps(payload).encode("utf-8")
         conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ctx)
-        conn.request("POST", "/" + endpoint.lstrip("/"), body=body,
-                     headers={"Content-Type": "application/json"})
+        conn.request(
+            "POST",
+            "/" + endpoint.lstrip("/"),
+            body=body,
+            headers={"Content-Type": "application/json"},
+        )
         resp = conn.getresponse()
         data = resp.read().decode("utf-8")
         conn.close()
@@ -174,6 +184,7 @@ def get_sage_session() -> Optional[requests.Session]:
 
 
 # ── Configuration Getters ─────────────────────────────────────────────
+
 
 def get_dexie_url() -> str:
     """Get Dexie API base URL from config."""
@@ -258,7 +269,9 @@ print()
 sage_url = get_sage_url()
 
 print(f"  Base URL: {sage_url}")
-print(f"  Wallet Type: {'sage' if CONFIG_LOADED and getattr(cfg, 'WALLET_TYPE', 'chia') == 'sage' else 'chia (not using sage)'}")
+print(
+    f"  Wallet Type: {'sage' if CONFIG_LOADED and getattr(cfg, 'WALLET_TYPE', 'chia') == 'sage' else 'chia (not using sage)'}"
+)
 print()
 
 # Test basic connectivity using http.client+ssl (same as bot)
@@ -281,7 +294,11 @@ try:
     elif data and "_http_status" in data:
         test("Sage RPC connectivity", FAIL, f"HTTP {data['_http_status']} ({ms:.0f}ms)")
     else:
-        test("Sage RPC connectivity", FAIL, f"No response ({ms:.0f}ms) -- is Sage running?")
+        test(
+            "Sage RPC connectivity",
+            FAIL,
+            f"No response ({ms:.0f}ms) -- is Sage running?",
+        )
 except Exception as e:
     test("Sage RPC connectivity", FAIL, f"{str(e)}")
 
@@ -305,7 +322,9 @@ for endpoint_name, payload in sage_read_tests:
             # Show a brief summary of the response
             summary = ""
             if endpoint_name == "get_sync_status":
-                summary = f"synced={data.get('synced', data.get('receive_address', '?'))}"
+                summary = (
+                    f"synced={data.get('synced', data.get('receive_address', '?'))}"
+                )
             elif endpoint_name == "get_keys":
                 keys = data.get("keys", [])
                 summary = f"{len(keys)} key(s)"
@@ -317,9 +336,17 @@ for endpoint_name, payload in sage_read_tests:
                 summary = f"{len(cats)} CAT wallet(s)"
             elif endpoint_name == "get_version":
                 summary = f"v{data.get('version', '?')}"
-            test(f"Sage /{endpoint_name}", PASS, f"{ms:.0f}ms" + (f" -- {summary}" if summary else ""))
+            test(
+                f"Sage /{endpoint_name}",
+                PASS,
+                f"{ms:.0f}ms" + (f" -- {summary}" if summary else ""),
+            )
         elif data and "_http_status" in data:
-            test(f"Sage /{endpoint_name}", WARN, f"HTTP {data['_http_status']} ({ms:.0f}ms)")
+            test(
+                f"Sage /{endpoint_name}",
+                WARN,
+                f"HTTP {data['_http_status']} ({ms:.0f}ms)",
+            )
         else:
             test(f"Sage /{endpoint_name}", SKIP, f"No response ({ms:.0f}ms)")
     except Exception as e:
@@ -332,7 +359,9 @@ coin_tests = [
     ("get_coins (XCH)", {"asset_id": None, "include_spent": False, "limit": 1}),
 ]
 if cat_id:
-    coin_tests.append(("get_coins (CAT)", {"asset_id": cat_id, "include_spent": False, "limit": 1}))
+    coin_tests.append(
+        ("get_coins (CAT)", {"asset_id": cat_id, "include_spent": False, "limit": 1})
+    )
 
 for test_name, payload in coin_tests:
     try:
@@ -358,7 +387,11 @@ for endpoint_name, payload in query_tests:
         if data and "_http_status" not in (data or {}):
             if endpoint_name == "get_offers":
                 offers = data.get("offers", [])
-                test(f"Sage /{endpoint_name}", PASS, f"{len(offers)} offer(s) ({ms:.0f}ms)")
+                test(
+                    f"Sage /{endpoint_name}",
+                    PASS,
+                    f"{len(offers)} offer(s) ({ms:.0f}ms)",
+                )
             else:
                 test(f"Sage /{endpoint_name}", PASS, f"{ms:.0f}ms")
         else:
@@ -369,11 +402,26 @@ for endpoint_name, payload in query_tests:
 
 # Note: Write operations (make_offer, cancel_offer, send_xch, etc.) are NOT tested as they modify state
 write_endpoints = [
-    "make_offer", "cancel_offer", "cancel_offers", "delete_offer",
-    "split", "combine", "send_xch", "send_cat", "multi_send",
-    "auto_combine_xch", "auto_combine_cat", "login", "logout", "resync"
+    "make_offer",
+    "cancel_offer",
+    "cancel_offers",
+    "delete_offer",
+    "split",
+    "combine",
+    "send_xch",
+    "send_cat",
+    "multi_send",
+    "auto_combine_xch",
+    "auto_combine_cat",
+    "login",
+    "logout",
+    "resync",
 ]
-test("Sage write endpoints (skipped)", SKIP, f"{len(write_endpoints)} write ops not tested (destructive)")
+test(
+    "Sage write endpoints (skipped)",
+    SKIP,
+    f"{len(write_endpoints)} write ops not tested (destructive)",
+)
 
 print()
 
@@ -385,16 +433,18 @@ print()
 
 print("--- COLLECTING REAL TEST DATA ---")
 
-_test_coin_id = ""        # A real XCH coin ID for Spacescan tests
-_test_cat_coin_id = ""    # A real CAT coin ID
-_test_wallet_addr = ""    # Our wallet address
-_test_offer_id = ""       # A real offer ID (trade_id)
-_test_dexie_id = ""       # A real Dexie offer hash
+_test_coin_id = ""  # A real XCH coin ID for Spacescan tests
+_test_cat_coin_id = ""  # A real CAT coin ID
+_test_wallet_addr = ""  # Our wallet address
+_test_offer_id = ""  # A real offer ID (trade_id)
+_test_dexie_id = ""  # A real Dexie offer hash
 
 # Try Sage wallet for coin IDs (using same http.client+ssl as the bot)
 try:
     # Get a real XCH coin
-    data, _ = sage_rpc("get_coins", {"asset_id": None, "include_spent": False, "limit": 1}, timeout=5)
+    data, _ = sage_rpc(
+        "get_coins", {"asset_id": None, "include_spent": False, "limit": 1}, timeout=5
+    )
     if data and "coins" in data:
         coins = data["coins"]
         if coins:
@@ -407,7 +457,11 @@ try:
     # Get a real CAT coin
     cat_id = getattr(cfg, "CAT_ASSET_ID", "") if CONFIG_LOADED else ""
     if cat_id:
-        data2, _ = sage_rpc("get_coins", {"asset_id": cat_id, "include_spent": False, "limit": 1}, timeout=5)
+        data2, _ = sage_rpc(
+            "get_coins",
+            {"asset_id": cat_id, "include_spent": False, "limit": 1},
+            timeout=5,
+        )
         if data2 and "coins" in data2:
             cats = data2["coins"]
             if cats:
@@ -417,7 +471,9 @@ try:
     time.sleep(1)
 
     # Get a real offer ID
-    data3, _ = sage_rpc("get_offers", {"include_completed": False, "start": 0, "end": 1}, timeout=5)
+    data3, _ = sage_rpc(
+        "get_offers", {"include_completed": False, "start": 0, "end": 1}, timeout=5
+    )
     if data3 and "offers" in data3:
         offers = data3["offers"]
         if offers:
@@ -432,6 +488,7 @@ if CONFIG_LOADED:
 # Get a dexie_id from the database
 try:
     from database import get_connection
+
     conn = get_connection()
     row = conn.execute(
         "SELECT dexie_id FROM dexie_mappings WHERE dexie_id IS NOT NULL AND dexie_id != '' LIMIT 1"
@@ -442,8 +499,12 @@ except Exception:
     pass
 
 print(f"  XCH coin:    {_test_coin_id[:24] + '...' if _test_coin_id else '(none)'}")
-print(f"  CAT coin:    {_test_cat_coin_id[:24] + '...' if _test_cat_coin_id else '(none)'}")
-print(f"  Wallet addr: {_test_wallet_addr[:20] + '...' if _test_wallet_addr else '(none)'}")
+print(
+    f"  CAT coin:    {_test_cat_coin_id[:24] + '...' if _test_cat_coin_id else '(none)'}"
+)
+print(
+    f"  Wallet addr: {_test_wallet_addr[:20] + '...' if _test_wallet_addr else '(none)'}"
+)
 print(f"  Offer ID:    {_test_offer_id[:20] + '...' if _test_offer_id else '(none)'}")
 print(f"  Dexie ID:    {_test_dexie_id[:20] + '...' if _test_dexie_id else '(none)'}")
 print()
@@ -460,8 +521,16 @@ cat_id = get_cat_asset_id()
 cat_ticker_id = get_cat_ticker_id()
 
 print(f"  Base URL: {dexie_url}")
-print(f"  CAT Asset ID: {cat_id[:16]}... (configured)" if cat_id else "  CAT Asset ID: (not configured)")
-print(f"  CAT Ticker ID: {cat_ticker_id}" if cat_ticker_id else "  CAT Ticker ID: (not configured)")
+print(
+    f"  CAT Asset ID: {cat_id[:16]}... (configured)"
+    if cat_id
+    else "  CAT Asset ID: (not configured)"
+)
+print(
+    f"  CAT Ticker ID: {cat_ticker_id}"
+    if cat_ticker_id
+    else "  CAT Ticker ID: (not configured)"
+)
 print()
 
 # Test basic connectivity
@@ -497,7 +566,11 @@ for test_name, endpoint_path in v1_tests:
             except json.JSONDecodeError:
                 test(test_name, FAIL, "Response not valid JSON")
         else:
-            test(test_name, FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                test_name,
+                FAIL,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test(test_name, FAIL, str(e))
     time.sleep(2)
@@ -511,11 +584,19 @@ if cat_id:
             try:
                 data = resp.json()
                 offers = data.get("offers", [])
-                test("Dexie /v1/offers (CAT/XCH)", PASS, f"{len(offers)} offer(s) ({ms:.0f}ms)")
+                test(
+                    "Dexie /v1/offers (CAT/XCH)",
+                    PASS,
+                    f"{len(offers)} offer(s) ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
                 test("Dexie /v1/offers (CAT/XCH)", FAIL, "Response not valid JSON")
         else:
-            test("Dexie /v1/offers (CAT/XCH)", FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/offers (CAT/XCH)",
+                FAIL,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Dexie /v1/offers (CAT/XCH)", FAIL, str(e))
     time.sleep(2)
@@ -525,7 +606,9 @@ else:
 # V2 Pricing API — What bot actually uses for prices
 try:
     _v2_ticker = cat_ticker_id or "XCH_XCH"  # fallback avoids empty param
-    resp, ms = timed_request("GET", f"{dexie_url}/v2/prices/tickers?ticker_id={_v2_ticker}", timeout=15)
+    resp, ms = timed_request(
+        "GET", f"{dexie_url}/v2/prices/tickers?ticker_id={_v2_ticker}", timeout=15
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
@@ -535,7 +618,11 @@ try:
     elif resp and resp.status_code == 404:
         test("Dexie /v2/prices/tickers", WARN, "404 -- endpoint may have changed")
     else:
-        test("Dexie /v2/prices/tickers", FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Dexie /v2/prices/tickers",
+            FAIL,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Dexie /v2/prices/tickers", FAIL, str(e))
 
@@ -544,7 +631,10 @@ time.sleep(2)
 # V3 Pricing API — Latest version
 v3_tests = [
     ("Dexie /v3/prices/pairs", "/v3/prices/pairs"),
-    ("Dexie /v3/prices/historical_trades", f"/v3/prices/historical_trades?ticker_id={cat_ticker_id or 'XCH_XCH'}&limit=5"),
+    (
+        "Dexie /v3/prices/historical_trades",
+        f"/v3/prices/historical_trades?ticker_id={cat_ticker_id or 'XCH_XCH'}&limit=5",
+    ),
 ]
 
 for test_name, endpoint_path in v3_tests:
@@ -559,7 +649,11 @@ for test_name, endpoint_path in v3_tests:
         elif resp and resp.status_code == 404:
             test(test_name, WARN, f"404 -- endpoint may not exist ({ms:.0f}ms)")
         else:
-            test(test_name, WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                test_name,
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test(test_name, WARN, str(e))
     time.sleep(2)
@@ -597,11 +691,17 @@ try:
         try:
             data = resp.json()
             pairs = data.get("pairs", [])
-            test("TibetSwap /pairs", PASS, f"{len(pairs)} pair(s) returned ({ms:.0f}ms)")
+            test(
+                "TibetSwap /pairs", PASS, f"{len(pairs)} pair(s) returned ({ms:.0f}ms)"
+            )
         except json.JSONDecodeError:
             test("TibetSwap /pairs", FAIL, "Response not valid JSON")
     else:
-        test("TibetSwap /pairs", FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "TibetSwap /pairs",
+            FAIL,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("TibetSwap /pairs", FAIL, str(e))
 
@@ -610,7 +710,9 @@ time.sleep(2)
 # If we have CAT_ASSET_ID, test filtering for that pair
 if cat_id:
     try:
-        resp, ms = timed_request("GET", f"{tibet_url}/pairs?skip=0&limit=200", timeout=15)
+        resp, ms = timed_request(
+            "GET", f"{tibet_url}/pairs?skip=0&limit=200", timeout=15
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
@@ -618,13 +720,25 @@ if cat_id:
                 # Look for our CAT in the pairs list
                 matching = [p for p in pairs if cat_id in str(p)]
                 if matching:
-                    test("TibetSwap CAT pair found", PASS, f"Located in {len(pairs)} pairs ({ms:.0f}ms)")
+                    test(
+                        "TibetSwap CAT pair found",
+                        PASS,
+                        f"Located in {len(pairs)} pairs ({ms:.0f}ms)",
+                    )
                 else:
-                    test("TibetSwap CAT pair found", WARN, f"Not in first 200 pairs ({ms:.0f}ms)")
+                    test(
+                        "TibetSwap CAT pair found",
+                        WARN,
+                        f"Not in first 200 pairs ({ms:.0f}ms)",
+                    )
             except (json.JSONDecodeError, KeyError):
                 test("TibetSwap CAT pair found", FAIL, "Could not parse pairs response")
         else:
-            test("TibetSwap CAT pair found", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "TibetSwap CAT pair found",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("TibetSwap CAT pair found", WARN, str(e))
 
@@ -638,7 +752,10 @@ quote_tests = [
 if cat_id:
     # Try CAT to XCH quote if CAT is configured
     quote_tests.append(
-        ("TibetSwap /quote (CAT->XCH)", f"?tokenIn={cat_id}&tokenOut=xch&amountIn=1000000000000")
+        (
+            "TibetSwap /quote (CAT->XCH)",
+            f"?tokenIn={cat_id}&tokenOut=xch&amountIn=1000000000000",
+        )
     )
 
 for test_name, params in quote_tests:
@@ -656,7 +773,11 @@ for test_name, params in quote_tests:
         elif resp and resp.status_code == 404:
             test(test_name, WARN, "404 -- pair may not exist")
         else:
-            test(test_name, FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                test_name,
+                FAIL,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test(test_name, WARN, str(e))
     time.sleep(2)
@@ -681,10 +802,19 @@ print()
 
 # Test basic connectivity
 try:
-    resp, ms = timed_request("GET", f"{spacescan_url}/coin/info/0x{'0' * 64}", headers=spacescan_headers, timeout=20)
+    resp, ms = timed_request(
+        "GET",
+        f"{spacescan_url}/coin/info/0x{'0' * 64}",
+        headers=spacescan_headers,
+        timeout=20,
+    )
     if resp is not None:
         if ms > 14000:
-            test("Spacescan connectivity", WARN, f"{ms:.0f}ms (slow!) HTTP {resp.status_code}")
+            test(
+                "Spacescan connectivity",
+                WARN,
+                f"{ms:.0f}ms (slow!) HTTP {resp.status_code}",
+            )
         else:
             test("Spacescan connectivity", PASS, f"{ms:.0f}ms, HTTP {resp.status_code}")
     else:
@@ -699,21 +829,37 @@ spacescan_tests = []
 # Use REAL coin ID from Sage if available, otherwise use dummy
 _ss_coin = _test_coin_id if _test_coin_id else ("0x" + "0" * 64)
 _ss_coin_label = f"REAL {_ss_coin[:16]}..." if _test_coin_id else "dummy (zeros)"
-spacescan_tests.append((f"Spacescan /coin/info ({_ss_coin_label})", f"/coin/info/{_ss_coin}"))
+spacescan_tests.append(
+    (f"Spacescan /coin/info ({_ss_coin_label})", f"/coin/info/{_ss_coin}")
+)
 
 # Add CAT coin test if we have one
 if _test_cat_coin_id:
-    spacescan_tests.append((f"Spacescan /coin/info (CAT {_test_cat_coin_id[:16]}...)", f"/coin/info/{_test_cat_coin_id}"))
+    spacescan_tests.append(
+        (
+            f"Spacescan /coin/info (CAT {_test_cat_coin_id[:16]}...)",
+            f"/coin/info/{_test_cat_coin_id}",
+        )
+    )
 
 # Address endpoints — use real wallet address or collected address
 wallet_addr = _test_wallet_addr or get_wallet_address()
 if wallet_addr:
-    spacescan_tests.append(("Spacescan /address/xch-balance", f"/address/xch-balance/{wallet_addr}"))
-    spacescan_tests.append(("Spacescan /address/token-balance", f"/address/token-balance/{wallet_addr}"))
+    spacescan_tests.append(
+        ("Spacescan /address/xch-balance", f"/address/xch-balance/{wallet_addr}")
+    )
+    spacescan_tests.append(
+        ("Spacescan /address/token-balance", f"/address/token-balance/{wallet_addr}")
+    )
 
 for test_name, endpoint_path in spacescan_tests:
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}{endpoint_path}", headers=spacescan_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}{endpoint_path}",
+            headers=spacescan_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
@@ -729,7 +875,11 @@ for test_name, endpoint_path in spacescan_tests:
             else:
                 test(test_name, WARN, "404 (expected for test data)")
         else:
-            test(test_name, FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                test_name,
+                FAIL,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test(test_name, FAIL, str(e))
     time.sleep(2)
@@ -753,20 +903,43 @@ spacescan_addr_headers["network"] = "xch"
 if wallet_addr:
     # XCH Historical Balance
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/address/xch-historical-balance/{wallet_addr}", headers=spacescan_addr_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/address/xch-historical-balance/{wallet_addr}",
+            headers=spacescan_addr_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 if ms > 14000:
-                    test("Spacescan /address/xch-historical-balance", WARN, f"Slow response ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /address/xch-historical-balance",
+                        WARN,
+                        f"Slow response ({ms:.0f}ms)",
+                    )
                 else:
-                    test("Spacescan /address/xch-historical-balance", PASS, f"{ms:.0f}ms")
+                    test(
+                        "Spacescan /address/xch-historical-balance", PASS, f"{ms:.0f}ms"
+                    )
             except json.JSONDecodeError:
-                test("Spacescan /address/xch-historical-balance", FAIL, "Response not valid JSON")
+                test(
+                    "Spacescan /address/xch-historical-balance",
+                    FAIL,
+                    "Response not valid JSON",
+                )
         elif resp and resp.status_code == 404:
-            test("Spacescan /address/xch-historical-balance", WARN, "404 (endpoint may not exist)")
+            test(
+                "Spacescan /address/xch-historical-balance",
+                WARN,
+                "404 (endpoint may not exist)",
+            )
         else:
-            test("Spacescan /address/xch-historical-balance", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /address/xch-historical-balance",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /address/xch-historical-balance", WARN, str(e))
 
@@ -774,21 +947,42 @@ if wallet_addr:
 
     # XCH Transactions
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/address/xch-transactions/{wallet_addr}?count=5", headers=spacescan_addr_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/address/xch-transactions/{wallet_addr}?count=5",
+            headers=spacescan_addr_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 txns = data if isinstance(data, list) else data.get("transactions", [])
                 if ms > 14000:
-                    test("Spacescan /address/xch-transactions", WARN, f"{len(txns)} txn(s), slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /address/xch-transactions",
+                        WARN,
+                        f"{len(txns)} txn(s), slow ({ms:.0f}ms)",
+                    )
                 else:
-                    test("Spacescan /address/xch-transactions", PASS, f"{len(txns)} txn(s) ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /address/xch-transactions",
+                        PASS,
+                        f"{len(txns)} txn(s) ({ms:.0f}ms)",
+                    )
             except json.JSONDecodeError:
-                test("Spacescan /address/xch-transactions", FAIL, "Response not valid JSON")
+                test(
+                    "Spacescan /address/xch-transactions",
+                    FAIL,
+                    "Response not valid JSON",
+                )
         elif resp and resp.status_code == 404:
             test("Spacescan /address/xch-transactions", WARN, "404 (no transactions)")
         else:
-            test("Spacescan /address/xch-transactions", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /address/xch-transactions",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /address/xch-transactions", WARN, str(e))
 
@@ -796,21 +990,46 @@ if wallet_addr:
 
     # Token Transactions
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/address/token-transactions/{wallet_addr}?count=5", headers=spacescan_addr_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/address/token-transactions/{wallet_addr}?count=5",
+            headers=spacescan_addr_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 txns = data if isinstance(data, list) else data.get("transactions", [])
                 if ms > 14000:
-                    test("Spacescan /address/token-transactions", WARN, f"{len(txns)} txn(s), slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /address/token-transactions",
+                        WARN,
+                        f"{len(txns)} txn(s), slow ({ms:.0f}ms)",
+                    )
                 else:
-                    test("Spacescan /address/token-transactions", PASS, f"{len(txns)} txn(s) ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /address/token-transactions",
+                        PASS,
+                        f"{len(txns)} txn(s) ({ms:.0f}ms)",
+                    )
             except json.JSONDecodeError:
-                test("Spacescan /address/token-transactions", FAIL, "Response not valid JSON")
+                test(
+                    "Spacescan /address/token-transactions",
+                    FAIL,
+                    "Response not valid JSON",
+                )
         elif resp and resp.status_code == 404:
-            test("Spacescan /address/token-transactions", WARN, "404 (no token transactions)")
+            test(
+                "Spacescan /address/token-transactions",
+                WARN,
+                "404 (no token transactions)",
+            )
         else:
-            test("Spacescan /address/token-transactions", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /address/token-transactions",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /address/token-transactions", WARN, str(e))
 
@@ -836,7 +1055,12 @@ cat_asset_id = get_cat_asset_id()
 if cat_asset_id:
     # Token Info
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/token/info/{cat_asset_id}", headers=spacescan_token_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/token/info/{cat_asset_id}",
+            headers=spacescan_token_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
@@ -849,7 +1073,11 @@ if cat_asset_id:
         elif resp and resp.status_code == 404:
             test("Spacescan /token/info", WARN, "404 (token not found)")
         else:
-            test("Spacescan /token/info", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /token/info",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /token/info", WARN, str(e))
 
@@ -857,12 +1085,19 @@ if cat_asset_id:
 
     # Token Price (may not exist)
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/token/price/{cat_asset_id}", headers=spacescan_token_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/token/price/{cat_asset_id}",
+            headers=spacescan_token_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 if ms > 14000:
-                    test("Spacescan /token/price", WARN, f"Retrieved, slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /token/price", WARN, f"Retrieved, slow ({ms:.0f}ms)"
+                    )
                 else:
                     test("Spacescan /token/price", PASS, f"{ms:.0f}ms")
             except json.JSONDecodeError:
@@ -870,7 +1105,11 @@ if cat_asset_id:
         elif resp and resp.status_code == 404:
             test("Spacescan /token/price", WARN, "404 (endpoint may not exist)")
         else:
-            test("Spacescan /token/price", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /token/price",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /token/price", WARN, str(e))
 
@@ -878,12 +1117,21 @@ if cat_asset_id:
 
     # CAT Total Supply
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/cat/total-supply/{cat_asset_id}", headers=spacescan_token_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/cat/total-supply/{cat_asset_id}",
+            headers=spacescan_token_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 if ms > 14000:
-                    test("Spacescan /cat/total-supply", WARN, f"Retrieved, slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /cat/total-supply",
+                        WARN,
+                        f"Retrieved, slow ({ms:.0f}ms)",
+                    )
                 else:
                     test("Spacescan /cat/total-supply", PASS, f"{ms:.0f}ms")
             except json.JSONDecodeError:
@@ -891,7 +1139,11 @@ if cat_asset_id:
         elif resp and resp.status_code == 404:
             test("Spacescan /cat/total-supply", WARN, "404 (endpoint may not exist)")
         else:
-            test("Spacescan /cat/total-supply", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /cat/total-supply",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /cat/total-supply", WARN, str(e))
 
@@ -899,20 +1151,39 @@ if cat_asset_id:
 
     # CAT Circulating Supply
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/cat/circulating-supply/{cat_asset_id}", headers=spacescan_token_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/cat/circulating-supply/{cat_asset_id}",
+            headers=spacescan_token_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 if ms > 14000:
-                    test("Spacescan /cat/circulating-supply", WARN, f"Retrieved, slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /cat/circulating-supply",
+                        WARN,
+                        f"Retrieved, slow ({ms:.0f}ms)",
+                    )
                 else:
                     test("Spacescan /cat/circulating-supply", PASS, f"{ms:.0f}ms")
             except json.JSONDecodeError:
-                test("Spacescan /cat/circulating-supply", FAIL, "Response not valid JSON")
+                test(
+                    "Spacescan /cat/circulating-supply", FAIL, "Response not valid JSON"
+                )
         elif resp and resp.status_code == 404:
-            test("Spacescan /cat/circulating-supply", WARN, "404 (endpoint may not exist)")
+            test(
+                "Spacescan /cat/circulating-supply",
+                WARN,
+                "404 (endpoint may not exist)",
+            )
         else:
-            test("Spacescan /cat/circulating-supply", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /cat/circulating-supply",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /cat/circulating-supply", WARN, str(e))
 
@@ -920,21 +1191,38 @@ if cat_asset_id:
 
     # Token Holders
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/token/holders/{cat_asset_id}?count=10", headers=spacescan_token_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/token/holders/{cat_asset_id}?count=10",
+            headers=spacescan_token_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 holders = data if isinstance(data, list) else data.get("holders", [])
                 if ms > 14000:
-                    test("Spacescan /token/holders", WARN, f"{len(holders)} holder(s), slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /token/holders",
+                        WARN,
+                        f"{len(holders)} holder(s), slow ({ms:.0f}ms)",
+                    )
                 else:
-                    test("Spacescan /token/holders", PASS, f"{len(holders)} holder(s) ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /token/holders",
+                        PASS,
+                        f"{len(holders)} holder(s) ({ms:.0f}ms)",
+                    )
             except json.JSONDecodeError:
                 test("Spacescan /token/holders", FAIL, "Response not valid JSON")
         elif resp and resp.status_code == 404:
             test("Spacescan /token/holders", WARN, "404 (endpoint may not exist)")
         else:
-            test("Spacescan /token/holders", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /token/holders",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /token/holders", WARN, str(e))
 
@@ -942,21 +1230,40 @@ if cat_asset_id:
 
     # Token Activities
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/token/activities/{cat_asset_id}?count=5", headers=spacescan_token_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/token/activities/{cat_asset_id}?count=5",
+            headers=spacescan_token_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
-                activities = data if isinstance(data, list) else data.get("activities", [])
+                activities = (
+                    data if isinstance(data, list) else data.get("activities", [])
+                )
                 if ms > 14000:
-                    test("Spacescan /token/activities", WARN, f"{len(activities)} activity(ies), slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /token/activities",
+                        WARN,
+                        f"{len(activities)} activity(ies), slow ({ms:.0f}ms)",
+                    )
                 else:
-                    test("Spacescan /token/activities", PASS, f"{len(activities)} activity(ies) ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /token/activities",
+                        PASS,
+                        f"{len(activities)} activity(ies) ({ms:.0f}ms)",
+                    )
             except json.JSONDecodeError:
                 test("Spacescan /token/activities", FAIL, "Response not valid JSON")
         elif resp and resp.status_code == 404:
             test("Spacescan /token/activities", WARN, "404 (endpoint may not exist)")
         else:
-            test("Spacescan /token/activities", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /token/activities",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /token/activities", WARN, str(e))
 
@@ -979,13 +1286,22 @@ spacescan_offer_headers["network"] = "xch"
 
 # List Offers (generic)
 try:
-    resp, ms = timed_request("GET", f"{spacescan_url}/offers?count=5", headers=spacescan_offer_headers, timeout=20)
+    resp, ms = timed_request(
+        "GET",
+        f"{spacescan_url}/offers?count=5",
+        headers=spacescan_offer_headers,
+        timeout=20,
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
             offers = data if isinstance(data, list) else data.get("offers", [])
             if ms > 14000:
-                test("Spacescan /offers", WARN, f"{len(offers)} offer(s), slow ({ms:.0f}ms)")
+                test(
+                    "Spacescan /offers",
+                    WARN,
+                    f"{len(offers)} offer(s), slow ({ms:.0f}ms)",
+                )
             else:
                 test("Spacescan /offers", PASS, f"{len(offers)} offer(s) ({ms:.0f}ms)")
         except json.JSONDecodeError:
@@ -993,7 +1309,11 @@ try:
     elif resp and resp.status_code == 404:
         test("Spacescan /offers", WARN, "404 (endpoint may not exist)")
     else:
-        test("Spacescan /offers", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Spacescan /offers",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Spacescan /offers", WARN, str(e))
 
@@ -1002,21 +1322,42 @@ time.sleep(2)
 # Offers by Asset
 if cat_asset_id:
     try:
-        resp, ms = timed_request("GET", f"{spacescan_url}/offers/asset/{cat_asset_id}?count=5", headers=spacescan_offer_headers, timeout=20)
+        resp, ms = timed_request(
+            "GET",
+            f"{spacescan_url}/offers/asset/{cat_asset_id}?count=5",
+            headers=spacescan_offer_headers,
+            timeout=20,
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 offers = data if isinstance(data, list) else data.get("offers", [])
                 if ms > 14000:
-                    test("Spacescan /offers/asset", WARN, f"{len(offers)} offer(s), slow ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /offers/asset",
+                        WARN,
+                        f"{len(offers)} offer(s), slow ({ms:.0f}ms)",
+                    )
                 else:
-                    test("Spacescan /offers/asset", PASS, f"{len(offers)} offer(s) ({ms:.0f}ms)")
+                    test(
+                        "Spacescan /offers/asset",
+                        PASS,
+                        f"{len(offers)} offer(s) ({ms:.0f}ms)",
+                    )
             except json.JSONDecodeError:
                 test("Spacescan /offers/asset", FAIL, "Response not valid JSON")
         elif resp and resp.status_code == 404:
-            test("Spacescan /offers/asset", WARN, "404 (no offers or endpoint may not exist)")
+            test(
+                "Spacescan /offers/asset",
+                WARN,
+                "404 (no offers or endpoint may not exist)",
+            )
         else:
-            test("Spacescan /offers/asset", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Spacescan /offers/asset",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Spacescan /offers/asset", WARN, str(e))
 
@@ -1037,13 +1378,22 @@ spacescan_util_headers["network"] = "xch"
 
 # Mempool min fee
 try:
-    resp, ms = timed_request("GET", f"{spacescan_url}/mempool/minfee", headers=spacescan_util_headers, timeout=20)
+    resp, ms = timed_request(
+        "GET",
+        f"{spacescan_url}/mempool/minfee",
+        headers=spacescan_util_headers,
+        timeout=20,
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
             fee = data.get("minfee", data.get("fee", "?"))
             if ms > 14000:
-                test("Spacescan /mempool/minfee", WARN, f"Min fee: {fee}, slow ({ms:.0f}ms)")
+                test(
+                    "Spacescan /mempool/minfee",
+                    WARN,
+                    f"Min fee: {fee}, slow ({ms:.0f}ms)",
+                )
             else:
                 test("Spacescan /mempool/minfee", PASS, f"Min fee: {fee} ({ms:.0f}ms)")
         except json.JSONDecodeError:
@@ -1051,7 +1401,11 @@ try:
     elif resp and resp.status_code == 404:
         test("Spacescan /mempool/minfee", WARN, "404 (endpoint may not exist)")
     else:
-        test("Spacescan /mempool/minfee", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Spacescan /mempool/minfee",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Spacescan /mempool/minfee", WARN, str(e))
 
@@ -1059,13 +1413,19 @@ time.sleep(2)
 
 # Peak Block
 try:
-    resp, ms = timed_request("GET", f"{spacescan_url}/block/peak", headers=spacescan_util_headers, timeout=20)
+    resp, ms = timed_request(
+        "GET", f"{spacescan_url}/block/peak", headers=spacescan_util_headers, timeout=20
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
             height = data.get("height", data.get("peak_height", "?"))
             if ms > 14000:
-                test("Spacescan /block/peak", WARN, f"Height: {height}, slow ({ms:.0f}ms)")
+                test(
+                    "Spacescan /block/peak",
+                    WARN,
+                    f"Height: {height}, slow ({ms:.0f}ms)",
+                )
             else:
                 test("Spacescan /block/peak", PASS, f"Height: {height} ({ms:.0f}ms)")
         except json.JSONDecodeError:
@@ -1073,7 +1433,11 @@ try:
     elif resp and resp.status_code == 404:
         test("Spacescan /block/peak", WARN, "404 (endpoint may not exist)")
     else:
-        test("Spacescan /block/peak", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Spacescan /block/peak",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Spacescan /block/peak", WARN, str(e))
 
@@ -1081,7 +1445,9 @@ time.sleep(2)
 
 # Stats (generic attempt)
 try:
-    resp, ms = timed_request("GET", f"{spacescan_url}/stats", headers=spacescan_util_headers, timeout=20)
+    resp, ms = timed_request(
+        "GET", f"{spacescan_url}/stats", headers=spacescan_util_headers, timeout=20
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
@@ -1094,7 +1460,11 @@ try:
     elif resp and resp.status_code == 404:
         test("Spacescan /stats", WARN, "404 (endpoint may not exist)")
     else:
-        test("Spacescan /stats", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Spacescan /stats",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Spacescan /stats", WARN, str(e))
 
@@ -1118,13 +1488,19 @@ try:
             offers = data.get("offers", [])
             if offers:
                 dexie_offer_id = offers[0].get("id")
-                test("Dexie /v1/offers (sample fetch)", PASS, f"Got offer ID {ms:.0f}ms")
+                test(
+                    "Dexie /v1/offers (sample fetch)", PASS, f"Got offer ID {ms:.0f}ms"
+                )
             else:
                 test("Dexie /v1/offers (sample fetch)", WARN, "No offers in response")
         except json.JSONDecodeError:
             test("Dexie /v1/offers (sample fetch)", FAIL, "Response not valid JSON")
     else:
-        test("Dexie /v1/offers (sample fetch)", FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Dexie /v1/offers (sample fetch)",
+            FAIL,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Dexie /v1/offers (sample fetch)", FAIL, str(e))
 
@@ -1133,17 +1509,35 @@ time.sleep(2)
 # Test inspect single offer
 if dexie_offer_id:
     try:
-        resp, ms = timed_request("GET", f"{dexie_url}/v1/offers/{dexie_offer_id}", timeout=15)
+        resp, ms = timed_request(
+            "GET", f"{dexie_url}/v1/offers/{dexie_offer_id}", timeout=15
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
-                test(f"Dexie /v1/offers/{dexie_offer_id[:8]}...", PASS, f"Offer detail retrieved ({ms:.0f}ms)")
+                test(
+                    f"Dexie /v1/offers/{dexie_offer_id[:8]}...",
+                    PASS,
+                    f"Offer detail retrieved ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
-                test(f"Dexie /v1/offers/{dexie_offer_id[:8]}...", FAIL, "Response not valid JSON")
+                test(
+                    f"Dexie /v1/offers/{dexie_offer_id[:8]}...",
+                    FAIL,
+                    "Response not valid JSON",
+                )
         elif resp and resp.status_code == 404:
-            test(f"Dexie /v1/offers/{dexie_offer_id[:8]}...", WARN, "404 (offer may have expired)")
+            test(
+                f"Dexie /v1/offers/{dexie_offer_id[:8]}...",
+                WARN,
+                "404 (offer may have expired)",
+            )
         else:
-            test(f"Dexie /v1/offers/{dexie_offer_id[:8]}...", FAIL, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                f"Dexie /v1/offers/{dexie_offer_id[:8]}...",
+                FAIL,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test(f"Dexie /v1/offers/{dexie_offer_id[:8]}...", FAIL, str(e))
     time.sleep(2)
@@ -1151,17 +1545,27 @@ if dexie_offer_id:
 # Test completed offers (status=4)
 if cat_id:
     try:
-        params = f"?status=4&offered={cat_id}&requested=xch&page_size=5&sort=date_completed"
+        params = (
+            f"?status=4&offered={cat_id}&requested=xch&page_size=5&sort=date_completed"
+        )
         resp, ms = timed_request("GET", f"{dexie_url}/v1/offers{params}", timeout=15)
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 completed = data.get("offers", [])
-                test("Dexie /v1/offers (completed)", PASS, f"{len(completed)} completed offer(s) ({ms:.0f}ms)")
+                test(
+                    "Dexie /v1/offers (completed)",
+                    PASS,
+                    f"{len(completed)} completed offer(s) ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
                 test("Dexie /v1/offers (completed)", FAIL, "Response not valid JSON")
         else:
-            test("Dexie /v1/offers (completed)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/offers (completed)",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Dexie /v1/offers (completed)", WARN, str(e))
     time.sleep(2)
@@ -1175,11 +1579,19 @@ if cat_id:
             try:
                 data = resp.json()
                 cancelled = data.get("offers", [])
-                test("Dexie /v1/offers (cancelled)", PASS, f"{len(cancelled)} cancelled offer(s) ({ms:.0f}ms)")
+                test(
+                    "Dexie /v1/offers (cancelled)",
+                    PASS,
+                    f"{len(cancelled)} cancelled offer(s) ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
                 test("Dexie /v1/offers (cancelled)", FAIL, "Response not valid JSON")
         else:
-            test("Dexie /v1/offers (cancelled)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/offers (cancelled)",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Dexie /v1/offers (cancelled)", WARN, str(e))
     time.sleep(2)
@@ -1193,11 +1605,19 @@ if cat_id:
             try:
                 data = resp.json()
                 expired = data.get("offers", [])
-                test("Dexie /v1/offers (expired)", PASS, f"{len(expired)} expired offer(s) ({ms:.0f}ms)")
+                test(
+                    "Dexie /v1/offers (expired)",
+                    PASS,
+                    f"{len(expired)} expired offer(s) ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
                 test("Dexie /v1/offers (expired)", FAIL, "Response not valid JSON")
         else:
-            test("Dexie /v1/offers (expired)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/offers (expired)",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Dexie /v1/offers (expired)", WARN, str(e))
     time.sleep(2)
@@ -1210,11 +1630,19 @@ if cat_id:
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
-                test("Dexie /v1/offers (compact mode)", PASS, f"Compact response ({ms:.0f}ms)")
+                test(
+                    "Dexie /v1/offers (compact mode)",
+                    PASS,
+                    f"Compact response ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
                 test("Dexie /v1/offers (compact mode)", FAIL, "Response not valid JSON")
         else:
-            test("Dexie /v1/offers (compact mode)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/offers (compact mode)",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Dexie /v1/offers (compact mode)", WARN, str(e))
     time.sleep(2)
@@ -1235,13 +1663,21 @@ try:
         try:
             data = resp.json()
             tokens = data.get("tokens", [])
-            test("Dexie /v1/swap/tokens", PASS, f"{len(tokens)} token(s) available ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/swap/tokens",
+                PASS,
+                f"{len(tokens)} token(s) available ({ms:.0f}ms)",
+            )
         except json.JSONDecodeError:
             test("Dexie /v1/swap/tokens", FAIL, "Response not valid JSON")
     elif resp and resp.status_code == 404:
         test("Dexie /v1/swap/tokens", WARN, "404 (endpoint may not exist)")
     else:
-        test("Dexie /v1/swap/tokens", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Dexie /v1/swap/tokens",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Dexie /v1/swap/tokens", WARN, str(e))
 
@@ -1254,13 +1690,19 @@ try:
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
-            test("Dexie /v1/swap/quote (XCH->XCH)", PASS, f"Quote retrieved ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/swap/quote (XCH->XCH)", PASS, f"Quote retrieved ({ms:.0f}ms)"
+            )
         except json.JSONDecodeError:
             test("Dexie /v1/swap/quote (XCH->XCH)", FAIL, "Response not valid JSON")
     elif resp and resp.status_code == 404:
         test("Dexie /v1/swap/quote (XCH->XCH)", WARN, "404 (endpoint may not exist)")
     else:
-        test("Dexie /v1/swap/quote (XCH->XCH)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Dexie /v1/swap/quote (XCH->XCH)",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Dexie /v1/swap/quote (XCH->XCH)", WARN, str(e))
 
@@ -1270,18 +1712,28 @@ time.sleep(2)
 if cat_id:
     try:
         params = f"?from=xch&to={cat_id}&from_amount=100000000000"
-        resp, ms = timed_request("GET", f"{dexie_url}/v1/swap/quote{params}", timeout=15)
+        resp, ms = timed_request(
+            "GET", f"{dexie_url}/v1/swap/quote{params}", timeout=15
+        )
         if resp and resp.status_code == 200:
             try:
                 data = resp.json()
                 to_amount = data.get("to_amount", data.get("out_amount", "?"))
-                test("Dexie /v1/swap/quote (XCH->CAT)", PASS, f"Quote: {to_amount} ({ms:.0f}ms)")
+                test(
+                    "Dexie /v1/swap/quote (XCH->CAT)",
+                    PASS,
+                    f"Quote: {to_amount} ({ms:.0f}ms)",
+                )
             except json.JSONDecodeError:
                 test("Dexie /v1/swap/quote (XCH->CAT)", FAIL, "Response not valid JSON")
         elif resp and resp.status_code == 404:
             test("Dexie /v1/swap/quote (XCH->CAT)", WARN, "404 (pair may not exist)")
         else:
-            test("Dexie /v1/swap/quote (XCH->CAT)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+            test(
+                "Dexie /v1/swap/quote (XCH->CAT)",
+                WARN,
+                f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+            )
     except Exception as e:
         test("Dexie /v1/swap/quote (XCH->CAT)", WARN, str(e))
 
@@ -1298,17 +1750,27 @@ print()
 
 # Test v3 tickers
 try:
-    resp, ms = timed_request("GET", f"{dexie_url}/v3/prices/tickers?ticker_id={cat_ticker_id or 'XCH_XCH'}", timeout=15)
+    resp, ms = timed_request(
+        "GET",
+        f"{dexie_url}/v3/prices/tickers?ticker_id={cat_ticker_id or 'XCH_XCH'}",
+        timeout=15,
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
-            test("Dexie /v3/prices/tickers", PASS, f"Ticker data retrieved ({ms:.0f}ms)")
+            test(
+                "Dexie /v3/prices/tickers", PASS, f"Ticker data retrieved ({ms:.0f}ms)"
+            )
         except json.JSONDecodeError:
             test("Dexie /v3/prices/tickers", FAIL, "Response not valid JSON")
     elif resp and resp.status_code == 404:
         test("Dexie /v3/prices/tickers", WARN, "404 (endpoint may not exist)")
     else:
-        test("Dexie /v3/prices/tickers", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Dexie /v3/prices/tickers",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Dexie /v3/prices/tickers", WARN, str(e))
 
@@ -1316,17 +1778,27 @@ time.sleep(2)
 
 # Test v3 order book depth
 try:
-    resp, ms = timed_request("GET", f"{dexie_url}/v3/prices/orderbook?ticker_id={cat_ticker_id or 'XCH_XCH'}&depth=10", timeout=15)
+    resp, ms = timed_request(
+        "GET",
+        f"{dexie_url}/v3/prices/orderbook?ticker_id={cat_ticker_id or 'XCH_XCH'}&depth=10",
+        timeout=15,
+    )
     if resp and resp.status_code == 200:
         try:
             data = resp.json()
-            test("Dexie /v3/prices/orderbook", PASS, f"Order book retrieved ({ms:.0f}ms)")
+            test(
+                "Dexie /v3/prices/orderbook", PASS, f"Order book retrieved ({ms:.0f}ms)"
+            )
         except json.JSONDecodeError:
             test("Dexie /v3/prices/orderbook", FAIL, "Response not valid JSON")
     elif resp and resp.status_code == 404:
         test("Dexie /v3/prices/orderbook", WARN, "404 (endpoint may not exist)")
     else:
-        test("Dexie /v3/prices/orderbook", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Dexie /v3/prices/orderbook",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Dexie /v3/prices/orderbook", WARN, str(e))
 
@@ -1354,7 +1826,11 @@ try:
     if resp is not None and resp.status_code < 500:
         test("Offerpool root", PASS, f"{ms:.0f}ms, HTTP {resp.status_code}")
     else:
-        test("Offerpool root", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Offerpool root",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Offerpool root", WARN, f"{str(e)} (optional)")
 
@@ -1364,9 +1840,17 @@ time.sleep(2)
 try:
     resp, ms = timed_request("POST", offerpool_url, json_data={}, timeout=15)
     if resp is not None and resp.status_code < 500:
-        test("Offerpool /api/v1/offers (POST)", WARN if offerpool_enabled else SKIP, f"Endpoint responsive ({ms:.0f}ms)")
+        test(
+            "Offerpool /api/v1/offers (POST)",
+            WARN if offerpool_enabled else SKIP,
+            f"Endpoint responsive ({ms:.0f}ms)",
+        )
     else:
-        test("Offerpool /api/v1/offers (POST)", WARN, f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)")
+        test(
+            "Offerpool /api/v1/offers (POST)",
+            WARN,
+            f"HTTP {resp.status_code if resp else 'timeout'} ({ms:.0f}ms)",
+        )
 except Exception as e:
     test("Offerpool /api/v1/offers (POST)", SKIP, f"{str(e)} (optional)")
 
@@ -1380,7 +1864,9 @@ print("--- SPLASH P2P (localhost:4000) --- OPTIONAL ---")
 print()
 
 print("  Base URL: http://localhost:4000")
-print(f"  Status: {'running' if CONFIG_LOADED and getattr(cfg, 'SPLASH_ENABLED', False) else 'not required'}")
+print(
+    f"  Status: {'running' if CONFIG_LOADED and getattr(cfg, 'SPLASH_ENABLED', False) else 'not required'}"
+)
 print()
 
 try:
@@ -1446,7 +1932,11 @@ if CONFIG_LOADED:
 
     # Check Dexie settings
     dexie_enabled = getattr(cfg, "DEXIE_AUTO_POST", True)
-    test("Dexie auto-post", PASS if dexie_enabled else WARN, f"{'enabled' if dexie_enabled else 'disabled'}")
+    test(
+        "Dexie auto-post",
+        PASS if dexie_enabled else WARN,
+        f"{'enabled' if dexie_enabled else 'disabled'}",
+    )
 
     # Check TibetSwap timeout
     tibet_timeout = getattr(cfg, "TIBET_TIMEOUT", 10)
@@ -1458,15 +1948,27 @@ if CONFIG_LOADED:
     # Check Spacescan settings
     spacescan_enabled = getattr(cfg, "SPACESCAN_ENABLED", True)
     spacescan_key = getattr(cfg, "SPACESCAN_API_KEY", "")
-    test("Spacescan enabled", PASS if spacescan_enabled else WARN, f"{'enabled (Pro)' if spacescan_key else 'enabled (Free)'}")
+    test(
+        "Spacescan enabled",
+        PASS if spacescan_enabled else WARN,
+        f"{'enabled (Pro)' if spacescan_key else 'enabled (Free)'}",
+    )
 
     # Check Offerpool settings
     offerpool_enabled = getattr(cfg, "OFFERPOOL_ENABLED", False)
-    test("Offerpool enabled", WARN if not offerpool_enabled else PASS, f"{'enabled' if offerpool_enabled else 'disabled'}")
+    test(
+        "Offerpool enabled",
+        WARN if not offerpool_enabled else PASS,
+        f"{'enabled' if offerpool_enabled else 'disabled'}",
+    )
 
     # Check Market Intelligence
     market_intel_enabled = getattr(cfg, "COMPETITOR_AWARE_ENABLED", False)
-    test("Market intelligence", WARN if not market_intel_enabled else PASS, f"{'enabled' if market_intel_enabled else 'disabled'}")
+    test(
+        "Market intelligence",
+        WARN if not market_intel_enabled else PASS,
+        f"{'enabled' if market_intel_enabled else 'disabled'}",
+    )
 
 else:
     test("Bot config", SKIP, "Could not load config.py")
@@ -1488,11 +1990,15 @@ warns = sum(1 for _, s, _ in results if s == WARN)
 skips = sum(1 for _, s, _ in results if s == SKIP)
 total = len(results)
 
-print(f"  Results: {passes} PASS, {fails} FAIL, {warns} WARN, {skips} SKIP / {total} total tests")
+print(
+    f"  Results: {passes} PASS, {fails} FAIL, {warns} WARN, {skips} SKIP / {total} total tests"
+)
 print()
 print("  Test Categories:")
 print("    - Sage Wallet RPC (30+ endpoints)")
-print("    - Dexie API (v1 basic + v1 advanced offers + v1 swap + v2 pricing + v3 latest)")
+print(
+    "    - Dexie API (v1 basic + v1 advanced offers + v1 swap + v2 pricing + v3 latest)"
+)
 print("    - TibetSwap API (pairs, quotes, slippage)")
 print("    - Spacescan API (basic + advanced address + token + offers + utility)")
 print("    - Offerpool (cross-posting)")
@@ -1513,7 +2019,9 @@ print("  By service:")
 for svc in sorted(services.keys()):
     counts = services[svc]
     status_str = "OK" if counts["fail"] == 0 else "BROKEN"
-    print(f"    {svc:15} {status_str:7} {counts['pass']:2}P {counts['fail']:2}F {counts['warn']:2}W {counts['skip']:2}S")
+    print(
+        f"    {svc:15} {status_str:7} {counts['pass']:2}P {counts['fail']:2}F {counts['warn']:2}W {counts['skip']:2}S"
+    )
 
 print()
 
@@ -1561,7 +2069,9 @@ tibet_fail = sum(1 for r in tibet_tests if r[1] == FAIL)
 if tibet_fail == 0:
     print("    [*] TibetSwap API is working — bot can calculate reference prices")
 else:
-    print("    [*] TibetSwap API is down or unreachable — bot will use fallback pricing")
+    print(
+        "    [*] TibetSwap API is down or unreachable — bot will use fallback pricing"
+    )
 
 spacescan_tests = [r for r in results if r[0].startswith("Spacescan")]
 spacescan_warn = sum(1 for r in spacescan_tests if r[1] == WARN and "slow" in r[2])
@@ -1583,7 +2093,9 @@ if fails == 0:
         print("    CAUTION — Core APIs working but some optional services have issues.")
         print("              Bot can run, but some features may be limited.")
 elif fails <= 2:
-    print("    DEGRADED — Some API endpoints failing. Bot may have limited functionality.")
+    print(
+        "    DEGRADED — Some API endpoints failing. Bot may have limited functionality."
+    )
     print("               Review failures above before starting bot.")
 else:
     print("    BROKEN — Multiple critical APIs failing. Bot will not operate.")

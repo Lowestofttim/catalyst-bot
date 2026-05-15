@@ -93,8 +93,10 @@ class SpacescanCacheTests(unittest.TestCase):
 
     def test_no_asset_id_returns_pass(self):
         cfg = bot_health.cfg
-        with patch.object(cfg, "SPACESCAN_ENABLED", True), \
-             patch.object(cfg, "CAT_ASSET_ID", ""):
+        with (
+            patch.object(cfg, "SPACESCAN_ENABLED", True),
+            patch.object(cfg, "CAT_ASSET_ID", ""),
+        ):
             check = bot_health.check_spacescan_cache_stale(auto_repair=True)
         self.assertEqual(check.status, "pass")
         self.assertIn("No CAT", check.message)
@@ -112,9 +114,11 @@ class SpacescanCacheTests(unittest.TestCase):
             refresh_called["fired"] = True
             return None
 
-        with patch.object(cfg, "SPACESCAN_ENABLED", True), \
-             patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"), \
-             patch("database.get_market_analysis_cache", return_value=cached):
+        with (
+            patch.object(cfg, "SPACESCAN_ENABLED", True),
+            patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"),
+            patch("database.get_market_analysis_cache", return_value=cached),
+        ):
             check = bot_health.check_spacescan_cache_stale(auto_repair=True)
 
         self.assertEqual(check.status, "pass")
@@ -132,17 +136,18 @@ class SpacescanCacheTests(unittest.TestCase):
         def _fake_refresh(asset_id):
             refresh_called["count"] += 1
             refresh_called["asset_id"] = asset_id
-            return {"has_data": True, "holder_count": 3412,
-                    "activity_count": 100}
+            return {"has_data": True, "holder_count": 3412, "activity_count": 100}
 
         fake_module = types.ModuleType("market_data_collector")
         fake_module.refresh_spacescan_cache = _fake_refresh
         sys.modules["market_data_collector"] = fake_module
 
         try:
-            with patch.object(cfg, "SPACESCAN_ENABLED", True), \
-                 patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"), \
-                 patch("database.get_market_analysis_cache", return_value=None):
+            with (
+                patch.object(cfg, "SPACESCAN_ENABLED", True),
+                patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"),
+                patch("database.get_market_analysis_cache", return_value=None),
+            ):
                 check = bot_health.check_spacescan_cache_stale(auto_repair=True)
                 # Wait briefly for the background thread to run.
                 time.sleep(0.2)
@@ -172,9 +177,11 @@ class SpacescanCacheTests(unittest.TestCase):
         sys.modules["market_data_collector"] = fake_module
 
         try:
-            with patch.object(cfg, "SPACESCAN_ENABLED", True), \
-                 patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"), \
-                 patch("database.get_market_analysis_cache", return_value=None):
+            with (
+                patch.object(cfg, "SPACESCAN_ENABLED", True),
+                patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"),
+                patch("database.get_market_analysis_cache", return_value=None),
+            ):
                 c1 = bot_health.check_spacescan_cache_stale(auto_repair=True)
                 c2 = bot_health.check_spacescan_cache_stale(auto_repair=True)
                 time.sleep(0.3)  # let refresh complete
@@ -204,9 +211,11 @@ class SpacescanCacheTests(unittest.TestCase):
         sys.modules["market_data_collector"] = fake_module
 
         try:
-            with patch.object(cfg, "SPACESCAN_ENABLED", True), \
-                 patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"), \
-                 patch("database.get_market_analysis_cache", return_value=None):
+            with (
+                patch.object(cfg, "SPACESCAN_ENABLED", True),
+                patch.object(cfg, "CAT_ASSET_ID", "b8edcc6a"),
+                patch("database.get_market_analysis_cache", return_value=None),
+            ):
                 check = bot_health.check_spacescan_cache_stale(auto_repair=False)
                 time.sleep(0.1)
         finally:

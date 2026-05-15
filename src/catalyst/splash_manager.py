@@ -60,8 +60,7 @@ class SplashManager:
     # Queue management
     # -------------------------------------------------------------------
 
-    def queue_post(self, offer_bech32: str, trade_id: str = None,
-                   force: bool = False):
+    def queue_post(self, offer_bech32: str, trade_id: str = None, force: bool = False):
         """Queue an offer for broadcasting to Splash.
 
         Args:
@@ -73,11 +72,13 @@ class SplashManager:
             return
 
         with self._lock:
-            self._queue.append({
-                "offer": offer_bech32.strip(),
-                "trade_id": trade_id,
-                "force": force,
-            })
+            self._queue.append(
+                {
+                    "offer": offer_bech32.strip(),
+                    "trade_id": trade_id,
+                    "force": force,
+                }
+            )
 
     def purge_trade_ids(self, trade_ids):
         """Remove queued entries for cancelled trade IDs."""
@@ -87,13 +88,15 @@ class SplashManager:
         with self._lock:
             before = len(self._queue)
             self._queue = [
-                item for item in self._queue
-                if item.get("trade_id") not in ids
+                item for item in self._queue if item.get("trade_id") not in ids
             ]
             removed = before - len(self._queue)
         if removed:
-            log_event("debug", "splash_queue_purged",
-                      f"Removed {removed} cancelled offer(s) from Splash queue")
+            log_event(
+                "debug",
+                "splash_queue_purged",
+                f"Removed {removed} cancelled offer(s) from Splash queue",
+            )
 
     def flush_queue(self, flush_all: bool = False) -> Dict:
         """Broadcast all queued offers to Splash.
@@ -152,8 +155,11 @@ class SplashManager:
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
             workers = min(8, len(batch))
-            log_event("info", "splash_flush_parallel",
-                      f"Parallel Splash flush: {len(batch)} offers with {workers} workers")
+            log_event(
+                "info",
+                "splash_flush_parallel",
+                f"Parallel Splash flush: {len(batch)} offers with {workers} workers",
+            )
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(_process_one, item): item for item in batch}
                 for future in as_completed(futures):
@@ -162,8 +168,11 @@ class SplashManager:
                         result = future.result()
                         _handle_result(result, item)
                     except Exception as e:
-                        log_event("warning", "splash_parallel_error",
-                                  f"Parallel Splash post failed: {e}")
+                        log_event(
+                            "warning",
+                            "splash_parallel_error",
+                            f"Parallel Splash post failed: {e}",
+                        )
                         with self._lock:
                             failed += 1
                             self._total_failed += 1
@@ -180,23 +189,34 @@ class SplashManager:
         if failed_items:
             with self._lock:
                 self._queue.extend(failed_items)
-            log_event("info", "splash_requeue",
-                      f"Re-queued {len(failed_items)} failed Splash posts for next cycle")
+            log_event(
+                "info",
+                "splash_requeue",
+                f"Re-queued {len(failed_items)} failed Splash posts for next cycle",
+            )
 
-        summary = {"posted": posted, "failed": failed, "skipped": skipped,
-                    "requeued": len(failed_items)}
+        summary = {
+            "posted": posted,
+            "failed": failed,
+            "skipped": skipped,
+            "requeued": len(failed_items),
+        }
         if posted > 0:
-            log_event("info", "splash_flush",
-                      f"Broadcast {posted} queued offers to Splash "
-                      f"({skipped} skipped, {failed} failed)")
+            log_event(
+                "info",
+                "splash_flush",
+                f"Broadcast {posted} queued offers to Splash "
+                f"({skipped} skipped, {failed} failed)",
+            )
         return summary
 
     # -------------------------------------------------------------------
     # Core posting
     # -------------------------------------------------------------------
 
-    def _post_single(self, offer_bech32: str, trade_id: str = None,
-                     force: bool = False) -> Dict:
+    def _post_single(
+        self, offer_bech32: str, trade_id: str = None, force: bool = False
+    ) -> Dict:
         """Post a single offer to Splash with retries.
 
         Returns result dict with success/skipped/error fields.
@@ -225,9 +245,10 @@ class SplashManager:
         for attempt in range(retries + 1):
             try:
                 r = requests.post(
-                    url, json=payload,
+                    url,
+                    json=payload,
                     headers={"content-type": "application/json"},
-                    timeout=timeout
+                    timeout=timeout,
                 )
 
                 if 200 <= r.status_code < 300:
@@ -240,12 +261,16 @@ class SplashManager:
                             self._consecutive_failures = 0
                             recovered = True
                     if recovered:
-                        log_event("info", "splash_recovered",
-                                  "Splash connection restored")
+                        log_event(
+                            "info", "splash_recovered", "Splash connection restored"
+                        )
 
                     tid_short = trade_id[:16] + "..." if trade_id else "unknown"
-                    log_event("debug", "splash_posted",
-                              f"Broadcast to Splash OK (trade: {tid_short})")
+                    log_event(
+                        "debug",
+                        "splash_posted",
+                        f"Broadcast to Splash OK (trade: {tid_short})",
+                    )
 
                     return {"success": True, "trade_id": trade_id}
 
@@ -272,12 +297,17 @@ class SplashManager:
                 self._splash_healthy = False
 
         if should_log:
-            log_event("warning", "splash_post_failed",
-                      f"Failed to broadcast to Splash "
-                      f"(attempt {cf}): {last_err}")
+            log_event(
+                "warning",
+                "splash_post_failed",
+                f"Failed to broadcast to Splash (attempt {cf}): {last_err}",
+            )
         if should_mark_unhealthy:
-            log_event("warning", "splash_unhealthy",
-                      "Splash appears offline — will keep trying silently")
+            log_event(
+                "warning",
+                "splash_unhealthy",
+                "Splash appears offline — will keep trying silently",
+            )
 
         return {"success": False, "error": last_err}
 
@@ -303,8 +333,11 @@ class SplashManager:
                 count += 1
 
         if count > 0:
-            log_event("info", "splash_repost_queued",
-                      f"Queued {count} active offers for Splash rebroadcast")
+            log_event(
+                "info",
+                "splash_repost_queued",
+                f"Queued {count} active offers for Splash rebroadcast",
+            )
 
     # -------------------------------------------------------------------
     # Health check
@@ -322,8 +355,11 @@ class SplashManager:
             requests.get(submit_url, timeout=3)
             return {"healthy": True, "url": submit_url, "error": None}
         except requests.ConnectionError:
-            return {"healthy": False, "url": submit_url,
-                    "error": "Connection refused — Splash not running"}
+            return {
+                "healthy": False,
+                "url": submit_url,
+                "error": "Connection refused — Splash not running",
+            }
         except Exception as e:
             return {"healthy": False, "url": submit_url, "error": str(e)}
 
@@ -361,8 +397,11 @@ class SplashManager:
         if len(self._posted_fingerprints) > max_fps:
             old_len = len(self._posted_fingerprints)
             self._posted_fingerprints.clear()
-            log_event("debug", "splash_fingerprints_cleared",
-                      f"Cleared {old_len} fingerprints (exceeded {max_fps} cap)")
+            log_event(
+                "debug",
+                "splash_fingerprints_cleared",
+                f"Cleared {old_len} fingerprints (exceeded {max_fps} cap)",
+            )
 
     # -------------------------------------------------------------------
     # Helpers
@@ -372,4 +411,3 @@ class SplashManager:
     def _fingerprint(offer_bech32: str) -> str:
         """SHA256 fingerprint of offer bech32 string."""
         return hashlib.sha256(offer_bech32.strip().encode("utf-8")).hexdigest()
-

@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import risk_manager as _rm_mod
     from risk_manager import RiskManager
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _rm_mod = None
@@ -28,6 +29,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Shared fake config
 # ---------------------------------------------------------------------------
+
 
 def _make_cfg(**overrides):
     defaults = dict(
@@ -52,6 +54,7 @@ def _make_cfg(**overrides):
 # ---------------------------------------------------------------------------
 # 1. Hard price limit — trip and confirm halt
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
 class TestHardPriceLimitTrip(unittest.TestCase):
@@ -100,6 +103,7 @@ class TestHardPriceLimitTrip(unittest.TestCase):
 # 2. Hysteresis — must have N consecutive OK cycles to clear
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
 class TestCircuitBreakerHysteresis(unittest.TestCase):
     """CB clears only after _cb_clear_threshold consecutive OK cycles."""
@@ -141,7 +145,7 @@ class TestCircuitBreakerHysteresis(unittest.TestCase):
         # Still active (streak=2, not enough yet)
         self.assertTrue(self.rm.circuit_breaker_active())
         # One more good cycle reaches threshold → clears
-        self.rm.check_circuit_breakers(Decimal("0.40"))   # streak=3 → clear
+        self.rm.check_circuit_breakers(Decimal("0.40"))  # streak=3 → clear
         self.assertFalse(self.rm.circuit_breaker_active())
 
     def test_trading_resumes_after_clear(self):
@@ -155,6 +159,7 @@ class TestCircuitBreakerHysteresis(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 3. Dynamic limit via PriceEngine integration
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
 class TestDynamicLimitPriceEngineIntegration(unittest.TestCase):
@@ -176,33 +181,25 @@ class TestDynamicLimitPriceEngineIntegration(unittest.TestCase):
         self.assertFalse(result)
 
     def test_trip_when_price_above_dynamic_max(self):
-        self._pe.get_dynamic_limits.return_value = (
-            Decimal("0.90"), Decimal("1.10")
-        )
+        self._pe.get_dynamic_limits.return_value = (Decimal("0.90"), Decimal("1.10"))
         result = self.rm.check_circuit_breakers(Decimal("1.50"))
         self.assertTrue(result)
         self.assertTrue(self.rm.circuit_breaker_active())
 
     def test_trip_when_price_below_dynamic_min(self):
-        self._pe.get_dynamic_limits.return_value = (
-            Decimal("0.90"), Decimal("1.10")
-        )
+        self._pe.get_dynamic_limits.return_value = (Decimal("0.90"), Decimal("1.10"))
         result = self.rm.check_circuit_breakers(Decimal("0.50"))
         self.assertTrue(result)
 
     def test_no_trip_within_dynamic_band(self):
-        self._pe.get_dynamic_limits.return_value = (
-            Decimal("0.90"), Decimal("1.10")
-        )
+        self._pe.get_dynamic_limits.return_value = (Decimal("0.90"), Decimal("1.10"))
         result = self.rm.check_circuit_breakers(Decimal("1.00"))
         self.assertFalse(result)
 
     def test_dynamic_limit_checked_before_hard_limit(self):
         # Dynamic max = 1.10, hard max = 2.00 → dynamic trips first
         self._cfg.HARD_MAX_PRICE_XCH = Decimal("2.00")
-        self._pe.get_dynamic_limits.return_value = (
-            Decimal("0.90"), Decimal("1.10")
-        )
+        self._pe.get_dynamic_limits.return_value = (Decimal("0.90"), Decimal("1.10"))
         result = self.rm.check_circuit_breakers(Decimal("1.50"))
         self.assertTrue(result)
         self.assertIn("dynamic maximum", self.rm._circuit_breaker_reason)
@@ -211,6 +208,7 @@ class TestDynamicLimitPriceEngineIntegration(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 4. Full trip-recover cycle
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
 class TestFullTripRecoverCycle(unittest.TestCase):
@@ -265,6 +263,7 @@ class TestFullTripRecoverCycle(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 5. Thread safety
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"risk_manager unavailable: {_SKIP}")
 class TestCircuitBreakerThreadSafety(unittest.TestCase):

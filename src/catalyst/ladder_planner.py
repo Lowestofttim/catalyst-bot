@@ -17,6 +17,7 @@ Currently exercised primarily via `tests/test_ladder_planner.py`; the plan
 output is intended to let the caller defer submission instead of producing
 a ragged ladder that later needs cleanup.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -27,20 +28,22 @@ from typing import Any, Dict, List, Optional
 
 class SlotStatus(Enum):
     """The readiness state of a single slot in the plan."""
-    READY = "ready"                        # tier-correct coin assigned
-    OVERSIZE_ACCEPTABLE = "oversize"       # coin > tier but within ceiling
+
+    READY = "ready"  # tier-correct coin assigned
+    OVERSIZE_ACCEPTABLE = "oversize"  # coin > tier but within ceiling
     MISFIT_COIN_AVAILABLE = "misfit_coin"  # only misfit coins available
-    NO_COIN_AVAILABLE = "no_coin"          # no candidate coins at all
-    SKIPPED = "skipped"                    # slot intentionally skipped (suspended)
+    NO_COIN_AVAILABLE = "no_coin"  # no candidate coins at all
+    SKIPPED = "skipped"  # slot intentionally skipped (suspended)
 
 
 @dataclass
 class SlotPlan:
     """One slot's entry in the plan."""
-    slot_idx: int                        # position in the ladder (0 = innermost)
-    tier: str                            # "inner" | "mid" | "outer" | "extreme"
-    target_size_mojos: int               # expected tier size (mojos of offer asset)
-    target_price: Decimal                # ladder price for this slot
+
+    slot_idx: int  # position in the ladder (0 = innermost)
+    tier: str  # "inner" | "mid" | "outer" | "extreme"
+    target_size_mojos: int  # expected tier size (mojos of offer asset)
+    target_price: Decimal  # ladder price for this slot
     status: SlotStatus
     coin_id: Optional[str] = None
     coin_amount_mojos: Optional[int] = None
@@ -51,7 +54,8 @@ class SlotPlan:
 @dataclass
 class LadderPlan:
     """A full plan for either the buy or sell side."""
-    side: str                            # "buy" or "sell"
+
+    side: str  # "buy" or "sell"
     mid_price: Decimal
     slots: List[SlotPlan] = field(default_factory=list)
     # Coins the planner consumed from the available pool — for the caller
@@ -69,9 +73,12 @@ class LadderPlan:
         return sum(1 for s in self.slots if s.status == SlotStatus.OVERSIZE_ACCEPTABLE)
 
     def unready_count(self) -> int:
-        return sum(1 for s in self.slots
-                   if s.status in (SlotStatus.NO_COIN_AVAILABLE,
-                                   SlotStatus.MISFIT_COIN_AVAILABLE))
+        return sum(
+            1
+            for s in self.slots
+            if s.status
+            in (SlotStatus.NO_COIN_AVAILABLE, SlotStatus.MISFIT_COIN_AVAILABLE)
+        )
 
     def is_viable(self, min_ready_fraction: float = 0.9) -> bool:
         """Plan is viable when ≥ ``min_ready_fraction`` of slots are READY
@@ -99,6 +106,7 @@ class LadderPlan:
 # ---------------------------------------------------------------------------
 # Planner
 # ---------------------------------------------------------------------------
+
 
 def plan_ladder(
     *,
@@ -166,7 +174,7 @@ def plan_ladder(
     misfit_coins: List[Dict[str, Any]] = []
     other_coins: List[Dict[str, Any]] = []  # dust / reserve / zero-tier
 
-    for coin in (available_coins or []):
+    for coin in available_coins or []:
         amount = int(coin.get("amount_mojos") or coin.get("amount") or 0)
         if amount <= 0:
             continue
@@ -232,14 +240,16 @@ def plan_ladder(
                     f"No {tier} tier-correct coin available (and no fallback). "
                     f"{len(misfit_coins)} misfit coin(s) present — reshape required."
                 )
-                plan.slots.append(SlotPlan(
-                    slot_idx=slot_idx,
-                    tier=tier,
-                    target_size_mojos=tier_size,
-                    target_price=price,
-                    status=status,
-                    reason=reason,
-                ))
+                plan.slots.append(
+                    SlotPlan(
+                        slot_idx=slot_idx,
+                        tier=tier,
+                        target_size_mojos=tier_size,
+                        target_price=price,
+                        status=status,
+                        reason=reason,
+                    )
+                )
                 continue
 
         amount = int(coin.get("amount_mojos") or 0)
@@ -247,16 +257,18 @@ def plan_ladder(
         consumed_ids.add(cid)
         plan.consumed_coin_ids.append(cid)
 
-        plan.slots.append(SlotPlan(
-            slot_idx=slot_idx,
-            tier=tier,
-            target_size_mojos=tier_size,
-            target_price=price,
-            status=status,
-            coin_id=cid,
-            coin_amount_mojos=amount,
-            reason=reason,
-        ))
+        plan.slots.append(
+            SlotPlan(
+                slot_idx=slot_idx,
+                tier=tier,
+                target_size_mojos=tier_size,
+                target_price=price,
+                status=status,
+                coin_id=cid,
+                coin_amount_mojos=amount,
+                reason=reason,
+            )
+        )
 
     # Aggregate reshape needs — one entry per missing tier.
     missing_by_tier: Dict[str, int] = {}
@@ -264,11 +276,13 @@ def plan_ladder(
         if s.status in (SlotStatus.NO_COIN_AVAILABLE, SlotStatus.MISFIT_COIN_AVAILABLE):
             missing_by_tier[s.tier] = missing_by_tier.get(s.tier, 0) + 1
     for tier, count in missing_by_tier.items():
-        plan.needed_reshapes.append({
-            "tier": tier,
-            "shortfall": count,
-            "target_size_mojos": tier_sizes_asset_mojos.get(tier, 0),
-        })
+        plan.needed_reshapes.append(
+            {
+                "tier": tier,
+                "shortfall": count,
+                "target_size_mojos": tier_sizes_asset_mojos.get(tier, 0),
+            }
+        )
 
     if misfit_coins and any(
         s.status in (SlotStatus.NO_COIN_AVAILABLE, SlotStatus.MISFIT_COIN_AVAILABLE)
@@ -285,9 +299,9 @@ def plan_ladder(
 def amount_fmt(mojos: int) -> str:
     """Friendly amount formatter for logs."""
     if mojos >= 1_000_000_000_000:
-        return f"{mojos/1e12:.4f} XCH"
+        return f"{mojos / 1e12:.4f} XCH"
     if mojos >= 1_000_000:
-        return f"{mojos/1000:.2f} CAT"
+        return f"{mojos / 1000:.2f} CAT"
     return f"{mojos} mojos"
 
 

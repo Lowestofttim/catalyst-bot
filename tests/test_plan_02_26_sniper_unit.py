@@ -14,6 +14,7 @@ from unittest.mock import patch
 try:
     import sniper as _sniper_mod
     from sniper import _bps_to_pct, Sniper
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -24,6 +25,7 @@ _SKIP_MSG = f"sniper unavailable: {_SKIP}"
 # ---------------------------------------------------------------------------
 # _bps_to_pct
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestBpsToPct(unittest.TestCase):
@@ -57,6 +59,7 @@ class TestBpsToPct(unittest.TestCase):
 # Sniper.prune_active_snipes
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestPruneActiveSnipes(unittest.TestCase):
     def _make_sniper(self, active_ids=None, active_sides=None):
@@ -86,8 +89,7 @@ class TestPruneActiveSnipes(unittest.TestCase):
         self.assertEqual(s._active_snipe_ids, [])
 
     def test_side_tracking_pruned_too(self):
-        s = self._make_sniper(["tid1", "tid2"],
-                               {"tid1": "buy", "tid2": "sell"})
+        s = self._make_sniper(["tid1", "tid2"], {"tid1": "buy", "tid2": "sell"})
         s.prune_active_snipes({"tid1"})
         self.assertIn("tid1", s._active_snipe_sides)
         self.assertNotIn("tid2", s._active_snipe_sides)
@@ -97,13 +99,20 @@ class TestPruneActiveSnipes(unittest.TestCase):
 # Sniper.get_stats
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestGetStats(unittest.TestCase):
     def test_returns_expected_keys(self):
         s = Sniper()
         stats = s.get_stats()
-        for key in ("total_snipes", "total_skipped", "active_snipes",
-                    "max_active_snipes", "last_snipe_time", "recent_snipes"):
+        for key in (
+            "total_snipes",
+            "total_skipped",
+            "active_snipes",
+            "max_active_snipes",
+            "last_snipe_time",
+            "recent_snipes",
+        ):
             self.assertIn(key, stats)
 
     def test_initial_counts_zero(self):
@@ -142,9 +151,12 @@ class TestGetStats(unittest.TestCase):
 # Sniper._calculate_snipe_size
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestCalculateSnipeSize(unittest.TestCase):
-    def _sniper_with_cfg(self, sniper_size=None, default=Decimal("0.01"), max_trade=Decimal("1.0")):
+    def _sniper_with_cfg(
+        self, sniper_size=None, default=Decimal("0.01"), max_trade=Decimal("1.0")
+    ):
         fake_cfg = SimpleNamespace(
             SNIPER_SIZE_XCH=sniper_size,
             DEFAULT_TRADE_XCH=default,

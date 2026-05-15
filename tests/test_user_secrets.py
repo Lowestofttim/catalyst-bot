@@ -13,20 +13,28 @@ class UserSecretsTests(unittest.TestCase):
             path = Path(tmp) / "user_secrets.json"
             backup = path.with_suffix(".json.bak")
 
-            with patch.object(user_secrets, "_secrets_path", return_value=path), \
-                 patch.object(user_secrets, "_backup_path", return_value=backup):
+            with (
+                patch.object(user_secrets, "_secrets_path", return_value=path),
+                patch.object(user_secrets, "_backup_path", return_value=backup),
+            ):
                 user_secrets.set_secret("SPACESCAN_API_KEY", "test-key-one")
-                self.assertEqual(user_secrets.get_secret("SPACESCAN_API_KEY"), "test-key-one")
+                self.assertEqual(
+                    user_secrets.get_secret("SPACESCAN_API_KEY"), "test-key-one"
+                )
 
                 user_secrets.set_secret("SPACESCAN_API_KEY", "test-key-two")
-                self.assertEqual(user_secrets.get_secret("SPACESCAN_API_KEY"), "test-key-two")
+                self.assertEqual(
+                    user_secrets.get_secret("SPACESCAN_API_KEY"), "test-key-two"
+                )
 
-                self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {
-                    "SPACESCAN_API_KEY": "test-key-two"
-                })
-                self.assertEqual(json.loads(backup.read_text(encoding="utf-8")), {
-                    "SPACESCAN_API_KEY": "test-key-one"
-                })
+                self.assertEqual(
+                    json.loads(path.read_text(encoding="utf-8")),
+                    {"SPACESCAN_API_KEY": "test-key-two"},
+                )
+                self.assertEqual(
+                    json.loads(backup.read_text(encoding="utf-8")),
+                    {"SPACESCAN_API_KEY": "test-key-one"},
+                )
                 self.assertFalse(list(Path(tmp).glob("*.tmp.*")))
 
     def test_clear_last_secret_removes_backup_so_it_cannot_restore(self):
@@ -34,8 +42,10 @@ class UserSecretsTests(unittest.TestCase):
             path = Path(tmp) / "user_secrets.json"
             backup = path.with_suffix(".json.bak")
 
-            with patch.object(user_secrets, "_secrets_path", return_value=path), \
-                 patch.object(user_secrets, "_backup_path", return_value=backup):
+            with (
+                patch.object(user_secrets, "_secrets_path", return_value=path),
+                patch.object(user_secrets, "_backup_path", return_value=backup),
+            ):
                 user_secrets.set_secret("SPACESCAN_API_KEY", "test-key-one")
                 user_secrets.set_secret("SPACESCAN_API_KEY", "test-key-two")
                 self.assertTrue(backup.exists())

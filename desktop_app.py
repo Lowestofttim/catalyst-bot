@@ -46,7 +46,9 @@ if sys.platform == "win32":
         if _st is not None and hasattr(_st, "buffer"):
             _buf = _st.detach()  # disconnect old wrapper without closing buffer
             _wrapped = io.TextIOWrapper(
-                _buf, encoding="utf-8", errors="replace",
+                _buf,
+                encoding="utf-8",
+                errors="replace",
                 line_buffering=True,
             )
             setattr(sys, _pair[0], _wrapped)
@@ -62,7 +64,9 @@ if sys.platform == "win32":
                     os.makedirs(_log_dir, exist_ok=True)
                     _pythonw_log = open(
                         os.path.join(_log_dir, "startup.log"),
-                        "w", encoding="utf-8", errors="replace",
+                        "w",
+                        encoding="utf-8",
+                        errors="replace",
                     )
                 except Exception:
                     _pythonw_log = open(os.devnull, "w", encoding="utf-8")
@@ -98,7 +102,7 @@ def _bundle_path(relative: str) -> str:
         path = _bundle_path('bot_gui.html')
         path = _bundle_path('splash.exe')
     """
-    base = getattr(sys, '_MEIPASS', APP_DIR)
+    base = getattr(sys, "_MEIPASS", APP_DIR)
     return os.path.join(base, relative)
 
 
@@ -137,10 +141,12 @@ def _kill_on_close_job_limit_flags() -> int:
     """Return the Windows Job Object flags used by the desktop parent."""
     return JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK
 
+
 # Window geometry persistence — lives in the user data directory so
 # the setting survives installs to read-only locations like Program Files.
 try:
     from user_paths import window_state_file as _window_state_file
+
     _WINDOW_STATE_FILE = _window_state_file()
 except Exception:
     _WINDOW_STATE_FILE = os.path.join(APP_DIR, ".window_state.json")
@@ -150,6 +156,7 @@ def _load_window_state() -> dict:
     """Return the last saved window size/position, or {} if none."""
     try:
         import json as _json
+
         if not os.path.exists(_WINDOW_STATE_FILE):
             return {}
         with open(_WINDOW_STATE_FILE, "r", encoding="utf-8") as fh:
@@ -181,6 +188,7 @@ def _save_window_state(window) -> None:
         return
     try:
         import json as _json
+
         state = {
             "width": int(getattr(window, "width", 0) or 0),
             "height": int(getattr(window, "height", 0) or 0),
@@ -215,12 +223,12 @@ def _apply_window_icon_win32(ico_path: str) -> None:
     import ctypes
     import ctypes.wintypes
 
-    WM_SETICON   = 0x0080
-    ICON_SMALL   = 0        # 16 × 16 — title bar
-    ICON_BIG     = 1        # 32 × 32 — taskbar / Alt+Tab
-    IMAGE_ICON   = 1
-    LR_LOADFROMFILE   = 0x0010
-    LR_DEFAULTSIZE    = 0x0040
+    WM_SETICON = 0x0080
+    ICON_SMALL = 0  # 16 × 16 — title bar
+    ICON_BIG = 1  # 32 × 32 — taskbar / Alt+Tab
+    IMAGE_ICON = 1
+    LR_LOADFROMFILE = 0x0010
+    LR_DEFAULTSIZE = 0x0040
 
     pid = os.getpid()
 
@@ -254,7 +262,10 @@ def _apply_window_icon_win32(ico_path: str) -> None:
         hwnd = _find_hwnd()
 
     if not hwnd:
-        print("  [ICON] Warning: window HWND not found — taskbar icon unchanged.", flush=True)
+        print(
+            "  [ICON] Warning: window HWND not found — taskbar icon unchanged.",
+            flush=True,
+        )
         return
 
     small_ico = ctypes.windll.user32.LoadImageW(
@@ -293,6 +304,7 @@ def _set_windows_app_user_model_id() -> None:
         return
     try:
         import ctypes
+
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             WINDOWS_APP_USER_MODEL_ID
         )
@@ -311,6 +323,7 @@ def _hide_windows_console() -> bool:
         return False
     try:
         import ctypes
+
         hwnd = ctypes.windll.kernel32.GetConsoleWindow()
         if hwnd:
             ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
@@ -326,6 +339,7 @@ def _show_fatal_error_dialog(message: str):
     if sys.platform == "win32":
         try:
             import ctypes
+
             ctypes.windll.user32.MessageBoxW(0, message, APP_NAME, 0x10)
             return
         except Exception:
@@ -390,6 +404,7 @@ def _respawn_under_pythonw() -> bool:
 def check_port_free(port: int) -> bool:
     """Check if localhost port is available. Returns True if free."""
     import socket
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.settimeout(1)
@@ -416,6 +431,7 @@ def _instance_lock_path() -> str:
     """Path to the cross-process singleton lock file."""
     try:
         from user_paths import data_dir
+
         return os.path.join(data_dir(), ".instance.lock")
     except Exception:
         return os.path.join(APP_DIR, ".instance.lock")
@@ -446,11 +462,15 @@ def _acquire_instance_lock() -> bool:
     try:
         fh = open(lock_path, "a+", encoding="utf-8")
     except Exception as e:
-        print(f"[INSTANCE-LOCK] Could not open {lock_path}: {e} — skipping lock", flush=True)
+        print(
+            f"[INSTANCE-LOCK] Could not open {lock_path}: {e} — skipping lock",
+            flush=True,
+        )
         return True  # Fail open: don't block startup on a filesystem hiccup
     try:
         if sys.platform == "win32":
             import msvcrt
+
             # msvcrt.locking() locks bytes starting at the *current* file
             # position. "a+" leaves the position at end-of-file, so without
             # this seek a second launcher (which sees the file populated by
@@ -463,6 +483,7 @@ def _acquire_instance_lock() -> bool:
             msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
+
             # flock locks the open file description, not a byte range, so
             # file position doesn't matter on POSIX.
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -492,6 +513,7 @@ def _open_existing_instance_in_browser() -> None:
     print(f"\n  {APP_NAME} is already running — opening {_app_url}", flush=True)
     try:
         import webbrowser
+
         webbrowser.open(_app_url)
     except Exception:
         pass
@@ -567,7 +589,10 @@ def _attach_to_kill_on_close_job() -> bool:
         kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
         kernel32.SetInformationJobObject.restype = wintypes.BOOL
         kernel32.SetInformationJobObject.argtypes = [
-            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
         ]
         kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
         kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
@@ -580,8 +605,10 @@ def _attach_to_kill_on_close_job() -> bool:
         limits = _EXTENDED_LIMIT()
         limits.BasicLimitInformation.LimitFlags = _kill_on_close_job_limit_flags()
         if not kernel32.SetInformationJobObject(
-            h_job, JobObjectExtendedLimitInformation,
-            ctypes.byref(limits), ctypes.sizeof(limits),
+            h_job,
+            JobObjectExtendedLimitInformation,
+            ctypes.byref(limits),
+            ctypes.sizeof(limits),
         ):
             return False
 
@@ -601,6 +628,7 @@ def _attach_to_kill_on_close_job() -> bool:
 def wait_for_flask(timeout: float = 15.0) -> bool:
     """Wait for Flask to start accepting connections. Returns True if ready."""
     import socket
+
     start = time.time()
     while time.time() - start < timeout:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -629,6 +657,7 @@ def start_flask_server():
 
     # Initialise database
     from database import init_database
+
     init_database()
 
     # Create bot instance
@@ -641,11 +670,13 @@ def start_flask_server():
 
     # Record session start time — dashboard/logs only show events from THIS session
     from datetime import datetime, timezone
+
     api_server._session_start_time = datetime.now(timezone.utc).isoformat()
 
     # Restore log clear-point from database
     try:
         from database import get_setting
+
         saved = get_setting("logs_cleared_at")
         if saved:
             api_server._logs_cleared_at = saved
@@ -662,14 +693,19 @@ def start_flask_server():
 
     # Run Flask (this blocks until shutdown)
     from database import log_event
-    log_event("info", "server_started", f"Desktop app v{APP_VERSION} starting Flask on port {FLASK_PORT}")
+
+    log_event(
+        "info",
+        "server_started",
+        f"Desktop app v{APP_VERSION} starting Flask on port {FLASK_PORT}",
+    )
 
     api_server.app.run(
         host=FLASK_HOST,
         port=FLASK_PORT,
         debug=False,
         threaded=True,
-        use_reloader=False  # Important: don't use reloader in desktop mode
+        use_reloader=False,  # Important: don't use reloader in desktop mode
     )
 
 
@@ -694,6 +730,7 @@ def run_desktop_mode(dev_mode: bool = False):
         print(f"\n  {APP_NAME} is already running — opening {_app_url}")
         try:
             import webbrowser
+
             webbrowser.open(_app_url)
         except Exception:
             pass
@@ -704,7 +741,9 @@ def run_desktop_mode(dev_mode: bool = False):
 
     # Start Flask in background thread
     print(f"  Starting Flask server on port {FLASK_PORT}...")
-    flask_thread = threading.Thread(target=start_flask_server, daemon=True, name="FlaskServer")
+    flask_thread = threading.Thread(
+        target=start_flask_server, daemon=True, name="FlaskServer"
+    )
     flask_thread.start()
 
     # Wait for Flask to be ready
@@ -720,6 +759,7 @@ def run_desktop_mode(dev_mode: bool = False):
     tray_thread = None
     try:
         from tray_manager import TrayManager
+
         tray = TrayManager(app_name=APP_NAME, app_version=APP_VERSION)
         tray_thread = threading.Thread(target=tray.run, daemon=True, name="SystemTray")
         tray_thread.start()
@@ -734,6 +774,7 @@ def run_desktop_mode(dev_mode: bool = False):
     # Start notification manager
     try:
         from notification_manager import NotificationManager
+
         notifier = NotificationManager(app_name=APP_NAME)
         print("  Notifications enabled.")
     except ImportError:
@@ -761,6 +802,7 @@ def run_desktop_mode(dev_mode: bool = False):
             """Start bot from tray: call Flask, then bring window to front."""
             try:
                 import urllib.request
+
                 req = urllib.request.Request(
                     f"http://{FLASK_HOST}:{FLASK_PORT}/api/bot/start",
                     data=b"{}",
@@ -768,7 +810,7 @@ def run_desktop_mode(dev_mode: bool = False):
                     headers={
                         "Content-Type": "application/json",
                         "X-Bot-Local-Token": _tray_token,
-                    }
+                    },
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     _ = resp.read()
@@ -780,6 +822,7 @@ def run_desktop_mode(dev_mode: bool = False):
             """Stop bot from tray: call Flask."""
             try:
                 import urllib.request
+
                 req = urllib.request.Request(
                     f"http://{FLASK_HOST}:{FLASK_PORT}/api/bot/stop",
                     data=b"{}",
@@ -787,7 +830,7 @@ def run_desktop_mode(dev_mode: bool = False):
                     headers={
                         "Content-Type": "application/json",
                         "X-Bot-Local-Token": _tray_token,
-                    }
+                    },
                 )
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     _ = resp.read()
@@ -805,10 +848,7 @@ def run_desktop_mode(dev_mode: bool = False):
     # and calls tray.update_tray_state() so the icon/tooltip/menu stay current.
     if tray:
         tray_poll_thread = threading.Thread(
-            target=_poll_tray_status,
-            args=(tray,),
-            daemon=True,
-            name="TrayStatusPoller"
+            target=_poll_tray_status, args=(tray,), daemon=True, name="TrayStatusPoller"
         )
         tray_poll_thread.start()
 
@@ -819,6 +859,7 @@ def run_desktop_mode(dev_mode: bool = False):
     # Create JS bridge for window.pywebview.api calls
     try:
         from app_bridge import AppBridge
+
         bridge = AppBridge()
         print("  JS bridge ready (AppBridge).")
     except Exception as e:
@@ -827,10 +868,10 @@ def run_desktop_mode(dev_mode: bool = False):
 
     # Restore last-saved window geometry if we have one
     _saved_state = _load_window_state()
-    _win_width  = _saved_state.get("width",  WINDOW_WIDTH)
+    _win_width = _saved_state.get("width", WINDOW_WIDTH)
     _win_height = _saved_state.get("height", WINDOW_HEIGHT)
-    _win_x      = _saved_state.get("x")
-    _win_y      = _saved_state.get("y")
+    _win_x = _saved_state.get("x")
+    _win_y = _saved_state.get("y")
 
     # Show a local splash page first (logo + "created by MonkeyZoo") so the
     # window doesn't flash black while the WebView2 backend boots and Flask's
@@ -911,6 +952,7 @@ def run_desktop_mode(dev_mode: bool = False):
         bot_running = False
         try:
             import api_server as _api
+
             if _api.bot and getattr(_api.bot, "_running", False):
                 bot_running = True
         except Exception:
@@ -934,7 +976,9 @@ def run_desktop_mode(dev_mode: bool = False):
         try:
             window.show()
             window.restore()
-            window.evaluate_js("window.showShutdownModal && window.showShutdownModal();")
+            window.evaluate_js(
+                "window.showShutdownModal && window.showShutdownModal();"
+            )
             print("\n  Alt+F4 intercepted — showing shutdown confirmation.", flush=True)
         except Exception as e:
             print(f"  [CLOSE] Could not show shutdown modal: {e}", flush=True)
@@ -955,7 +999,9 @@ def run_desktop_mode(dev_mode: bool = False):
     # re-triggering close, so a second on_closing() call is honoured.
     if bridge is not None:
         try:
-            bridge._set_confirmed_close = lambda: _state.update({"confirmed_close": True})
+            bridge._set_confirmed_close = lambda: _state.update(
+                {"confirmed_close": True}
+            )
         except Exception:
             pass
 
@@ -999,7 +1045,7 @@ def run_flask_mode():
 
     signal.signal(signal.SIGINT, _flask_shutdown)
     signal.signal(signal.SIGTERM, _flask_shutdown)
-    if hasattr(signal, 'SIGBREAK'):
+    if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, _flask_shutdown)
 
     start_flask_server()
@@ -1075,9 +1121,7 @@ def _tray_graceful_quit(webview_module, tray):
 
     try:
         # Trigger the same shutdown modal the X button uses.
-        window.evaluate_js(
-            "window.showShutdownModal && window.showShutdownModal();"
-        )
+        window.evaluate_js("window.showShutdownModal && window.showShutdownModal();")
     except Exception as e:
         print(f"[TRAY] Graceful quit via JS bridge failed: {e}", flush=True)
         _quit_app(webview_module, tray)
@@ -1087,6 +1131,7 @@ def _cleanup():
     """Clean shutdown of bot and modules."""
     try:
         import api_server
+
         if api_server.bot and api_server.bot._running:
             print("  Stopping bot...")
             api_server.bot.stop()
@@ -1095,6 +1140,7 @@ def _cleanup():
 
     try:
         from database import log_event
+
         log_event("info", "app_shutdown", f"Desktop app v{APP_VERSION} shutting down")
     except Exception:
         pass
@@ -1120,7 +1166,7 @@ def _poll_tray_status(tray, interval: float = 3.0):
         try:
             req = urllib.request.Request(
                 f"http://{FLASK_HOST}:{FLASK_PORT}/api/status",
-                headers={"Accept": "application/json"}
+                headers={"Accept": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = _json.loads(resp.read().decode())
@@ -1139,11 +1185,7 @@ def _poll_tray_status(tray, interval: float = 3.0):
             # Active CAT name for tooltip (e.g. "MZ")
             cat_name = ""
             cat_info = data.get("current_cat") or {}
-            cat_name = (
-                cat_info.get("ticker_id")
-                or cat_info.get("name")
-                or ""
-            )
+            cat_name = cat_info.get("ticker_id") or cat_info.get("name") or ""
             if not cat_name:
                 # Fallback: check top-level fields some status endpoints return
                 cat_name = data.get("cat_ticker") or data.get("cat_name") or ""
@@ -1153,7 +1195,7 @@ def _poll_tray_status(tray, interval: float = 3.0):
                 last_status = new_status
 
         except Exception:
-            pass   # Flask not ready or transient error — keep last state
+            pass  # Flask not ready or transient error — keep last state
 
         time.sleep(interval)
 
@@ -1188,8 +1230,8 @@ def _wire_notifications(notifier):
     except Exception as _sub_err:
         try:
             from super_log import slog as _slog
-            _slog("DESKTOP", f"Notification subscribe failed: {_sub_err}",
-                  level="warn")
+
+            _slog("DESKTOP", f"Notification subscribe failed: {_sub_err}", level="warn")
         except Exception:
             pass
         return
@@ -1222,8 +1264,9 @@ def _wire_notifications(notifier):
                 elif ev_type in ("critical", "error"):
                     notifier.notify(
                         title="Bot Error",
-                        message=str(data.get("message") or data.get("msg")
-                                    or "Unknown error"),
+                        message=str(
+                            data.get("message") or data.get("msg") or "Unknown error"
+                        ),
                         category="error",
                     )
                 elif ev_type == "alert":
@@ -1239,9 +1282,7 @@ def _wire_notifications(notifier):
                 # swallow so other events keep flowing.
                 continue
 
-    t = _threading.Thread(target=_dispatch,
-                          name="catalyst-notifications",
-                          daemon=True)
+    t = _threading.Thread(target=_dispatch, name="catalyst-notifications", daemon=True)
     t.start()
 
 
@@ -1255,6 +1296,7 @@ def _run_coin_prep_worker_mode(worker_args):
     os.environ.setdefault("_CATALYST_PRESERVE_PROCESS_ENV", "1")
     try:
         from coin_prep_worker import main as coin_prep_main
+
         try:
             result = coin_prep_main()
             return int(result or 0)
@@ -1273,7 +1315,7 @@ def main(argv=None):
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if "--coin-prep-worker" in raw_argv:
         worker_flag_index = raw_argv.index("--coin-prep-worker")
-        worker_args = raw_argv[:worker_flag_index] + raw_argv[worker_flag_index + 1:]
+        worker_args = raw_argv[:worker_flag_index] + raw_argv[worker_flag_index + 1 :]
         return _run_coin_prep_worker_mode(worker_args)
 
     # Set Windows AUMID as early as possible — must happen before any window
@@ -1282,9 +1324,19 @@ def main(argv=None):
     _set_windows_app_user_model_id()
 
     parser = argparse.ArgumentParser(description=f"{APP_NAME} v{APP_VERSION}")
-    parser.add_argument("--dev", action="store_true", help="Enable dev mode (browser accessible + debug)")
-    parser.add_argument("--flask", action="store_true", help="Flask-only mode (no desktop window)")
-    parser.add_argument("--show-console", action="store_true", help="Keep the Windows console visible in desktop mode")
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Enable dev mode (browser accessible + debug)",
+    )
+    parser.add_argument(
+        "--flask", action="store_true", help="Flask-only mode (no desktop window)"
+    )
+    parser.add_argument(
+        "--show-console",
+        action="store_true",
+        help="Keep the Windows console visible in desktop mode",
+    )
     args = parser.parse_args(argv)
 
     if not args.flask and not args.dev and not args.show_console:
@@ -1313,6 +1365,7 @@ def main(argv=None):
     # manually runs scripts/recover_db.py.
     try:
         from database import attempt_db_recovery
+
         _rec = attempt_db_recovery() or {}
         _action = _rec.get("action")
         if _action == "recovered":
@@ -1347,8 +1400,10 @@ def main(argv=None):
         # The crash log lives under the user data directory so it's
         # writable regardless of install location.
         import traceback
+
         try:
             from user_paths import crash_log_file
+
             crash_log = crash_log_file()
         except Exception:
             crash_log = os.path.join(APP_DIR, "crash.log")
@@ -1370,6 +1425,7 @@ def main(argv=None):
                 f.write(f"Install: {APP_DIR}\n")
                 try:
                     from user_paths import data_dir as _dd
+
                     f.write(f"Data:    {_dd()}\n")
                 except Exception:
                     pass
@@ -1380,8 +1436,11 @@ def main(argv=None):
         except Exception as write_err:
             # Last-ditch: if we can't write the log file, at least print
             # the traceback to stderr so `--show-console` users see it.
-            print(f"[CRASH] Could not write crash log to {crash_log}: {write_err}",
-                  file=sys.stderr, flush=True)
+            print(
+                f"[CRASH] Could not write crash log to {crash_log}: {write_err}",
+                file=sys.stderr,
+                flush=True,
+            )
             print(tb_str, file=sys.stderr, flush=True)
 
         # Build a user-friendly message for the fatal dialog. Include

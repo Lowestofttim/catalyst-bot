@@ -14,9 +14,7 @@ class CoinManagerSageSnapshotTests(unittest.TestCase):
     def setUp(self):
         self._saved_wallet_type = os.environ.get("WALLET_TYPE")
         os.environ["WALLET_TYPE"] = "sage"
-        self._saved_modules = {
-            name: sys.modules.get(name) for name in _MODS_TO_RESTORE
-        }
+        self._saved_modules = {name: sys.modules.get(name) for name in _MODS_TO_RESTORE}
         self.calls = {"detailed": 0, "upserts": []}
 
         fake_config = types.ModuleType("config")
@@ -37,8 +35,9 @@ class CoinManagerSageSnapshotTests(unittest.TestCase):
         fake_database = types.ModuleType("database")
         fake_database.log_event = lambda *args, **kwargs: None
         fake_database.upsert_coin = (
-            lambda coin_id, wallet_type, amount, tier="unknown":
-            self.calls["upserts"].append((coin_id, wallet_type, amount))
+            lambda coin_id, wallet_type, amount, tier="unknown": self.calls[
+                "upserts"
+            ].append((coin_id, wallet_type, amount))
         )
         fake_database.get_free_coins = lambda wallet_type: []
         fake_database.mark_coins_gone = lambda coin_ids: 0
@@ -47,7 +46,9 @@ class CoinManagerSageSnapshotTests(unittest.TestCase):
         sys.modules["database"] = fake_database
 
         def _unexpected(*args, **kwargs):
-            raise AssertionError("legacy wallet coin path should not be called when detailed Sage snapshot is available")
+            raise AssertionError(
+                "legacy wallet coin path should not be called when detailed Sage snapshot is available"
+            )
 
         def _owned_snapshot(wallet_id):
             self.calls["detailed"] += 1
@@ -81,7 +82,11 @@ class CoinManagerSageSnapshotTests(unittest.TestCase):
 
         sys.modules.pop("coin_manager", None)
         self.coin_manager = importlib.import_module("coin_manager")
-        with patch.object(self.coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"):
+        with patch.object(
+            self.coin_manager.CoinManager,
+            "_resolve_fingerprint",
+            return_value="123456789",
+        ):
             self.manager = self.coin_manager.CoinManager()
 
     def tearDown(self):
@@ -101,7 +106,10 @@ class CoinManagerSageSnapshotTests(unittest.TestCase):
         self.assertEqual((xch_count, cat_count), (1, 1))
         self.assertEqual(self.calls["detailed"], 2)
         self.assertEqual(
-            {(coin_id, wallet_type, amount) for coin_id, wallet_type, amount in self.calls["upserts"]},
+            {
+                (coin_id, wallet_type, amount)
+                for coin_id, wallet_type, amount in self.calls["upserts"]
+            },
             {
                 ("0x" + "11" * 32, "xch", 111),
                 ("0x" + "21" * 32, "cat", 333),

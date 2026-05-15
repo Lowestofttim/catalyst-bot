@@ -28,16 +28,18 @@ from typing import List, Optional
 @dataclass(frozen=True, slots=True)
 class DoctorCheck:
     """A single preflight check result."""
+
     name: str
-    category: str     # "wallet", "config", "exchange", "database", "network"
-    status: str       # "pass", "warn", "fail", "skip"
+    category: str  # "wallet", "config", "exchange", "database", "network"
+    status: str  # "pass", "warn", "fail", "skip"
     message: str
-    severity: str     # "info", "warning", "error"
+    severity: str  # "info", "warning", "error"
 
 
 @dataclass
 class DoctorReport:
     """Complete preflight report."""
+
     checks: List[DoctorCheck] = field(default_factory=list)
     timestamp: float = 0.0
     duration_ms: float = 0.0
@@ -130,10 +132,12 @@ def run_preflight(force: bool = False) -> DoctorReport:
 # Shared wallet sync fetch (avoids redundant RPC calls)
 # ---------------------------------------------------------------------------
 
+
 def _fetch_wallet_sync_once() -> dict:
     """Fetch wallet sync status once for all wallet checks."""
     try:
         from config import cfg
+
         wallet_type = getattr(cfg, "WALLET_TYPE", "sage")
         if wallet_type == "sage":
             from wallet_sage import get_wallet_sync_status
@@ -150,10 +154,12 @@ def _fetch_wallet_sync_once() -> dict:
 # Individual checks
 # ---------------------------------------------------------------------------
 
+
 def _check_db_health() -> DoctorCheck:
     """Verify database is readable and writable."""
     try:
         from database import get_connection
+
         conn = get_connection()
 
         # Check key tables exist
@@ -165,7 +171,9 @@ def _check_db_health() -> DoctorCheck:
         missing = required - table_names
         if missing:
             return DoctorCheck(
-                name="database_health", category="database", status="fail",
+                name="database_health",
+                category="database",
+                status="fail",
                 message=f"Missing required tables: {', '.join(sorted(missing))}",
                 severity="error",
             )
@@ -176,19 +184,21 @@ def _check_db_health() -> DoctorCheck:
             "INSERT INTO events (timestamp, event_type, severity, message) "
             "VALUES (datetime('now'), 'preflight_db_test', 'info', 'write test')"
         )
-        conn.execute(
-            "DELETE FROM events WHERE event_type = 'preflight_db_test'"
-        )
+        conn.execute("DELETE FROM events WHERE event_type = 'preflight_db_test'")
         conn.commit()  # both ops in same auto-transaction
 
         return DoctorCheck(
-            name="database_health", category="database", status="pass",
+            name="database_health",
+            category="database",
+            status="pass",
             message=f"Database OK — {len(table_names)} tables",
             severity="info",
         )
     except Exception as e:
         return DoctorCheck(
-            name="database_health", category="database", status="fail",
+            name="database_health",
+            category="database",
+            status="fail",
             message=f"Database error: {e}",
             severity="error",
         )
@@ -199,29 +209,38 @@ def _check_config_sanity() -> DoctorCheck:
     try:
         from config import cfg
         from config_validator import validate_config
+
         report = validate_config(cfg)
         if not report.is_valid:
             msgs = [f"{i.key}: {i.message}" for i in report.errors[:3]]
             return DoctorCheck(
-                name="config_validation", category="config", status="fail",
+                name="config_validation",
+                category="config",
+                status="fail",
                 message=f"{len(report.errors)} config error(s): {'; '.join(msgs)}",
                 severity="error",
             )
         if report.warnings:
             msgs = [f"{i.key}: {i.message}" for i in report.warnings[:3]]
             return DoctorCheck(
-                name="config_validation", category="config", status="warn",
+                name="config_validation",
+                category="config",
+                status="warn",
                 message=f"{len(report.warnings)} config warning(s): {'; '.join(msgs)}",
                 severity="warning",
             )
         return DoctorCheck(
-            name="config_validation", category="config", status="pass",
+            name="config_validation",
+            category="config",
+            status="pass",
             message="Config validation passed",
             severity="info",
         )
     except Exception as e:
         return DoctorCheck(
-            name="config_validation", category="config", status="warn",
+            name="config_validation",
+            category="config",
+            status="warn",
             message=f"Config validation could not run: {e}",
             severity="warning",
         )
@@ -231,23 +250,30 @@ def _check_cat_config() -> DoctorCheck:
     """Verify CAT identity is configured."""
     try:
         from config import cfg
+
         cat_id = getattr(cfg, "CAT_ASSET_ID", "")
         if not cat_id:
             return DoctorCheck(
-                name="cat_identity", category="config", status="fail",
+                name="cat_identity",
+                category="config",
+                status="fail",
                 message="CAT_ASSET_ID is empty — bot cannot identify which token to trade",
                 severity="error",
             )
         cat_name = getattr(cfg, "CAT_NAME", "")
         cat_dec = getattr(cfg, "CAT_DECIMALS", 3)
         return DoctorCheck(
-            name="cat_identity", category="config", status="pass",
+            name="cat_identity",
+            category="config",
+            status="pass",
             message=f"CAT configured: {cat_name} ({cat_id[:16]}...) decimals={cat_dec}",
             severity="info",
         )
     except Exception as e:
         return DoctorCheck(
-            name="cat_identity", category="config", status="fail",
+            name="cat_identity",
+            category="config",
+            status="fail",
             message=f"CAT config check failed: {e}",
             severity="error",
         )
@@ -261,18 +287,24 @@ def _check_wallet_reachable(sync_result: dict = None) -> DoctorCheck:
 
         if not result.get("reachable", False):
             return DoctorCheck(
-                name="wallet_reachable", category="wallet", status="fail",
+                name="wallet_reachable",
+                category="wallet",
+                status="fail",
                 message=f"{wallet_type.title()} wallet RPC is unreachable",
                 severity="error",
             )
         return DoctorCheck(
-            name="wallet_reachable", category="wallet", status="pass",
+            name="wallet_reachable",
+            category="wallet",
+            status="pass",
             message=f"{wallet_type.title()} wallet RPC is reachable",
             severity="info",
         )
     except Exception as e:
         return DoctorCheck(
-            name="wallet_reachable", category="wallet", status="fail",
+            name="wallet_reachable",
+            category="wallet",
+            status="fail",
             message=f"Wallet reachability check failed: {e}",
             severity="error",
         )
@@ -294,7 +326,9 @@ def _check_wallet_synced(sync_result: dict = None) -> DoctorCheck:
 
         if not result.get("reachable", False):
             return DoctorCheck(
-                name="wallet_synced", category="wallet", status="skip",
+                name="wallet_synced",
+                category="wallet",
+                status="skip",
                 message="Skipped — wallet not reachable",
                 severity="info",
             )
@@ -305,20 +339,26 @@ def _check_wallet_synced(sync_result: dict = None) -> DoctorCheck:
             sync_state = result.get("sync_state", "unknown")
             if sync_state == "synced":
                 return DoctorCheck(
-                    name="wallet_synced", category="wallet", status="pass",
+                    name="wallet_synced",
+                    category="wallet",
+                    status="pass",
                     message="Wallet is synced",
                     severity="info",
                 )
             if sync_state == "not_synced":
                 return DoctorCheck(
-                    name="wallet_synced", category="wallet", status="fail",
+                    name="wallet_synced",
+                    category="wallet",
+                    status="fail",
                     message="Wallet is not synced — trading would use stale coin state",
                     severity="error",
                 )
             # sync_state == "unknown" — per Sage review rules, do not
             # promote this into "ready". Warn but don't block.
             return DoctorCheck(
-                name="wallet_synced", category="wallet", status="warn",
+                name="wallet_synced",
+                category="wallet",
+                status="warn",
                 message=f"Wallet sync state is '{sync_state}' — cannot confirm readiness",
                 severity="warning",
             )
@@ -326,24 +366,32 @@ def _check_wallet_synced(sync_result: dict = None) -> DoctorCheck:
             # Chia wallet — uses bool "synced" field
             if result.get("synced", False):
                 return DoctorCheck(
-                    name="wallet_synced", category="wallet", status="pass",
+                    name="wallet_synced",
+                    category="wallet",
+                    status="pass",
                     message="Wallet is synced",
                     severity="info",
                 )
             if result.get("syncing", False):
                 return DoctorCheck(
-                    name="wallet_synced", category="wallet", status="fail",
+                    name="wallet_synced",
+                    category="wallet",
+                    status="fail",
                     message="Wallet is still syncing — wait for sync to complete",
                     severity="error",
                 )
             return DoctorCheck(
-                name="wallet_synced", category="wallet", status="warn",
+                name="wallet_synced",
+                category="wallet",
+                status="warn",
                 message="Wallet sync state could not be confirmed",
                 severity="warning",
             )
     except Exception as e:
         return DoctorCheck(
-            name="wallet_synced", category="wallet", status="warn",
+            name="wallet_synced",
+            category="wallet",
+            status="warn",
             message=f"Sync check failed: {e}",
             severity="warning",
         )
@@ -363,34 +411,45 @@ def _check_wallet_can_sign(sync_result: dict = None) -> DoctorCheck:
         if wallet_type == "sage":
             if not result.get("reachable", False):
                 return DoctorCheck(
-                    name="wallet_signing", category="wallet", status="skip",
+                    name="wallet_signing",
+                    category="wallet",
+                    status="skip",
                     message="Skipped — wallet not reachable",
                     severity="info",
                 )
 
             from wallet_sage import _require_signing_capability
+
             can_sign = _require_signing_capability()
             if not can_sign:
                 return DoctorCheck(
-                    name="wallet_signing", category="wallet", status="fail",
+                    name="wallet_signing",
+                    category="wallet",
+                    status="fail",
                     message="Sage wallet is watch-only (no secrets) — cannot create/cancel offers",
                     severity="error",
                 )
             return DoctorCheck(
-                name="wallet_signing", category="wallet", status="pass",
+                name="wallet_signing",
+                category="wallet",
+                status="pass",
                 message="Wallet has signing capability",
                 severity="info",
             )
         else:
             # Chia wallet — signing capability check not exposed the same way
             return DoctorCheck(
-                name="wallet_signing", category="wallet", status="pass",
+                name="wallet_signing",
+                category="wallet",
+                status="pass",
                 message="Chia wallet signing assumed available",
                 severity="info",
             )
     except Exception as e:
         return DoctorCheck(
-            name="wallet_signing", category="wallet", status="warn",
+            name="wallet_signing",
+            category="wallet",
+            status="warn",
             message=f"Signing capability check failed: {e}",
             severity="warning",
         )
@@ -400,10 +459,13 @@ def _check_cat_wallet_mapping() -> DoctorCheck:
     """Verify the wallet has a CAT matching our configured asset ID."""
     try:
         from config import cfg
+
         cat_id = getattr(cfg, "CAT_ASSET_ID", "")
         if not cat_id:
             return DoctorCheck(
-                name="cat_wallet_mapping", category="wallet", status="skip",
+                name="cat_wallet_mapping",
+                category="wallet",
+                status="skip",
                 message="Skipped — no CAT_ASSET_ID configured",
                 severity="info",
             )
@@ -417,7 +479,9 @@ def _check_cat_wallet_mapping() -> DoctorCheck:
         raw_wallets = get_wallets()
         if not raw_wallets:
             return DoctorCheck(
-                name="cat_wallet_mapping", category="wallet", status="warn",
+                name="cat_wallet_mapping",
+                category="wallet",
+                status="warn",
                 message="Could not enumerate wallet CATs — mapping not verified",
                 severity="warning",
             )
@@ -434,7 +498,9 @@ def _check_cat_wallet_mapping() -> DoctorCheck:
 
         if not wallet_list:
             return DoctorCheck(
-                name="cat_wallet_mapping", category="wallet", status="warn",
+                name="cat_wallet_mapping",
+                category="wallet",
+                status="warn",
                 message="Wallet returned no entries — mapping not verified",
                 severity="warning",
             )
@@ -446,24 +512,33 @@ def _check_cat_wallet_mapping() -> DoctorCheck:
                 continue
             # Sage uses "asset_id" directly; Chia uses "data" for CAT asset ID
             w_data = w.get("asset_id", "") or w.get("data", "") or ""
-            if isinstance(w_data, str) and w_data.lower().replace("0x", "") == cat_id_lower:
+            if (
+                isinstance(w_data, str)
+                and w_data.lower().replace("0x", "") == cat_id_lower
+            ):
                 found = True
                 break
 
         if found:
             return DoctorCheck(
-                name="cat_wallet_mapping", category="wallet", status="pass",
+                name="cat_wallet_mapping",
+                category="wallet",
+                status="pass",
                 message=f"CAT {cat_id[:16]}... found in wallet",
                 severity="info",
             )
         return DoctorCheck(
-            name="cat_wallet_mapping", category="wallet", status="warn",
+            name="cat_wallet_mapping",
+            category="wallet",
+            status="warn",
             message=f"CAT {cat_id[:16]}... not found in wallet — may not have any balance",
             severity="warning",
         )
     except Exception as e:
         return DoctorCheck(
-            name="cat_wallet_mapping", category="wallet", status="warn",
+            name="cat_wallet_mapping",
+            category="wallet",
+            status="warn",
             message=f"CAT mapping check failed: {e}",
             severity="warning",
         )
@@ -474,8 +549,10 @@ def _check_dexie_reachable() -> DoctorCheck:
     try:
         import requests
         from config import cfg
+
         try:
             from api_call_tracker import record as _t
+
             _t("dexie", "/v1/offers (doctor)")
         except Exception:
             pass
@@ -483,18 +560,24 @@ def _check_dexie_reachable() -> DoctorCheck:
         resp = requests.head(f"{dexie_url}/v1/offers", timeout=5)
         if resp.status_code < 500:
             return DoctorCheck(
-                name="dexie_reachable", category="exchange", status="pass",
+                name="dexie_reachable",
+                category="exchange",
+                status="pass",
                 message=f"Dexie API reachable (HTTP {resp.status_code})",
                 severity="info",
             )
         return DoctorCheck(
-            name="dexie_reachable", category="exchange", status="warn",
+            name="dexie_reachable",
+            category="exchange",
+            status="warn",
             message=f"Dexie API returned HTTP {resp.status_code}",
             severity="warning",
         )
     except Exception as e:
         return DoctorCheck(
-            name="dexie_reachable", category="exchange", status="warn",
+            name="dexie_reachable",
+            category="exchange",
+            status="warn",
             message=f"Dexie API unreachable: {e}",
             severity="warning",
         )
@@ -505,8 +588,10 @@ def _check_tibet_reachable() -> DoctorCheck:
     try:
         import requests
         from config import cfg
+
         try:
             from api_call_tracker import record as _t
+
             _t("tibetswap", "/tokens (doctor)")
         except Exception:
             pass
@@ -514,18 +599,24 @@ def _check_tibet_reachable() -> DoctorCheck:
         resp = requests.get(f"{tibet_url}/tokens", timeout=5)
         if resp.status_code < 500:
             return DoctorCheck(
-                name="tibet_reachable", category="exchange", status="pass",
+                name="tibet_reachable",
+                category="exchange",
+                status="pass",
                 message=f"TibetSwap API reachable (HTTP {resp.status_code})",
                 severity="info",
             )
         return DoctorCheck(
-            name="tibet_reachable", category="exchange", status="warn",
+            name="tibet_reachable",
+            category="exchange",
+            status="warn",
             message=f"TibetSwap API returned HTTP {resp.status_code}",
             severity="warning",
         )
     except Exception as e:
         return DoctorCheck(
-            name="tibet_reachable", category="exchange", status="warn",
+            name="tibet_reachable",
+            category="exchange",
+            status="warn",
             message=f"TibetSwap API unreachable: {e}",
             severity="warning",
         )
@@ -535,30 +626,40 @@ def _check_splash_reachable() -> DoctorCheck:
     """Check Splash reachability (only if enabled)."""
     try:
         from config import cfg
+
         if not getattr(cfg, "SPLASH_ENABLED", False):
             return DoctorCheck(
-                name="splash_reachable", category="network", status="skip",
+                name="splash_reachable",
+                category="network",
+                status="skip",
                 message="Splash is disabled — skipped",
                 severity="info",
             )
 
         import requests
+
         splash_url = getattr(cfg, "SPLASH_SUBMIT_URL", "http://localhost:4000")
         resp = requests.head(splash_url, timeout=5)
         if resp.status_code < 500:
             return DoctorCheck(
-                name="splash_reachable", category="network", status="pass",
+                name="splash_reachable",
+                category="network",
+                status="pass",
                 message=f"Splash reachable (HTTP {resp.status_code})",
                 severity="info",
             )
         return DoctorCheck(
-            name="splash_reachable", category="network", status="warn",
+            name="splash_reachable",
+            category="network",
+            status="warn",
             message=f"Splash returned HTTP {resp.status_code}",
             severity="warning",
         )
     except Exception as e:
         return DoctorCheck(
-            name="splash_reachable", category="network", status="warn",
+            name="splash_reachable",
+            category="network",
+            status="warn",
             message=f"Splash unreachable: {e}",
             severity="warning",
         )
@@ -568,9 +669,12 @@ def _check_spacescan_setup() -> DoctorCheck:
     """Check Spacescan configuration."""
     try:
         from config import cfg
+
         if not getattr(cfg, "SPACESCAN_ENABLED", False):
             return DoctorCheck(
-                name="spacescan_setup", category="network", status="skip",
+                name="spacescan_setup",
+                category="network",
+                status="skip",
                 message="Spacescan is disabled — skipped",
                 severity="info",
             )
@@ -581,20 +685,26 @@ def _check_spacescan_setup() -> DoctorCheck:
         # Pro URL implies paid tier which needs an API key
         if pro_url and not api_key:
             return DoctorCheck(
-                name="spacescan_setup", category="network", status="warn",
+                name="spacescan_setup",
+                category="network",
+                status="warn",
                 message="SPACESCAN_PRO_URL is set but SPACESCAN_API_KEY is empty",
                 severity="warning",
             )
 
         return DoctorCheck(
-            name="spacescan_setup", category="network", status="pass",
-            message="Spacescan configuration OK" + (" (API key set)" if api_key else " (free tier)"),
+            name="spacescan_setup",
+            category="network",
+            status="pass",
+            message="Spacescan configuration OK"
+            + (" (API key set)" if api_key else " (free tier)"),
             severity="info",
         )
     except Exception as e:
         return DoctorCheck(
-            name="spacescan_setup", category="network", status="warn",
+            name="spacescan_setup",
+            category="network",
+            status="warn",
             message=f"Spacescan check failed: {e}",
             severity="warning",
         )
-

@@ -87,61 +87,80 @@ def api_watchdog_cancel_mismatched_offers():
         elif alert_id.endswith("_sell"):
             side = "sell"
         else:
-            side = "sell"   # Default — most shape violations seen on sell
+            side = "sell"  # Default — most shape violations seen on sell
 
     orchestrator = getattr(bot, "shape_fix_orchestrator", None)
     if orchestrator is None:
         # Fallback — orchestrator failed to init. Fall back to the
         # older synchronous path so the button still does something.
-        log_event("warning", "watchdog_cancel_fallback_sync",
-                  "Orchestrator unavailable — falling back to sync cancel")
+        log_event(
+            "warning",
+            "watchdog_cancel_fallback_sync",
+            "Orchestrator unavailable — falling back to sync cancel",
+        )
         try:
             result = bot.offer_manager.cancel_offers(
-                unique_tids, reason="watchdog_shape_fix")
+                unique_tids, reason="watchdog_shape_fix"
+            )
         except Exception as e:
-            log_event("error", "watchdog_cancel_failed",
-                      f"Watchdog-triggered cancel failed: {e}")
+            log_event(
+                "error",
+                "watchdog_cancel_failed",
+                f"Watchdog-triggered cancel failed: {e}",
+            )
             return jsonify({"success": False, "error": "watchdog_cancel_failed"}), 500
-        cancelled = [tid for tid, r in (result or {}).items()
-                     if isinstance(r, dict) and r.get("success")]
+        cancelled = [
+            tid
+            for tid, r in (result or {}).items()
+            if isinstance(r, dict) and r.get("success")
+        ]
         failed = [tid for tid in unique_tids if tid not in cancelled]
         if alert_id:
             try:
                 api_server.alerts.clear(alert_id)
             except Exception:
                 pass
-        return jsonify({
-            "success": True,
-            "fallback": "sync",
-            "cancelled_count": len(cancelled),
-            "failed_count": len(failed),
-        })
+        return jsonify(
+            {
+                "success": True,
+                "fallback": "sync",
+                "cancelled_count": len(cancelled),
+                "failed_count": len(failed),
+            }
+        )
 
     # Happy path — delegate to the orchestrator.
     outcome = orchestrator.start_flow(
-        side=side, trade_ids=unique_tids, alert_id=alert_id)
+        side=side, trade_ids=unique_tids, alert_id=alert_id
+    )
     if not outcome.get("accepted"):
-        return jsonify({
-            "success": False,
-            "error": outcome.get("error") or "Orchestrator rejected flow",
-        }), 409
+        return jsonify(
+            {
+                "success": False,
+                "error": outcome.get("error") or "Orchestrator rejected flow",
+            }
+        ), 409
 
-    log_event("info", "shape_fix_flow_started",
-              f"Shape-fix flow started for {side} side "
-              f"({len(unique_tids)} offers)",
-              data={
-                  "flow_id": outcome["flow_id"],
-                  "side": side,
-                  "trade_id_count": len(unique_tids),
-                  "alert_id": alert_id,
-              })
+    log_event(
+        "info",
+        "shape_fix_flow_started",
+        f"Shape-fix flow started for {side} side ({len(unique_tids)} offers)",
+        data={
+            "flow_id": outcome["flow_id"],
+            "side": side,
+            "trade_id_count": len(unique_tids),
+            "alert_id": alert_id,
+        },
+    )
 
-    return jsonify({
-        "success": True,
-        "flow_id": outcome["flow_id"],
-        "side": side,
-        "total_requested": len(unique_tids),
-    }), 202
+    return jsonify(
+        {
+            "success": True,
+            "flow_id": outcome["flow_id"],
+            "side": side,
+            "total_requested": len(unique_tids),
+        }
+    ), 202
 
 
 @bp.route("/api/watchdog/shape-fix-status")

@@ -5,4 +5,3 @@ the ongoing Sage migration.
 """
 
 from sage_node import *  # noqa: F401,F403
-

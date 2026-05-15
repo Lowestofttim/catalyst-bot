@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     _db = None
@@ -121,13 +122,17 @@ class _TempDB(unittest.TestCase):
         return bot
 
     def _start(self, bot_mock):
-        with patch.object(api_server, "bot", bot_mock), \
-             patch("api_server._get_sage_signing_block_reason", return_value=None), \
-             patch("wallet.get_wallet_sync_status",
-                   return_value={"reachable": True, "sync_state": "synced"}), \
-             patch.object(api_server.cfg, "CAT_ASSET_ID", _FAKE_ASSET), \
-             patch.object(api_server.cfg, "SPREAD_BPS", 50), \
-             patch("api_server.events") as mock_events:
+        with (
+            patch.object(api_server, "bot", bot_mock),
+            patch("api_server._get_sage_signing_block_reason", return_value=None),
+            patch(
+                "wallet.get_wallet_sync_status",
+                return_value={"reachable": True, "sync_state": "synced"},
+            ),
+            patch.object(api_server.cfg, "CAT_ASSET_ID", _FAKE_ASSET),
+            patch.object(api_server.cfg, "SPREAD_BPS", 50),
+            patch("api_server.events") as mock_events,
+        ):
             resp = self.client.post(
                 "/api/bot/start",
                 headers={"X-Bot-Local-Token": self.token},
@@ -136,8 +141,10 @@ class _TempDB(unittest.TestCase):
             return resp, mock_events
 
     def _stop(self, bot_mock):
-        with patch.object(api_server, "bot", bot_mock), \
-             patch("api_server.events") as mock_events:
+        with (
+            patch.object(api_server, "bot", bot_mock),
+            patch("api_server.events") as mock_events,
+        ):
             resp = self.client.post(
                 "/api/bot/stop",
                 headers={"X-Bot-Local-Token": self.token},
@@ -149,6 +156,7 @@ class _TempDB(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Bot start: validation + basic response contract
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestBotStartContract(_TempDB):
@@ -174,10 +182,12 @@ class TestBotStartContract(_TempDB):
 
     def test_start_no_asset_id_returns_400(self):
         bot = self._make_bot(running=False)
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server.cfg, "CAT_ASSET_ID", ""), \
-             patch.object(api_server.cfg, "SPREAD_BPS", 50), \
-             patch("api_server._get_sage_signing_block_reason", return_value=None):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server.cfg, "CAT_ASSET_ID", ""),
+            patch.object(api_server.cfg, "SPREAD_BPS", 50),
+            patch("api_server._get_sage_signing_block_reason", return_value=None),
+        ):
             resp = self.client.post(
                 "/api/bot/start",
                 headers={"X-Bot-Local-Token": self.token},
@@ -194,6 +204,7 @@ class TestBotStartContract(_TempDB):
 # ---------------------------------------------------------------------------
 # DB state survives bot start
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestBotStartPreservesFills(_TempDB):
@@ -221,6 +232,7 @@ class TestBotStartPreservesFills(_TempDB):
 # ---------------------------------------------------------------------------
 # Bot stop: DB state survives
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestBotStopPreservesFills(_TempDB):
@@ -257,6 +269,7 @@ class TestBotStopPreservesFills(_TempDB):
 # ---------------------------------------------------------------------------
 # Full start → stop cycle: DB state consistent throughout
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestStartStopCycleDBConsistency(_TempDB):

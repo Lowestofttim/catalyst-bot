@@ -89,8 +89,9 @@ class TopupPoolRefundTests(unittest.TestCase):
             sys.modules.pop(name, None)
 
     def _make_manager(self):
-        with patch.object(coin_manager.CoinManager, "_resolve_fingerprint",
-                          return_value="123456789"):
+        with patch.object(
+            coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"
+        ):
             return coin_manager.CoinManager()
 
     # ------------------------------------------------------------------
@@ -108,8 +109,10 @@ class TopupPoolRefundTests(unittest.TestCase):
         def _fake_set(key, value):
             storage[key] = value
 
-        with patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set):
+        with (
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+        ):
             manager._record_topup_pool_refund(
                 is_cat=False,
                 amount_mojos=15_069_600_000_000,  # 15.0696 XCH
@@ -134,18 +137,20 @@ class TopupPoolRefundTests(unittest.TestCase):
         def _fake_set(key, value):
             storage[key] = value
 
-        with patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set):
+        with (
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+        ):
             manager._record_topup_pool_refund(
                 is_cat=True,
                 amount_mojos=30_000_000,
             )
 
-        self.assertEqual(storage["topup_pool_cat_spent_mojos"],
-                         str(140_000_000 - 30_000_000))
+        self.assertEqual(
+            storage["topup_pool_cat_spent_mojos"], str(140_000_000 - 30_000_000)
+        )
         # XCH counter must be untouched.
-        self.assertEqual(storage["topup_pool_xch_spent_mojos"],
-                         str(5_000_000_000_000))
+        self.assertEqual(storage["topup_pool_xch_spent_mojos"], str(5_000_000_000_000))
 
     def test_refund_clamped_at_zero(self):
         """An over-refund must not push the counter negative."""
@@ -158,8 +163,10 @@ class TopupPoolRefundTests(unittest.TestCase):
         def _fake_set(key, value):
             storage[key] = value
 
-        with patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set):
+        with (
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+        ):
             manager._record_topup_pool_refund(
                 is_cat=False,
                 amount_mojos=999_999_999_999_999,  # way more than the counter
@@ -175,8 +182,10 @@ class TopupPoolRefundTests(unittest.TestCase):
         def _fake_set(key, value):
             touched["flag"] = True
 
-        with patch("database.get_setting", return_value="0"), \
-             patch("database.set_setting", side_effect=_fake_set):
+        with (
+            patch("database.get_setting", return_value="0"),
+            patch("database.set_setting", side_effect=_fake_set),
+        ):
             manager._record_topup_pool_refund(is_cat=False, amount_mojos=0)
             manager._record_topup_pool_refund(is_cat=False, amount_mojos=-100)
 
@@ -197,15 +206,20 @@ class TopupPoolRefundTests(unittest.TestCase):
         def _fake_set(key, value):
             storage[key] = value
 
-        with patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set):
+        with (
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+        ):
             manager._record_topup_pool_spend(
-                is_cat=False, amount_mojos=2_650_230_000_000)  # 2.6502 XCH
-            self.assertEqual(storage["topup_pool_xch_spent_mojos"],
-                             str(2_650_230_000_000))
+                is_cat=False, amount_mojos=2_650_230_000_000
+            )  # 2.6502 XCH
+            self.assertEqual(
+                storage["topup_pool_xch_spent_mojos"], str(2_650_230_000_000)
+            )
 
             manager._record_topup_pool_refund(
-                is_cat=False, amount_mojos=2_650_230_000_000)
+                is_cat=False, amount_mojos=2_650_230_000_000
+            )
             self.assertEqual(storage["topup_pool_xch_spent_mojos"], "0")
 
     def test_pool_rebuild_refunds_spent_counter(self):
@@ -232,14 +246,18 @@ class TopupPoolRefundTests(unittest.TestCase):
         def _fake_set(key, value):
             storage[key] = value
 
-        with patch("database.get_setting", side_effect=_fake_get), \
-             patch("database.set_setting", side_effect=_fake_set), \
-             patch.object(manager, "_configured_tier_sizes_xch",
-                          return_value={"inner": 1}), \
-             patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                          return_value={"inner": 1}), \
-             patch.object(manager, "_consolidate_coins", return_value=True), \
-             patch.object(coin_manager, "log_event"):
+        with (
+            patch("database.get_setting", side_effect=_fake_get),
+            patch("database.set_setting", side_effect=_fake_set),
+            patch.object(
+                manager, "_configured_tier_sizes_xch", return_value={"inner": 1}
+            ),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", return_value={"inner": 1}
+            ),
+            patch.object(manager, "_consolidate_coins", return_value=True),
+            patch.object(coin_manager, "log_event"),
+        ):
             result = manager._smart_topup_wallet(
                 "XCH-inner",
                 wallet_id=1,

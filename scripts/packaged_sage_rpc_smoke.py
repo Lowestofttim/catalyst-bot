@@ -60,17 +60,14 @@ def _validity(builder: x509.CertificateBuilder) -> x509.CertificateBuilder:
 
 def _create_ca(temp_dir: Path) -> tuple[Path, object, x509.Certificate]:
     key = _new_key()
-    cert = (
-        _validity(
-            x509.CertificateBuilder()
-            .subject_name(_name("catalyst-smoke-ca"))
-            .issuer_name(_name("catalyst-smoke-ca"))
-            .public_key(key.public_key())
-            .serial_number(_serial())
-            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        )
-        .sign(key, hashes.SHA256())
-    )
+    cert = _validity(
+        x509.CertificateBuilder()
+        .subject_name(_name("catalyst-smoke-ca"))
+        .issuer_name(_name("catalyst-smoke-ca"))
+        .public_key(key.public_key())
+        .serial_number(_serial())
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+    ).sign(key, hashes.SHA256())
     cert_path = temp_dir / "ca.crt"
     _write_bytes(cert_path, cert.public_bytes(serialization.Encoding.PEM))
     return cert_path, key, cert
@@ -161,7 +158,9 @@ class MockSageServer(ThreadingHTTPServer):
     saw_client_cert: bool
 
 
-def _mock_sage_server_context(server_cert: Path, server_key: Path, ca_path: Path) -> ssl.SSLContext:
+def _mock_sage_server_context(
+    server_cert: Path, server_key: Path, ca_path: Path
+) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(str(server_cert), str(server_key))
@@ -170,7 +169,9 @@ def _mock_sage_server_context(server_cert: Path, server_key: Path, ca_path: Path
     return context
 
 
-def _start_mock_sage(temp_dir: Path) -> tuple[MockSageServer, threading.Thread, Path, Path]:
+def _start_mock_sage(
+    temp_dir: Path,
+) -> tuple[MockSageServer, threading.Thread, Path, Path]:
     ca_path, ca_key, ca_cert = _create_ca(temp_dir)
     server_cert, server_key = _create_signed_cert(
         temp_dir, "server", "mock-sage-server", ca_key, ca_cert, is_server=True
@@ -186,7 +187,9 @@ def _start_mock_sage(temp_dir: Path) -> tuple[MockSageServer, threading.Thread, 
     context = _mock_sage_server_context(server_cert, server_key, ca_path)
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
-    thread = threading.Thread(target=httpd.serve_forever, name="mock-sage-rpc", daemon=True)
+    thread = threading.Thread(
+        target=httpd.serve_forever, name="mock-sage-rpc", daemon=True
+    )
     thread.start()
     return httpd, thread, client_cert, client_key
 
@@ -241,12 +244,18 @@ def run_smoke(exe_path: Path, timeout_s: int) -> int:
         print(f"ERROR: smoke worker exited with {result.returncode}", file=sys.stderr)
         return result.returncode
     if not server.saw_client_cert:
-        print("ERROR: mock Sage server did not receive a client certificate", file=sys.stderr)
+        print(
+            "ERROR: mock Sage server did not receive a client certificate",
+            file=sys.stderr,
+        )
         return 1
     required_paths = {"/initialize", "/get_key"}
     missing = required_paths.difference(server.request_paths)
     if missing:
-        print(f"ERROR: mock Sage server did not receive required calls: {sorted(missing)}", file=sys.stderr)
+        print(
+            f"ERROR: mock Sage server did not receive required calls: {sorted(missing)}",
+            file=sys.stderr,
+        )
         return 1
 
     print("Packaged Sage RPC worker smoke PASSED")
@@ -255,8 +264,12 @@ def run_smoke(exe_path: Path, timeout_s: int) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke test packaged Sage RPC worker")
-    parser.add_argument("--exe", required=True, help="Path to packaged Catalyst executable")
-    parser.add_argument("--timeout", type=int, default=30, help="Worker timeout in seconds")
+    parser.add_argument(
+        "--exe", required=True, help="Path to packaged Catalyst executable"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=30, help="Worker timeout in seconds"
+    )
     args = parser.parse_args()
     return run_smoke(Path(args.exe).resolve(), args.timeout)
 

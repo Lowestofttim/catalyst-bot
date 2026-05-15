@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -34,9 +35,7 @@ _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
 
 def _sse_get(client, token, *, with_auth=True):
     headers = {"X-Bot-Local-Token": token} if with_auth else {}
-    return client.get("/api/events",
-                      headers=headers,
-                      environ_base=_LOOPBACK)
+    return client.get("/api/events", headers=headers, environ_base=_LOOPBACK)
 
 
 def _finite_queue(*items):
@@ -59,7 +58,6 @@ def _read_all_sse(resp):
 
 
 class _FlaskBase(unittest.TestCase):
-
     def setUp(self):
         api_server.app.testing = True
         self.client = api_server.app.test_client()
@@ -74,17 +72,19 @@ class _FlaskBase(unittest.TestCase):
 # 1. Auth guard
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSSEAuth(_FlaskBase):
-
     def test_no_token_returns_401(self):
         resp = _sse_get(self.client, self.token, with_auth=False)
         self.assertEqual(resp.status_code, 401)
 
     def test_wrong_token_returns_401(self):
-        resp = self.client.get("/api/events",
-                               headers={"X-Bot-Local-Token": "wrong-token"},
-                               environ_base=_LOOPBACK)
+        resp = self.client.get(
+            "/api/events",
+            headers={"X-Bot-Local-Token": "wrong-token"},
+            environ_base=_LOOPBACK,
+        )
         self.assertEqual(resp.status_code, 401)
 
 
@@ -92,14 +92,16 @@ class TestSSEAuth(_FlaskBase):
 # 2. Basic response shape (no body consumption needed — headers only)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSSEResponseShape(_FlaskBase):
-
     def _resp(self):
         q = _finite_queue({"type": "ping"})
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", None),
+        ):
             return _sse_get(self.client, self.token)
 
     def test_returns_200(self):
@@ -119,14 +121,16 @@ class TestSSEResponseShape(_FlaskBase):
 # 3. Subscribe / unsubscribe lifecycle
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSSESubscribeLifecycle(_FlaskBase):
-
     def test_subscribe_called_on_connect(self):
         q = _finite_queue({"type": "ping"})
-        with patch.object(api_server.events, "subscribe", return_value=q) as mock_sub, \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q) as mock_sub,
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = _sse_get(self.client, self.token)
             _read_all_sse(resp)
 
@@ -134,9 +138,11 @@ class TestSSESubscribeLifecycle(_FlaskBase):
 
     def test_unsubscribe_called_after_stream_ends(self):
         q = _finite_queue({"type": "ping"})
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe") as mock_unsub, \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe") as mock_unsub,
+            patch.object(api_server, "bot", None),
+        ):
             resp = _sse_get(self.client, self.token)
             _read_all_sse(resp)
 
@@ -147,15 +153,17 @@ class TestSSESubscribeLifecycle(_FlaskBase):
 # 4. Initial state event
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSSEInitialState(_FlaskBase):
-
     def test_bot_none_first_event_is_sentinel(self):
         """Without bot, the first data event should not be 'state'."""
         q = _finite_queue({"type": "sentinel"})
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
@@ -170,9 +178,11 @@ class TestSSEInitialState(_FlaskBase):
         fake_bot = MagicMock()
         fake_bot.get_state.return_value = {"running": True}
 
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", fake_bot):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", fake_bot),
+        ):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
@@ -187,9 +197,11 @@ class TestSSEInitialState(_FlaskBase):
         fake_bot = MagicMock()
         fake_bot.get_state.return_value = {"running": False, "mode": "idle"}
 
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", fake_bot):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", fake_bot),
+        ):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
@@ -203,14 +215,16 @@ class TestSSEInitialState(_FlaskBase):
 # 5. Message format
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSSEMessageFormat(_FlaskBase):
-
     def test_dict_message_serialized_as_json(self):
         q = _finite_queue({"type": "price_update", "price": "0.001"})
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
@@ -222,9 +236,11 @@ class TestSSEMessageFormat(_FlaskBase):
     def test_events_terminated_by_double_newline(self):
         """SSE spec: each event ends with \\n\\n."""
         q = _finite_queue({"type": "ping"})
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 
@@ -232,9 +248,11 @@ class TestSSEMessageFormat(_FlaskBase):
 
     def test_multiple_messages_all_parsed(self):
         q = _finite_queue({"type": "msg1"}, {"type": "msg2"})
-        with patch.object(api_server.events, "subscribe", return_value=q), \
-             patch.object(api_server.events, "unsubscribe"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.events, "subscribe", return_value=q),
+            patch.object(api_server.events, "unsubscribe"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = _sse_get(self.client, self.token)
             raw = _read_all_sse(resp)
 

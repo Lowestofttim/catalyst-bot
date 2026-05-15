@@ -67,7 +67,9 @@ if sys.platform == "win32":
                 if not isinstance(_st.buffer, io.BytesIO):
                     _buf = _st.detach()
                     _wrapped = io.TextIOWrapper(
-                        _buf, encoding="utf-8", errors="replace",
+                        _buf,
+                        encoding="utf-8",
+                        errors="replace",
                         line_buffering=True,
                     )
                     setattr(sys, _attr, _wrapped)
@@ -77,6 +79,7 @@ from flask import Flask, jsonify, request, send_from_directory, send_file, Respo
 
 # ---- Super Log: capture EVERYTHING to terminal + file ----
 from super_log import init_super_log, slog, intercept_log_event
+
 init_super_log()
 slog("STARTUP", "=== API SERVER STARTING ===")
 
@@ -102,13 +105,13 @@ from tx_fees import get_fee_settings_snapshot
 # In dev mode this file lives at src/catalyst/api_server.py, so the repo
 # root (where bot_gui.html sits) is two dirname() hops up from here.
 # ---------------------------------------------------------------------------
-_APP_ROOT = getattr(sys, '_MEIPASS', None)
+_APP_ROOT = getattr(sys, "_MEIPASS", None)
 if _APP_ROOT is None:
     # Dev mode: this module lives at src/catalyst/api_server.py, and
     # bot_gui.html sits at the repo root (three dirname() hops up).
-    _APP_ROOT = os.path.dirname(os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    ))
+    _APP_ROOT = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     # Legacy fallback: if bot_gui.html isn't at that computed root
     # (e.g. a flat install for ad-hoc testing), look alongside this
     # module instead so we don't regress the pre-src-layout behaviour.
@@ -146,6 +149,7 @@ from wallet import get_wallet_type
 # ---- Super Log: hook ALL module methods for complete visibility ----
 try:
     from super_log_hooks import install_all_hooks
+
     install_all_hooks()
 except Exception as e:
     slog("STARTUP", f"Failed to install hooks: {e}")
@@ -179,15 +183,18 @@ _TOKEN_EXEMPT_WRITE_ROUTES = {
 # Those machine routes stay loopback-only and must implement their own validation.
 _RATE_LIMIT_EXEMPT_WRITE_ROUTES = {
     "/api/splash/incoming",
-    "/api/log",              # GUI flushes buffered log entries in bursts
+    "/api/log",  # GUI flushes buffered log entries in bursts
 }
 
 # Dedicated limiter for /api/splash/incoming so an unbounded webhook flood
 # cannot amplify into runaway DB writes. 200/sec per process is still
 # generous for a local webhook but prevents a pathological flood.
 _SPLASH_RATE_LIMIT = {"window_s": 1.0, "max": 200, "hits": [], "lock": threading.Lock()}
+
+
 def _splash_incoming_rate_limited() -> bool:
     import time as _t
+
     now = _t.time()
     with _SPLASH_RATE_LIMIT["lock"]:
         hits = _SPLASH_RATE_LIMIT["hits"]
@@ -200,6 +207,7 @@ def _splash_incoming_rate_limited() -> bool:
         hits.append(now)
         return False
 
+
 # ---------------------------------------------------------------------------
 # Simple per-endpoint rate limiter for state-changing operations
 #
@@ -210,12 +218,14 @@ def _splash_incoming_rate_limited() -> bool:
 # ---------------------------------------------------------------------------
 _rate_limit_log: dict = {}  # {endpoint: [timestamp, ...]}
 _rate_limit_lock = threading.Lock()
-_RATE_LIMIT_WINDOW = 10     # seconds
-_RATE_LIMIT_MAX = 20        # max requests per window
+_RATE_LIMIT_WINDOW = 10  # seconds
+_RATE_LIMIT_MAX = 20  # max requests per window
+
 
 def _is_rate_limited(endpoint: str) -> bool:
     """Check if an endpoint is being called too frequently."""
     import time as _rl_time
+
     now = _rl_time.time()
     cutoff = now - _RATE_LIMIT_WINDOW
     with _rate_limit_lock:
@@ -224,6 +234,7 @@ def _is_rate_limited(endpoint: str) -> bool:
         hits.append(now)
         _rate_limit_log[endpoint] = hits
         return len(hits) > _RATE_LIMIT_MAX
+
 
 _dbx_pair_cache = {}
 _LOCAL_API_TOKEN_HEADER = "X-Bot-Local-Token"
@@ -239,8 +250,15 @@ _LOCAL_API_COOKIE_VALUE = secrets.token_urlsafe(32)
 # Substrings that flag a config key as sensitive — these values are never
 # logged or returned in API error messages.
 _SENSITIVE_KEY_FRAGMENTS = {
-    "key", "cert", "password", "secret", "token", "mnemonic", "seed",
-    "fingerprint", "private",
+    "key",
+    "cert",
+    "password",
+    "secret",
+    "token",
+    "mnemonic",
+    "seed",
+    "fingerprint",
+    "private",
 }
 
 
@@ -289,12 +307,16 @@ def _api_error(e: Exception, endpoint: str = "", status: int = 500):
     """
     endpoint_name = endpoint or "unknown"
     try:
-        slog("API_ERROR", f"Unhandled exception on {endpoint_name}: {e!r}", level="error")
+        slog(
+            "API_ERROR", f"Unhandled exception on {endpoint_name}: {e!r}", level="error"
+        )
     except Exception as log_exc:
         from contextlib import suppress
+
         # Last-resort diagnostics only; API error handling must never raise.
         with suppress(Exception):
             import sys
+
             sys.stderr.write(
                 f"CATalyst API error logging failed for {endpoint_name}: {log_exc!r}\n"
             )
@@ -307,6 +329,7 @@ def _api_error(e: Exception, endpoint: str = "", status: int = 500):
         )
     except Exception as log_exc:
         from contextlib import suppress
+
         with suppress(Exception):
             slog(
                 "API_ERROR",
@@ -320,8 +343,10 @@ def _api_exception(endpoint: str = "", status: int = 500):
     """Return a safe JSON response for the exception currently being handled."""
     endpoint_name = endpoint or "unknown"
     from contextlib import suppress
+
     with suppress(Exception):
         import traceback
+
         slog(
             "API_ERROR",
             f"Unhandled exception on {endpoint_name}:\n{traceback.format_exc()}",
@@ -336,6 +361,7 @@ def _api_exception(endpoint: str = "", status: int = 500):
         )
     except Exception as log_exc:
         from contextlib import suppress
+
         with suppress(Exception):
             slog(
                 "API_ERROR",
@@ -345,7 +371,9 @@ def _api_exception(endpoint: str = "", status: int = 500):
     return jsonify({"error": "Internal server error", "code": "SERVER_ERROR"}), status
 
 
-def _client_safe_result(payload: object, *, error_message: str = "Operation failed") -> object:
+def _client_safe_result(
+    payload: object, *, error_message: str = "Operation failed"
+) -> object:
     """Return an API-safe copy of a helper result without exception-derived text."""
     if not isinstance(payload, dict):
         return payload
@@ -387,17 +415,24 @@ def _looks_like_traceback_text(value: str) -> bool:
     return any(marker in text for marker in _TRACEBACK_TEXT_MARKERS)
 
 
-def _client_safe_payload(payload: object, *, error_message: str = "Details unavailable") -> object:
+def _client_safe_payload(
+    payload: object, *, error_message: str = "Details unavailable"
+) -> object:
     """Strip exception and traceback-shaped values from client JSON payloads."""
     if isinstance(payload, BaseException):
         return error_message
     if isinstance(payload, dict):
         return {
-            key: "***" if _is_sensitive_key(str(key)) else _client_safe_payload(value, error_message=error_message)
+            key: "***"
+            if _is_sensitive_key(str(key))
+            else _client_safe_payload(value, error_message=error_message)
             for key, value in payload.items()
         }
     if isinstance(payload, (list, tuple)):
-        return [_client_safe_payload(value, error_message=error_message) for value in payload]
+        return [
+            _client_safe_payload(value, error_message=error_message)
+            for value in payload
+        ]
     if isinstance(payload, str) and _looks_like_traceback_text(payload):
         return error_message
     return payload
@@ -406,6 +441,7 @@ def _client_safe_payload(payload: object, *, error_message: str = "Details unava
 # ---------------------------------------------------------------------------
 # Startup security checks
 # ---------------------------------------------------------------------------
+
 
 def _check_env_file_permissions():
     """Warn if the .env file is readable by group or others.
@@ -420,8 +456,10 @@ def _check_env_file_permissions():
     if sys.platform == "win32":
         return
     import stat as _stat
+
     try:
         from user_paths import env_file as _env_file
+
         env_path = _env_file()
     except Exception:
         env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -435,8 +473,11 @@ def _check_env_file_permissions():
                 "Run: chmod 600 .env"
             )
             try:
-                log_event("warning", "security",
-                          ".env file has insecure permissions (readable by group/others)")
+                log_event(
+                    "warning",
+                    "security",
+                    ".env file has insecure permissions (readable by group/others)",
+                )
             except Exception:
                 pass
     except OSError:
@@ -464,10 +505,12 @@ def get_app_version() -> str:
     """Return the packaged app version from _version.py (single source of truth)."""
     try:
         from _version import get_version
+
         return get_version()
     except ImportError:
         try:
             from _version import __version__
+
             return __version__
         except Exception:
             return "unknown"
@@ -478,7 +521,9 @@ def get_app_version() -> str:
 def _get_spacescan_plan_advice() -> Dict[str, object]:
     """Estimate sensible Spacescan plan guidance for this bot profile."""
     loop_seconds = max(15, int(getattr(cfg, "LOOP_SECONDS", 90) or 90))
-    balance_every_loops = max(1, int(getattr(cfg, "SPACESCAN_BALANCE_CHECK_EVERY_N", 10) or 10))
+    balance_every_loops = max(
+        1, int(getattr(cfg, "SPACESCAN_BALANCE_CHECK_EVERY_N", 10) or 10)
+    )
 
     loops_per_day = 86400 / float(loop_seconds)
     balance_checks_per_day = loops_per_day / float(balance_every_loops)
@@ -488,9 +533,15 @@ def _get_spacescan_plan_advice() -> Dict[str, object]:
     token_context_calls_month = 120  # ~4 calls/day from cached token context refreshes
     baseline_paid_monthly = balance_calls_month + token_context_calls_month
 
-    if baseline_paid_monthly <= _SPACESCAN_PUBLIC_PLANS["hobbyist"]["requests_per_month"]:
+    if (
+        baseline_paid_monthly
+        <= _SPACESCAN_PUBLIC_PLANS["hobbyist"]["requests_per_month"]
+    ):
         minimum_paid_tier = "hobbyist"
-    elif baseline_paid_monthly <= _SPACESCAN_PUBLIC_PLANS["builder"]["requests_per_month"]:
+    elif (
+        baseline_paid_monthly
+        <= _SPACESCAN_PUBLIC_PLANS["builder"]["requests_per_month"]
+    ):
         minimum_paid_tier = "builder"
     else:
         minimum_paid_tier = "startup"
@@ -537,9 +588,13 @@ def _get_spacescan_plan_advice() -> Dict[str, object]:
     }
 
 
-def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
-                                  decimals: int = 3, *,
-                                  executable_mid_price: float = 0.0) -> dict:
+def _get_spacescan_market_context(
+    asset_id: str = "",
+    ticker_id: str = "",
+    decimals: int = 3,
+    *,
+    executable_mid_price: float = 0.0,
+) -> dict:
     """Return cached Spacescan-assisted token context for live UI decisions.
 
     This is deliberately *not* a live pricing feed. Dexie + Tibet remain the
@@ -575,7 +630,11 @@ def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
         return context
 
     try:
-        from database import get_market_analysis_cache, get_market_analysis_cache_age_secs
+        from database import (
+            get_market_analysis_cache,
+            get_market_analysis_cache_age_secs,
+        )
+
         spacescan = get_market_analysis_cache(asset_id, "spacescan") or {}
         analysis = get_market_analysis_cache(asset_id, "full_analysis") or {}
         # Advisor tips that depend on Spacescan should degrade gracefully when
@@ -594,7 +653,9 @@ def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
         # full_analysis may have expired (30min TTL) while spacescan data (24hr TTL)
         # is still valid. Use spacescan raw data directly, fall back to analysis
         # for derived fields (activity_level, risk_level) when available.
-        health = (analysis.get("token_health") or {}) if isinstance(analysis, dict) else {}
+        health = (
+            (analysis.get("token_health") or {}) if isinstance(analysis, dict) else {}
+        )
 
         context["has_data"] = bool(spacescan.get("has_data"))
         context["token_preview_url"] = str(spacescan.get("token_preview_url", "") or "")
@@ -616,8 +677,12 @@ def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
         # Derive activity_level and risk_level from raw spacescan data when
         # full_analysis has expired but spacescan cache is still valid.
         if health:
-            context["activity_level"] = str(health.get("activity_level", "unknown") or "unknown")
-            context["risk_level"] = str(health.get("risk_level", "unknown") or "unknown")
+            context["activity_level"] = str(
+                health.get("activity_level", "unknown") or "unknown"
+            )
+            context["risk_level"] = str(
+                health.get("risk_level", "unknown") or "unknown"
+            )
             context["confidence"] = str(health.get("confidence", "low") or "low")
         else:
             # Derive from raw spacescan data inline (same logic as _analyze_token_health)
@@ -651,7 +716,9 @@ def _get_spacescan_market_context(asset_id: str = "", ticker_id: str = "",
             context["confidence"] = "medium" if hc > 0 else "low"
         context["price_xch"] = float(spacescan.get("price_xch", 0) or 0)
         context["price_usd"] = float(spacescan.get("price_usd", 0) or 0)
-        context["circulating_supply"] = float(spacescan.get("circulating_supply", 0) or 0)
+        context["circulating_supply"] = float(
+            spacescan.get("circulating_supply", 0) or 0
+        )
         context["total_supply"] = float(spacescan.get("total_supply", 0) or 0)
 
         mid = float(executable_mid_price or 0)
@@ -697,7 +764,9 @@ def _get_live_requote_notice(changed_keys):
     except Exception:
         return None
 
-    keys = sorted({str(k) for k in (changed_keys or []) if str(k) in _LIVE_REQUOTE_ONLY_KEYS})
+    keys = sorted(
+        {str(k) for k in (changed_keys or []) if str(k) in _LIVE_REQUOTE_ONLY_KEYS}
+    )
     if not keys:
         return None
 
@@ -717,6 +786,7 @@ def _is_loopback_addr(addr: str) -> bool:
         return True
     try:
         import ipaddress
+
         # Handles 127.0.0.0/8, ::1, ::ffff:127.x.x.x and all other loopback forms
         return ipaddress.ip_address(addr).is_loopback
     except (ValueError, AttributeError):
@@ -762,6 +832,7 @@ def _get_sage_signing_block_reason():
 
     try:
         from wallet_sage import get_current_key
+
         key = get_current_key() or {}
         if not key.get("has_secrets", False):
             fp = key.get("fingerprint")
@@ -798,6 +869,7 @@ def _serve_bootstrapped_html(filename: str):
 
 class _QuietRequestFilter(logging.Filter):
     """Filter out repetitive polling requests from Werkzeug's access log."""
+
     def filter(self, record):
         msg = record.getMessage()
         # Werkzeug log format: '127.0.0.1 - - [date] "GET /api/status HTTP/1.1" 200 -'
@@ -818,6 +890,7 @@ logging.getLogger("werkzeug").setLevel(logging.ERROR)
 # ---------------------------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------------------------
+
 
 def _bps_to_pct(val):
     """Convert a BPS value to a formatted % string."""
@@ -853,7 +926,6 @@ def _history_age_label(timestamp_value: str) -> str:
 # _build_fill_history_for_gui moved to blueprint
 
 
-
 def _get_live_local_offer_edges(asset_id: str) -> dict:
     """Get our current best live bid/ask from wallet-open offers.
 
@@ -874,7 +946,9 @@ def _get_live_local_offer_edges(asset_id: str) -> dict:
     trade_ids = None
     if bot and getattr(bot, "offer_manager", None):
         try:
-            wallet_open_buys, wallet_open_sells, _ = bot.offer_manager.sync_from_wallet()
+            wallet_open_buys, wallet_open_sells, _ = (
+                bot.offer_manager.sync_from_wallet()
+            )
             trade_ids = [
                 o.get("trade_id", "")
                 for o in (wallet_open_buys + wallet_open_sells)
@@ -944,6 +1018,7 @@ if _active_cat["ticker_id"] and "_" not in _active_cat["ticker_id"]:
     cfg.update("CAT_TICKER_ID", _active_cat["ticker_id"])
 print(f"[STARTUP] _active_cat initialized from .env: {_active_cat}")
 
+
 # Auto-resolve CAT metadata (TIBET_PAIR_ID, CAT_TICKER_ID, CAT_NAME) at startup.
 # Runs in a background thread so it doesn't block Flask startup.
 # Clears TIBET_PAIR_ID first — it may belong to a previous token if the user
@@ -952,6 +1027,7 @@ print(f"[STARTUP] _active_cat initialized from .env: {_active_cat}")
 def _background_cat_resolve():
     try:
         from cat_resolver import resolve_and_apply as _resolve_cat
+
         # Clear stale TIBET_PAIR_ID before resolving — ensures we always get
         # the pair for the currently configured CAT, not a leftover from the last session.
         cfg.update("TIBET_PAIR_ID", "")
@@ -961,15 +1037,23 @@ def _background_cat_resolve():
             with _active_cat_lock:
                 if meta.get("ticker_id") and not _active_cat.get("ticker_id"):
                     _active_cat["ticker_id"] = meta["ticker_id"]
-                if meta.get("name") and (not _active_cat.get("name") or _active_cat.get("name") == "MZ"):
+                if meta.get("name") and (
+                    not _active_cat.get("name") or _active_cat.get("name") == "MZ"
+                ):
                     _active_cat["name"] = meta["name"]
-            print(f"[STARTUP] CAT metadata resolved: pair_id={str(meta.get('pair_id') or '')[:20]}... "
-                  f"ticker={meta.get('ticker_id')} name={meta.get('name')}")
+            print(
+                f"[STARTUP] CAT metadata resolved: pair_id={str(meta.get('pair_id') or '')[:20]}... "
+                f"ticker={meta.get('ticker_id')} name={meta.get('name')}"
+            )
     except Exception as e:
         print(f"[STARTUP] CAT metadata resolve failed (non-critical): {e}")
 
+
 import threading as _threading
-_threading.Thread(target=_background_cat_resolve, daemon=True, name="cat-resolver").start()
+
+_threading.Thread(
+    target=_background_cat_resolve, daemon=True, name="cat-resolver"
+).start()
 
 # Track when the GUI log panel was last cleared.
 # Events older than this timestamp are hidden from the GUI but still
@@ -985,16 +1069,22 @@ if not hasattr(cfg, "RUN_HISTORY_CUTOFF"):
 # resume modal doesn't reappear.  Uses a flag file rather than memory so
 # it survives the app being fully closed and reopened.
 import os as _os
-_FRESH_START_FLAG = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".fresh_start_chosen")
+
+_FRESH_START_FLAG = _os.path.join(
+    _os.path.dirname(_os.path.abspath(__file__)), ".fresh_start_chosen"
+)
+
 
 def _fresh_start_is_set() -> bool:
     return _os.path.exists(_FRESH_START_FLAG)
+
 
 def _fresh_start_set():
     try:
         open(_FRESH_START_FLAG, "w").close()
     except Exception:
         pass
+
 
 def _fresh_start_clear():
     try:
@@ -1007,6 +1097,7 @@ def _fresh_start_clear():
 # ---------------------------------------------------------------------------
 # Event Bus (for SSE push to GUI)
 # ---------------------------------------------------------------------------
+
 
 class EventBus:
     """Simple event bus for Server-Sent Events (SSE).
@@ -1045,18 +1136,26 @@ class EventBus:
             for q in dead:
                 self._subscribers.remove(q)
 
-    def alert(self, alert_id: str, severity: str, title: str, message: str,
-              action: str = None, action_label: str = None,
-              action_value: str = None):
+    def alert(
+        self,
+        alert_id: str,
+        severity: str,
+        title: str,
+        message: str,
+        action: str = None,
+        action_label: str = None,
+        action_value: str = None,
+    ):
         """Convenience: set a persistent alert and emit it.
 
         ``action_value`` is an opaque string passed to the action handler
         in the frontend (e.g. a comma-separated list of trade_ids). The
         default is ``None``; set it when the action needs a payload.
         """
-        if hasattr(self, '_alert_store'):
-            self._alert_store.set_alert(alert_id, severity, title, message,
-                                        action, action_label, action_value)
+        if hasattr(self, "_alert_store"):
+            self._alert_store.set_alert(
+                alert_id, severity, title, message, action, action_label, action_value
+            )
 
     @property
     def subscriber_count(self) -> int:
@@ -1075,9 +1174,16 @@ class AlertStore:
         self._alerts: Dict[str, dict] = {}  # keyed by alert_id
         self._lock = threading.Lock()
 
-    def set_alert(self, alert_id: str, severity: str, title: str, message: str,
-                  action: str = None, action_label: str = None,
-                  action_value: str = None):
+    def set_alert(
+        self,
+        alert_id: str,
+        severity: str,
+        title: str,
+        message: str,
+        action: str = None,
+        action_label: str = None,
+        action_value: str = None,
+    ):
         """Create or update an alert. Severity: 'error', 'warning', 'info', 'success'.
 
         ``action_value`` is an opaque payload passed to the action handler
@@ -1093,7 +1199,7 @@ class AlertStore:
                 "action_label": action_label,  # button text
                 "action_value": action_value,  # optional payload for the action
                 "created_at": time.time(),
-                "dismissed": False
+                "dismissed": False,
             }
         # Push to GUI via SSE
         events.emit("alert", self._alerts[alert_id])
@@ -1124,6 +1230,7 @@ events._alert_store = alerts
 # Hook log_event() to push to the live console via SSE
 try:
     from database import set_log_sse_callback
+
     set_log_sse_callback(events.emit)
     print("  [SSE] log_event → SSE callback registered ✓", flush=True)
 except Exception as e:
@@ -1182,6 +1289,7 @@ def create_bot() -> BotLoop:
     # bus is wired so flows can emit SSE progress events.
     try:
         from shape_fix_orchestrator import ShapeFixOrchestrator
+
         bot.shape_fix_orchestrator = ShapeFixOrchestrator(bot, events)
     except Exception as _sf_err:
         # Non-fatal — dashboard simply won't have the modal experience
@@ -1195,6 +1303,7 @@ def create_bot() -> BotLoop:
 # GUI Route
 # ---------------------------------------------------------------------------
 
+
 @app.after_request
 def add_no_cache_headers(response):
     """Prevent browser from caching HTML and API responses.
@@ -1202,8 +1311,10 @@ def add_no_cache_headers(response):
     This fixes the 'stuck GUI after restart' problem — without these headers
     the browser serves a stale cached page that can't connect to the new server.
     """
-    if response.content_type and ("text/html" in response.content_type
-                                   or "application/json" in response.content_type):
+    if response.content_type and (
+        "text/html" in response.content_type
+        or "application/json" in response.content_type
+    ):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -1249,16 +1360,26 @@ def enforce_local_runtime_guard():
     if path == "/api/events" and not _has_valid_local_token():
         return Response("Unauthorized", status=401, mimetype="text/plain")
 
-    if request.method in {"POST", "PUT", "PATCH", "DELETE", "OPTIONS"} and path.startswith("/api/"):
+    if request.method in {
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    } and path.startswith("/api/"):
         if not _request_origin_matches_app():
             return jsonify({"error": "origin_not_allowed"}), 403
 
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and path.startswith("/api/"):
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and path.startswith(
+        "/api/"
+    ):
         requires_token = path not in _TOKEN_EXEMPT_WRITE_ROUTES
         if requires_token and not _has_valid_local_token():
             return jsonify({"error": "unauthorized"}), 401
         if path not in _RATE_LIMIT_EXEMPT_WRITE_ROUTES and _is_rate_limited(path):
-            return jsonify({"error": "rate_limited", "message": "Too many requests"}), 429
+            return jsonify(
+                {"error": "rate_limited", "message": "Too many requests"}
+            ), 429
 
 
 @app.route("/")
@@ -1306,13 +1427,17 @@ def _get_session_pending_verification_count() -> int:
         return 0
     try:
         since_iso = datetime.fromtimestamp(bot._start_time, timezone.utc).isoformat()
-        row = get_connection().execute(
-            """SELECT COUNT(*) as cnt
+        row = (
+            get_connection()
+            .execute(
+                """SELECT COUNT(*) as cnt
                FROM events
                WHERE event_type='offer_closed_unverified'
                  AND timestamp >= ?""",
-            (since_iso,)
-        ).fetchone()
+                (since_iso,),
+            )
+            .fetchone()
+        )
         return int((row["cnt"] if row else 0) or 0)
     except Exception:
         return 0
@@ -1332,13 +1457,17 @@ def _restore_run_history_cutoff_from_events() -> str:
     """
     global _run_history_cutoff
     try:
-        row = get_connection().execute(
-            """SELECT timestamp
+        row = (
+            get_connection()
+            .execute(
+                """SELECT timestamp
                FROM events
                WHERE event_type IN ('session_fresh_start', 'fresh_start_cleanup')
                ORDER BY id DESC
                LIMIT 1"""
-        ).fetchone()
+            )
+            .fetchone()
+        )
         cutoff = str((row["timestamp"] if row else "") or "").strip()
         _run_history_cutoff = cutoff or None
         cfg.RUN_HISTORY_CUTOFF = _run_history_cutoff
@@ -1357,6 +1486,7 @@ def _reset_runtime_session_stats() -> Dict:
 
     try:
         from database import clear_splash_incoming
+
         reset_summary["splash_incoming_cleared"] = int(clear_splash_incoming() or 0)
     except Exception:
         reset_summary["splash_incoming_cleared"] = 0
@@ -1386,12 +1516,14 @@ def _reset_runtime_session_stats() -> Dict:
     return reset_summary
 
 
-def _reset_fresh_run_session(clear_coins: bool = False,
-                             clear_price_history: bool = False,
-                             clear_inventory: bool = False,
-                             cancel_open_offers: bool = False,
-                             preserve_history: bool = False,
-                             reason: str = "fresh_start") -> Dict:
+def _reset_fresh_run_session(
+    clear_coins: bool = False,
+    clear_price_history: bool = False,
+    clear_inventory: bool = False,
+    cancel_open_offers: bool = False,
+    preserve_history: bool = False,
+    reason: str = "fresh_start",
+) -> Dict:
     """Reset session-facing bot state.
 
     Two modes controlled by ``preserve_history``:
@@ -1414,6 +1546,7 @@ def _reset_fresh_run_session(clear_coins: bool = False,
     global _run_history_cutoff, _session_start_time
 
     from database import _sqlite_ts
+
     reset_at = _sqlite_ts(datetime.now(timezone.utc))
     summary = {
         "reset_at": reset_at,
@@ -1428,23 +1561,32 @@ def _reset_fresh_run_session(clear_coins: bool = False,
 
     conn = get_connection()
     try:
-        has_round_trips = bool(conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
-        ).fetchone())
+        has_round_trips = bool(
+            conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='round_trips'"
+            ).fetchone()
+        )
 
         if not preserve_history:
             # Only count rows we're actually going to delete.
             summary["fills_cleared"] = int(
-                (conn.execute("SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"]) or 0
+                (conn.execute("SELECT COUNT(*) as cnt FROM fills").fetchone()["cnt"])
+                or 0
             )
             if has_round_trips:
                 summary["round_trips_cleared"] = int(
-                    (conn.execute("SELECT COUNT(*) as cnt FROM round_trips").fetchone()["cnt"]) or 0
+                    (
+                        conn.execute(
+                            "SELECT COUNT(*) as cnt FROM round_trips"
+                        ).fetchone()["cnt"]
+                    )
+                    or 0
                 )
 
         if clear_coins:
             summary["coins_cleared"] = int(
-                (conn.execute("SELECT COUNT(*) as cnt FROM coins").fetchone()["cnt"]) or 0
+                (conn.execute("SELECT COUNT(*) as cnt FROM coins").fetchone()["cnt"])
+                or 0
             )
 
         if not preserve_history:
@@ -1454,7 +1596,9 @@ def _reset_fresh_run_session(clear_coins: bool = False,
         if clear_coins:
             conn.execute("DELETE FROM coins")
         if cancel_open_offers:
-            cursor = conn.execute("UPDATE offers SET status='cancelled' WHERE status='open'")
+            cursor = conn.execute(
+                "UPDATE offers SET status='cancelled' WHERE status='open'"
+            )
             summary["open_offers_cancelled"] = int(cursor.rowcount or 0)
         if clear_price_history:
             try:
@@ -1505,6 +1649,7 @@ def _reset_fresh_run_session(clear_coins: bool = False,
         # under preserve_history.
         try:
             from database import clear_splash_incoming
+
             summary["splash_incoming_cleared"] = int(clear_splash_incoming() or 0)
         except Exception:
             summary["splash_incoming_cleared"] = 0
@@ -1597,18 +1742,18 @@ def api_open_external():
         return jsonify({"success": False, "error": "loopback_only"}), 403
 
     payload = request.get_json(silent=True)
-    raw_url = (
-        (payload or {}).get("url")
-        if isinstance(payload, dict)
-        else None
-    )
+    raw_url = (payload or {}).get("url") if isinstance(payload, dict) else None
     url = str(raw_url or "").strip()
 
     if not _is_allowed_external_url(url):
-        return jsonify({"success": False, "error": "Only absolute http/https URLs are allowed"}), 400
+        return jsonify(
+            {"success": False, "error": "Only absolute http/https URLs are allowed"}
+        ), 400
 
     if not _launch_external_url(url):
-        return jsonify({"success": False, "error": "Could not open URL in the default browser"}), 500
+        return jsonify(
+            {"success": False, "error": "Could not open URL in the default browser"}
+        ), 500
 
     return jsonify({"success": True, "url": url})
 
@@ -1626,22 +1771,27 @@ def api_open_data_folder():
 
     try:
         from user_paths import data_dir as _dd
+
         folder = _dd()
     except Exception as e:
         log_event("error", "open_data_folder_data_dir_unavailable", str(e))
         return jsonify({"success": False, "error": "data_dir_unavailable"}), 500
 
     if not os.path.isdir(folder):
-        return jsonify({"success": False, "error": f"data dir does not exist: {folder}"}), 500
+        return jsonify(
+            {"success": False, "error": f"data dir does not exist: {folder}"}
+        ), 500
 
     try:
         if sys.platform == "win32":
             os.startfile(folder)  # type: ignore[attr-defined]
         elif sys.platform == "darwin":
             import subprocess as _sp
+
             _sp.Popen(["open", folder])
         else:
             import subprocess as _sp
+
             _sp.Popen(["xdg-open", folder])
     except Exception as e:
         log_event("error", "open_data_folder_failed", str(e))
@@ -1664,6 +1814,7 @@ def api_crash_log():
 
     try:
         from user_paths import crash_log_file, data_dir as _dd
+
         path = crash_log_file()
         data_folder = _dd()
     except Exception as e:
@@ -1671,14 +1822,16 @@ def api_crash_log():
         return jsonify({"success": False, "error": "data_dir_unavailable"}), 500
 
     if not os.path.isfile(path):
-        return jsonify({
-            "success": True,
-            "exists": False,
-            "path": path,
-            "folder": data_folder,
-            "content": "",
-            "size": 0,
-        })
+        return jsonify(
+            {
+                "success": True,
+                "exists": False,
+                "path": path,
+                "folder": data_folder,
+                "content": "",
+                "size": 0,
+            }
+        )
 
     try:
         st = os.stat(path)
@@ -1698,15 +1851,17 @@ def api_crash_log():
         log_event("error", "crash_log_read_failed", str(e))
         return jsonify({"success": False, "error": "crash_log_read_failed"}), 500
 
-    return jsonify({
-        "success": True,
-        "exists": True,
-        "path": path,
-        "folder": data_folder,
-        "content": content,
-        "size": st.st_size,
-        "mtime": st.st_mtime,
-    })
+    return jsonify(
+        {
+            "success": True,
+            "exists": True,
+            "path": path,
+            "folder": data_folder,
+            "content": content,
+            "size": st.st_size,
+            "mtime": st.st_mtime,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1716,6 +1871,7 @@ def api_crash_log():
 # The updater pins the manifest source to the official CATalyst public release
 # channel. UPDATE_MANIFEST_URL is read for deployment flexibility, but
 # app_update rejects any value outside that exact public manifest path.
+
 
 @app.route("/api/check-update", methods=["GET"])
 def api_check_update():
@@ -1741,8 +1897,12 @@ def api_check_update():
 
     try:
         import app_update
+
         force_refresh = str(request.args.get("force", "") or "").strip().lower() in {
-            "1", "true", "yes", "on"
+            "1",
+            "true",
+            "yes",
+            "on",
         }
         result = app_update.public_update_info(
             app_update.get_update_info(
@@ -1776,6 +1936,7 @@ def api_update_status():
         return jsonify({"success": False, "error": "loopback_only"}), 403
     try:
         import app_update
+
         status = app_update.get_update_status()
         status["success"] = True
         return jsonify(status)
@@ -1795,18 +1956,23 @@ def api_update_install():
 
     try:
         if bot and bot.is_running():
-            return jsonify({
-                "success": False,
-                "error": "Stop the bot before upgrading CATalyst.",
-            }), 409
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Stop the bot before upgrading CATalyst.",
+                }
+            ), 409
     except Exception:
-        return jsonify({
-            "success": False,
-            "error": "Could not confirm the bot is stopped.",
-        }), 409
+        return jsonify(
+            {
+                "success": False,
+                "error": "Could not confirm the bot is stopped.",
+            }
+        ), 409
 
     try:
         import app_update
+
         result = app_update.start_update_install(
             get_app_version(),
             str(os.environ.get("UPDATE_MANIFEST_URL", "") or ""),
@@ -1854,8 +2020,10 @@ def api_sage_latest_release():
 
     try:
         import requests as _req
+
         try:
             from api_call_tracker import record as _t
+
             _t("github", "/repos/xch-dev/sage/releases/latest")
         except Exception:
             pass
@@ -1894,7 +2062,6 @@ def api_sage_latest_release():
 # api_events moved to blueprint
 
 
-
 # ---------------------------------------------------------------------------
 # Bot Control Routes
 # ---------------------------------------------------------------------------
@@ -1902,26 +2069,24 @@ def api_sage_latest_release():
 # api_bot_start moved to blueprint
 
 
-
 # api_bot_stop moved to blueprint
-
 
 
 # api_shutdown moved to blueprint
 
 
-
 # api_bot_state moved to blueprint
-
 
 
 def _get_health_snapshot() -> dict:
     """Quick health check for /api/status when bot hasn't started yet."""
     import chia_node
+
     if not chia_node.is_startup_authorised():
         return {"status": "not_started", "consecutive_failures": 0}
     try:
         from wallet import get_chia_health
+
         h = get_chia_health()
         wallet = h.get("wallet", {}) or {}
         node = h.get("node", {}) or {}
@@ -1941,7 +2106,6 @@ def _get_health_snapshot() -> dict:
 
 
 # api_status moved to blueprint
-
 
 
 def _build_liquidity_status_block(raw_status: dict) -> dict:
@@ -2008,9 +2172,17 @@ def _build_liquidity_status_block(raw_status: dict) -> dict:
             # position size is still the inner POSITION (not bucket).
             try:
                 from config import get_buy_tier_size_xch
-                _sizes = [float(get_buy_tier_size_xch(t) or 0) for t in ("inner", "mid", "outer", "extreme")]
+
+                _sizes = [
+                    float(get_buy_tier_size_xch(t) or 0)
+                    for t in ("inner", "mid", "outer", "extreme")
+                ]
                 _sizes = [s for s in _sizes if s > 0]
-                floor = min(_sizes) if _sizes else float(getattr(cfg, "DEFAULT_TRADE_XCH", 0.01) or 0.01)
+                floor = (
+                    min(_sizes)
+                    if _sizes
+                    else float(getattr(cfg, "DEFAULT_TRADE_XCH", 0.01) or 0.01)
+                )
             except Exception:
                 floor = float(getattr(cfg, "DEFAULT_TRADE_XCH", 0.01) or 0.01)
             reserve = float(getattr(cfg, "XCH_RESERVE", 0) or 0)
@@ -2028,6 +2200,7 @@ def _build_liquidity_status_block(raw_status: dict) -> dict:
             cat_avail = float(_bal.get("cat", {}).get("spendable") or 0)
             try:
                 from config import get_sell_tier_size_xch
+
                 mid = None
                 try:
                     pricing = raw_status.get("pricing") or {}
@@ -2035,10 +2208,15 @@ def _build_liquidity_status_block(raw_status: dict) -> dict:
                         mid = float(pricing.get("mid") or 0)
                 except Exception:
                     mid = None
-                _xch_sizes = [float(get_sell_tier_size_xch(t) or 0) for t in ("inner", "mid", "outer", "extreme")]
+                _xch_sizes = [
+                    float(get_sell_tier_size_xch(t) or 0)
+                    for t in ("inner", "mid", "outer", "extreme")
+                ]
                 _xch_sizes = [s for s in _xch_sizes if s > 0]
                 xch_floor = min(_xch_sizes) if _xch_sizes else 0.0
-                cat_floor = (xch_floor / mid) if (mid and mid > 0 and xch_floor > 0) else 0.0
+                cat_floor = (
+                    (xch_floor / mid) if (mid and mid > 0 and xch_floor > 0) else 0.0
+                )
             except Exception:
                 cat_floor = 0.0
             reserve = float(getattr(cfg, "CAT_RESERVE", 0) or 0)
@@ -2072,9 +2250,7 @@ def _safe_float(val) -> float:
 # api_runtime_diagnostics moved to blueprint
 
 
-
 # api_diagnostics_api_stats moved to blueprint
-
 
 
 def _sage_ts_to_iso(ts) -> str:
@@ -2083,13 +2259,13 @@ def _sage_ts_to_iso(ts) -> str:
         return ""
     try:
         from datetime import datetime, timezone
+
         return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
     except (ValueError, TypeError, OSError):
         return ""
 
 
 # api_bot_price moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2099,29 +2275,22 @@ def _sage_ts_to_iso(ts) -> str:
 # api_config_get moved to blueprint
 
 
-
 # api_fees_status moved to blueprint
-
 
 
 # _apply_sage_change_address_setting moved to blueprint
 
 
-
 # api_config_update moved to blueprint
-
 
 
 # api_config_reload moved to blueprint
 
 
-
 # api_config_apply moved to blueprint
 
 
-
 # api_config_live moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2131,25 +2300,19 @@ def _sage_ts_to_iso(ts) -> str:
 # api_offers moved to blueprint
 
 
-
 # api_cancel_all_status moved to blueprint
-
 
 
 # api_open_offer_count moved to blueprint
 
 
-
 # api_cancel_all moved to blueprint
-
 
 
 # api_cleanup_orphans moved to blueprint
 
 
-
 # api_cancel_offer moved to blueprint
-
 
 
 # Boost routes moved to blueprints/boost.py
@@ -2161,59 +2324,52 @@ def _sage_ts_to_iso(ts) -> str:
 # api_fills moved to blueprint
 
 
-
 # api_fills_classified moved to blueprint
-
 
 
 # api_fills_arb_wallets moved to blueprint
 
 
-
 # api_market_fill_intel moved to blueprint
-
 
 
 # api_offers_diagnostic moved to blueprint
 
 
-
 # api_purge_fills moved to blueprint
-
 
 
 # api_pnl_reset_preview moved to blueprint
 
 
-
 # api_pnl_reset moved to blueprint
-
 
 
 # api_reset_offer_history moved to blueprint
 
 
-
 # api_reset_full moved to blueprint
-
 
 
 # Sentinel context manager for the sniper lock fallback above.
 class _SNIPE_LOCK_NOOP_CLS:
-    def __enter__(self): return self
-    def __exit__(self, *a): return False
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
 _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 
 
 # api_deposit_advisory_allocate moved to blueprint
 
 
-
 # Session routes moved to blueprints/session.py
 
 
 # api_pnl moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2223,9 +2379,7 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_dashboard moved to blueprint
 
 
-
 # api_stats moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2235,9 +2389,7 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_inventory moved to blueprint
 
 
-
 # api_risk_spreads moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2247,13 +2399,10 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_coins moved to blueprint
 
 
-
 # api_coin_topup moved to blueprint
 
 
-
 # api_coin_prep moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2263,9 +2412,7 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_dexie_stats moved to blueprint
 
 
-
 # api_dexie_repost moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2275,21 +2422,16 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # _fetch_dbx_pair_status moved to blueprint
 
 
-
 # api_market_intel moved to blueprint
-
 
 
 # api_market_orderbook moved to blueprint
 
 
-
 # api_market_slippage moved to blueprint
 
 
-
 # api_market_dbx moved to blueprint
-
 
 
 # Alert/watchdog routes moved to blueprints/watchdog.py
@@ -2303,7 +2445,6 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_coinset_stats moved to blueprint
 
 
-
 # ---------------------------------------------------------------------------
 # Price Routes
 # ---------------------------------------------------------------------------
@@ -2311,37 +2452,28 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_price moved to blueprint
 
 
-
 # api_market_summary moved to blueprint
-
 
 
 # api_tibet_price moved to blueprint
 
 
-
 # api_amm_price moved to blueprint
-
 
 
 # api_debug_coinprep moved to blueprint
 
 
-
 # api_debug_pricing moved to blueprint
-
 
 
 # api_debug_tibet_test moved to blueprint
 
 
-
 # api_debug_sage_single_offer_test moved to blueprint
 
 
-
 # _fetch_price_standalone moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2351,13 +2483,10 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # _fetch_dexie_orderbook_standalone moved to blueprint
 
 
-
 # api_smart_defaults moved to blueprint
 
 
-
 # _calculate_smart_defaults moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2367,13 +2496,11 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_db_backup moved to blueprint
 
 
-
 # ---------------------------------------------------------------------------
 # Log Route (for GUI log panel)
 # ---------------------------------------------------------------------------
 
 # api_logs moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2383,49 +2510,37 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # api_fingerprint moved to blueprint
 
 
-
 # _normalize_asset_id moved to blueprint
-
 
 
 # _get_dexie_pairs moved to blueprint
 
 
-
 # api_token_overview moved to blueprint
-
 
 
 # api_dexie_v3_pairs moved to blueprint
 
 
-
 # api_cats moved to blueprint
-
 
 
 # api_cat_select moved to blueprint
 
 
-
 # api_cat_refresh moved to blueprint
-
 
 
 # api_balances_refresh moved to blueprint
 
 
-
 # api_full_node_status moved to blueprint
-
 
 
 # api_settings_defaults moved to blueprint
 
 
-
 # api_settings_validate moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2435,9 +2550,7 @@ _SNIPE_LOCK_NOOP = _SNIPE_LOCK_NOOP_CLS()
 # _resume_last_active_label moved to blueprint
 
 
-
 # api_check_resume moved to blueprint
-
 
 
 # ---------------------------------------------------------------------------
@@ -2454,7 +2567,9 @@ _coin_prep_state = {
     "xch_needed": 0,
     "cat_needed": 0,
 }
-_coin_prep_proc = None  # Global ref to subprocess — used to kill old worker on re-trigger
+_coin_prep_proc = (
+    None  # Global ref to subprocess — used to kill old worker on re-trigger
+)
 
 
 # The cancel-all state-factory/mutator helpers live in blueprints/offers.py,
@@ -2462,12 +2577,22 @@ _coin_prep_proc = None  # Global ref to subprocess — used to kill old worker o
 # other modules (shutdown path, GUI fetch) can read it before the blueprints
 # are registered below.
 _cancel_all_state = {
-    "running": False, "complete": False, "error": None,
-    "phase": "idle", "message": "",
-    "started_at": None, "finished_at": None, "updated_at": None,
-    "total": 0, "batch_size": 0, "total_batches": 0, "current_batch": 0,
-    "batch_cancelled": 0, "batch_failed": 0,
-    "cancelled": 0, "failed": 0,
+    "running": False,
+    "complete": False,
+    "error": None,
+    "phase": "idle",
+    "message": "",
+    "started_at": None,
+    "finished_at": None,
+    "updated_at": None,
+    "total": 0,
+    "batch_size": 0,
+    "total_batches": 0,
+    "current_batch": 0,
+    "batch_cancelled": 0,
+    "batch_failed": 0,
+    "cancelled": 0,
+    "failed": 0,
 }
 _cancel_all_state_lock = threading.Lock()
 
@@ -2475,33 +2600,25 @@ _cancel_all_state_lock = threading.Lock()
 # _set_cancel_all_state moved to blueprint
 
 
-
 # _reset_cancel_all_state moved to blueprint
-
 
 
 # _get_cancel_all_state moved to blueprint
 
 
-
 # api_log_event moved to blueprint
-
 
 
 # api_coin_prep_status moved to blueprint
 
 
-
 # api_coin_prep_verify moved to blueprint
-
 
 
 # api_coin_prep_trigger moved to blueprint
 
 
-
 # api_coin_prep_reset moved to blueprint
-
 
 
 # Console + wallet detect/switch routes moved to blueprints/system.py
@@ -2513,17 +2630,13 @@ _cancel_all_state_lock = threading.Lock()
 # api_fills_export moved to blueprint
 
 
-
 # api_logs_clear moved to blueprint
-
 
 
 # api_logs_download moved to blueprint
 
 
-
 # SuperLog routes moved to blueprints/superlog.py
-
 
 
 # Health, doctor, self-test, config-validate/history/export routes moved to
@@ -2536,6 +2649,7 @@ _cancel_all_state_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
+
 
 def _serialize_offers(offers: list) -> list:
     """Convert offer list to JSON-safe format."""
@@ -2579,33 +2693,25 @@ def _serialize_dict(d: dict) -> dict:
     return result
 
 
-
 # api_wallet_sage_running moved to blueprint
-
 
 
 # api_wallet_retry_sage_connect moved to blueprint
 
 
-
 # api_wallet_begin_startup moved to blueprint
-
 
 
 # api_chia_startup_status moved to blueprint
 
 
-
 # api_chia_fingerprints moved to blueprint
-
 
 
 # api_chia_start_with_fingerprint moved to blueprint
 
 
-
 # api_sage_setup_certs moved to blueprint
-
 
 
 # Spacescan routes moved to blueprints/spacescan.py
@@ -2615,9 +2721,12 @@ def _serialize_dict(d: dict) -> dict:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def _graceful_shutdown(signum, _frame):
     """Handle Ctrl+C or terminal close — stop bot cleanly before exit."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    sig_name = (
+        signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
+    )
     print(f"\n🛑 Received {sig_name} — shutting down gracefully...", flush=True)
 
     if bot and bot.is_running():
@@ -2633,7 +2742,7 @@ def _graceful_shutdown(signum, _frame):
 
     # Stop Splash node (in case bot.stop() didn't cover it)
     try:
-        if bot and hasattr(bot, 'splash_node') and bot.splash_node.is_running():
+        if bot and hasattr(bot, "splash_node") and bot.splash_node.is_running():
             bot.splash_node.stop()
             print("   ✅ Splash node stopped", flush=True)
     except Exception:
@@ -2649,6 +2758,7 @@ def _graceful_shutdown(signum, _frame):
     print("   Stopping Chia services...", flush=True)
     try:
         import chia_node
+
         result = chia_node.stop_chia("all")
         if result.get("success"):
             print("   ✅ Chia services stopped", flush=True)
@@ -2736,55 +2846,101 @@ from blueprints.spacescan import (
 
 from blueprints.market import (
     bp as _market_bp,
-    api_dexie_stats, api_dexie_repost, api_market_intel,
-    api_market_orderbook, api_market_slippage, api_market_dbx,
-    api_coinset_stats, api_price, api_market_summary,
-    api_tibet_price, api_amm_price,
-    api_debug_coinprep, api_debug_pricing, api_debug_tibet_test,
+    api_dexie_stats,
+    api_dexie_repost,
+    api_market_intel,
+    api_market_orderbook,
+    api_market_slippage,
+    api_market_dbx,
+    api_coinset_stats,
+    api_price,
+    api_market_summary,
+    api_tibet_price,
+    api_amm_price,
+    api_debug_coinprep,
+    api_debug_pricing,
+    api_debug_tibet_test,
     api_debug_sage_single_offer_test,
 )
 from blueprints.sage import (
     bp as _sage_bp,
-    api_fingerprint, api_full_node_status,
-    api_wallet_sage_running, api_wallet_retry_sage_connect,
-    api_wallet_begin_startup, api_chia_startup_status,
-    api_chia_fingerprints, api_chia_start_with_fingerprint,
-    api_sage_set_fingerprint, api_sage_cert_candidates,
+    api_fingerprint,
+    api_full_node_status,
+    api_wallet_sage_running,
+    api_wallet_retry_sage_connect,
+    api_wallet_begin_startup,
+    api_chia_startup_status,
+    api_chia_fingerprints,
+    api_chia_start_with_fingerprint,
+    api_sage_set_fingerprint,
+    api_sage_cert_candidates,
     api_sage_setup_certs,
 )
 from blueprints.cat import (
     bp as _cat_bp,
-    api_deposit_advisory_allocate, api_token_overview,
-    api_dexie_v3_pairs, api_cats, api_cat_select,
-    api_cat_refresh, api_balances_refresh,
+    api_deposit_advisory_allocate,
+    api_token_overview,
+    api_dexie_v3_pairs,
+    api_cats,
+    api_cat_select,
+    api_cat_refresh,
+    api_balances_refresh,
 )
 from blueprints.config_bp import (
     bp as _config_bp,
-    api_config_get, api_fees_status, api_config_update,
-    api_config_reload, api_config_apply, api_config_live,
-    api_settings_defaults, api_settings_validate, api_check_resume,
+    api_config_get,
+    api_fees_status,
+    api_config_update,
+    api_config_reload,
+    api_config_apply,
+    api_config_live,
+    api_settings_defaults,
+    api_settings_validate,
+    api_check_resume,
 )
 from blueprints.coin_prep import (
     bp as _coin_prep_bp,
-    api_coins, api_coin_topup, api_coin_prep,
-    api_db_backup, api_logs, api_log_event,
-    api_coin_prep_status, api_coin_prep_verify, api_coin_prep_trigger,
-    api_coin_prep_reset, api_fills_export,
-    api_logs_clear, api_logs_download,
+    api_coins,
+    api_coin_topup,
+    api_coin_prep,
+    api_db_backup,
+    api_logs,
+    api_log_event,
+    api_coin_prep_status,
+    api_coin_prep_verify,
+    api_coin_prep_trigger,
+    api_coin_prep_reset,
+    api_fills_export,
+    api_logs_clear,
+    api_logs_download,
 )
 
 from blueprints.offers import (
     bp as _offers_bp,
-    api_offers, api_cancel_all_status, api_open_offer_count,
-    api_cancel_all, api_cleanup_orphans, api_cancel_offer,
-    api_fills, api_fills_classified, api_fills_arb_wallets,
-    api_market_fill_intel, api_offers_diagnostic, api_purge_fills,
-    api_pnl_reset_preview, api_pnl_reset,
-    api_reset_offer_history, api_reset_full, api_pnl,
+    api_offers,
+    api_cancel_all_status,
+    api_open_offer_count,
+    api_cancel_all,
+    api_cleanup_orphans,
+    api_cancel_offer,
+    api_fills,
+    api_fills_classified,
+    api_fills_arb_wallets,
+    api_market_fill_intel,
+    api_offers_diagnostic,
+    api_purge_fills,
+    api_pnl_reset_preview,
+    api_pnl_reset,
+    api_reset_offer_history,
+    api_reset_full,
+    api_pnl,
 )
 from blueprints.dashboard import (
     bp as _dashboard_bp,
-    api_dashboard, api_stats, api_inventory, api_risk_spreads,
+    api_dashboard,
+    api_stats,
+    api_inventory,
+    api_risk_spreads,
 )
 from blueprints.smart_defaults import (
     bp as _smart_defaults_bp,
@@ -2792,9 +2948,15 @@ from blueprints.smart_defaults import (
 )
 from blueprints.bot import (
     bp as _bot_bp,
-    api_events, api_bot_start, api_bot_stop, api_shutdown,
-    api_bot_state, api_status,
-    api_runtime_diagnostics, api_diagnostics_api_stats, api_bot_price,
+    api_events,
+    api_bot_start,
+    api_bot_stop,
+    api_shutdown,
+    api_bot_state,
+    api_status,
+    api_runtime_diagnostics,
+    api_diagnostics_api_stats,
+    api_bot_price,
 )
 
 app.register_blueprint(_splash_bp)
@@ -2834,6 +2996,7 @@ if __name__ == "__main__":
 
     # --- Check for stale instance already running on port 5000 ---
     import socket as _socket
+
     _port = 5000
     _sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
     try:
@@ -2856,10 +3019,10 @@ if __name__ == "__main__":
             pass
 
     # Register signal handlers for clean shutdown
-    signal.signal(signal.SIGINT, _graceful_shutdown)   # Ctrl+C
-    signal.signal(signal.SIGTERM, _graceful_shutdown)   # kill / task manager
+    signal.signal(signal.SIGINT, _graceful_shutdown)  # Ctrl+C
+    signal.signal(signal.SIGTERM, _graceful_shutdown)  # kill / task manager
     # SIGBREAK is Windows-only (terminal close / Ctrl+Break)
-    if hasattr(signal, 'SIGBREAK'):
+    if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, _graceful_shutdown)
 
     # Initialise
@@ -2872,13 +3035,14 @@ if __name__ == "__main__":
     # actually new. Runs once per install, gated by a settings flag.
     try:
         from database import get_setting, set_setting, get_reserve_coins
+
         if not get_setting("deposit_advisory_startup_backfill_v1"):
             raw = get_setting("deposit_advisory_advised_coins", "") or ""
             advised = {s.strip() for s in raw.split(",") if s.strip()}
             added = 0
             for _wt in ("xch", "cat"):
                 try:
-                    for _rc in (get_reserve_coins(_wt) or []):
+                    for _rc in get_reserve_coins(_wt) or []:
                         _cid = _rc.get("coin_id") or ""
                         if _cid and _cid not in advised:
                             advised.add(_cid)
@@ -2887,7 +3051,9 @@ if __name__ == "__main__":
                     pass
             if added:
                 set_setting("deposit_advisory_advised_coins", ",".join(sorted(advised)))
-                print(f"  [DepositAdvisory] Backfilled {added} existing reserve coin(s)")
+                print(
+                    f"  [DepositAdvisory] Backfilled {added} existing reserve coin(s)"
+                )
             set_setting("deposit_advisory_startup_backfill_v1", "1")
             # Best-effort: clear any currently-live advisory alerts so the
             # UI updates immediately instead of waiting for the next cycle.
@@ -2909,6 +3075,7 @@ if __name__ == "__main__":
     # Restore "logs cleared at" from database so Clear survives restarts
     try:
         from database import get_setting
+
         saved = get_setting("logs_cleared_at")
         if saved:
             _logs_cleared_at = saved
@@ -2928,6 +3095,7 @@ if __name__ == "__main__":
     # Fresh app startups should not inherit old Splash receive counters.
     try:
         from database import clear_splash_incoming
+
         clear_splash_incoming()
     except Exception:
         pass
@@ -2938,6 +3106,7 @@ if __name__ == "__main__":
     # These are stored in %APPDATA%\Catalyst\ and are never written to .env.
     try:
         import user_secrets as _user_secrets
+
         _user_secrets.apply_to_config(cfg)
         if cfg.SPACESCAN_API_KEY:
             print("  [Secrets] Spacescan API key loaded from user secrets.", flush=True)
@@ -2956,9 +3125,4 @@ if __name__ == "__main__":
 
     log_event("info", "server_started", f"API server starting on port {_port}")
 
-    app.run(
-        host="127.0.0.1",
-        port=_port,
-        debug=False,
-        threaded=True
-    )
+    app.run(host="127.0.0.1", port=_port, debug=False, threaded=True)

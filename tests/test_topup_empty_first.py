@@ -14,6 +14,7 @@ def _empty_first_key_factory(default_order, xch_dist, cat_dist, xch_inv, cat_inv
 
     Kept in sync manually. If the production code changes, update here too.
     """
+
     def key(tier_name):
         xch_slots_n = int(xch_dist.get(tier_name, 0) or 0)
         cat_slots_n = int(cat_dist.get(tier_name, 0) or 0)
@@ -27,6 +28,7 @@ def _empty_first_key_factory(default_order, xch_dist, cat_dist, xch_inv, cat_inv
         except ValueError:
             default_idx = 99
         return (empty_rank, default_idx)
+
     return key
 
 
@@ -80,9 +82,7 @@ class TestEmptyFirstPriority(unittest.TestCase):
         xch_inv = {"inner": [1], "mid": [1], "outer": [1], "extreme": []}
         cat_inv = {"inner": [1], "mid": [1], "outer": [1], "extreme": []}
         dist = {"inner": 10, "mid": 5, "outer": 3, "extreme": 0}
-        key = _empty_first_key_factory(
-            self.default_order, dist, dist, xch_inv, cat_inv
-        )
+        key = _empty_first_key_factory(self.default_order, dist, dist, xch_inv, cat_inv)
         order = sorted(self.default_order, key=key)
         # Extreme has slots=0, so it's NOT treated as empty-with-active-slots.
         # Default order applies → inner first.

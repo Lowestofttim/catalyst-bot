@@ -11,17 +11,26 @@ from typing import List, Dict, Any
 
 try:
     from ladder_planner import (
-        SlotStatus, SlotPlan, LadderPlan, plan_ladder, amount_fmt,
+        SlotStatus,
+        SlotPlan,
+        LadderPlan,
+        plan_ladder,
+        amount_fmt,
     )
+
     _SKIP_LP = None
 except ModuleNotFoundError as exc:
     _SKIP_LP = str(exc)
 
 try:
     from ladder_watchdog import (
-        Severity, Issue, AuditResult,
-        audit_ladder_shape, check_coin_invariants,
+        Severity,
+        Issue,
+        AuditResult,
+        audit_ladder_shape,
+        check_coin_invariants,
     )
+
     _SKIP_LW = None
 except ModuleNotFoundError as exc:
     _SKIP_LW = str(exc)
@@ -30,6 +39,7 @@ except ModuleNotFoundError as exc:
 # ===========================================================================
 # amount_fmt
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_LP is not None, f"ladder_planner unavailable: {_SKIP_LP}")
 class TestAmountFmt(unittest.TestCase):
@@ -57,23 +67,28 @@ class TestAmountFmt(unittest.TestCase):
 # LadderPlan dataclass methods
 # ===========================================================================
 
+
 def _make_plan(statuses: List[SlotStatus]) -> LadderPlan:
     plan = LadderPlan(side="buy", mid_price=Decimal("0.001"))
     for i, st in enumerate(statuses):
-        plan.slots.append(SlotPlan(
-            slot_idx=i,
-            tier="mid",
-            target_size_mojos=1_000_000_000_000,
-            target_price=Decimal("0.001"),
-            status=st,
-        ))
+        plan.slots.append(
+            SlotPlan(
+                slot_idx=i,
+                tier="mid",
+                target_size_mojos=1_000_000_000_000,
+                target_price=Decimal("0.001"),
+                status=st,
+            )
+        )
     return plan
 
 
 @unittest.skipIf(_SKIP_LP is not None, f"ladder_planner unavailable: {_SKIP_LP}")
 class TestLadderPlanMethods(unittest.TestCase):
     def test_ready_count(self):
-        plan = _make_plan([SlotStatus.READY, SlotStatus.READY, SlotStatus.NO_COIN_AVAILABLE])
+        plan = _make_plan(
+            [SlotStatus.READY, SlotStatus.READY, SlotStatus.NO_COIN_AVAILABLE]
+        )
         self.assertEqual(plan.ready_count(), 2)
 
     def test_oversize_count(self):
@@ -81,8 +96,13 @@ class TestLadderPlanMethods(unittest.TestCase):
         self.assertEqual(plan.oversize_count(), 1)
 
     def test_unready_count(self):
-        plan = _make_plan([
-            SlotStatus.NO_COIN_AVAILABLE, SlotStatus.MISFIT_COIN_AVAILABLE, SlotStatus.READY])
+        plan = _make_plan(
+            [
+                SlotStatus.NO_COIN_AVAILABLE,
+                SlotStatus.MISFIT_COIN_AVAILABLE,
+                SlotStatus.READY,
+            ]
+        )
         self.assertEqual(plan.unready_count(), 2)
 
     def test_is_viable_all_ready(self):
@@ -116,15 +136,20 @@ class TestLadderPlanMethods(unittest.TestCase):
 # plan_ladder
 # ===========================================================================
 
-def _coin(coin_id: str, amount_mojos: int,
-          designation: str = "tier_spare",
-          assigned_tier: str = "mid") -> Dict[str, Any]:
+
+def _coin(
+    coin_id: str,
+    amount_mojos: int,
+    designation: str = "tier_spare",
+    assigned_tier: str = "mid",
+) -> Dict[str, Any]:
     return {
         "coin_id": coin_id,
         "amount_mojos": amount_mojos,
         "designation": designation,
         "assigned_tier": assigned_tier,
     }
+
 
 _TIER_COUNTS = {"inner": 1, "mid": 2, "outer": 1, "extreme": 0}
 _TIER_SIZES = {"inner": 500_000_000, "mid": 1_000_000_000, "outer": 2_000_000_000}
@@ -217,6 +242,7 @@ class TestPlanLadder(unittest.TestCase):
 # AuditResult helpers
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_LW is not None, f"ladder_watchdog unavailable: {_SKIP_LW}")
 class TestAuditResult(unittest.TestCase):
     def test_ok_true_when_no_issues(self):
@@ -225,22 +251,22 @@ class TestAuditResult(unittest.TestCase):
         self.assertFalse(ar.has_warnings())
 
     def test_has_errors_when_error_issue(self):
-        ar = AuditResult(ok=False, issues=[
-            Issue(severity=Severity.ERROR, code="x", message="msg")
-        ])
+        ar = AuditResult(
+            ok=False, issues=[Issue(severity=Severity.ERROR, code="x", message="msg")]
+        )
         self.assertTrue(ar.has_errors())
 
     def test_has_warnings_when_warn_issue(self):
-        ar = AuditResult(ok=True, issues=[
-            Issue(severity=Severity.WARN, code="x", message="msg")
-        ])
+        ar = AuditResult(
+            ok=True, issues=[Issue(severity=Severity.WARN, code="x", message="msg")]
+        )
         self.assertTrue(ar.has_warnings())
         self.assertFalse(ar.has_errors())
 
     def test_info_is_not_error_or_warning(self):
-        ar = AuditResult(ok=True, issues=[
-            Issue(severity=Severity.INFO, code="x", message="msg")
-        ])
+        ar = AuditResult(
+            ok=True, issues=[Issue(severity=Severity.INFO, code="x", message="msg")]
+        )
         self.assertFalse(ar.has_errors())
         self.assertFalse(ar.has_warnings())
 
@@ -248,6 +274,7 @@ class TestAuditResult(unittest.TestCase):
 # ===========================================================================
 # audit_ladder_shape
 # ===========================================================================
+
 
 def _offers_with_sizes(prices_and_sizes: List[tuple]) -> List[Dict]:
     """Build fake offer dicts with price and size_xch."""
@@ -267,12 +294,15 @@ class TestAuditLadderShape(unittest.TestCase):
 
     def test_correct_count_no_count_warning(self):
         # 2 offers, expected 2
-        offers = _offers_with_sizes([
-            (Decimal("0.001"), Decimal("0.5")),
-            (Decimal("0.0009"), Decimal("1.0")),
-        ])
+        offers = _offers_with_sizes(
+            [
+                (Decimal("0.001"), Decimal("0.5")),
+                (Decimal("0.0009"), Decimal("1.0")),
+            ]
+        )
         result = audit_ladder_shape(
-            "buy", offers,
+            "buy",
+            offers,
             {"inner": Decimal("0.5"), "mid": Decimal("1.0")},
             {"inner": 1, "mid": 1, "outer": 0, "extreme": 0},
         )
@@ -283,7 +313,8 @@ class TestAuditLadderShape(unittest.TestCase):
         # Expected 5, got 1
         offers = _offers_with_sizes([(Decimal("0.001"), Decimal("1.0"))])
         result = audit_ladder_shape(
-            "buy", offers,
+            "buy",
+            offers,
             {"inner": Decimal("1.0")},
             {"inner": 5, "mid": 0, "outer": 0, "extreme": 0},
         )
@@ -292,11 +323,14 @@ class TestAuditLadderShape(unittest.TestCase):
 
     def test_size_taper_violation_warns(self):
         # Offer sizes don't match tier sizes (huge drift)
-        offers = _offers_with_sizes([
-            (Decimal("0.001"), Decimal("9.0")),   # expected inner=0.5
-        ])
+        offers = _offers_with_sizes(
+            [
+                (Decimal("0.001"), Decimal("9.0")),  # expected inner=0.5
+            ]
+        )
         result = audit_ladder_shape(
-            "buy", offers,
+            "buy",
+            offers,
             {"inner": Decimal("0.5")},
             {"inner": 1, "mid": 0, "outer": 0, "extreme": 0},
         )
@@ -305,12 +339,18 @@ class TestAuditLadderShape(unittest.TestCase):
 
     def test_standard_inversion_detected(self):
         # Standard: inner < mid. Give inner=2 XCH, mid=0.5 XCH → ERROR
-        offers = _offers_with_sizes([
-            (Decimal("0.001"), Decimal("2.0")),   # inner slot (buy: highest price = innermost)
-            (Decimal("0.0009"), Decimal("0.5")),  # mid slot
-        ])
+        offers = _offers_with_sizes(
+            [
+                (
+                    Decimal("0.001"),
+                    Decimal("2.0"),
+                ),  # inner slot (buy: highest price = innermost)
+                (Decimal("0.0009"), Decimal("0.5")),  # mid slot
+            ]
+        )
         result = audit_ladder_shape(
-            "buy", offers,
+            "buy",
+            offers,
             {"inner": Decimal("2.0"), "mid": Decimal("0.5")},
             {"inner": 1, "mid": 1, "outer": 0, "extreme": 0},
             reversed_ladder=False,
@@ -321,12 +361,15 @@ class TestAuditLadderShape(unittest.TestCase):
 
     def test_reverse_inversion_detected(self):
         # Reverse: inner > mid. Give inner=0.5 XCH, mid=2 XCH → ERROR
-        offers = _offers_with_sizes([
-            (Decimal("0.001"), Decimal("0.5")),   # inner slot (highest price)
-            (Decimal("0.0009"), Decimal("2.0")),  # mid slot
-        ])
+        offers = _offers_with_sizes(
+            [
+                (Decimal("0.001"), Decimal("0.5")),  # inner slot (highest price)
+                (Decimal("0.0009"), Decimal("2.0")),  # mid slot
+            ]
+        )
         result = audit_ladder_shape(
-            "buy", offers,
+            "buy",
+            offers,
             {"inner": Decimal("0.5"), "mid": Decimal("2.0")},
             {"inner": 1, "mid": 1, "outer": 0, "extreme": 0},
             reversed_ladder=True,
@@ -336,12 +379,15 @@ class TestAuditLadderShape(unittest.TestCase):
 
     def test_ok_false_when_has_errors(self):
         # Standard inversion → has_errors → ok=False
-        offers = _offers_with_sizes([
-            (Decimal("0.001"), Decimal("2.0")),
-            (Decimal("0.0009"), Decimal("0.5")),
-        ])
+        offers = _offers_with_sizes(
+            [
+                (Decimal("0.001"), Decimal("2.0")),
+                (Decimal("0.0009"), Decimal("0.5")),
+            ]
+        )
         result = audit_ladder_shape(
-            "buy", offers,
+            "buy",
+            offers,
             {"inner": Decimal("2.0"), "mid": Decimal("0.5")},
             {"inner": 1, "mid": 1, "outer": 0, "extreme": 0},
         )
@@ -352,12 +398,16 @@ class TestAuditLadderShape(unittest.TestCase):
 # check_coin_invariants
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_LW is not None, f"ladder_watchdog unavailable: {_SKIP_LW}")
 class TestCheckCoinInvariants(unittest.TestCase):
     def _clean(self):
         return check_coin_invariants(
             wallet_totals={"xch_total": 10, "cat_total": 20},
-            inventory={"xch": {"free": 5, "locked": 5}, "cat": {"free": 15, "locked": 5}},
+            inventory={
+                "xch": {"free": 5, "locked": 5},
+                "cat": {"free": 15, "locked": 5},
+            },
             open_offers_count={"buy": 5, "sell": 5},
             db_locked_count={"xch": 5, "cat": 5},
         )
@@ -370,7 +420,10 @@ class TestCheckCoinInvariants(unittest.TestCase):
     def test_inventory_mismatch_warns(self):
         result = check_coin_invariants(
             wallet_totals={"xch_total": 10, "cat_total": 20},
-            inventory={"xch": {"free": 3, "locked": 3}, "cat": {"free": 15, "locked": 5}},
+            inventory={
+                "xch": {"free": 3, "locked": 3},
+                "cat": {"free": 15, "locked": 5},
+            },
             open_offers_count={"buy": 5, "sell": 5},
             db_locked_count={"xch": 5, "cat": 5},
         )
@@ -380,7 +433,10 @@ class TestCheckCoinInvariants(unittest.TestCase):
     def test_xch_locked_vs_buys_mismatch_warns(self):
         result = check_coin_invariants(
             wallet_totals={"xch_total": 10, "cat_total": 20},
-            inventory={"xch": {"free": 5, "locked": 5}, "cat": {"free": 15, "locked": 5}},
+            inventory={
+                "xch": {"free": 5, "locked": 5},
+                "cat": {"free": 15, "locked": 5},
+            },
             open_offers_count={"buy": 1, "sell": 5},  # 1 buy vs 5 locked → diff=4>2
             db_locked_count={"xch": 5, "cat": 5},
         )
@@ -390,7 +446,10 @@ class TestCheckCoinInvariants(unittest.TestCase):
     def test_cat_locked_vs_sells_mismatch_warns(self):
         result = check_coin_invariants(
             wallet_totals={"xch_total": 10, "cat_total": 20},
-            inventory={"xch": {"free": 5, "locked": 5}, "cat": {"free": 15, "locked": 5}},
+            inventory={
+                "xch": {"free": 5, "locked": 5},
+                "cat": {"free": 15, "locked": 5},
+            },
             open_offers_count={"buy": 5, "sell": 1},  # 1 sell vs 5 cat locked
             db_locked_count={"xch": 5, "cat": 5},
         )
@@ -401,7 +460,10 @@ class TestCheckCoinInvariants(unittest.TestCase):
         # ±2 is allowed
         result = check_coin_invariants(
             wallet_totals={"xch_total": 10, "cat_total": 20},
-            inventory={"xch": {"free": 5, "locked": 5}, "cat": {"free": 15, "locked": 5}},
+            inventory={
+                "xch": {"free": 5, "locked": 5},
+                "cat": {"free": 15, "locked": 5},
+            },
             open_offers_count={"buy": 4, "sell": 4},  # diff=1≤2 → OK
             db_locked_count={"xch": 5, "cat": 5},
         )
@@ -413,7 +475,10 @@ class TestCheckCoinInvariants(unittest.TestCase):
         # wallet_total=0 → we skip the inventory mismatch check
         result = check_coin_invariants(
             wallet_totals={"xch_total": 0, "cat_total": 0},
-            inventory={"xch": {"free": 99, "locked": 99}, "cat": {"free": 99, "locked": 99}},
+            inventory={
+                "xch": {"free": 99, "locked": 99},
+                "cat": {"free": 99, "locked": 99},
+            },
             open_offers_count={"buy": 0, "sell": 0},
             db_locked_count={"xch": 0, "cat": 0},
         )

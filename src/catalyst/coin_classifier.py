@@ -39,6 +39,7 @@ All thresholds are inclusive on the floor side, inclusive on the ceiling side.
 Thresholds are applied as integer mojos after multiplying by Decimal to avoid
 float drift.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -85,23 +86,26 @@ DEFAULT_RESERVE_MULTIPLE = Decimal("1.5")
 # Result types
 # ---------------------------------------------------------------------------
 
+
 class CoinFit(Enum):
     """How well a coin fits a given tier."""
-    EXACT = "exact"              # floor <= amount <= tier_size
-    OVERSIZE_FIT = "oversize"    # tier_size < amount <= ceiling (ratio * size)
-    UNDER_FLOOR = "under"        # amount < floor — too small for this tier
-    OVER_CEILING = "over"        # amount > ceiling — too big for this tier
+
+    EXACT = "exact"  # floor <= amount <= tier_size
+    OVERSIZE_FIT = "oversize"  # tier_size < amount <= ceiling (ratio * size)
+    UNDER_FLOOR = "under"  # amount < floor — too small for this tier
+    OVER_CEILING = "over"  # amount > ceiling — too big for this tier
 
 
 class CoinDesignation(Enum):
     """Canonical designation vocabulary. Matches the DB column values."""
-    TIER_SPARE = "tier_spare"    # free coin, sized for a trading tier
+
+    TIER_SPARE = "tier_spare"  # free coin, sized for a trading tier
     TIER_ACTIVE = "tier_active"  # coin currently backing an active offer
-    RESERVE = "reserve"          # too big for any tier, used as topup fuel
-    DUST = "dust"                # too small for any tier
-    UNKNOWN = "unknown"          # misfit — doesn't cleanly fit any bucket
-    SNIPER = "sniper"            # dedicated sniper-pool coin (distinct sizing)
-    FEES = "fees"                # dedicated fee-pool coin (distinct sizing)
+    RESERVE = "reserve"  # too big for any tier, used as topup fuel
+    DUST = "dust"  # too small for any tier
+    UNKNOWN = "unknown"  # misfit — doesn't cleanly fit any bucket
+    SNIPER = "sniper"  # dedicated sniper-pool coin (distinct sizing)
+    FEES = "fees"  # dedicated fee-pool coin (distinct sizing)
 
 
 @dataclass
@@ -113,20 +117,22 @@ class CoinClassification:
     closest tier by size — and is populated even for misfits so callers
     logging the classification can show "this misfit is closest to inner".
     """
+
     amount_mojos: int
-    fit: CoinFit                           # overall best fit across all tiers
-    best_tier: Optional[str]                # tier to USE this coin for, or None
-    nearest_tier: Optional[str]             # diagnostic only
-    designation: CoinDesignation            # recommended DB designation
+    fit: CoinFit  # overall best fit across all tiers
+    best_tier: Optional[str]  # tier to USE this coin for, or None
+    nearest_tier: Optional[str]  # diagnostic only
+    designation: CoinDesignation  # recommended DB designation
     candidates: Dict[str, CoinFit] = field(default_factory=dict)
-                                            # per-tier fit, for debugging
-    is_misfit: bool = False                 # convenience: true when best_tier is None
-                                            # AND designation is UNKNOWN (not dust/reserve)
+    # per-tier fit, for debugging
+    is_misfit: bool = False  # convenience: true when best_tier is None
+    # AND designation is UNKNOWN (not dust/reserve)
 
 
 # ---------------------------------------------------------------------------
 # The classifier
 # ---------------------------------------------------------------------------
+
 
 def classify_coin(
     amount_mojos: int,
@@ -183,11 +189,7 @@ def classify_coin(
     # apply dust and reserve thresholds against the canonical extremes.
     # Also filter out zero/negative tiers silently — they're misconfigured
     # callers, and we don't want to classify against them.
-    valid = {
-        str(t): int(s)
-        for t, s in tier_sizes_mojos.items()
-        if int(s or 0) > 0
-    }
+    valid = {str(t): int(s) for t, s in tier_sizes_mojos.items() if int(s or 0) > 0}
     if not valid:
         return CoinClassification(
             amount_mojos=amount_mojos,
@@ -213,7 +215,7 @@ def classify_coin(
             nearest_tier=smallest_name,
             designation=CoinDesignation.DUST,
             candidates={smallest_name: CoinFit.UNDER_FLOOR},
-            is_misfit=False,   # dust is its own category, not a misfit
+            is_misfit=False,  # dust is its own category, not a misfit
         )
 
     # Reserve: above reserve_multiple × largest. Not a misfit (topup fuel).
@@ -232,7 +234,7 @@ def classify_coin(
             nearest_tier=largest_name,
             designation=CoinDesignation.RESERVE,
             candidates={largest_name: CoinFit.OVER_CEILING},
-            is_misfit=False,   # reserve is its own category, not a misfit
+            is_misfit=False,  # reserve is its own category, not a misfit
         )
 
     # ---- Check each tier for EXACT / OVERSIZE_FIT / UNDER_FLOOR / OVER_CEILING
@@ -338,6 +340,7 @@ def classify_coin(
 # Convenience wrappers — maintain backward-compat with the 5 old APIs
 # ---------------------------------------------------------------------------
 
+
 def is_misfit_coin(
     amount_mojos: int,
     tier_sizes_mojos: Dict[str, int],
@@ -361,8 +364,10 @@ def is_misfit_coin(
         _max = Decimal(str(max_size_ratio))
     _floor = Decimal(str(floor_tolerance))
     cls = classify_coin(
-        amount_mojos, tier_sizes_mojos,
-        floor_tolerance=_floor, max_ratio=_max,
+        amount_mojos,
+        tier_sizes_mojos,
+        floor_tolerance=_floor,
+        max_ratio=_max,
     )
     return cls.is_misfit
 

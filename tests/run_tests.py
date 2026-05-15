@@ -170,24 +170,32 @@ def _run_simulation_tests() -> int:
         add_help=True,
     )
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--full",     action="store_true",
-                      help="Run all 5,600 parametric scenarios.")
-    mode.add_argument("--quick",    action="store_true",
-                      help="Run 50 most important parametric scenarios only.")
-    mode.add_argument("--api",      action="store_true",
-                      help="Run API tests only.")
-    mode.add_argument("--stress",   action="store_true",
-                      help="Run stress tests only.")
-    mode.add_argument("--matrix",   action="store_true",
-                      help="Run parametric matrix only (50 quick).")
-    mode.add_argument("--list",     action="store_true",
-                      help="Print all test names (1000+) and exit.")
-    mode.add_argument("--scenario", metavar="NAME",
-                      help="Run a single named simulation test.")
-    mode.add_argument("--replay",   metavar="PATH",
-                      help="Replay a real bot log file.")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="Random seed for subset selection (default: 42).")
+    mode.add_argument(
+        "--full", action="store_true", help="Run all 5,600 parametric scenarios."
+    )
+    mode.add_argument(
+        "--quick",
+        action="store_true",
+        help="Run 50 most important parametric scenarios only.",
+    )
+    mode.add_argument("--api", action="store_true", help="Run API tests only.")
+    mode.add_argument("--stress", action="store_true", help="Run stress tests only.")
+    mode.add_argument(
+        "--matrix", action="store_true", help="Run parametric matrix only (50 quick)."
+    )
+    mode.add_argument(
+        "--list", action="store_true", help="Print all test names (1000+) and exit."
+    )
+    mode.add_argument(
+        "--scenario", metavar="NAME", help="Run a single named simulation test."
+    )
+    mode.add_argument("--replay", metavar="PATH", help="Replay a real bot log file.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for subset selection (default: 42).",
+    )
 
     args = parser.parse_args(sim_argv)
 
@@ -200,6 +208,7 @@ def _run_simulation_tests() -> int:
     if args.replay:
         try:
             import run_simulation
+
             run_simulation._run_replay(args.replay)
         except Exception as exc:
             print(f"ERROR running replay: {exc}")
@@ -216,9 +225,9 @@ def _run_simulation_tests() -> int:
     full_matrix = args.full
 
     # Count plan
-    n_mat  = 5600 if full_matrix else 50
-    n_api  = 42 if run_api else 0
-    n_str  = 10 if run_stress_flag else 0
+    n_mat = 5600 if full_matrix else 50
+    n_api = 42 if run_api else 0
+    n_str = 10 if run_stress_flag else 0
     n_plan = (n_mat if run_parametric else 0) + n_api + n_str
 
     print()
@@ -245,21 +254,30 @@ def _run_simulation_tests() -> int:
     if run_parametric:
         print("Running parametric matrix...", flush=True)
         mx_p, mx_f, mx_fail_list = _sim_run_matrix(full=full_matrix, seed=args.seed)
-        print(f"  Parametric: {mx_p}/{mx_p+mx_f} passed")
+        print(f"  Parametric: {mx_p}/{mx_p + mx_f} passed")
 
     if run_api:
         print("Running API logic tests...", flush=True)
         ap_p, ap_f, ap_fail_list = _sim_run_api()
-        print(f"  API tests: {ap_p}/{ap_p+ap_f} passed")
+        print(f"  API tests: {ap_p}/{ap_p + ap_f} passed")
 
     if run_stress_flag:
         st_p, st_f, st_fail_list = _sim_run_stress()
-        print(f"  Stress: {st_p}/{st_p+st_f} passed")
+        print(f"  Stress: {st_p}/{st_p + st_f} passed")
 
     elapsed = time.time() - t0
-    return _sim_print_summary(elapsed, mx_p, mx_f, mx_fail_list,
-                               ap_p, ap_f, ap_fail_list,
-                               st_p, st_f, st_fail_list)
+    return _sim_print_summary(
+        elapsed,
+        mx_p,
+        mx_f,
+        mx_fail_list,
+        ap_p,
+        ap_f,
+        ap_fail_list,
+        st_p,
+        st_f,
+        st_fail_list,
+    )
 
 
 def _sim_list_all_names() -> None:
@@ -276,6 +294,7 @@ def _sim_list_all_names() -> None:
         print(st.name)
     try:
         from simulation.scenarios import ALL_SCENARIOS
+
         for sc in ALL_SCENARIOS:
             print(f"scenario_{sc.name}")
     except Exception:
@@ -285,16 +304,20 @@ def _sim_list_all_names() -> None:
 def _sim_run_single(name: str) -> int:
     """Run one named simulation test."""
     from simulation.stress_tests import ALL_STRESS_TESTS
+
     for st in ALL_STRESS_TESTS:
         if st.name == name:
             result = st.run()
-            print(f"{'PASS' if result.passed else 'FAIL'} {result.name}: {result.reason or 'ok'}")
+            print(
+                f"{'PASS' if result.passed else 'FAIL'} {result.name}: {result.reason or 'ok'}"
+            )
             for k, v in result.metrics.items():
                 print(f"  {k}: {v}")
             return 0 if result.passed else 1
 
     if name.startswith("matrix_"):
         from simulation.test_matrix import generate_matrix, run_matrix_scenario
+
         for ms in generate_matrix():
             if ms.name == name:
                 result = run_matrix_scenario(ms)
@@ -307,6 +330,7 @@ def _sim_run_single(name: str) -> int:
     try:
         from simulation.scenarios import SCENARIO_MAP
         from simulation.runner import run_scenario
+
         if name in SCENARIO_MAP:
             result = run_scenario(SCENARIO_MAP[name], verbose=True)
             print(f"P&L: {result.pnl_xch:+.6f} XCH  Fills: {result.total_fills}")
@@ -321,8 +345,11 @@ def _sim_run_single(name: str) -> int:
 def _sim_run_matrix(full: bool = False, seed: int = 42):
     """Run parametric matrix. Returns (passed, failed, failures)."""
     from simulation.test_matrix import (
-        generate_matrix, generate_quick, run_matrix_scenario
+        generate_matrix,
+        generate_quick,
+        run_matrix_scenario,
     )
+
     scenarios = generate_matrix() if full else generate_quick(n=50)
     total = len(scenarios)
     passed = failed = 0
@@ -342,21 +369,27 @@ def _sim_run_matrix(full: bool = False, seed: int = 42):
 def _sim_run_api():
     """Run API tests. Returns (passed, failed, failures)."""
     from simulation.api_tests import run_all_api_tests
+
     results = run_all_api_tests()
     passed = sum(1 for r in results if r.passed)
     failed = sum(1 for r in results if not r.passed)
-    failures = [{"name": r.name, "fail_reason": r.reason} for r in results if not r.passed]
+    failures = [
+        {"name": r.name, "fail_reason": r.reason} for r in results if not r.passed
+    ]
     return passed, failed, failures
 
 
 def _sim_run_stress():
     """Run stress tests. Returns (passed, failed, failures)."""
     from simulation.stress_tests import run_all_stress_tests
+
     print("  Running stress tests (may take up to 60s)...", flush=True)
     results = run_all_stress_tests()
     passed = sum(1 for r in results if r.passed)
     failed = sum(1 for r in results if not r.passed)
-    failures = [{"name": r.name, "fail_reason": r.reason} for r in results if not r.passed]
+    failures = [
+        {"name": r.name, "fail_reason": r.reason} for r in results if not r.passed
+    ]
     return passed, failed, failures
 
 
@@ -371,7 +404,9 @@ def _sim_clear() -> None:
     print(f"\r{' ' * 72}\r", end="", flush=True)
 
 
-def _sim_print_summary(elapsed, mx_p, mx_f, mx_fl, ap_p, ap_f, ap_fl, st_p, st_f, st_fl):
+def _sim_print_summary(
+    elapsed, mx_p, mx_f, mx_fl, ap_p, ap_f, ap_fl, st_p, st_f, st_fl
+):
     """Print summary table. Returns exit code."""
     total_p = total_f = 0
     all_fl = []
@@ -381,13 +416,19 @@ def _sim_print_summary(elapsed, mx_p, mx_f, mx_fl, ap_p, ap_f, ap_fl, st_p, st_f
     rows = []
     if mx_p is not None:
         rows.append(("PARAMETRIC", mx_p, mx_f))
-        total_p += mx_p; total_f += mx_f; all_fl.extend(mx_fl)
+        total_p += mx_p
+        total_f += mx_f
+        all_fl.extend(mx_fl)
     if ap_p is not None:
         rows.append(("API TESTS", ap_p, ap_f))
-        total_p += ap_p; total_f += ap_f; all_fl.extend(ap_fl)
+        total_p += ap_p
+        total_f += ap_f
+        all_fl.extend(ap_fl)
     if st_p is not None:
         rows.append(("STRESS", st_p, st_f))
-        total_p += st_p; total_f += st_f; all_fl.extend(st_fl)
+        total_p += st_p
+        total_f += st_f
+        all_fl.extend(st_fl)
     for label, p, f in rows:
         t = p + f
         tag = "ok" if f == 0 else f"{f} fail"
@@ -430,11 +471,20 @@ def main():
             print(f"  SKIP  {batch['name']} (slow, use without --quick)")
             continue
 
-        cmd = [sys.executable, "-m", "pytest"] + batch["files"] + [
-            "--tb=line", "-q", "--no-header",
-        ]
+        cmd = (
+            [sys.executable, "-m", "pytest"]
+            + batch["files"]
+            + [
+                "--tb=line",
+                "-q",
+                "--no-header",
+            ]
+        )
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
             env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"},
         )
 
@@ -446,14 +496,20 @@ def main():
         for part in last_line.split(","):
             part = part.strip()
             if "passed" in part:
-                try: passed = int(part.split()[0])
-                except (ValueError, IndexError): pass
+                try:
+                    passed = int(part.split()[0])
+                except (ValueError, IndexError):
+                    pass
             elif "failed" in part:
-                try: failed = int(part.split()[0])
-                except (ValueError, IndexError): pass
+                try:
+                    failed = int(part.split()[0])
+                except (ValueError, IndexError):
+                    pass
             elif "error" in part:
-                try: errors = int(part.split()[0])
-                except (ValueError, IndexError): pass
+                try:
+                    errors = int(part.split()[0])
+                except (ValueError, IndexError):
+                    pass
 
         total_passed += passed
         total_failed += failed
@@ -461,9 +517,11 @@ def main():
 
         status = "PASS" if failed == 0 and errors == 0 else "FAIL"
         icon = "OK" if status == "PASS" else "!!"
-        print(f"  [{icon}] {batch['name']}: {passed} passed"
-              + (f", {failed} failed" if failed else "")
-              + (f", {errors} errors" if errors else ""))
+        print(
+            f"  [{icon}] {batch['name']}: {passed} passed"
+            + (f", {failed} failed" if failed else "")
+            + (f", {errors} errors" if errors else "")
+        )
 
         if failed > 0 or errors > 0:
             failed_batches.append(batch["name"])
@@ -475,8 +533,10 @@ def main():
     elapsed = time.time() - start
     print()
     print(f"{'=' * 50}")
-    print(f"  Total: {total_passed} passed, {total_failed} failed, "
-          f"{total_errors} errors ({elapsed:.1f}s)")
+    print(
+        f"  Total: {total_passed} passed, {total_failed} failed, "
+        f"{total_errors} errors ({elapsed:.1f}s)"
+    )
     if failed_batches:
         print(f"  Failed batches: {', '.join(failed_batches)}")
     else:

@@ -40,9 +40,15 @@ class TxFeesTests(unittest.TestCase):
         with patch.object(
             self.tx_fees,
             "get_suggested_transaction_fee",
-            return_value={"available": True, "fee_mojos": 1_234_567, "fee_xch": "0.000001234567"},
+            return_value={
+                "available": True,
+                "fee_mojos": 1_234_567,
+                "fee_xch": "0.000001234567",
+            },
         ):
-            self.assertEqual(self.tx_fees.get_effective_transaction_fee_mojos(), 1_234_567)
+            self.assertEqual(
+                self.tx_fees.get_effective_transaction_fee_mojos(), 1_234_567
+            )
 
     def test_fee_pool_plan_reports_fee_tier(self):
         plan = self.tx_fees.get_fee_pool_plan()

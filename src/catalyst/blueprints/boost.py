@@ -32,16 +32,20 @@ def api_boost_activate():
     # startup the market data is empty and we'd fall back to the configured
     # spread, placing probes far behind the real best prices.
     try:
-        rm_check = bot.runtime_monitor.get_state() if hasattr(bot, "runtime_monitor") else {}
+        rm_check = (
+            bot.runtime_monitor.get_state() if hasattr(bot, "runtime_monitor") else {}
+        )
         market_check = rm_check.get("market", {})
         orderbook_age = float(market_check.get("orderbook_age_secs", 9999) or 9999)
         orderbook_refreshes = int(market_check.get("orderbook_refreshes", 0) or 0)
         if orderbook_refreshes == 0 or orderbook_age > 120:
-            return jsonify({
-                "error": "Market data not ready yet — please wait a few seconds and try again.",
-                "orderbook_refreshes": orderbook_refreshes,
-                "orderbook_age_secs": orderbook_age,
-            }), 503
+            return jsonify(
+                {
+                    "error": "Market data not ready yet — please wait a few seconds and try again.",
+                    "orderbook_refreshes": orderbook_refreshes,
+                    "orderbook_age_secs": orderbook_age,
+                }
+            ), 503
     except Exception:
         pass  # If monitor check fails, proceed anyway
 
@@ -63,12 +67,16 @@ def api_boost_activate():
         if mid_f > 0:
             rm_state = {}
             try:
-                rm_state = bot.runtime_monitor.get_state() if hasattr(bot, "runtime_monitor") else {}
+                rm_state = (
+                    bot.runtime_monitor.get_state()
+                    if hasattr(bot, "runtime_monitor")
+                    else {}
+                )
             except Exception:
                 pass
             market_diag = rm_state.get("market", {})
-            our_bid  = float(market_diag.get("our_best_bid",  0) or 0)
-            our_ask  = float(market_diag.get("our_best_ask",  0) or 0)
+            our_bid = float(market_diag.get("our_best_bid", 0) or 0)
+            our_ask = float(market_diag.get("our_best_ask", 0) or 0)
             comp_bid = float(market_diag.get("best_competitor_bid", 0) or 0)
             comp_ask = float(market_diag.get("best_competitor_ask", 0) or 0)
 
@@ -77,29 +85,41 @@ def api_boost_activate():
             best_dexie_bid = max(candidates_bid) if candidates_bid else 0
             best_dexie_ask = min(candidates_ask) if candidates_ask else 0
 
-            if best_dexie_bid > 0 and best_dexie_ask > 0 and best_dexie_ask > best_dexie_bid:
-                buy_half_bps  = int(((mid_f - best_dexie_bid) / mid_f) * 10000)
+            if (
+                best_dexie_bid > 0
+                and best_dexie_ask > 0
+                and best_dexie_ask > best_dexie_bid
+            ):
+                buy_half_bps = int(((mid_f - best_dexie_bid) / mid_f) * 10000)
                 sell_half_bps = int(((best_dexie_ask - mid_f) / mid_f) * 10000)
-                tighter_half  = min(buy_half_bps, sell_half_bps)
+                tighter_half = min(buy_half_bps, sell_half_bps)
                 if tighter_half > 0:
                     main_spread_bps = max(1, int(tighter_half * 2 * 0.95))
                     start_pct_override_dexie = 100
 
         if main_spread_bps == 0:
             from database import get_open_offers
+
             open_offers = get_open_offers() or []
-            ladder_offers = [o for o in open_offers
-                             if o.get("tier") != "boost" and float(o.get("price", 0)) > 0]
-            buys  = [float(o["price"]) for o in ladder_offers if o.get("side") == "buy"]
-            sells = [float(o["price"]) for o in ladder_offers if o.get("side") == "sell"]
+            ladder_offers = [
+                o
+                for o in open_offers
+                if o.get("tier") != "boost" and float(o.get("price", 0)) > 0
+            ]
+            buys = [float(o["price"]) for o in ladder_offers if o.get("side") == "buy"]
+            sells = [
+                float(o["price"]) for o in ladder_offers if o.get("side") == "sell"
+            ]
             if buys and sells:
                 innermost_bps = int(((min(sells) - max(buys)) / mid_f) * 10000)
                 if innermost_bps > 0:
                     main_spread_bps = innermost_bps
 
         if main_spread_bps == 0 and bot.risk_manager:
-            buy_spread  = bot.risk_manager.get_adjusted_spread("buy")  * Decimal("10000")
-            sell_spread = bot.risk_manager.get_adjusted_spread("sell") * Decimal("10000")
+            buy_spread = bot.risk_manager.get_adjusted_spread("buy") * Decimal("10000")
+            sell_spread = bot.risk_manager.get_adjusted_spread("sell") * Decimal(
+                "10000"
+            )
             main_spread_bps = int((buy_spread + sell_spread) / 2)
     except Exception:
         pass
@@ -126,7 +146,11 @@ def api_boost_activate():
     # Only an explicit user start_pct overrides the aggressive default.
     if start_pct_override is not None:
         start_pct = start_pct_override
-        expected_spread = max(1, int(main_spread_bps * start_pct / 100)) if main_spread_bps > 0 else getattr(cfg, "BOOST_SPREAD_BPS", 200)
+        expected_spread = (
+            max(1, int(main_spread_bps * start_pct / 100))
+            if main_spread_bps > 0
+            else getattr(cfg, "BOOST_SPREAD_BPS", 200)
+        )
     else:
         # AGGRESSIVE DEFAULT: start AT the calculated arb floor (1.0x). The
         # probes are sniper-sized — getting arbed on the first probe is the
@@ -139,7 +163,9 @@ def api_boost_activate():
         # Translate to a start_pct so BoostManager's existing math reproduces
         # this spread (it computes spread = main_spread * pct / 100).
         if main_spread_bps > 0:
-            start_pct_override = max(1, int(round(expected_spread * 100 / main_spread_bps)))
+            start_pct_override = max(
+                1, int(round(expected_spread * 100 / main_spread_bps))
+            )
         else:
             start_pct_override = 100  # fallback path doesn't use main_spread anyway
 
@@ -148,7 +174,8 @@ def api_boost_activate():
     def _activate_bg():
         try:
             result = bot.boost_manager.activate(
-                mid_price, arb_gap_bps=arb_gap,
+                mid_price,
+                arb_gap_bps=arb_gap,
                 main_spread_bps=main_spread_bps,
                 size_xch_override=size_xch_override,
                 start_pct_override=start_pct_override,
@@ -163,14 +190,16 @@ def api_boost_activate():
     t = threading.Thread(target=_activate_bg, daemon=True)
     t.start()
 
-    return jsonify({
-        "success": True,
-        "spread_bps": expected_spread,
-        "arb_floor_bps": expected_floor,
-        "created": 0,
-        "async": True,
-        "warnings": [],
-    })
+    return jsonify(
+        {
+            "success": True,
+            "spread_bps": expected_spread,
+            "arb_floor_bps": expected_floor,
+            "created": 0,
+            "async": True,
+            "warnings": [],
+        }
+    )
 
 
 @bp.route("/api/boost/deactivate", methods=["POST"])

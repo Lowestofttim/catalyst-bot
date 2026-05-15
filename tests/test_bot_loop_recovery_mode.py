@@ -98,7 +98,9 @@ class _DummyOfferManager:
         del side
         return 0
 
-    def get_replenishment_slots(self, side, total_slots, cat_asset_id=None, live_offer_ids=None):
+    def get_replenishment_slots(
+        self, side, total_slots, cat_asset_id=None, live_offer_ids=None
+    ):
         del side, cat_asset_id, live_offer_ids
         return list(range(total_slots))
 
@@ -231,8 +233,13 @@ class _DummyRiskManager:
 
 
 class _DummySniper:
-    def __init__(self, offer_manager=None, risk_manager=None, dexie_manager=None,
-                 splash_manager=None):
+    def __init__(
+        self,
+        offer_manager=None,
+        risk_manager=None,
+        dexie_manager=None,
+        splash_manager=None,
+    ):
         del offer_manager, risk_manager, dexie_manager, splash_manager
         self._active_snipe_ids = []
         self._active_snipe_sides = {}
@@ -269,16 +276,35 @@ class _DummyRuntimeMonitor:
 
 
 class _DummyAMMMonitor:
-    def __init__(self, price_engine=None): pass
-    def start(self): pass
-    def stop(self): pass
-    def is_available(self): return False
-    def get_amm_price(self): return None
-    def get_amm_state(self): return None
-    def get_drift_bps(self): return None
-    def get_stats(self): return {}
-    def notify_quoted_price(self, buy=None, sell=None): pass
-    def check_amm_buffer(self, price, side): return True
+    def __init__(self, price_engine=None):
+        pass
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def is_available(self):
+        return False
+
+    def get_amm_price(self):
+        return None
+
+    def get_amm_state(self):
+        return None
+
+    def get_drift_bps(self):
+        return None
+
+    def get_stats(self):
+        return {}
+
+    def notify_quoted_price(self, buy=None, sell=None):
+        pass
+
+    def check_amm_buffer(self, price, side):
+        return True
 
 
 def _module_with_class(name, cls_name, cls):
@@ -372,14 +398,19 @@ class RecoveryModeTests(unittest.TestCase):
             "unreliable wallet snapshots must not report existing coins as gone",
         )
         self.assertTrue(
-            any(evt == "coin_watcher_stale_snapshot_skipped" for _, evt, _, _ in self.logged)
+            any(
+                evt == "coin_watcher_stale_snapshot_skipped"
+                for _, evt, _, _ in self.logged
+            )
         )
 
     def test_coin_watcher_snapshot_reliability_requires_live_wallet_results(self):
         loop = bot_loop.BotLoop()
         empty_result = {"success": True, "confirmed_records": []}
 
-        self.assertTrue(loop._is_coin_watcher_snapshot_reliable(empty_result, empty_result))
+        self.assertTrue(
+            loop._is_coin_watcher_snapshot_reliable(empty_result, empty_result)
+        )
         self.assertFalse(loop._is_coin_watcher_snapshot_reliable(None, empty_result))
         self.assertFalse(
             loop._is_coin_watcher_snapshot_reliable(
@@ -389,7 +420,9 @@ class RecoveryModeTests(unittest.TestCase):
         )
 
         loop._wallet_sync_stale_cycle = True
-        self.assertFalse(loop._is_coin_watcher_snapshot_reliable(empty_result, empty_result))
+        self.assertFalse(
+            loop._is_coin_watcher_snapshot_reliable(empty_result, empty_result)
+        )
 
     def test_recovery_mode_enters_after_persistent_under_target(self):
         loop = bot_loop.BotLoop()
@@ -400,7 +433,9 @@ class RecoveryModeTests(unittest.TestCase):
 
         self.assertTrue(loop._recovery_state["active"])
         self.assertEqual(loop._bot_state["status"], "recovering")
-        self.assertTrue(any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged)
+        )
 
     def test_recovery_mode_enter_is_info_after_book_was_live(self):
         loop = bot_loop.BotLoop()
@@ -410,8 +445,10 @@ class RecoveryModeTests(unittest.TestCase):
         loop._enter_recovery_mode("book drift", 2, 3)
 
         self.assertTrue(
-            any(severity == "info" and evt == "recovery_mode_enter"
-                for severity, evt, _, _ in self.logged)
+            any(
+                severity == "info" and evt == "recovery_mode_enter"
+                for severity, evt, _, _ in self.logged
+            )
         )
 
     def test_recovery_mode_does_not_enter_on_stale_sync_without_deficit(self):
@@ -423,7 +460,9 @@ class RecoveryModeTests(unittest.TestCase):
             loop._evaluate_recovery_mode(Decimal("1.0"), 40, 40)
 
         self.assertFalse(loop._recovery_state["active"])
-        self.assertFalse(any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged))
+        self.assertFalse(
+            any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged)
+        )
 
     def test_recovery_mode_exits_after_healthy_cycles(self):
         loop = bot_loop.BotLoop()
@@ -436,7 +475,9 @@ class RecoveryModeTests(unittest.TestCase):
         loop._evaluate_recovery_mode(Decimal("1.0"), 40, 40)
         self.assertFalse(loop._recovery_state["active"])
         self.assertEqual(loop._bot_state["status"], "running")
-        self.assertTrue(any(evt == "recovery_mode_exit" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "recovery_mode_exit" for _, evt, _, _ in self.logged)
+        )
 
     def test_recovery_mode_skips_requotes(self):
         loop = bot_loop.BotLoop()
@@ -445,7 +486,9 @@ class RecoveryModeTests(unittest.TestCase):
         loop._handle_requoting(Decimal("1.0"), set(), set())
 
         self.assertEqual(loop.offer_manager.requote_calls, [])
-        self.assertTrue(any(evt == "requote_skip_recovery" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "requote_skip_recovery" for _, evt, _, _ in self.logged)
+        )
 
     def test_recovery_mode_marks_creation_stall_when_book_cannot_refill(self):
         loop = bot_loop.BotLoop()
@@ -479,7 +522,9 @@ class RecoveryModeTests(unittest.TestCase):
             arb_gap=Decimal("0"),
         )
 
-        buy_calls = [call for call in loop.offer_manager.create_calls if call[0] == "buy"]
+        buy_calls = [
+            call for call in loop.offer_manager.create_calls if call[0] == "buy"
+        ]
         self.assertEqual(len(buy_calls), 1)
         self.assertEqual(buy_calls[0][1], Decimal("1.00"))
         self.assertFalse(buy_calls[0][2]["interpolate_refill_prices"])
@@ -506,7 +551,9 @@ class RecoveryModeTests(unittest.TestCase):
 
         self.assertFalse(loop._recovery_state["active"])
         self.assertEqual(loop._recovery_state["sell_deficit"], 0)
-        self.assertFalse(any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged))
+        self.assertFalse(
+            any(evt == "recovery_mode_enter" for _, evt, _, _ in self.logged)
+        )
 
     def test_bot_health_anomaly_log_is_deduped_until_signature_changes(self):
         loop = bot_loop.BotLoop()
@@ -515,7 +562,9 @@ class RecoveryModeTests(unittest.TestCase):
             anomaly_count=1,
             message="CAT extreme topup pool underfunded",
         )
-        health = types.SimpleNamespace(checks=[check], anomaly_check_names=["funds_advisory"])
+        health = types.SimpleNamespace(
+            checks=[check], anomaly_check_names=["funds_advisory"]
+        )
 
         with patch.object(bot_loop.time, "time", side_effect=[1000, 1200, 4700]):
             self.assertTrue(loop._should_log_bot_health_anomalies(health))

@@ -5,11 +5,17 @@ from pathlib import Path
 
 
 def _load_mapping_helper():
-    source_path = Path(__file__).resolve().parent.parent / "src" / "catalyst" / "bot_loop.py"
-    module = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+    source_path = (
+        Path(__file__).resolve().parent.parent / "src" / "catalyst" / "bot_loop.py"
+    )
+    module = ast.parse(
+        source_path.read_text(encoding="utf-8"), filename=str(source_path)
+    )
     fn_node = next(
-        node for node in module.body
-        if isinstance(node, ast.FunctionDef) and node.name == "map_sage_terminal_offer_status"
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "map_sage_terminal_offer_status"
     )
     isolated = ast.Module(body=[fn_node], type_ignores=[])
     ast.fix_missing_locations(isolated)
@@ -35,7 +41,9 @@ class TestBotLoopSageStatusMapping(unittest.TestCase):
 
     def test_pending_cancel_is_not_terminal(self):
         self.assertIsNone(self.map_status(2, sage_offer={}, local_offer={}))
-        self.assertIsNone(self.map_status("PENDING_CANCEL", sage_offer={}, local_offer={}))
+        self.assertIsNone(
+            self.map_status("PENDING_CANCEL", sage_offer={}, local_offer={})
+        )
 
     def test_failed_maps_to_cancelled(self):
         self.assertEqual(

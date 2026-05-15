@@ -43,8 +43,17 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
                    trade_id, side, price_xch, size_xch, size_cat,
                    filled_at, cat_asset_id, tier, verification_status
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("legacy-fill", "buy", "0.1", "1.0", "1000",
-             "2026-03-20T00:00:00+00:00", asset_id, "mid", "legacy")
+            (
+                "legacy-fill",
+                "buy",
+                "0.1",
+                "1.0",
+                "1000",
+                "2026-03-20T00:00:00+00:00",
+                asset_id,
+                "mid",
+                "legacy",
+            ),
         )
         conn.commit()
 
@@ -135,10 +144,18 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
 
         rows = conn.execute(
             "SELECT coin_id, status, designation, assigned_tier FROM coins WHERE trade_id=? ORDER BY coin_id",
-            ("trade-multi",)
+            ("trade-multi",),
         ).fetchall()
         self.assertEqual(
-            [(row["coin_id"], row["status"], row["designation"], row["assigned_tier"]) for row in rows],
+            [
+                (
+                    row["coin_id"],
+                    row["status"],
+                    row["designation"],
+                    row["assigned_tier"],
+                )
+                for row in rows
+            ],
             [
                 ("0xcoin-a", "spent", "unknown", "none"),
                 ("0xcoin-b", "spent", "unknown", "none"),
@@ -224,7 +241,7 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
 
         row = conn.execute(
             "SELECT status, filled_at, cancelled_at FROM offers WHERE trade_id=?",
-            ("trade-upgrade",)
+            ("trade-upgrade",),
         ).fetchone()
         self.assertEqual(row["status"], "filled")
         self.assertIsNotNone(row["filled_at"])
@@ -276,7 +293,9 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
             tier="mid",
             coin_id="0xcoin-upgrade-verified",
         )
-        self.assertTrue(database.update_offer_status("trade-upgrade-verified", "filled"))
+        self.assertTrue(
+            database.update_offer_status("trade-upgrade-verified", "filled")
+        )
 
         conn.execute(
             """INSERT INTO fills (
@@ -324,7 +343,11 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
         )
         conn.execute(
             "UPDATE offers SET status='filled', filled_at=?, created_at=? WHERE trade_id=?",
-            ("2026-03-27T22:00:00+00:00", "2026-03-27T21:59:00+00:00", "trade-old-filled"),
+            (
+                "2026-03-27T22:00:00+00:00",
+                "2026-03-27T21:59:00+00:00",
+                "trade-old-filled",
+            ),
         )
 
         database.add_offer(
@@ -339,7 +362,11 @@ class DatabaseVerifiedFillsTests(unittest.TestCase):
         )
         conn.execute(
             "UPDATE offers SET status='filled', filled_at=?, created_at=? WHERE trade_id=?",
-            ("2026-03-28T22:10:00+00:00", "2026-03-28T22:09:00+00:00", "trade-new-filled"),
+            (
+                "2026-03-28T22:10:00+00:00",
+                "2026-03-28T22:09:00+00:00",
+                "trade-new-filled",
+            ),
         )
         conn.commit()
 

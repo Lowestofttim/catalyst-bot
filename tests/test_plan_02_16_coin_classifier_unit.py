@@ -10,33 +10,41 @@ from decimal import Decimal
 
 try:
     from coin_classifier import (
-        CoinFit, CoinDesignation, CoinClassification,
-        classify_coin, is_misfit_coin, infer_designation_by_size,
-        DEFAULT_FLOOR_TOLERANCE, DEFAULT_MAX_RATIO,
-        DEFAULT_DUST_FRACTION, DEFAULT_RESERVE_MULTIPLE,
+        CoinFit,
+        CoinDesignation,
+        CoinClassification,
+        classify_coin,
+        is_misfit_coin,
+        infer_designation_by_size,
+        DEFAULT_FLOOR_TOLERANCE,
+        DEFAULT_MAX_RATIO,
+        DEFAULT_DUST_FRACTION,
+        DEFAULT_RESERVE_MULTIPLE,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
 
 # Realistic tier sizes (mojos):  inner=1 XCH, mid=2 XCH, outer=4 XCH, extreme=8 XCH
 _TIERS = {
-    "inner":   1_000_000_000_000,
-    "mid":     2_000_000_000_000,
-    "outer":   4_000_000_000_000,
+    "inner": 1_000_000_000_000,
+    "mid": 2_000_000_000_000,
+    "outer": 4_000_000_000_000,
     "extreme": 8_000_000_000_000,
 }
 
 # Pre-computed thresholds for clarity
-_INNER_FLOOR    = int(Decimal("1000000000000") * DEFAULT_FLOOR_TOLERANCE)   # 980B
-_INNER_CEILING  = int(Decimal("1000000000000") * DEFAULT_MAX_RATIO)         # 1.5T
-_DUST_THRESHOLD = int(Decimal("1000000000000") * DEFAULT_DUST_FRACTION)     # 500B
+_INNER_FLOOR = int(Decimal("1000000000000") * DEFAULT_FLOOR_TOLERANCE)  # 980B
+_INNER_CEILING = int(Decimal("1000000000000") * DEFAULT_MAX_RATIO)  # 1.5T
+_DUST_THRESHOLD = int(Decimal("1000000000000") * DEFAULT_DUST_FRACTION)  # 500B
 _RESERVE_THRESH = int(Decimal("8000000000000") * DEFAULT_RESERVE_MULTIPLE)  # 16T
 
 
 # ===========================================================================
 # classify_coin — edge / boundary cases
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinEdgeCases(unittest.TestCase):
@@ -62,6 +70,7 @@ class TestClassifyCoinEdgeCases(unittest.TestCase):
 # classify_coin — dust
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinDust(unittest.TestCase):
     def test_below_dust_threshold_is_dust(self):
@@ -82,6 +91,7 @@ class TestClassifyCoinDust(unittest.TestCase):
 # ===========================================================================
 # classify_coin — reserve
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinReserve(unittest.TestCase):
@@ -105,6 +115,7 @@ class TestClassifyCoinReserve(unittest.TestCase):
 # ===========================================================================
 # classify_coin — exact match
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinExact(unittest.TestCase):
@@ -131,6 +142,7 @@ class TestClassifyCoinExact(unittest.TestCase):
 # classify_coin — oversize fit
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinOversize(unittest.TestCase):
     def test_slightly_over_inner_is_oversize(self):
@@ -149,6 +161,7 @@ class TestClassifyCoinOversize(unittest.TestCase):
 # ===========================================================================
 # classify_coin — misfit (between tiers)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinMisfit(unittest.TestCase):
@@ -173,6 +186,7 @@ class TestClassifyCoinMisfit(unittest.TestCase):
 # classify_coin — prefer smallest exact match
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestClassifyCoinBestTierPreference(unittest.TestCase):
     def test_exact_match_preferred_over_oversize(self):
@@ -193,6 +207,7 @@ class TestClassifyCoinBestTierPreference(unittest.TestCase):
 # ===========================================================================
 # is_misfit_coin
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestIsMisfitCoin(unittest.TestCase):
@@ -217,6 +232,7 @@ class TestIsMisfitCoin(unittest.TestCase):
 # ===========================================================================
 # infer_designation_by_size
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coin_classifier unavailable: {_SKIP}")
 class TestInferDesignationBySize(unittest.TestCase):

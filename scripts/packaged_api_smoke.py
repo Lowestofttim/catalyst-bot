@@ -79,7 +79,9 @@ class MockSageServer(ThreadingHTTPServer):
     saw_client_cert: bool
 
 
-def _mock_sage_server_context(server_cert: Path, server_key: Path, ca_path: Path) -> ssl.SSLContext:
+def _mock_sage_server_context(
+    server_cert: Path, server_key: Path, ca_path: Path
+) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(str(server_cert), str(server_key))
@@ -129,7 +131,9 @@ def _mock_sage_payload(path: str) -> dict[str, Any]:
     return {"success": True}
 
 
-def _start_mock_sage(temp_dir: Path) -> tuple[MockSageServer, threading.Thread, Path, Path]:
+def _start_mock_sage(
+    temp_dir: Path,
+) -> tuple[MockSageServer, threading.Thread, Path, Path]:
     ca_path, ca_key, ca_cert = _create_ca(temp_dir)
     server_cert, server_key = _create_signed_cert(
         temp_dir, "server", "mock-sage-server", ca_key, ca_cert, is_server=True
@@ -145,7 +149,9 @@ def _start_mock_sage(temp_dir: Path) -> tuple[MockSageServer, threading.Thread, 
     context = _mock_sage_server_context(server_cert, server_key, ca_path)
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
-    thread = threading.Thread(target=httpd.serve_forever, name="mock-sage-rpc", daemon=True)
+    thread = threading.Thread(
+        target=httpd.serve_forever, name="mock-sage-rpc", daemon=True
+    )
     thread.start()
     return httpd, thread, client_cert, client_key
 
@@ -247,10 +253,14 @@ def _has_key(payload: Any, dotted_key: str) -> bool:
 
 def _validate_payload(check: EndpointCheck, payload: Any) -> None:
     if not isinstance(payload, dict):
-        raise SmokeFailure(f"{check.path} returned {type(payload).__name__}, expected JSON object")
+        raise SmokeFailure(
+            f"{check.path} returned {type(payload).__name__}, expected JSON object"
+        )
     missing = [key for key in check.required_keys if not _has_key(payload, key)]
     if missing:
-        raise SmokeFailure(f"{check.path} missing required key(s): {', '.join(missing)}")
+        raise SmokeFailure(
+            f"{check.path} missing required key(s): {', '.join(missing)}"
+        )
 
 
 def _request_json(
@@ -292,7 +302,9 @@ def _wait_for_health(base_url: str, deadline: float) -> dict[str, Any]:
     last_error = ""
     while time.time() < deadline:
         try:
-            status, payload = _request_json(base_url=base_url, check=check, local_token="")
+            status, payload = _request_json(
+                base_url=base_url, check=check, local_token=""
+            )
             if status == 200:
                 _validate_payload(check, payload)
                 return payload
@@ -389,7 +401,9 @@ def run_smoke(exe_path: Path, timeout_s: int) -> int:
         try:
             deadline = time.time() + timeout_s
             health = _wait_for_health(base_url, deadline)
-            print(f"Packaged app responded on /api/health: v{health.get('version', 'unknown')}")
+            print(
+                f"Packaged app responded on /api/health: v{health.get('version', 'unknown')}"
+            )
 
             for check in _endpoint_checks():
                 status, payload = _request_json(
@@ -398,14 +412,20 @@ def run_smoke(exe_path: Path, timeout_s: int) -> int:
                     local_token=local_token,
                 )
                 if status not in check.allow_statuses:
-                    raise SmokeFailure(f"{check.path} returned HTTP {status}: {payload}")
+                    raise SmokeFailure(
+                        f"{check.path} returned HTTP {status}: {payload}"
+                    )
                 _validate_payload(check, payload)
                 print(f"OK {check.method} {check.path}")
 
             if not server.saw_client_cert:
-                raise SmokeFailure("mock Sage server did not receive a client certificate")
+                raise SmokeFailure(
+                    "mock Sage server did not receive a client certificate"
+                )
             if "/get_version" not in server.request_paths:
-                raise SmokeFailure("mock Sage server did not receive the /get_version RPC probe")
+                raise SmokeFailure(
+                    "mock Sage server did not receive the /get_version RPC probe"
+                )
 
             print("Packaged Catalyst API smoke PASSED")
             return 0
@@ -427,8 +447,12 @@ def run_smoke(exe_path: Path, timeout_s: int) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke test packaged Catalyst API")
-    parser.add_argument("--exe", required=True, help="Path to packaged Catalyst executable")
-    parser.add_argument("--timeout", type=int, default=45, help="Startup timeout in seconds")
+    parser.add_argument(
+        "--exe", required=True, help="Path to packaged Catalyst executable"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=45, help="Startup timeout in seconds"
+    )
     args = parser.parse_args()
     return run_smoke(Path(args.exe).resolve(), args.timeout)
 

@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     _db = None
@@ -46,7 +47,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 
 _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
 
-_FAKE_ASSET = "a" * 64     # valid 64-hex asset_id
+_FAKE_ASSET = "a" * 64  # valid 64-hex asset_id
 _FAKE_TRADE_ID = "test-shutdown-001"
 
 
@@ -105,6 +106,7 @@ class _TempDB(unittest.TestCase):
     def _seed_fill(self):
         """Insert a fill into the temp DB to simulate a previous session."""
         from decimal import Decimal
+
         _db.record_fill(
             trade_id=_FAKE_TRADE_ID,
             side="buy",
@@ -123,20 +125,26 @@ class _TempDB(unittest.TestCase):
 # check-resume: wallet state → can_resume flag
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCheckResume(_TempDB):
     """check-resume must report correctly based on wallet offer state."""
 
     def _check(self, wallet_offers, classified_buy=None, classified_sell=None):
-        classified_buy = classified_buy or [{"trade_id": o["trade_id"]} for o in wallet_offers]
+        classified_buy = classified_buy or [
+            {"trade_id": o["trade_id"]} for o in wallet_offers
+        ]
         classified_sell = classified_sell or []
-        with patch("api_server.bot", None), \
-             patch("api_server._fresh_start_is_set", return_value=False), \
-             patch("wallet.get_all_offers", return_value=wallet_offers), \
-             patch("wallet.classify_offers_from_list",
-                   return_value=(classified_buy, classified_sell, [])):
-            return self.client.get("/api/check-resume",
-                                   environ_base=_LOOPBACK)
+        with (
+            patch("api_server.bot", None),
+            patch("api_server._fresh_start_is_set", return_value=False),
+            patch("wallet.get_all_offers", return_value=wallet_offers),
+            patch(
+                "wallet.classify_offers_from_list",
+                return_value=(classified_buy, classified_sell, []),
+            ),
+        ):
+            return self.client.get("/api/check-resume", environ_base=_LOOPBACK)
 
     def test_open_offers_returns_can_resume_true(self):
         """Wallet has open offers → can_resume=True."""
@@ -167,18 +175,22 @@ class TestCheckResume(_TempDB):
     def test_fresh_start_flag_prevents_resume_modal(self):
         """If user already pressed Start Fresh this session, skip modal."""
         api_server._fresh_start_set()
-        with patch("api_server.bot", None), \
-             patch("wallet.get_all_offers", return_value=[{"trade_id": "b1"}]), \
-             patch("wallet.classify_offers_from_list",
-                   return_value=([{"trade_id": "b1"}], [], [])):
-            resp = self.client.get("/api/check-resume",
-                                   environ_base=_LOOPBACK)
+        with (
+            patch("api_server.bot", None),
+            patch("wallet.get_all_offers", return_value=[{"trade_id": "b1"}]),
+            patch(
+                "wallet.classify_offers_from_list",
+                return_value=([{"trade_id": "b1"}], [], []),
+            ),
+        ):
+            resp = self.client.get("/api/check-resume", environ_base=_LOOPBACK)
         self.assertFalse(resp.get_json().get("can_resume"))
 
 
 # ---------------------------------------------------------------------------
 # resume-chosen: flag cleared, DB preserved
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestResumePath(_TempDB):
@@ -219,6 +231,7 @@ class TestResumePath(_TempDB):
 # fresh-start: fills cleared from DB
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestFreshStartPath(_TempDB):
     """fresh-start must clear session data from DB and set the flag."""
@@ -249,12 +262,15 @@ class TestFreshStartPath(_TempDB):
     def test_check_resume_after_fresh_start_returns_false(self):
         """After fresh-start, check-resume returns can_resume=False (flag)."""
         self._fresh_start()
-        with patch("api_server.bot", None), \
-             patch("wallet.get_all_offers", return_value=[{"trade_id": "b1"}]), \
-             patch("wallet.classify_offers_from_list",
-                   return_value=([{"trade_id": "b1"}], [], [])):
-            resp = self.client.get("/api/check-resume",
-                                   environ_base=_LOOPBACK)
+        with (
+            patch("api_server.bot", None),
+            patch("wallet.get_all_offers", return_value=[{"trade_id": "b1"}]),
+            patch(
+                "wallet.classify_offers_from_list",
+                return_value=([{"trade_id": "b1"}], [], []),
+            ),
+        ):
+            resp = self.client.get("/api/check-resume", environ_base=_LOOPBACK)
         self.assertFalse(resp.get_json().get("can_resume"))
 
     def test_response_includes_fills_cleared_count(self):

@@ -29,6 +29,7 @@ try:
         _normalize_offer_lock_id,
         WALLET_ID_XCH,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -40,6 +41,7 @@ _ASSET = "abc123def456abc123def456abc123def456abc123def456abc123def456ab12"
 # ---------------------------------------------------------------------------
 # _rpc_succeeded
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestRpcSucceeded(unittest.TestCase):
@@ -94,6 +96,7 @@ class TestSageMempoolConflictClassification(unittest.TestCase):
 # _is_cat_wallet
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestIsCatWallet(unittest.TestCase):
     def test_xch_wallet_id_returns_false(self):
@@ -109,6 +112,7 @@ class TestIsCatWallet(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _extract_sage_coin_list
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestExtractSageCoinList(unittest.TestCase):
@@ -150,13 +154,19 @@ class TestExtractSageCoinList(unittest.TestCase):
 # _normalize_sage_coin_records
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestNormalizeSageCoinRecords(unittest.TestCase):
     def _coin(self, **kwargs):
         return kwargs
 
     def test_basic_conversion(self):
-        coin = {"amount": "1000", "parent_coin_info": "0xpar", "puzzle_hash": "0xpuz", "coin_id": "0xid"}
+        coin = {
+            "amount": "1000",
+            "parent_coin_info": "0xpar",
+            "puzzle_hash": "0xpuz",
+            "coin_id": "0xid",
+        }
         result = _normalize_sage_coin_records([coin])
         self.assertEqual(len(result), 1)
         rec = result[0]
@@ -198,6 +208,7 @@ class TestNormalizeSageCoinRecords(unittest.TestCase):
 # is_offer_time_expired
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestIsOfferTimeExpired(unittest.TestCase):
     def test_no_max_time_returns_false(self):
@@ -231,6 +242,7 @@ class TestIsOfferTimeExpired(unittest.TestCase):
 # get_offer_expiry_info
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestGetOfferExpiryInfo(unittest.TestCase):
     def test_no_max_time_returns_inf(self):
@@ -261,6 +273,7 @@ class TestGetOfferExpiryInfo(unittest.TestCase):
 # cat_to_mojos
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestCatToMojos(unittest.TestCase):
     def test_standard_3_decimals(self):
@@ -279,6 +292,7 @@ class TestCatToMojos(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # xch_to_mojos
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestXchToMojos(unittest.TestCase):
@@ -299,6 +313,7 @@ class TestXchToMojos(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _is_open_status
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestIsOpenStatus(unittest.TestCase):
@@ -349,6 +364,7 @@ class TestIsOpenStatus(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # classify_offers_from_list
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestClassifyOffersFromList(unittest.TestCase):
@@ -449,6 +465,7 @@ class TestClassifyOffersFromList(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _normalize_offer_lock_id
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, _SKIP_MSG)
 class TestNormalizeOfferLockId(unittest.TestCase):

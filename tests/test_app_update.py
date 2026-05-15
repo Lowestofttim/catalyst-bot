@@ -33,14 +33,17 @@ class TestAppUpdateSecurity(unittest.TestCase):
             "version": version,
             "tag": f"v{version}",
             "published_at": "2026-05-04T10:00:00Z",
-            "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "expires_at": expires_at.replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "release_url": f"https://github.com/Lowestofttim/catalyst-releases/releases/tag/v{version}",
             "release_notes": "Signed manifest update.",
             "platforms": {
                 "windows-x64": {
                     "installer": {
                         "name": installer_name,
-                        "url": installer_url or (
+                        "url": installer_url
+                        or (
                             "https://github.com/Lowestofttim/catalyst-releases/releases/download/"
                             f"v{version}/{installer_name}"
                         ),
@@ -54,7 +57,9 @@ class TestAppUpdateSecurity(unittest.TestCase):
     def _signature(self, private, manifest):
         from app_update import canonical_manifest_bytes
 
-        return base64.b64encode(private.sign(canonical_manifest_bytes(manifest))).decode("ascii")
+        return base64.b64encode(
+            private.sign(canonical_manifest_bytes(manifest))
+        ).decode("ascii")
 
     def test_official_manifest_url_is_allowed(self):
         from app_update import OFFICIAL_MANIFEST_URL, is_allowed_manifest_url
@@ -127,7 +132,9 @@ class TestAppUpdateSecurity(unittest.TestCase):
             raise AssertionError(f"unexpected URL: {url}")
 
         with patch("requests.get", side_effect=fake_get):
-            verified = fetch_signed_manifest(OFFICIAL_MANIFEST_URL, public_key_b64=public_b64)
+            verified = fetch_signed_manifest(
+                OFFICIAL_MANIFEST_URL, public_key_b64=public_b64
+            )
 
         self.assertEqual(verified["version"], "1.2.6")
         self.assertEqual(calls, [OFFICIAL_MANIFEST_URL, expected_sig_url])
@@ -232,8 +239,10 @@ class TestAppUpdateApi(unittest.TestCase):
         self.assertIn("Stop the bot", body["error"])
 
     def test_check_update_includes_release_notes_and_installer_readiness(self):
-        with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
-                patch("app_update.fetch_signed_manifest") as fetch_manifest:
+        with (
+            patch.object(self.api_server, "get_app_version", return_value="1.2.5"),
+            patch("app_update.fetch_signed_manifest") as fetch_manifest,
+        ):
             fetch_manifest.return_value = {
                 "schema": 1,
                 "app": "CATalyst",
@@ -282,9 +291,15 @@ class TestAppUpdateApi(unittest.TestCase):
             "url": "https://github.com/Lowestofttim/catalyst-releases/releases/tag/v1.2.6",
             "release_notes": "New release.",
         }
-        with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
-                patch("app_update.get_update_info", return_value=update_info) as get_update_info:
-            resp = self.client.get("/api/check-update?force=1", environ_base=self.loopback)
+        with (
+            patch.object(self.api_server, "get_app_version", return_value="1.2.5"),
+            patch(
+                "app_update.get_update_info", return_value=update_info
+            ) as get_update_info,
+        ):
+            resp = self.client.get(
+                "/api/check-update?force=1", environ_base=self.loopback
+            )
 
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
@@ -310,8 +325,12 @@ class TestAppUpdateBridge(unittest.TestCase):
             "release_notes": "Maintenance update.",
         }
 
-        with patch.object(api_server, "get_app_version", return_value="1.2.26"), \
-                patch("app_update.get_update_info", return_value=update_info) as get_update_info:
+        with (
+            patch.object(api_server, "get_app_version", return_value="1.2.26"),
+            patch(
+                "app_update.get_update_info", return_value=update_info
+            ) as get_update_info,
+        ):
             result = AppBridge().check_update({"force": "1"})
 
         self.assertTrue(result["success"])

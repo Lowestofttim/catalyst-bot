@@ -24,8 +24,11 @@ from typing import Optional, Dict, List, Any
 
 from config import cfg
 from database import (
-    get_connection, get_market_analysis_cache, set_market_analysis_cache,
-    get_pool_snapshots, record_pool_snapshot
+    get_connection,
+    get_market_analysis_cache,
+    set_market_analysis_cache,
+    get_pool_snapshots,
+    record_pool_snapshot,
 )
 
 
@@ -39,16 +42,16 @@ COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 COINSET_BASE_DEFAULT = "https://api.coinset.org"
 
 # Cache TTLs (minutes)
-CACHE_TTL_TRADES = 60       # Dexie trade history — changes slowly
-CACHE_TTL_TICKER = 5        # Dexie ticker — changes frequently
+CACHE_TTL_TRADES = 60  # Dexie trade history — changes slowly
+CACHE_TTL_TICKER = 5  # Dexie ticker — changes frequently
 CACHE_TTL_SPACESCAN = 1440  # Spacescan token info — 24 hours (rate limited)
 CACHE_TTL_SPACESCAN_ENHANCED = 10  # Fees + CAT transaction context
-CACHE_TTL_TIBET = 30        # TibetSwap pool — matches price_engine cache
-CACHE_TTL_ANALYSIS = 30     # Full analysis result
+CACHE_TTL_TIBET = 30  # TibetSwap pool — matches price_engine cache
+CACHE_TTL_ANALYSIS = 30  # Full analysis result
 # F78 (2026-04-17):
-CACHE_TTL_XCH_USD = 5       # XCH/USD fiat price — moves moderately
-CACHE_TTL_BLOCKCHAIN = 1    # Chia blockchain state — block-cadence sensitive
-CACHE_TTL_TRENDING = 10     # Dexie trending pairs — discovery use, not critical
+CACHE_TTL_XCH_USD = 5  # XCH/USD fiat price — moves moderately
+CACHE_TTL_BLOCKCHAIN = 1  # Chia blockchain state — block-cadence sensitive
+CACHE_TTL_TRENDING = 10  # Dexie trending pairs — discovery use, not critical
 
 _session = requests.Session()
 _session.headers.update({"Content-Type": "application/json"})
@@ -70,9 +73,10 @@ _spacescan_smart_last_warned: Dict[str, float] = {}
 # PHASE 1: DATA COLLECTION
 # ===========================================================================
 
-def collect_all_market_data(asset_id: str, ticker_id: str,
-                            decimals: int = 3,
-                            progress_callback=None) -> Dict:
+
+def collect_all_market_data(
+    asset_id: str, ticker_id: str, decimals: int = 3, progress_callback=None
+) -> Dict:
     """Gather all market data from external APIs + internal DB.
 
     This is the main entry point for Smart Defaults v2 data gathering.
@@ -89,6 +93,7 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
         dexie_trades, dexie_ticker, tibet_pool, tibet_quote,
         spacescan, internal_db, _metadata
     """
+
     def _progress(step, msg):
         if progress_callback:
             progress_callback(step, 6, msg)
@@ -111,7 +116,7 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
             "sources_ok": [],
             "sources_failed": [],
             "cache_hits": [],
-        }
+        },
     }
 
     meta = result["_metadata"]
@@ -127,7 +132,9 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
             trades = _fetch_dexie_trade_history(asset_id, days=30)
             if trades:
                 result["dexie_trades"] = trades
-                set_market_analysis_cache(asset_id, "dexie_trades", trades, CACHE_TTL_TRADES)
+                set_market_analysis_cache(
+                    asset_id, "dexie_trades", trades, CACHE_TTL_TRADES
+                )
         if result["dexie_trades"]:
             meta["sources_ok"].append("dexie_trades")
         else:
@@ -147,7 +154,9 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
             ticker = _fetch_dexie_ticker_extended(ticker_id)
             if ticker and ticker.get("has_data"):
                 result["dexie_ticker"] = ticker
-                set_market_analysis_cache(asset_id, "dexie_ticker", ticker, CACHE_TTL_TICKER)
+                set_market_analysis_cache(
+                    asset_id, "dexie_ticker", ticker, CACHE_TTL_TICKER
+                )
         if result["dexie_ticker"]:
             meta["sources_ok"].append("dexie_ticker")
         else:
@@ -170,17 +179,16 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
                 set_market_analysis_cache(asset_id, "tibet_pool", pool, CACHE_TTL_TIBET)
                 # Store snapshot for historical tracking
                 record_pool_snapshot(
-                    asset_id,
-                    pool["xch_reserve"],
-                    pool["cat_reserve"],
-                    pool["price"]
+                    asset_id, pool["xch_reserve"], pool["cat_reserve"], pool["price"]
                 )
         if result["tibet_pool"]:
             meta["sources_ok"].append("tibet_pool")
             # Also get a quote for slippage estimation
             pair_id = result["tibet_pool"].get("pair_id", "")
             if pair_id:
-                quote = _fetch_tibet_quote(pair_id, amount_mojos=10000000000)  # 0.01 XCH
+                quote = _fetch_tibet_quote(
+                    pair_id, amount_mojos=10000000000
+                )  # 0.01 XCH
                 if quote:
                     result["tibet_quote"] = quote
                     meta["sources_ok"].append("tibet_quote")
@@ -208,9 +216,8 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
                 # fetch, which can be hours away on the free tier.
                 spacescan = _merge_partial_spacescan(spacescan, asset_id)
                 result["spacescan"] = spacescan
-                _partial = (
-                    int(spacescan.get("holder_count", 0) or 0) <= 0
-                    or bool(spacescan.get("activity_fetch_failed"))
+                _partial = int(spacescan.get("holder_count", 0) or 0) <= 0 or bool(
+                    spacescan.get("activity_fetch_failed")
                 )
                 _ttl = 30 if _partial else CACHE_TTL_SPACESCAN  # 30 min vs 24 hr
                 set_market_analysis_cache(asset_id, "spacescan", spacescan, _ttl)
@@ -251,7 +258,9 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
     try:
         db_data = _fetch_internal_db_history(asset_id)
         result["internal_db"] = db_data
-        if db_data and (db_data.get("price_count", 0) > 0 or db_data.get("fill_count", 0) > 0):
+        if db_data and (
+            db_data.get("price_count", 0) > 0 or db_data.get("fill_count", 0) > 0
+        ):
             meta["sources_ok"].append("internal_db")
         else:
             # Empty DB is expected on first run — not a failure
@@ -270,7 +279,9 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
             xch_usd = _fetch_xch_usd_price()
             if xch_usd:
                 result["xch_usd"] = xch_usd
-                set_market_analysis_cache("_global_", "xch_usd", xch_usd, CACHE_TTL_XCH_USD)
+                set_market_analysis_cache(
+                    "_global_", "xch_usd", xch_usd, CACHE_TTL_XCH_USD
+                )
         if result["xch_usd"]:
             meta["sources_ok"].append("xch_usd")
         else:
@@ -291,7 +302,9 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
             bc = _fetch_coinset_blockchain_state()
             if bc:
                 result["blockchain_state"] = bc
-                set_market_analysis_cache("_global_", "blockchain_state", bc, CACHE_TTL_BLOCKCHAIN)
+                set_market_analysis_cache(
+                    "_global_", "blockchain_state", bc, CACHE_TTL_BLOCKCHAIN
+                )
         if result["blockchain_state"]:
             meta["sources_ok"].append("blockchain_state")
         else:
@@ -310,7 +323,9 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
             trending = _fetch_dexie_trending_pairs(limit=20)
             if trending:
                 result["dexie_trending"] = trending
-                set_market_analysis_cache("_global_", "dexie_trending", trending, CACHE_TTL_TRENDING)
+                set_market_analysis_cache(
+                    "_global_", "dexie_trending", trending, CACHE_TTL_TRENDING
+                )
         if result["dexie_trending"]:
             meta["sources_ok"].append("dexie_trending")
         else:
@@ -323,8 +338,10 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
 
     total_ok = len([s for s in meta["sources_ok"] if not s.endswith("_empty")])
     total_sources = total_ok + len(meta["sources_failed"])
-    print(f"[MARKET_DATA] Done: {total_ok}/{total_sources} sources OK, "
-          f"{len(meta['cache_hits'])} cache hits")
+    print(
+        f"[MARKET_DATA] Done: {total_ok}/{total_sources} sources OK, "
+        f"{len(meta['cache_hits'])} cache hits"
+    )
 
     return result
 
@@ -332,6 +349,7 @@ def collect_all_market_data(asset_id: str, ticker_id: str,
 # ---------------------------------------------------------------------------
 # 1. Dexie Trade History Fetcher (paginated, 30 days)
 # ---------------------------------------------------------------------------
+
 
 def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
     """Fetch completed trades from Dexie for the last N days.
@@ -387,9 +405,13 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
                         "order": "desc",
                     }
 
-                resp = _session.get(f"{DEXIE_BASE}/v1/offers", params=params, timeout=15)
+                resp = _session.get(
+                    f"{DEXIE_BASE}/v1/offers", params=params, timeout=15
+                )
                 if resp.status_code != 200:
-                    print(f"[MARKET_DATA] Dexie trades ({direction}) HTTP {resp.status_code}")
+                    print(
+                        f"[MARKET_DATA] Dexie trades ({direction}) HTTP {resp.status_code}"
+                    )
                     break
 
                 data = resp.json()
@@ -430,15 +452,21 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
                     # Compute price as XCH/CAT from parsed amounts.
                     # NOTE: Dexie's offer "price" field is CAT/XCH (inverted) —
                     # using it directly would produce VWAP ~25000 instead of ~0.00002.
-                    price = xch_amount / cat_amount if cat_amount > 0 and xch_amount > 0 else 0
+                    price = (
+                        xch_amount / cat_amount
+                        if cat_amount > 0 and xch_amount > 0
+                        else 0
+                    )
 
-                    all_trades.append({
-                        "date": completed,
-                        "direction": direction,
-                        "price": price,
-                        "xch_amount": xch_amount,
-                        "cat_amount": cat_amount,
-                    })
+                    all_trades.append(
+                        {
+                            "date": completed,
+                            "direction": direction,
+                            "price": price,
+                            "xch_amount": xch_amount,
+                            "cat_amount": cat_amount,
+                        }
+                    )
 
                 if not page_had_valid:
                     break
@@ -452,12 +480,16 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
                 time.sleep(0.3)  # Rate-limit friendly
 
             except Exception as e:
-                print(f"[MARKET_DATA] Dexie trades page {page} ({direction}) failed: {e}")
+                print(
+                    f"[MARKET_DATA] Dexie trades page {page} ({direction}) failed: {e}"
+                )
                 break
 
     # If status=4 found nothing, try offered_or_requested approach as fallback
     if not all_trades:
-        print("[MARKET_DATA] No trades from status=4, trying offered_or_requested fallback...")
+        print(
+            "[MARKET_DATA] No trades from status=4, trying offered_or_requested fallback..."
+        )
         try:
             params = {
                 "offered_or_requested": asset_id,
@@ -493,14 +525,20 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
                         else:
                             direction = "sell"
                     # Compute XCH/CAT price from amounts (Dexie "price" field is CAT/XCH inverted)
-                    price = xch_amount / cat_amount if cat_amount > 0 and xch_amount > 0 else 0
-                    all_trades.append({
-                        "date": completed,
-                        "direction": direction,
-                        "price": price,
-                        "xch_amount": xch_amount,
-                        "cat_amount": cat_amount,
-                    })
+                    price = (
+                        xch_amount / cat_amount
+                        if cat_amount > 0 and xch_amount > 0
+                        else 0
+                    )
+                    all_trades.append(
+                        {
+                            "date": completed,
+                            "direction": direction,
+                            "price": price,
+                            "xch_amount": xch_amount,
+                            "cat_amount": cat_amount,
+                        }
+                    )
                 if all_trades:
                     print(f"[MARKET_DATA] Fallback found {len(all_trades)} trades")
         except Exception as e:
@@ -525,12 +563,18 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
         if median_price > 0:
             outlier_lo = median_price / 10
             outlier_hi = median_price * 10
-            filtered = [t for t in all_trades if t["price"] <= 0 or outlier_lo <= t["price"] <= outlier_hi]
+            filtered = [
+                t
+                for t in all_trades
+                if t["price"] <= 0 or outlier_lo <= t["price"] <= outlier_hi
+            ]
             n_removed = len(all_trades) - len(filtered)
             if n_removed > 0:
-                print(f"[MARKET_DATA] Outlier filter: removed {n_removed} trade(s) "
-                      f"outside [{outlier_lo:.8f}, {outlier_hi:.8f}] "
-                      f"(median={median_price:.8f})")
+                print(
+                    f"[MARKET_DATA] Outlier filter: removed {n_removed} trade(s) "
+                    f"outside [{outlier_lo:.8f}, {outlier_hi:.8f}] "
+                    f"(median={median_price:.8f})"
+                )
                 all_trades = filtered
 
     # --- Calculate summary statistics ---
@@ -538,7 +582,9 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
     prices = [t["price"] for t in all_trades if t["price"] > 0]
 
     total_volume = sum(xch_amounts)
-    avg_trade_size = sorted(xch_amounts)[len(xch_amounts) // 2] if xch_amounts else 0  # median
+    avg_trade_size = (
+        sorted(xch_amounts)[len(xch_amounts) // 2] if xch_amounts else 0
+    )  # median
     fills_per_day = len(all_trades) / max(1, days)
     daily_volume = total_volume / max(1, days)
 
@@ -586,6 +632,7 @@ def _fetch_dexie_trade_history(asset_id: str, days: int = 30) -> Optional[Dict]:
 # 2. Dexie Ticker Extended (30d/90d ranges)
 # ---------------------------------------------------------------------------
 
+
 def _fetch_dexie_ticker_extended(ticker_id: str) -> Optional[Dict]:
     """Fetch full Dexie ticker with 30d/90d/1y range data.
 
@@ -603,7 +650,7 @@ def _fetch_dexie_ticker_extended(ticker_id: str) -> Optional[Dict]:
         resp = _session.get(
             f"{DEXIE_BASE}/v2/prices/tickers",
             params={"ticker_id": ticker_id},
-            timeout=10
+            timeout=10,
         )
         if resp.status_code != 200:
             return None
@@ -654,6 +701,7 @@ def _fetch_dexie_ticker_extended(ticker_id: str) -> Optional[Dict]:
 # 3. TibetSwap Pool + Quote
 # ---------------------------------------------------------------------------
 
+
 def _fetch_tibet_pool(asset_id: str, decimals: int = 3) -> Optional[Dict]:
     """Fetch TibetSwap pool reserves and pair info.
 
@@ -664,9 +712,7 @@ def _fetch_tibet_pool(asset_id: str, decimals: int = 3) -> Optional[Dict]:
 
     try:
         resp = _session.get(
-            f"{TIBET_BASE}/pairs",
-            params={"skip": 0, "limit": 200},
-            timeout=10
+            f"{TIBET_BASE}/pairs", params={"skip": 0, "limit": 200}, timeout=10
         )
         if resp.status_code != 200:
             return None
@@ -694,7 +740,7 @@ def _fetch_tibet_pool(asset_id: str, decimals: int = 3) -> Optional[Dict]:
 
                 if xch_raw > 0 and tok_raw > 0:
                     xch_reserve = xch_raw / 1e12
-                    cat_reserve = tok_raw / (10 ** decimals)
+                    cat_reserve = tok_raw / (10**decimals)
                     price = xch_reserve / cat_reserve if cat_reserve > 0 else 0
 
                     return {
@@ -726,11 +772,8 @@ def _fetch_tibet_quote(pair_id: str, amount_mojos: int = 10000000000) -> Optiona
     try:
         resp = _session.get(
             f"{TIBET_BASE}/quote/{pair_id}",
-            params={
-                "amount_in": str(amount_mojos),
-                "xch_is_input": "true"
-            },
-            timeout=8
+            params={"amount_in": str(amount_mojos), "xch_is_input": "true"},
+            timeout=8,
         )
         if resp.status_code != 200:
             return None
@@ -752,6 +795,7 @@ def _fetch_tibet_quote(pair_id: str, amount_mojos: int = 10000000000) -> Optiona
 # F78 (2026-04-17) — additional data sources
 # ---------------------------------------------------------------------------
 
+
 def _fetch_xch_usd_price() -> Optional[Dict]:
     """Fetch XCH/USD fiat price from CoinGecko, falling back to Spacescan.
 
@@ -764,6 +808,7 @@ def _fetch_xch_usd_price() -> Optional[Dict]:
     try:
         try:
             from api_call_tracker import record as _record_api_call
+
             _record_api_call("coingecko", "/simple/price")
         except Exception:
             pass
@@ -813,7 +858,9 @@ def _coerce_epoch_seconds(value: Any) -> int:
 
 def _fetch_spacescan_xch_usd_price() -> Optional[Dict]:
     """Fetch XCH/USD from Spacescan's documented stats price endpoint."""
-    api_key = (cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else "").strip()
+    api_key = (
+        cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else ""
+    ).strip()
     free_url = getattr(cfg, "SPACESCAN_FREE_URL", "https://api.spacescan.io")
     pro_url = getattr(cfg, "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
     attempts = []
@@ -914,7 +961,9 @@ def _fetch_coinset_blockchain_state() -> Optional[Dict]:
             "has_data": True,
             "peak_height": int(peak.get("height", 0) or 0),
             "peak_timestamp": int(peak.get("timestamp", 0) or 0),
-            "sync_progress_pct": _safe_float(state.get("sync", {}).get("sync_progress_height", 0)),
+            "sync_progress_pct": _safe_float(
+                state.get("sync", {}).get("sync_progress_height", 0)
+            ),
             "synced": bool(state.get("sync", {}).get("synced", False)),
             "mempool_size": int(data.get("mempool_size", 0) or 0),
             "mempool_cost": int(data.get("mempool_cost", 0) or 0),
@@ -952,13 +1001,15 @@ def _fetch_dexie_trending_pairs(limit: int = 20) -> Optional[Dict]:
         for p in pairs[:limit]:
             if not isinstance(p, dict):
                 continue
-            trimmed.append({
-                "ticker": str(p.get("ticker_id") or p.get("id") or ""),
-                "name": str(p.get("name") or ""),
-                "volume_24h": _safe_float(p.get("volume_24h", 0)),
-                "price": _safe_float(p.get("price", 0)),
-                "price_change_24h_pct": _safe_float(p.get("price_change_24h", 0)),
-            })
+            trimmed.append(
+                {
+                    "ticker": str(p.get("ticker_id") or p.get("id") or ""),
+                    "name": str(p.get("name") or ""),
+                    "volume_24h": _safe_float(p.get("volume_24h", 0)),
+                    "price": _safe_float(p.get("price", 0)),
+                    "price_change_24h_pct": _safe_float(p.get("price_change_24h", 0)),
+                }
+            )
         return {
             "has_data": bool(trimmed),
             "pairs": trimmed,
@@ -972,6 +1023,7 @@ def _fetch_dexie_trending_pairs(limit: int = 20) -> Optional[Dict]:
 # ---------------------------------------------------------------------------
 # 4. Spacescan Token Analytics
 # ---------------------------------------------------------------------------
+
 
 def _spacescan_smart_headers(api_key: str = "") -> Dict[str, str]:
     """Headers that keep Spacescan token endpoints on the documented v1/xch lane."""
@@ -991,7 +1043,9 @@ def _spacescan_smart_timeout() -> tuple[int, int]:
     return (5, read_timeout)
 
 
-def _spacescan_smart_key(base_url: str, headers: Optional[Dict[str, str]]) -> tuple[str, bool]:
+def _spacescan_smart_key(
+    base_url: str, headers: Optional[Dict[str, str]]
+) -> tuple[str, bool]:
     """Return a cooldown bucket key and whether the request uses a Pro key."""
     has_key = bool((headers or {}).get("x-api-key"))
     tier = "pro" if has_key else "free"
@@ -1001,7 +1055,9 @@ def _spacescan_smart_key(base_url: str, headers: Optional[Dict[str, str]]) -> tu
 def _spacescan_smart_before_request(key: str, is_pro: bool) -> Optional[str]:
     """Return an error string if a Spacescan request should be skipped."""
     now = time.time()
-    interval = _SPACESCAN_SMART_PRO_INTERVAL if is_pro else _SPACESCAN_SMART_FREE_INTERVAL
+    interval = (
+        _SPACESCAN_SMART_PRO_INTERVAL if is_pro else _SPACESCAN_SMART_FREE_INTERVAL
+    )
 
     with _spacescan_smart_lock:
         cooldown_until = _spacescan_smart_cooldown_until.get(key, 0.0)
@@ -1021,7 +1077,9 @@ def _spacescan_smart_before_request(key: str, is_pro: bool) -> Optional[str]:
 
 def _spacescan_smart_set_cooldown(key: str) -> None:
     with _spacescan_smart_lock:
-        _spacescan_smart_cooldown_until[key] = time.time() + _SPACESCAN_SMART_429_COOLDOWN
+        _spacescan_smart_cooldown_until[key] = (
+            time.time() + _SPACESCAN_SMART_429_COOLDOWN
+        )
 
 
 def _spacescan_smart_report_once(key: str, message: str) -> None:
@@ -1034,10 +1092,14 @@ def _spacescan_smart_report_once(key: str, message: str) -> None:
     print(message)
 
 
-def _spacescan_smart_get(base_url: str, endpoint: str, *,
-                         params: Optional[Dict[str, Any]] = None,
-                         headers: Optional[Dict[str, str]] = None,
-                         retries: int = 1) -> tuple[Optional[Dict], Optional[str]]:
+def _spacescan_smart_get(
+    base_url: str,
+    endpoint: str,
+    *,
+    params: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    retries: int = 1,
+) -> tuple[Optional[Dict], Optional[str]]:
     """Request a Spacescan endpoint with light retry/backoff for transient slowness."""
     url = f"{base_url.rstrip('/')}{endpoint}"
     timeout = _spacescan_smart_timeout()
@@ -1061,12 +1123,16 @@ def _spacescan_smart_get(base_url: str, endpoint: str, *,
             else:
                 resp.raise_for_status()
                 data = resp.json()
-                if isinstance(data, dict) and data.get("status") not in (None, "success"):
+                if isinstance(data, dict) and data.get("status") not in (
+                    None,
+                    "success",
+                ):
                     last_error = f"status={data.get('status')}"
                 else:
                     # Count this call in the central Spacescan stats
                     try:
                         import spacescan as _ss
+
                         _ss.record_external_call(endpoint=endpoint)
                     except Exception:
                         pass
@@ -1085,9 +1151,12 @@ def _spacescan_smart_get(base_url: str, endpoint: str, *,
     return None, last_error
 
 
-def _spacescan_count_from_payload(payload: Any, *,
-                                  count_keys: Optional[List[str]] = None,
-                                  list_keys: Optional[List[str]] = None) -> int:
+def _spacescan_count_from_payload(
+    payload: Any,
+    *,
+    count_keys: Optional[List[str]] = None,
+    list_keys: Optional[List[str]] = None,
+) -> int:
     """Best-effort count extraction across the response shapes Spacescan returns."""
     count_keys = count_keys or ["count", "total", "total_count"]
     list_keys = list_keys or ["data", "holders", "activities", "items", "results"]
@@ -1160,7 +1229,7 @@ def _merge_partial_spacescan(new_payload: Dict, asset_id: str) -> Dict:
     new_activity = int(new_payload.get("activity_count", 0) or 0)
     activity_failed = bool(new_payload.get("activity_fetch_failed"))
 
-    holder_partial = (new_holder <= 0)
+    holder_partial = new_holder <= 0
     activity_partial = (new_activity <= 0) or activity_failed
     if not holder_partial and not activity_partial:
         return new_payload  # full fetch — no merge needed
@@ -1208,9 +1277,8 @@ def refresh_spacescan_cache(asset_id: str) -> Optional[Dict]:
     try:
         # Merge with prior cache before persisting — see _merge_partial_spacescan.
         payload = _merge_partial_spacescan(payload, asset_id)
-        _partial = (
-            int(payload.get("holder_count", 0) or 0) <= 0
-            or bool(payload.get("activity_fetch_failed"))
+        _partial = int(payload.get("holder_count", 0) or 0) <= 0 or bool(
+            payload.get("activity_fetch_failed")
         )
         _ttl = 30 if _partial else CACHE_TTL_SPACESCAN
         set_market_analysis_cache(asset_id, "spacescan", payload, _ttl)
@@ -1221,7 +1289,9 @@ def refresh_spacescan_cache(asset_id: str) -> Optional[Dict]:
     return payload
 
 
-def _spacescan_rows_from_payload(payload: Any, list_keys: Optional[List[str]] = None) -> List[Dict]:
+def _spacescan_rows_from_payload(
+    payload: Any, list_keys: Optional[List[str]] = None
+) -> List[Dict]:
     """Return the first list of dict rows found in a Spacescan payload."""
     list_keys = list_keys or ["data", "transactions", "items", "results", "tokens"]
     if isinstance(payload, list):
@@ -1277,7 +1347,9 @@ def _fetch_spacescan_enhanced_data(asset_id: str) -> Optional[Dict]:
     if not asset_id:
         return None
 
-    api_key = (cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else "").strip()
+    api_key = (
+        cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else ""
+    ).strip()
     free_url = getattr(cfg, "SPACESCAN_FREE_URL", "https://api.spacescan.io")
     pro_url = getattr(cfg, "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
     attempts = []
@@ -1307,7 +1379,9 @@ def _fetch_spacescan_enhanced_data(asset_id: str) -> Optional[Dict]:
         if not data:
             continue
 
-        rows = _spacescan_rows_from_payload(data, ["data", "mempool", "items", "results"])
+        rows = _spacescan_rows_from_payload(
+            data, ["data", "mempool", "items", "results"]
+        )
         latest = _latest_spacescan_row(rows)
         min_fee = _safe_float(
             latest.get("minfees")
@@ -1316,14 +1390,18 @@ def _fetch_spacescan_enhanced_data(asset_id: str) -> Optional[Dict]:
             or latest.get("fee"),
             0,
         )
-        result.update({
-            "has_data": True,
-            "mempool_sample_count": len(rows),
-            "mempool_min_fee": min_fee,
-            "mempool_fee_pressure": _fee_pressure_label(min_fee),
-            "mempool_latest_timestamp": _coerce_epoch_seconds(latest.get("timestamp")),
-            "source": label,
-        })
+        result.update(
+            {
+                "has_data": True,
+                "mempool_sample_count": len(rows),
+                "mempool_min_fee": min_fee,
+                "mempool_fee_pressure": _fee_pressure_label(min_fee),
+                "mempool_latest_timestamp": _coerce_epoch_seconds(
+                    latest.get("timestamp")
+                ),
+                "source": label,
+            }
+        )
         break
 
     for base_url, headers, label in attempts:
@@ -1347,15 +1425,17 @@ def _fetch_spacescan_enhanced_data(asset_id: str) -> Optional[Dict]:
             count_keys=["total_count", "count", "total"],
             list_keys=["data", "transactions", "items", "results", "tokens"],
         )
-        result.update({
-            "has_data": True,
-            "cat_tx_count": tx_count,
-            "cat_transfer_sample_count": len(rows),
-            "cat_last_tx_timestamp": _coerce_epoch_seconds(
-                latest.get("timestamp") or latest.get("confirmed_time")
-            ),
-            "source": result.get("source") or label,
-        })
+        result.update(
+            {
+                "has_data": True,
+                "cat_tx_count": tx_count,
+                "cat_transfer_sample_count": len(rows),
+                "cat_last_tx_timestamp": _coerce_epoch_seconds(
+                    latest.get("timestamp") or latest.get("confirmed_time")
+                ),
+                "source": result.get("source") or label,
+            }
+        )
         break
 
     return result if result.get("has_data") else None
@@ -1412,7 +1492,9 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
         "activity_count": 0,
     }
 
-    api_key = (cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else "").strip()
+    api_key = (
+        cfg.SPACESCAN_API_KEY if hasattr(cfg, "SPACESCAN_API_KEY") else ""
+    ).strip()
     free_url = getattr(cfg, "SPACESCAN_FREE_URL", "https://api.spacescan.io")
     pro_url = getattr(cfg, "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
     pro_headers = _spacescan_smart_headers(api_key)
@@ -1444,12 +1526,17 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
             result["price_usd"] = _safe_float(price.get("usd", 0))
             result["price_xch"] = _safe_float(price.get("xch", 0))
             result["total_supply"] = _safe_float(supply.get("total_supply", 0))
-            result["circulating_supply"] = _safe_float(supply.get("circulating_supply", 0))
+            result["circulating_supply"] = _safe_float(
+                supply.get("circulating_supply", 0)
+            )
             # Token icon — Spacescan serves higher-res than Dexie CDN (22KB vs 5KB).
             # preview_url is the full CDN URL; image_url is just the filename.
             result["token_preview_url"] = (
-                info.get("preview_url") or data.get("preview_url") or
-                info.get("image_url") or data.get("image_url") or ""
+                info.get("preview_url")
+                or data.get("preview_url")
+                or info.get("image_url")
+                or data.get("image_url")
+                or ""
             )
             result["has_data"] = True
             break
@@ -1485,7 +1572,11 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
         )
         if data:
             # Prefer total_count (real holder total) over count (page size) or list length
-            total_count = data.get("total_count") or data.get("total_holders") or data.get("holder_count")
+            total_count = (
+                data.get("total_count")
+                or data.get("total_holders")
+                or data.get("holder_count")
+            )
             if total_count is not None:
                 try:
                     result["holder_count"] = int(total_count)
@@ -1528,14 +1619,22 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
     activity_attempts: List[tuple] = []
     if api_key:
         activity_attempts.append(
-            (pro_url, "/token/activity",
-             {"asset_id": asset_id, "type": "transfer", "count": 100},
-             pro_headers, "pro-legacy")
+            (
+                pro_url,
+                "/token/activity",
+                {"asset_id": asset_id, "type": "transfer", "count": 100},
+                pro_headers,
+                "pro-legacy",
+            )
         )
     activity_attempts.append(
-        (free_url, "/token/activity",
-         {"asset_id": asset_id, "type": "transfer", "count": 100},
-         free_headers, "free")
+        (
+            free_url,
+            "/token/activity",
+            {"asset_id": asset_id, "type": "transfer", "count": 100},
+            free_headers,
+            "free",
+        )
     )
     last_was_rate_limited = False
     for base_url, endpoint, params, headers, label in activity_attempts:
@@ -1544,13 +1643,23 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
             # Spacescan free tier's sliding window to reset.
             time.sleep(3)
         data, err = _spacescan_smart_get(
-            base_url, endpoint, params=params, headers=headers, retries=2,
+            base_url,
+            endpoint,
+            params=params,
+            headers=headers,
+            retries=2,
         )
         last_was_rate_limited = bool(err and "429" in err)
         if data:
             result["activity_count"] = _spacescan_count_from_payload(
                 data,
-                count_keys=["activity_count", "activities", "count", "total", "total_count"],
+                count_keys=[
+                    "activity_count",
+                    "activities",
+                    "count",
+                    "total",
+                    "total_count",
+                ],
                 list_keys=["tokens", "data", "activities", "items", "results"],
             )
             if result["activity_count"] > 0:
@@ -1585,6 +1694,7 @@ def _fetch_spacescan_data(asset_id: str) -> Optional[Dict]:
 # 5. Internal Database History
 # ---------------------------------------------------------------------------
 
+
 def _fetch_internal_db_history(asset_id: str) -> Dict:
     """Query our own database for the bot's historical performance.
 
@@ -1606,9 +1716,9 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
         # of our actual fill prices. Uses ground-truth data we already
         # store; previously ignored despite being the best volatility
         # signal we have (Dexie trades are noisier aggregates).
-        "own_fill_stddev_pct": 0.0,      # std-dev of log-returns ×100
-        "own_fill_range_pct": 0.0,        # (max-min)/mean ×100 of recent fills
-        "own_fill_samples": 0,            # number of fills used in the calc
+        "own_fill_stddev_pct": 0.0,  # std-dev of log-returns ×100
+        "own_fill_range_pct": 0.0,  # (max-min)/mean ×100 of recent fills
+        "own_fill_samples": 0,  # number of fills used in the calc
     }
 
     conn = get_connection()
@@ -1618,7 +1728,7 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
         row = conn.execute(
             "SELECT COUNT(*) as cnt FROM price_history "
             "WHERE cat_asset_id = ? AND timestamp >= datetime('now', '-30 days')",
-            (asset_id,)
+            (asset_id,),
         ).fetchone()
         result["price_count"] = row["cnt"] if row else 0
 
@@ -1630,7 +1740,7 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
             "SUM(CAST(size_xch AS REAL)) as total_vol, "
             "AVG(CAST(size_xch AS REAL)) as avg_size "
             "FROM fills WHERE cat_asset_id = ? AND filled_at >= datetime('now', '-30 days')",
-            (asset_id,)
+            (asset_id,),
         ).fetchone()
         if row and row["cnt"]:
             result["fill_count"] = row["cnt"]
@@ -1643,7 +1753,7 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
         row = conn.execute(
             "SELECT COUNT(*) as cnt FROM inventory "
             "WHERE cat_asset_id = ? AND timestamp >= datetime('now', '-30 days')",
-            (asset_id,)
+            (asset_id,),
         ).fetchone()
         result["inventory_snapshots"] = row["cnt"] if row else 0
 
@@ -1651,7 +1761,7 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
         row = conn.execute(
             "SELECT net_position FROM inventory "
             "WHERE cat_asset_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (asset_id,)
+            (asset_id,),
         ).fetchone()
         if row:
             result["latest_net_position"] = _safe_float(row["net_position"])
@@ -1663,7 +1773,9 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
             # Pool trend: compare recent vs older reserves
             mid = len(snapshots) // 2
             recent_avg = sum(s["xch_reserve"] for s in snapshots[:mid]) / mid
-            older_avg = sum(s["xch_reserve"] for s in snapshots[mid:]) / (len(snapshots) - mid)
+            older_avg = sum(s["xch_reserve"] for s in snapshots[mid:]) / (
+                len(snapshots) - mid
+            )
             if older_avg > 0:
                 ratio = recent_avg / older_avg
                 if ratio > 1.1:
@@ -1684,13 +1796,14 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
                 "AND filled_at >= datetime('now', '-30 days') "
                 "AND price_xch IS NOT NULL "
                 "ORDER BY filled_at ASC",
-                (asset_id,)
+                (asset_id,),
             ).fetchall()
             prices = [r["price"] for r in rows if r["price"] and r["price"] > 0]
             n = len(prices)
             if n >= 3:
                 # Log-return std-dev (expressed as percentage)
                 import math as _math
+
                 returns = [
                     _math.log(prices[i] / prices[i - 1])
                     for i in range(1, n)
@@ -1698,10 +1811,10 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
                 ]
                 if returns:
                     mean_ret = sum(returns) / len(returns)
-                    variance = sum(
-                        (r - mean_ret) ** 2 for r in returns
-                    ) / max(1, len(returns) - 1)
-                    sigma = variance ** 0.5
+                    variance = sum((r - mean_ret) ** 2 for r in returns) / max(
+                        1, len(returns) - 1
+                    )
+                    sigma = variance**0.5
                     result["own_fill_stddev_pct"] = round(sigma * 100, 4)
                 # Range-based measure (robust to small samples)
                 p_min = min(prices)
@@ -1725,6 +1838,7 @@ def _fetch_internal_db_history(asset_id: str) -> Dict:
 # ===========================================================================
 # PHASE 2: ANALYSIS ENGINE
 # ===========================================================================
+
 
 def analyze_market_data(raw: Dict, asset_id: str) -> Dict:
     """Analyze collected market data and produce actionable insights.
@@ -1802,7 +1916,9 @@ def _analyze_volatility(raw: Dict) -> Dict:
         range_pct = (high_30d - low_30d) / mid_30d * 100
         result["range_30d_pct"] = round(range_pct, 2)
         result["confidence"] = "medium"
-        result["explanation"] = f"30-day range: {range_pct:.1f}% (high {high_30d:.8f}, low {low_30d:.8f})"
+        result["explanation"] = (
+            f"30-day range: {range_pct:.1f}% (high {high_30d:.8f}, low {low_30d:.8f})"
+        )
 
     # --- 90-day and 1-year context ---
     # These give a longer-term view of how volatile this token really is.
@@ -1867,9 +1983,9 @@ def _analyze_volatility(raw: Dict) -> Dict:
 
                 result["confidence"] = "high"
                 result["explanation"] = (
-                    f"30-day vol: std_dev={std_dev*100:.1f}%, "
+                    f"30-day vol: std_dev={std_dev * 100:.1f}%, "
                     f"range={result['range_30d_pct']:.1f}%, "
-                    f"max_move={max_move*100:.1f}% "
+                    f"max_move={max_move * 100:.1f}% "
                     f"(from {len(daily_avgs)} days of trades)"
                 )
 
@@ -1904,7 +2020,9 @@ def _analyze_volatility(raw: Dict) -> Dict:
 
     # --- Determine regime ---
     # Use the best available metric
-    vol_metric = result["std_dev_pct"] or (result["range_30d_pct"] / 4)  # Range/4 ≈ rough std dev
+    vol_metric = result["std_dev_pct"] or (
+        result["range_30d_pct"] / 4
+    )  # Range/4 ≈ rough std dev
 
     if vol_metric > 15:
         result["regime"] = "extreme"
@@ -1972,7 +2090,9 @@ def _analyze_liquidity(raw: Dict) -> Dict:
         # Calculate our trade's share of the pool
         trade_size = float(cfg.DEFAULT_TRADE_XCH)
         if result["pool_depth_xch"] > 0 and trade_size > 0:
-            result["pool_share_pct"] = round((trade_size / result["pool_depth_xch"]) * 100, 2)
+            result["pool_share_pct"] = round(
+                (trade_size / result["pool_depth_xch"]) * 100, 2
+            )
 
     # --- Determine liquidity level ---
     daily_vol = result["daily_volume_xch"]
@@ -2135,7 +2255,9 @@ def _assess_data_quality(raw: Dict) -> Dict:
     if raw.get("dexie_trades"):
         sources["dexie_trades"]["available"] = True
         count = raw["dexie_trades"].get("total_count", 0)
-        sources["dexie_trades"]["confidence"] = "high" if count > 50 else "medium" if count > 10 else "low"
+        sources["dexie_trades"]["confidence"] = (
+            "high" if count > 50 else "medium" if count > 10 else "low"
+        )
 
     if raw.get("tibet_pool") and raw["tibet_pool"].get("has_data"):
         sources["tibet_pool"]["available"] = True
@@ -2161,7 +2283,9 @@ def _assess_data_quality(raw: Dict) -> Dict:
     db = raw.get("internal_db") or {}
     if db.get("fill_count", 0) > 0 or db.get("price_count", 0) > 0:
         sources["internal_db"]["available"] = True
-        sources["internal_db"]["confidence"] = "high" if db.get("fill_count", 0) > 20 else "medium"
+        sources["internal_db"]["confidence"] = (
+            "high" if db.get("fill_count", 0) > 20 else "medium"
+        )
 
     # Calculate weighted score
     total_weight = sum(s["weight"] for s in sources.values())
@@ -2208,6 +2332,7 @@ def _assess_data_quality(raw: Dict) -> Dict:
 # ===========================================================================
 # Utility
 # ===========================================================================
+
 
 def _safe_float(val, default: float = 0.0) -> float:
     """Safely convert any value to float."""

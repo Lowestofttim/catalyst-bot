@@ -62,10 +62,14 @@ def _load_real_module(name: str, filename: str):
     return module
 
 
-if "config" not in sys.modules or not hasattr(getattr(sys.modules["config"], "cfg", object()), "SPACESCAN_TIMEOUT"):
+if "config" not in sys.modules or not hasattr(
+    getattr(sys.modules["config"], "cfg", object()), "SPACESCAN_TIMEOUT"
+):
     _load_real_module("config", "config.py")
 
-if "database" not in sys.modules or not hasattr(sys.modules["database"], "get_connection"):
+if "database" not in sys.modules or not hasattr(
+    sys.modules["database"], "get_connection"
+):
     _load_real_module("database", "database.py")
 
 import database
@@ -127,42 +131,52 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
     @patch("market_data_collector.time.sleep", return_value=None)
-    def test_fetch_spacescan_data_prefers_pro_and_uses_fallback_activity_route(self, _sleep):
+    def test_fetch_spacescan_data_prefers_pro_and_uses_fallback_activity_route(
+        self, _sleep
+    ):
         mdc.cfg.SPACESCAN_API_KEY = "test-key"
         mdc.cfg.SPACESCAN_TIMEOUT = 15
         calls = []
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            calls.append({
-                "url": url,
-                "params": dict(params or {}),
-                "headers": dict(headers or {}),
-                "timeout": timeout,
-            })
+            calls.append(
+                {
+                    "url": url,
+                    "params": dict(params or {}),
+                    "headers": dict(headers or {}),
+                    "timeout": timeout,
+                }
+            )
 
             if url.endswith("/token/info/asset123"):
-                return FakeResponse(data={
-                    "status": "success",
-                    "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
-                    "price": {"usd": 0.01, "xch": 0.000125},
-                    "supply": {"total_supply": 1000, "circulating_supply": 750},
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
+                        "price": {"usd": 0.01, "xch": 0.000125},
+                        "supply": {"total_supply": 1000, "circulating_supply": 750},
+                    }
+                )
 
             if url.endswith("/token/holders/asset123"):
-                return FakeResponse(data={
-                    "status": "success",
-                    "tokens": [{"address": "xch1..."}],
-                    "total_count": 321,
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "tokens": [{"address": "xch1..."}],
+                        "total_count": 321,
+                    }
+                )
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
                 raise requests.exceptions.Timeout("timed out")
 
             if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity":
-                return FakeResponse(data={
-                    "status": "success",
-                    "tokens": [{"id": 1}, {"id": 2}, {"id": 3}],
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "tokens": [{"id": 1}, {"id": 2}, {"id": 3}],
+                    }
+                )
 
             raise AssertionError(f"Unexpected URL {url}")
 
@@ -180,26 +194,35 @@ class SpacescanCollectorTests(unittest.TestCase):
         # then free (/token/activity) succeeds on first try with
         # 3 items, so activity_count=3.
         self.assertEqual(result["activity_count"], 3)
-        self.assertEqual(calls[0]["url"], f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123")
+        self.assertEqual(
+            calls[0]["url"], f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123"
+        )
         # Holders endpoint uses count=1 to minimise response size (only total_count needed)
         holders_calls = [c for c in calls if "/token/holders/" in c["url"]]
         self.assertTrue(len(holders_calls) > 0)
         self.assertEqual(holders_calls[0]["params"], {"count": 1})
         # Activity calls: 3 pro-legacy timeouts (retries=2) + 1 free success = 4 total.
         activity_calls = [
-            c for c in calls
+            c
+            for c in calls
             if "/token/activity" in c["url"] or "/token/activities/" in c["url"]
         ]
         self.assertEqual(len(activity_calls), 4)
-        self.assertEqual(activity_calls[-1]["url"], f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity")
-        self.assertEqual(activity_calls[-1]["params"], {
-            "asset_id": "asset123",
-            "type": "transfer",
-            "count": 100,
-        })
+        self.assertEqual(
+            activity_calls[-1]["url"], f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity"
+        )
+        self.assertEqual(
+            activity_calls[-1]["params"],
+            {
+                "asset_id": "asset123",
+                "type": "transfer",
+                "count": 100,
+            },
+        )
         # Free tier succeeded, so pro-plural should NOT appear in the call log.
         pro_plural_calls = [
-            c for c in activity_calls
+            c
+            for c in activity_calls
             if mdc.cfg.SPACESCAN_PRO_URL in c["url"]
             and c["url"].endswith("/token/activities/asset123")
         ]
@@ -210,30 +233,38 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertEqual(calls[0]["timeout"], (5, 20))
 
     @patch("market_data_collector.time.sleep", return_value=None)
-    def test_fetch_spacescan_data_skips_known_bad_pro_plural_after_free_rate_limit(self, _sleep):
+    def test_fetch_spacescan_data_skips_known_bad_pro_plural_after_free_rate_limit(
+        self, _sleep
+    ):
         mdc.cfg.SPACESCAN_API_KEY = "test-key"
         calls = []
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            calls.append({
-                "url": url,
-                "params": dict(params or {}),
-            })
+            calls.append(
+                {
+                    "url": url,
+                    "params": dict(params or {}),
+                }
+            )
 
             if url.endswith("/token/info/asset123"):
-                return FakeResponse(data={
-                    "status": "success",
-                    "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
-                    "price": {"usd": 0.01, "xch": 0.000125},
-                    "supply": {"total_supply": 1000, "circulating_supply": 750},
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
+                        "price": {"usd": 0.01, "xch": 0.000125},
+                        "supply": {"total_supply": 1000, "circulating_supply": 750},
+                    }
+                )
 
             if url.endswith("/token/holders/asset123"):
-                return FakeResponse(data={
-                    "status": "success",
-                    "tokens": [{"address": "xch1..."}],
-                    "total_count": 321,
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "tokens": [{"address": "xch1..."}],
+                        "total_count": 321,
+                    }
+                )
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
                 return FakeResponse(data={"status": "success", "data": []})
@@ -253,48 +284,61 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertEqual(result["holder_count"], 321)
         self.assertTrue(result.get("activity_fetch_failed"))
         pro_plural_calls = [
-            c for c in calls
+            c
+            for c in calls
             if c["url"] == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activities/asset123"
         ]
         self.assertEqual(pro_plural_calls, [])
 
     @patch("market_data_collector.time.sleep", return_value=None)
-    def test_fetch_spacescan_data_counts_pro_activity_tokens_without_free_fallback(self, _sleep):
+    def test_fetch_spacescan_data_counts_pro_activity_tokens_without_free_fallback(
+        self, _sleep
+    ):
         mdc.cfg.SPACESCAN_API_KEY = "test-key"
         calls = []
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            calls.append({
-                "url": url,
-                "params": dict(params or {}),
-            })
+            calls.append(
+                {
+                    "url": url,
+                    "params": dict(params or {}),
+                }
+            )
 
             if url.endswith("/token/info/asset123"):
-                return FakeResponse(data={
-                    "status": "success",
-                    "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
-                    "price": {"usd": 0.01, "xch": 0.000125},
-                    "supply": {"total_supply": 1000, "circulating_supply": 750},
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
+                        "price": {"usd": 0.01, "xch": 0.000125},
+                        "supply": {"total_supply": 1000, "circulating_supply": 750},
+                    }
+                )
 
             if url.endswith("/token/holders/asset123"):
-                return FakeResponse(data={
-                    "status": "success",
-                    "tokens": [{"address": "xch1..."}],
-                    "total_count": 321,
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "tokens": [{"address": "xch1..."}],
+                        "total_count": 321,
+                    }
+                )
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/activity":
-                return FakeResponse(data={
-                    "status": "success",
-                    "tokens": [{"coin_id": "coin1"}, {"coin_id": "coin2"}],
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "tokens": [{"coin_id": "coin1"}, {"coin_id": "coin2"}],
+                    }
+                )
 
             if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity":
-                return FakeResponse(data={
-                    "status": "success",
-                    "tokens": [{"id": "free"}],
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "tokens": [{"id": "free"}],
+                    }
+                )
 
             raise AssertionError(f"Unexpected URL {url}")
 
@@ -304,7 +348,8 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertTrue(result["has_data"])
         self.assertEqual(result["activity_count"], 2)
         free_activity_calls = [
-            c for c in calls
+            c
+            for c in calls
             if c["url"] == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/activity"
         ]
         self.assertEqual(free_activity_calls, [])
@@ -321,12 +366,14 @@ class SpacescanCollectorTests(unittest.TestCase):
                 raise requests.exceptions.Timeout("timed out")
 
             if url == f"{mdc.cfg.SPACESCAN_FREE_URL}/token/info/asset123":
-                return FakeResponse(data={
-                    "status": "success",
-                    "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
-                    "price": {"usd": 0.01, "xch": 0.000125},
-                    "supply": {"total_supply": 1000, "circulating_supply": 750},
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "info": {"name": "Monkeyzoo", "symbol": "MZ", "precision": 3},
+                        "price": {"usd": 0.01, "xch": 0.000125},
+                        "supply": {"total_supply": 1000, "circulating_supply": 750},
+                    }
+                )
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/token/holders/asset123":
                 return FakeResponse(data={"status": "success", "data": []})
@@ -346,11 +393,14 @@ class SpacescanCollectorTests(unittest.TestCase):
             result = mdc._fetch_spacescan_data("asset123")
 
         self.assertTrue(result["has_data"])
-        self.assertEqual(calls[:3], [
-            f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123",
-            f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123",
-            f"{mdc.cfg.SPACESCAN_FREE_URL}/token/info/asset123",
-        ])
+        self.assertEqual(
+            calls[:3],
+            [
+                f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123",
+                f"{mdc.cfg.SPACESCAN_PRO_URL}/token/info/asset123",
+                f"{mdc.cfg.SPACESCAN_FREE_URL}/token/info/asset123",
+            ],
+        )
 
     @patch("market_data_collector.time.sleep", return_value=None)
     def test_xch_usd_price_falls_back_to_spacescan_when_coingecko_fails(self, _sleep):
@@ -358,21 +408,25 @@ class SpacescanCollectorTests(unittest.TestCase):
         calls = []
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            calls.append({
-                "url": url,
-                "params": dict(params or {}),
-                "headers": dict(headers or {}),
-            })
+            calls.append(
+                {
+                    "url": url,
+                    "params": dict(params or {}),
+                    "headers": dict(headers or {}),
+                }
+            )
 
             if url == f"{mdc.COINGECKO_BASE}/simple/price":
                 return FakeResponse(status_code=503, data={})
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/stats/price":
-                return FakeResponse(data={
-                    "status": "success",
-                    "price": 2.5,
-                    "timestamp": 1770000000,
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "price": 2.5,
+                        "timestamp": 1770000000,
+                    }
+                )
 
             raise AssertionError(f"Unexpected URL {url}")
 
@@ -386,33 +440,41 @@ class SpacescanCollectorTests(unittest.TestCase):
         self.assertEqual(calls[1]["headers"]["x-api-key"], "test-key")
 
     @patch("market_data_collector.time.sleep", return_value=None)
-    def test_fetch_spacescan_enhanced_data_summarises_fee_and_cat_transactions(self, _sleep):
+    def test_fetch_spacescan_enhanced_data_summarises_fee_and_cat_transactions(
+        self, _sleep
+    ):
         mdc.cfg.SPACESCAN_API_KEY = "test-key"
         calls = []
 
         def fake_get(url, params=None, headers=None, timeout=None):
-            calls.append({
-                "url": url,
-                "params": dict(params or {}),
-            })
+            calls.append(
+                {
+                    "url": url,
+                    "params": dict(params or {}),
+                }
+            )
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/mempool/minfee":
-                return FakeResponse(data={
-                    "status": "success",
-                    "data": [
-                        {"timestamp": 1770000000, "minfees": 3, "fee": 9},
-                        {"timestamp": 1770000060, "minfees": 5, "fee": 10},
-                    ],
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "data": [
+                            {"timestamp": 1770000000, "minfees": 3, "fee": 9},
+                            {"timestamp": 1770000060, "minfees": 5, "fee": 10},
+                        ],
+                    }
+                )
 
             if url == f"{mdc.cfg.SPACESCAN_PRO_URL}/cat/transactions/asset123":
-                return FakeResponse(data={
-                    "status": "success",
-                    "data": [
-                        {"coin_name": "coin1", "timestamp": 1770000001},
-                        {"coin_name": "coin2", "timestamp": 1770000002},
-                    ],
-                })
+                return FakeResponse(
+                    data={
+                        "status": "success",
+                        "data": [
+                            {"coin_name": "coin1", "timestamp": 1770000001},
+                            {"coin_name": "coin2", "timestamp": 1770000002},
+                        ],
+                    }
+                )
 
             raise AssertionError(f"Unexpected URL {url}")
 
@@ -457,10 +519,13 @@ class MarketAnalysisCacheTests(unittest.TestCase):
             "SELECT asset_id, analysis_type FROM market_analysis_cache ORDER BY asset_id, analysis_type"
         ).fetchall()
         self.assertEqual(deleted, 2)
-        self.assertEqual(remaining, [
-            ("asset123", "spacescan"),
-            ("other", "spacescan"),
-        ])
+        self.assertEqual(
+            remaining,
+            [
+                ("asset123", "spacescan"),
+                ("other", "spacescan"),
+            ],
+        )
 
 
 if __name__ == "__main__":

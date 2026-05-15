@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import api_server
     from blueprints import dashboard as dashboard_bp
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -25,19 +26,26 @@ except (ModuleNotFoundError, ImportError) as exc:
 
 
 def _empty_spacescan():
-    return {"enabled": False, "has_data": False, "holder_count": 0,
-            "activity_level": "unknown", "risk_level": "unknown",
-            "price_gap_bps": 0}
+    return {
+        "enabled": False,
+        "has_data": False,
+        "holder_count": 0,
+        "activity_level": "unknown",
+        "risk_level": "unknown",
+        "price_gap_bps": 0,
+    }
 
 
 def _priced_spacescan():
     data = _empty_spacescan()
-    data.update({
-        "enabled": True,
-        "has_data": True,
-        "price_xch": "0.005",
-        "price_usd": "0.0125",
-    })
+    data.update(
+        {
+            "enabled": True,
+            "has_data": True,
+            "price_xch": "0.005",
+            "price_usd": "0.0125",
+        }
+    )
     return data
 
 
@@ -64,26 +72,40 @@ class _FlaskBase(unittest.TestCase):
 
     def _get_dashboard(self):
         fake_stats = {
-            "realised_pnl_xch": "0", "total_fills": 0, "buy_fills": 0,
-            "sell_fills": 0, "round_trips": 0, "win_rate": 0,
-            "fill_rate_per_hour": 0, "avg_spread_capture": "0",
-            "pending_verification_count": 0, "volume_xch": "0",
+            "realised_pnl_xch": "0",
+            "total_fills": 0,
+            "buy_fills": 0,
+            "sell_fills": 0,
+            "round_trips": 0,
+            "win_rate": 0,
+            "fill_rate_per_hour": 0,
+            "avg_spread_capture": "0",
+            "pending_verification_count": 0,
+            "volume_xch": "0",
         }
-        fake_summary = {"xch_free_count": 0, "cat_free_count": 0, "xch_total": 0, "cat_total": 0}
-        with patch("database.get_stats", return_value=fake_stats), \
-             patch("database.get_coin_summary", return_value=fake_summary), \
-             patch("database.get_open_offers", return_value=[]), \
-             patch("database.get_connection", return_value=_make_mock_db_conn()), \
-             patch.object(api_server, "_get_spacescan_market_context",
-                          return_value=_empty_spacescan()), \
-             patch.object(api_server, "bot", None):
-            return self.client.get("/api/dashboard",
-                                   environ_base=self._LOOPBACK)
+        fake_summary = {
+            "xch_free_count": 0,
+            "cat_free_count": 0,
+            "xch_total": 0,
+            "cat_total": 0,
+        }
+        with (
+            patch("database.get_stats", return_value=fake_stats),
+            patch("database.get_coin_summary", return_value=fake_summary),
+            patch("database.get_open_offers", return_value=[]),
+            patch("database.get_connection", return_value=_make_mock_db_conn()),
+            patch.object(
+                api_server,
+                "_get_spacescan_market_context",
+                return_value=_empty_spacescan(),
+            ),
+            patch.object(api_server, "bot", None),
+        ):
+            return self.client.get("/api/dashboard", environ_base=self._LOOPBACK)
 
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestDashboard(_FlaskBase):
-
     def test_returns_200(self):
         resp = self._get_dashboard()
         self.assertEqual(resp.status_code, 200)
@@ -91,35 +113,59 @@ class TestDashboard(_FlaskBase):
     def test_response_has_top_level_keys(self):
         resp = self._get_dashboard()
         body = resp.get_json()
-        for key in ("settings", "market_health", "wallet", "coins",
-                    "performance", "current_cat", "links"):
+        for key in (
+            "settings",
+            "market_health",
+            "wallet",
+            "coins",
+            "performance",
+            "current_cat",
+            "links",
+        ):
             self.assertIn(key, body)
 
     def test_response_has_fiat_price_summary(self):
         fake_stats = {
-            "realised_pnl_xch": "0", "total_fills": 0, "buy_fills": 0,
-            "sell_fills": 0, "round_trips": 0, "win_rate": 0,
-            "fill_rate_per_hour": 0, "avg_spread_capture": "0",
-            "pending_verification_count": 0, "volume_xch": "0",
+            "realised_pnl_xch": "0",
+            "total_fills": 0,
+            "buy_fills": 0,
+            "sell_fills": 0,
+            "round_trips": 0,
+            "win_rate": 0,
+            "fill_rate_per_hour": 0,
+            "avg_spread_capture": "0",
+            "pending_verification_count": 0,
+            "volume_xch": "0",
         }
-        fake_summary = {"xch_free_count": 0, "cat_free_count": 0, "xch_total": 0, "cat_total": 0}
+        fake_summary = {
+            "xch_free_count": 0,
+            "cat_free_count": 0,
+            "xch_total": 0,
+            "cat_total": 0,
+        }
         price_result = {
             "has_data": True,
             "xch_usd": 2.5,
             "source": "spacescan",
             "fetched_at": 1777824000.0,
         }
-        with patch("database.get_stats", return_value=fake_stats), \
-             patch("database.get_coin_summary", return_value=fake_summary), \
-             patch("database.get_open_offers", return_value=[]), \
-             patch("database.get_connection", return_value=_make_mock_db_conn()), \
-             patch("market_data_collector.get_cached_xch_usd_price",
-                   return_value=price_result), \
-             patch.object(api_server, "_get_spacescan_market_context",
-                          return_value=_priced_spacescan()), \
-             patch.object(api_server, "bot", None):
-            resp = self.client.get("/api/dashboard",
-                                   environ_base=self._LOOPBACK)
+        with (
+            patch("database.get_stats", return_value=fake_stats),
+            patch("database.get_coin_summary", return_value=fake_summary),
+            patch("database.get_open_offers", return_value=[]),
+            patch("database.get_connection", return_value=_make_mock_db_conn()),
+            patch(
+                "market_data_collector.get_cached_xch_usd_price",
+                return_value=price_result,
+            ),
+            patch.object(
+                api_server,
+                "_get_spacescan_market_context",
+                return_value=_priced_spacescan(),
+            ),
+            patch.object(api_server, "bot", None),
+        ):
+            resp = self.client.get("/api/dashboard", environ_base=self._LOOPBACK)
 
         self.assertEqual(resp.status_code, 200)
         fiat = resp.get_json()["fiat_prices"]
@@ -188,15 +234,28 @@ class TestDashboard(_FlaskBase):
         bot.coin_manager = None
         bot.sniper = None
         bot.boost_manager = None
-        bot.price_engine.get_last_price.return_value = "0.0001318526026886049206032406980"
+        bot.price_engine.get_last_price.return_value = (
+            "0.0001318526026886049206032406980"
+        )
 
         fake_stats = {
-            "realised_pnl_xch": "0", "total_fills": 0, "buy_fills": 0,
-            "sell_fills": 0, "round_trips": 0, "win_rate": 0,
-            "fill_rate_per_hour": 0, "avg_spread_capture": "0",
-            "pending_verification_count": 0, "volume_xch": "0",
+            "realised_pnl_xch": "0",
+            "total_fills": 0,
+            "buy_fills": 0,
+            "sell_fills": 0,
+            "round_trips": 0,
+            "win_rate": 0,
+            "fill_rate_per_hour": 0,
+            "avg_spread_capture": "0",
+            "pending_verification_count": 0,
+            "volume_xch": "0",
         }
-        fake_summary = {"xch_free_count": 0, "cat_free_count": 0, "xch_total": 0, "cat_total": 0}
+        fake_summary = {
+            "xch_free_count": 0,
+            "cat_free_count": 0,
+            "xch_total": 0,
+            "cat_total": 0,
+        }
         live_edges = {
             "our_best_bid": api_server.Decimal("0.0001297758078408030669426051158"),
             "our_best_ask": api_server.Decimal("0.0001349368190860945260879005506"),
@@ -205,15 +264,26 @@ class TestDashboard(_FlaskBase):
             "source": "wallet_sync",
         }
 
-        with patch("database.get_stats", return_value=fake_stats), \
-             patch("database.get_coin_summary", return_value=fake_summary), \
-             patch("database.get_open_offers", return_value=[]), \
-             patch("database.get_connection", return_value=_make_mock_db_conn()), \
-             patch.object(api_server, "_get_spacescan_market_context",
-                          return_value=_empty_spacescan()), \
-             patch.object(api_server, "_get_live_local_offer_edges", return_value=live_edges), \
-             patch.object(api_server, "_active_cat", {"asset_id": "aa" * 32, "wallet_id": 2, "decimals": 3}), \
-             patch.object(api_server, "bot", bot):
+        with (
+            patch("database.get_stats", return_value=fake_stats),
+            patch("database.get_coin_summary", return_value=fake_summary),
+            patch("database.get_open_offers", return_value=[]),
+            patch("database.get_connection", return_value=_make_mock_db_conn()),
+            patch.object(
+                api_server,
+                "_get_spacescan_market_context",
+                return_value=_empty_spacescan(),
+            ),
+            patch.object(
+                api_server, "_get_live_local_offer_edges", return_value=live_edges
+            ),
+            patch.object(
+                api_server,
+                "_active_cat",
+                {"asset_id": "aa" * 32, "wallet_id": 2, "decimals": 3},
+            ),
+            patch.object(api_server, "bot", bot),
+        ):
             resp = self.client.get("/api/dashboard", environ_base=self._LOOPBACK)
 
         self.assertEqual(resp.status_code, 200)
@@ -225,7 +295,9 @@ class TestDashboard(_FlaskBase):
             / api_server.Decimal(bot._bot_state["mid_price"])
             * api_server.Decimal("10000")
         )
-        self.assertAlmostEqual(float(metrics["your_spread_bps"]), float(expected_bps), places=6)
+        self.assertAlmostEqual(
+            float(metrics["your_spread_bps"]), float(expected_bps), places=6
+        )
 
     def test_cat_topup_pool_empty_recommendation_does_not_suggest_coin_prep(self):
         cfg = types.SimpleNamespace(
@@ -266,8 +338,10 @@ class TestDashboard(_FlaskBase):
         self.assertNotIn("Coin Prep", rec["message"])
 
     def test_shape_fix_coin_prep_halt_copy_is_explicitly_nuclear(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
-                  encoding="utf-8") as handle:
+        with open(
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+            encoding="utf-8",
+        ) as handle:
             html = handle.read()
 
         self.assertIn(
@@ -282,8 +356,10 @@ class TestDashboard(_FlaskBase):
         self.assertIn("CAT top-up pool empty", html)
 
     def test_dashboard_has_fiat_price_display_hooks(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
-                  encoding="utf-8") as handle:
+        with open(
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+            encoding="utf-8",
+        ) as handle:
             html = handle.read()
 
         self.assertIn('id="ccFiatPrices"', html)
@@ -294,8 +370,10 @@ class TestDashboard(_FlaskBase):
         self.assertIn("updateFiatPriceSummary", html)
 
     def test_status_sync_requests_dashboard_fiat_prices_after_pair_loads(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
-                  encoding="utf-8") as handle:
+        with open(
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+            encoding="utf-8",
+        ) as handle:
             html = handle.read()
 
         self.assertIn("function ensureFiatPricesFromDashboard", html)
@@ -304,8 +382,10 @@ class TestDashboard(_FlaskBase):
         self.assertIn("ensureFiatPricesFromDashboard", status_sync)
 
     def test_fiat_price_summary_clears_snapshot_fields_when_prices_missing(self):
-        with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
-                  encoding="utf-8") as handle:
+        with open(
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "bot_gui.html"),
+            encoding="utf-8",
+        ) as handle:
             html = handle.read()
 
         self.assertIn("function resetFiatPriceSummary", html)

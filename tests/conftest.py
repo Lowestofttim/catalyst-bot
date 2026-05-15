@@ -103,7 +103,10 @@ if sys.platform == "win32":
         elif _stream is not None and hasattr(_stream, "buffer"):
             try:
                 _wrapped = io.TextIOWrapper(
-                    _stream.buffer, encoding="utf-8", errors="replace", line_buffering=True
+                    _stream.buffer,
+                    encoding="utf-8",
+                    errors="replace",
+                    line_buffering=True,
                 )
                 setattr(sys, _stream_name, _wrapped)
             except Exception:
@@ -131,10 +134,21 @@ import pytest
 # bot ships, and the ones tests most commonly stub.
 _ISOLATION_GUARDED = (
     "api_server",
-    "database", "wallet", "wallet_sage", "wallet_chia",
-    "coin_manager", "coin_prep_worker", "bot_health", "bot_loop",
-    "fill_tracker", "offer_manager", "price_engine",
-    "dexie_manager", "spacescan", "amm_monitor", "tx_fees",
+    "database",
+    "wallet",
+    "wallet_sage",
+    "wallet_chia",
+    "coin_manager",
+    "coin_prep_worker",
+    "bot_health",
+    "bot_loop",
+    "fill_tracker",
+    "offer_manager",
+    "price_engine",
+    "dexie_manager",
+    "spacescan",
+    "amm_monitor",
+    "tx_fees",
     "config",
 )
 

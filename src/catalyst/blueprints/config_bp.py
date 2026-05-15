@@ -46,31 +46,50 @@ def _apply_sage_change_address_setting() -> dict:
     """Apply the opt-in Sage change-address setting immediately when possible."""
     try:
         from wallet import get_wallet_type, get_next_address
+
         if get_wallet_type() != "sage":
             return {"attempted": False, "success": False, "error": "wallet_not_sage"}
         if not getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False):
             return {"attempted": False, "success": False, "error": "setting_disabled"}
 
         addr_result = get_next_address(new_address=False)
-        if not addr_result or not addr_result.get("success") or not addr_result.get("address"):
-            return {"attempted": True, "success": False, "error": "wallet_address_unavailable"}
+        if (
+            not addr_result
+            or not addr_result.get("success")
+            or not addr_result.get("address")
+        ):
+            return {
+                "attempted": True,
+                "success": False,
+                "error": "wallet_address_unavailable",
+            }
 
         cfg.WALLET_ADDRESS = addr_result["address"]
         from wallet_sage import set_change_address as _sage_set_change_address
+
         result = _sage_set_change_address(cfg.WALLET_ADDRESS)
         if result and result.get("success"):
-            log_event("success", "sage_change_address_set",
-                      f"Sage change address set to {cfg.WALLET_ADDRESS[:20]}... "
-                      f"for fingerprint {result.get('fingerprint')}")
+            log_event(
+                "success",
+                "sage_change_address_set",
+                f"Sage change address set to {cfg.WALLET_ADDRESS[:20]}... "
+                f"for fingerprint {result.get('fingerprint')}",
+            )
             return {"attempted": True, **result}
 
         error = (result or {}).get("error", "unknown_error")
-        log_event("warning", "sage_change_address_failed",
-                  f"Could not set Sage change address via API: {error}")
+        log_event(
+            "warning",
+            "sage_change_address_failed",
+            f"Could not set Sage change address via API: {error}",
+        )
         return {"attempted": True, "success": False, "error": "change_address_failed"}
     except Exception as e:
-        log_event("warning", "sage_change_address_failed",
-                  f"Error applying Sage change address via API: {e}")
+        log_event(
+            "warning",
+            "sage_change_address_failed",
+            f"Error applying Sage change address via API: {e}",
+        )
         return {"attempted": True, "success": False, "error": "Change address failed"}
 
 
@@ -106,13 +125,23 @@ def _resume_last_active_label(offers: list) -> str:
 # Security-sensitive keys blocked from API modification. Can only be
 # changed by editing .env directly.
 _BLOCKED_KEYS = {
-    "CHIA_WALLET_CERT", "CHIA_WALLET_KEY", "WALLET_FINGERPRINT",
-    "SPACESCAN_API_KEY", "SAGE_CERT_PATH", "SAGE_KEY_PATH", "SAGE_DATA_DIR",
+    "CHIA_WALLET_CERT",
+    "CHIA_WALLET_KEY",
+    "WALLET_FINGERPRINT",
+    "SPACESCAN_API_KEY",
+    "SAGE_CERT_PATH",
+    "SAGE_KEY_PATH",
+    "SAGE_DATA_DIR",
     "SAGE_FINGERPRINT",
-    "CHIA_WALLET_RPC_URL", "CHIA_FULL_NODE_RPC_URL", "SAGE_RPC_URL",
-    "DEXIE_API_BASE", "TIBET_API_BASE",
-    "SPLASH_SUBMIT_URL", "COINSET_API_URL",
-    "SPACESCAN_PRO_URL", "SPACESCAN_FREE_URL",
+    "CHIA_WALLET_RPC_URL",
+    "CHIA_FULL_NODE_RPC_URL",
+    "SAGE_RPC_URL",
+    "DEXIE_API_BASE",
+    "TIBET_API_BASE",
+    "SPLASH_SUBMIT_URL",
+    "COINSET_API_URL",
+    "SPACESCAN_PRO_URL",
+    "SPACESCAN_FREE_URL",
     "WALLET_TYPE",
     "CAT_ASSET_ID",
     # CAT_WALLET_ID is derived at runtime from CAT_ASSET_ID via Sage's
@@ -168,13 +197,13 @@ _KEY_MAP = {
     "mid_size_xch": "MID_SIZE_XCH",
     "outer_size_xch": "OUTER_SIZE_XCH",
     "extreme_size_xch": "EXTREME_SIZE_XCH",
-    "buy_inner_size_xch":   "BUY_INNER_SIZE_XCH",
-    "buy_mid_size_xch":     "BUY_MID_SIZE_XCH",
-    "buy_outer_size_xch":   "BUY_OUTER_SIZE_XCH",
+    "buy_inner_size_xch": "BUY_INNER_SIZE_XCH",
+    "buy_mid_size_xch": "BUY_MID_SIZE_XCH",
+    "buy_outer_size_xch": "BUY_OUTER_SIZE_XCH",
     "buy_extreme_size_xch": "BUY_EXTREME_SIZE_XCH",
-    "sell_inner_size_xch":   "SELL_INNER_SIZE_XCH",
-    "sell_mid_size_xch":     "SELL_MID_SIZE_XCH",
-    "sell_outer_size_xch":   "SELL_OUTER_SIZE_XCH",
+    "sell_inner_size_xch": "SELL_INNER_SIZE_XCH",
+    "sell_mid_size_xch": "SELL_MID_SIZE_XCH",
+    "sell_outer_size_xch": "SELL_OUTER_SIZE_XCH",
     "sell_extreme_size_xch": "SELL_EXTREME_SIZE_XCH",
     "inner_tier_count": "INNER_TIER_COUNT",
     "mid_tier_count": "MID_TIER_COUNT",
@@ -254,42 +283,62 @@ def api_config_update():
         key = data["key"]
         value = data["value"]
         if key in _BLOCKED_KEYS:
-            return jsonify({"success": False, "error": f"Cannot modify {key} via API"}), 403
+            return jsonify(
+                {"success": False, "error": f"Cannot modify {key} via API"}
+            ), 403
 
         _bot_running = bool(bot and bot.is_running())
         if key == "LIQUIDITY_MODE":
             _allowed = ("two_sided", "buy_only", "sell_only")
             if str(value).lower().strip() not in _allowed:
-                return jsonify({
-                    "success": False,
-                    "error": f"LIQUIDITY_MODE must be one of: {', '.join(_allowed)}"
-                }), 400
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": f"LIQUIDITY_MODE must be one of: {', '.join(_allowed)}",
+                    }
+                ), 400
             if _bot_running:
-                return jsonify({
-                    "success": False,
-                    "error": "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first"
-                }), 409
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first",
+                    }
+                ), 409
 
         if key == "SPREAD_BPS":
             try:
                 _bps_val = int(float(value))
             except (ValueError, TypeError):
-                return jsonify({"success": False, "error": "SPREAD_BPS must be a positive integer"}), 400
+                return jsonify(
+                    {"success": False, "error": "SPREAD_BPS must be a positive integer"}
+                ), 400
             if _bps_val <= 0:
-                return jsonify({
-                    "success": False,
-                    "error": "SPREAD_BPS must be a positive integer (got %d)" % _bps_val
-                }), 400
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "SPREAD_BPS must be a positive integer (got %d)"
+                        % _bps_val,
+                    }
+                ), 400
 
         ok = cfg.update(key, str(value), source="api_settings_save")
         if ok:
             extra = None
-            if key == "SAGE_SET_CHANGE_ADDRESS" and str(value).strip().lower() in ("true", "1", "yes", "on"):
+            if key == "SAGE_SET_CHANGE_ADDRESS" and str(value).strip().lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            ):
                 extra = _apply_sage_change_address_setting()
             safe_value = "***" if api_server._is_sensitive_key(key) else value
             log_event("info", "config_changed", f"Config updated: {key} = {safe_value}")
-            response = {"success": True, "status": "updated", "key": key,
-                        "change_address_result": extra}
+            response = {
+                "success": True,
+                "status": "updated",
+                "key": key,
+                "change_address_result": extra,
+            }
             event_payload = {"key": key, "value": safe_value}
             notice = api_server._get_live_requote_notice([key])
             if notice:
@@ -329,7 +378,9 @@ def api_config_update():
                 errors.append("SPREAD_BPS must be a positive integer")
                 continue
             if _bps_val <= 0:
-                errors.append("SPREAD_BPS must be a positive integer (got %d)" % _bps_val)
+                errors.append(
+                    "SPREAD_BPS must be a positive integer (got %d)" % _bps_val
+                )
                 continue
             _max_bps = getattr(cfg, "MAX_SPREAD_BPS", 0) or 0
             if _max_bps and _bps_val > _max_bps:
@@ -379,12 +430,17 @@ def api_config_update():
             if cfg.update("MIN_MID", ""):
                 legacy_cleared.append("MIN_MID")
         if legacy_cleared:
-            log_event("info", "legacy_keys_cleared",
-                      f"Cleared legacy price rail keys: {', '.join(legacy_cleared)} "
-                      f"(superseded by HARD_MAX/MIN_PRICE_XCH)")
+            log_event(
+                "info",
+                "legacy_keys_cleared",
+                f"Cleared legacy price rail keys: {', '.join(legacy_cleared)} "
+                f"(superseded by HARD_MAX/MIN_PRICE_XCH)",
+            )
             updated.extend(legacy_cleared)
 
-        log_event("info", "config_changed", f"Bulk config updated: {', '.join(updated)}")
+        log_event(
+            "info", "config_changed", f"Bulk config updated: {', '.join(updated)}"
+        )
         event_payload = {"keys": updated}
         notice = api_server._get_live_requote_notice(updated)
         if notice:
@@ -395,8 +451,10 @@ def api_config_update():
         api_server.events.emit("config_changed", event_payload)
 
     extra = None
-    if ("SAGE_SET_CHANGE_ADDRESS" in updated and
-            str(getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False)).lower() == "true"):
+    if (
+        "SAGE_SET_CHANGE_ADDRESS" in updated
+        and str(getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False)).lower() == "true"
+    ):
         extra = _apply_sage_change_address_setting()
 
     response["change_address_result"] = extra
@@ -422,10 +480,17 @@ def api_config_apply():
 
     if not bot.is_running():
         cfg.reload()
-        return jsonify({"status": "reloaded", "message": "Bot not running — config reloaded directly"})
+        return jsonify(
+            {
+                "status": "reloaded",
+                "message": "Bot not running — config reloaded directly",
+            }
+        )
 
     result = bot.graceful_config_change()
-    api_server.events.emit("config_changed", {"action": "graceful_apply", "result": result})
+    api_server.events.emit(
+        "config_changed", {"action": "graceful_apply", "result": result}
+    )
     return jsonify(result)
 
 
@@ -450,20 +515,26 @@ def api_config_live():
     graceful = data.get("graceful", False)
 
     if key in _BLOCKED_KEYS:
-        return jsonify({"success": False, "error": f"Cannot modify {key} via live controls"}), 403
+        return jsonify(
+            {"success": False, "error": f"Cannot modify {key} via live controls"}
+        ), 403
 
     if key == "LIQUIDITY_MODE":
         _allowed = ("two_sided", "buy_only", "sell_only")
         if str(value).lower().strip() not in _allowed:
-            return jsonify({
-                "success": False,
-                "error": f"LIQUIDITY_MODE must be one of: {', '.join(_allowed)}"
-            }), 400
+            return jsonify(
+                {
+                    "success": False,
+                    "error": f"LIQUIDITY_MODE must be one of: {', '.join(_allowed)}",
+                }
+            ), 400
         if bot and bot.is_running():
-            return jsonify({
-                "success": False,
-                "error": "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first"
-            }), 409
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "LIQUIDITY_MODE cannot be changed while bot is running — stop the bot first",
+                }
+            ), 409
 
     ok = cfg.update(key, value, source="gui_live_control")
     if not ok:
@@ -506,7 +577,9 @@ def api_config_live():
     if graceful and bot and bot.is_running():
         try:
             result = bot.graceful_config_change()
-            api_server.events.emit("config_changed", {"action": "graceful_apply", "result": result})
+            api_server.events.emit(
+                "config_changed", {"action": "graceful_apply", "result": result}
+            )
             response["graceful"] = result
             return jsonify(response)
         except Exception as e:
@@ -562,7 +635,9 @@ def api_settings_validate():
         try:
             spread = float(data["SPREAD_BPS"])
             if spread < 10:
-                warnings.append("Spread below 0.1% is very tight — high risk of adverse selection")
+                warnings.append(
+                    "Spread below 0.1% is very tight — high risk of adverse selection"
+                )
             if spread > 2000:
                 warnings.append("Spread above 20% — offers unlikely to fill")
         except ValueError:
@@ -607,10 +682,19 @@ def api_settings_validate():
         fee_coin_size = Decimal("0")
 
     if fee_count > 0 and fee_coin_size <= 0:
-        errors.append("Fee coin size must be greater than zero when fee prep count is enabled")
+        errors.append(
+            "Fee coin size must be greater than zero when fee prep count is enabled"
+        )
 
-    if fee_mode == "manual" and fee_xch > 0 and fee_coin_size > 0 and fee_coin_size <= fee_xch:
-        warnings.append("Fee coin size should usually be larger than the manual fee so change can recycle into the fee pool")
+    if (
+        fee_mode == "manual"
+        and fee_xch > 0
+        and fee_coin_size > 0
+        and fee_coin_size <= fee_xch
+    ):
+        warnings.append(
+            "Fee coin size should usually be larger than the manual fee so change can recycle into the fee pool"
+        )
 
     base_spread = _decimal_value("base_spread_bps", "BASE_SPREAD_BPS")
     min_edge = _decimal_value("min_edge_bps", "MIN_EDGE_BPS")
@@ -620,18 +704,28 @@ def api_settings_validate():
     skew_intensity = _decimal_value("skew_intensity", "SKEW_INTENSITY")
     max_position = _decimal_value("max_position_xch", "MAX_POSITION_XCH")
     default_trade_xch = _decimal_value("default_trade_xch", "DEFAULT_TRADE_XCH")
-    sniper_rearm_price_move = _decimal_value("sniper_rearm_price_move_bps", "SNIPER_REARM_PRICE_MOVE_BPS")
-    sniper_rearm_gap_move = _decimal_value("sniper_rearm_gap_move_bps", "SNIPER_REARM_GAP_MOVE_BPS")
-    shock_trigger_pct = _decimal_value("tibet_shock_cancel_trigger_pct", "TIBET_SHOCK_CANCEL_TRIGGER_PCT")
+    sniper_rearm_price_move = _decimal_value(
+        "sniper_rearm_price_move_bps", "SNIPER_REARM_PRICE_MOVE_BPS"
+    )
+    sniper_rearm_gap_move = _decimal_value(
+        "sniper_rearm_gap_move_bps", "SNIPER_REARM_GAP_MOVE_BPS"
+    )
+    shock_trigger_pct = _decimal_value(
+        "tibet_shock_cancel_trigger_pct", "TIBET_SHOCK_CANCEL_TRIGGER_PCT"
+    )
     dynamic_enabled = _bool_value("dynamic_spread_enabled", "DYNAMIC_SPREAD_ENABLED")
     inventory_enabled = _bool_value("inventory_enabled", "INVENTORY_ENABLED")
-    competitor_enabled = _bool_value("competitor_aware_enabled", "COMPETITOR_AWARE_ENABLED")
+    competitor_enabled = _bool_value(
+        "competitor_aware_enabled", "COMPETITOR_AWARE_ENABLED"
+    )
 
     if base_spread is not None:
         if base_spread <= 0:
             errors.append("Base spread must be greater than zero")
         elif base_spread < Decimal("200"):
-            warnings.append("Base spread below 2% is very aggressive for live market making")
+            warnings.append(
+                "Base spread below 2% is very aggressive for live market making"
+            )
         elif base_spread > Decimal("1500"):
             warnings.append("Base spread above 15% is very wide and can stall fills")
 
@@ -654,22 +748,34 @@ def api_settings_validate():
         if max_spread is not None and max_spread < required_outer:
             errors.append("Max spread must be at least 1.5× the inner edge")
         if min_spread is not None and min_spread < required_outer:
-            warnings.append("Min spread is below the ladder safety floor and will be clamped up at runtime")
+            warnings.append(
+                "Min spread is below the ladder safety floor and will be clamped up at runtime"
+            )
         if base_spread is not None and base_spread < required_outer:
-            warnings.append("Base spread is below the ladder safety floor and will be clamped up at runtime")
+            warnings.append(
+                "Base spread is below the ladder safety floor and will be clamped up at runtime"
+            )
 
     if base_spread is not None and min_spread is not None and base_spread < min_spread:
-        warnings.append("Base spread is below min spread and will be clamped up at runtime")
+        warnings.append(
+            "Base spread is below min spread and will be clamped up at runtime"
+        )
     if base_spread is not None and max_spread is not None and base_spread > max_spread:
-        warnings.append("Base spread is above max spread and will be clamped down at runtime")
+        warnings.append(
+            "Base spread is above max spread and will be clamped down at runtime"
+        )
 
     if vol_window is not None:
         if vol_window <= 0:
             errors.append("Volatility window must be greater than zero")
         elif vol_window < Decimal("1"):
-            warnings.append("Volatility window below 1 hour will make spreads very reactive")
+            warnings.append(
+                "Volatility window below 1 hour will make spreads very reactive"
+            )
         elif vol_window > Decimal("24"):
-            warnings.append("Volatility window above 24 hours will make spreads slow to adapt")
+            warnings.append(
+                "Volatility window above 24 hours will make spreads slow to adapt"
+            )
 
     if skew_intensity is not None:
         if skew_intensity < 0:
@@ -677,7 +783,9 @@ def api_settings_validate():
         elif skew_intensity > 1:
             errors.append("Skew intensity must be 1.0 or lower")
         elif skew_intensity > Decimal("0.7"):
-            warnings.append("Skew intensity above 0.7 is aggressive and can swing buy/sell spreads sharply")
+            warnings.append(
+                "Skew intensity above 0.7 is aggressive and can swing buy/sell spreads sharply"
+            )
 
     if max_position is not None:
         if max_position < 0:
@@ -685,18 +793,36 @@ def api_settings_validate():
         elif max_position == 0:
             warnings.append("Max position set to 0 disables position-limit protection")
             if inventory_enabled:
-                warnings.append("Inventory management is enabled, but max position 0 effectively disables skew and side protection")
-        elif default_trade_xch is not None and default_trade_xch > 0 and max_position < default_trade_xch:
-            warnings.append("Max position is smaller than one normal trade size, so inventory protection may trip very quickly")
+                warnings.append(
+                    "Inventory management is enabled, but max position 0 effectively disables skew and side protection"
+                )
+        elif (
+            default_trade_xch is not None
+            and default_trade_xch > 0
+            and max_position < default_trade_xch
+        ):
+            warnings.append(
+                "Max position is smaller than one normal trade size, so inventory protection may trip very quickly"
+            )
         elif bot and getattr(bot, "risk_manager", None):
             try:
-                current_mid = getattr(bot, "_current_mid_price", Decimal("0")) or Decimal("0")
+                current_mid = getattr(
+                    bot, "_current_mid_price", Decimal("0")
+                ) or Decimal("0")
                 if current_mid <= 0 and getattr(bot, "price_engine", None):
                     current_mid = Decimal(str(bot.price_engine.get_last_price() or 0))
                 current_pos_cat = Decimal(
-                    str(bot.risk_manager.get_inventory_state().get("net_position_cat", "0"))
+                    str(
+                        bot.risk_manager.get_inventory_state().get(
+                            "net_position_cat", "0"
+                        )
+                    )
                 )
-                current_pos_xch = abs(current_pos_cat * current_mid) if current_mid > 0 else Decimal("0")
+                current_pos_xch = (
+                    abs(current_pos_cat * current_mid)
+                    if current_mid > 0
+                    else Decimal("0")
+                )
                 if current_pos_xch > 0:
                     if current_pos_xch > max_position:
                         warnings.append(
@@ -713,17 +839,25 @@ def api_settings_validate():
         if sniper_rearm_price_move < 0:
             errors.append("Sniper re-arm price move must be zero or greater")
         elif sniper_rearm_price_move == 0:
-            warnings.append("Sniper re-arm price move of 0% makes sniper re-arm on every qualifying gap")
+            warnings.append(
+                "Sniper re-arm price move of 0% makes sniper re-arm on every qualifying gap"
+            )
         elif sniper_rearm_price_move < Decimal("25"):
-            warnings.append("Sniper re-arm price move below 0.25% may create frequent tiny probes")
+            warnings.append(
+                "Sniper re-arm price move below 0.25% may create frequent tiny probes"
+            )
 
     if sniper_rearm_gap_move is not None:
         if sniper_rearm_gap_move < 0:
             errors.append("Sniper re-arm arb gap move must be zero or greater")
         elif sniper_rearm_gap_move == 0:
-            warnings.append("Sniper re-arm arb gap move of 0% makes sniper re-arm on every qualifying gap")
+            warnings.append(
+                "Sniper re-arm arb gap move of 0% makes sniper re-arm on every qualifying gap"
+            )
         elif sniper_rearm_gap_move < Decimal("25"):
-            warnings.append("Sniper re-arm arb gap move below 0.25% may create frequent tiny probes")
+            warnings.append(
+                "Sniper re-arm arb gap move below 0.25% may create frequent tiny probes"
+            )
 
     if shock_trigger_pct is not None:
         if shock_trigger_pct < 0:
@@ -731,9 +865,13 @@ def api_settings_validate():
         elif shock_trigger_pct == 0:
             pass
         elif shock_trigger_pct < Decimal("0.5"):
-            warnings.append("Tibet shock cancel threshold below 0.5% may churn offers on normal pool noise")
+            warnings.append(
+                "Tibet shock cancel threshold below 0.5% may churn offers on normal pool noise"
+            )
         elif shock_trigger_pct > Decimal("20"):
-            warnings.append("Tibet shock cancel threshold above 20% may react too late to stale offers")
+            warnings.append(
+                "Tibet shock cancel threshold above 20% may react too late to stale offers"
+            )
 
     if dynamic_enabled is False and (inventory_enabled or competitor_enabled):
         warnings.append(
@@ -741,11 +879,13 @@ def api_settings_validate():
             "inventory skew and competitor nudges still apply if those features stay enabled"
         )
 
-    return jsonify({
-        "valid": len(errors) == 0,
-        "errors": errors,
-        "warnings": warnings,
-    })
+    return jsonify(
+        {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+        }
+    )
 
 
 @bp.route("/api/check-resume")
@@ -758,19 +898,43 @@ def api_check_resume():
     bot = server.bot
     cfg = server.cfg
     if bot and getattr(bot, "_loop_count", 0) > 0:
-        return jsonify({"can_resume": False, "has_session": True,
-                        "buy_count": 0, "sell_count": 0, "reason": "bot_already_running"})
+        return jsonify(
+            {
+                "can_resume": False,
+                "has_session": True,
+                "buy_count": 0,
+                "sell_count": 0,
+                "reason": "bot_already_running",
+            }
+        )
     if server._fresh_start_is_set():
-        return jsonify({"can_resume": False, "has_session": False,
-                        "buy_count": 0, "sell_count": 0, "reason": "fresh_start_chosen"})
+        return jsonify(
+            {
+                "can_resume": False,
+                "has_session": False,
+                "buy_count": 0,
+                "sell_count": 0,
+                "reason": "fresh_start_chosen",
+            }
+        )
     try:
         from wallet import get_all_offers, classify_offers_from_list
+
         active_cat = server._active_cat
-        asset_id = active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
+        asset_id = active_cat.get("asset_id") or (
+            cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+        )
         offers = get_all_offers(include_completed=False, start=0, end=200)
         if not offers:
-            return jsonify({"can_resume": False, "has_session": False,
-                            "buy_count": 0, "sell_count": 0, "reason": "no offers"})
+            return jsonify(
+                {
+                    "can_resume": False,
+                    "has_session": False,
+                    "buy_count": 0,
+                    "sell_count": 0,
+                    "reason": "no offers",
+                }
+            )
 
         open_buy, open_sell, _ = classify_offers_from_list(offers, asset_id)
         total = len(open_buy) + len(open_sell)
@@ -786,20 +950,30 @@ def api_check_resume():
         if hasattr(cfg, "SPREAD_BPS"):
             saved["spread_bps"] = float(cfg.SPREAD_BPS)
         saved["cat_name"] = active_cat.get("name") or getattr(cfg, "CAT_NAME", "CAT")
-        saved["cat_asset_id"] = active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
-        saved["cat_wallet_id"] = active_cat.get("wallet_id") or getattr(cfg, "CAT_WALLET_ID", None)
-        saved["cat_decimals"] = active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
-        saved["cat_ticker_id"] = active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "")
+        saved["cat_asset_id"] = active_cat.get("asset_id") or getattr(
+            cfg, "CAT_ASSET_ID", ""
+        )
+        saved["cat_wallet_id"] = active_cat.get("wallet_id") or getattr(
+            cfg, "CAT_WALLET_ID", None
+        )
+        saved["cat_decimals"] = active_cat.get("decimals") or getattr(
+            cfg, "CAT_DECIMALS", 3
+        )
+        saved["cat_ticker_id"] = active_cat.get("ticker_id") or getattr(
+            cfg, "CAT_TICKER_ID", ""
+        )
 
         # Detect gap closer activity via (1) open boost offers + (2) recent events.
         gap_closer_info = {"active": False, "count": 0}
         try:
             from database import get_connection
+
             db = get_connection()
 
             boost_count = 0
             try:
                 from database import get_open_offers
+
                 boost_offers = get_open_offers(cat_asset_id=asset_id)
                 boost_count = sum(1 for o in boost_offers if o.get("tier") == "boost")
                 print(f"[RESUME] DB open boost offers: {boost_count}", flush=True)
@@ -819,19 +993,30 @@ def api_check_resume():
                     evt_type = row[0]
                     evt_data_str = row[1]
                     evt_ts = row[2]
-                    print(f"[RESUME] Latest gap closer event: {evt_type} at {evt_ts}", flush=True)
+                    print(
+                        f"[RESUME] Latest gap closer event: {evt_type} at {evt_ts}",
+                        flush=True,
+                    )
 
                     if evt_type == "gap_closer_deactivated":
                         gc_deactivated = True
                     else:
                         try:
-                            evt_time = datetime.fromisoformat(evt_ts.replace("Z", "+00:00"))
+                            evt_time = datetime.fromisoformat(
+                                evt_ts.replace("Z", "+00:00")
+                            )
                             age = datetime.now(timezone.utc) - evt_time
                             if age < timedelta(hours=2):
                                 gc_event = evt_data_str
-                                print(f"[RESUME] Gap closer was active ({age.seconds//60}min ago)", flush=True)
+                                print(
+                                    f"[RESUME] Gap closer was active ({age.seconds // 60}min ago)",
+                                    flush=True,
+                                )
                             else:
-                                print(f"[RESUME] Gap closer event too old ({age})", flush=True)
+                                print(
+                                    f"[RESUME] Gap closer event too old ({age})",
+                                    flush=True,
+                                )
                         except Exception:
                             gc_event = evt_data_str
             except Exception as e:
@@ -843,14 +1028,24 @@ def api_check_resume():
 
                 if gc_event:
                     try:
-                        evt_data = _json.loads(gc_event) if isinstance(gc_event, str) else gc_event
+                        evt_data = (
+                            _json.loads(gc_event)
+                            if isinstance(gc_event, str)
+                            else gc_event
+                        )
                         if evt_data and isinstance(evt_data, dict):
                             if evt_data.get("spread_bps"):
-                                gap_closer_info["last_spread_bps"] = int(evt_data["spread_bps"])
+                                gap_closer_info["last_spread_bps"] = int(
+                                    evt_data["spread_bps"]
+                                )
                             if evt_data.get("arb_floor_bps"):
-                                gap_closer_info["arb_floor_bps"] = int(evt_data["arb_floor_bps"])
+                                gap_closer_info["arb_floor_bps"] = int(
+                                    evt_data["arb_floor_bps"]
+                                )
                             if evt_data.get("steps_taken"):
-                                gap_closer_info["steps_taken"] = int(evt_data["steps_taken"])
+                                gap_closer_info["steps_taken"] = int(
+                                    evt_data["steps_taken"]
+                                )
                     except Exception:
                         pass
 
@@ -858,24 +1053,37 @@ def api_check_resume():
         except Exception as e:
             print(f"[RESUME] Gap closer detection error: {e}", flush=True)
 
-        return jsonify({
-            "can_resume": can_resume,
-            "has_session": can_resume,
-            "buy_count": len(open_buy),
-            "sell_count": len(open_sell),
-            "offer_count": total,
-            "saved_settings": saved,
-            "active_cat": {
-                "asset_id": saved.get("cat_asset_id") or "",
-                "wallet_id": saved.get("cat_wallet_id"),
-                "decimals": saved.get("cat_decimals"),
-                "ticker_id": saved.get("cat_ticker_id") or "",
-                "name": saved.get("cat_name") or "CAT",
-            },
-            "gap_closer": gap_closer_info,
-            "last_active": _resume_last_active_label(open_buy + open_sell),
-        })
+        return jsonify(
+            {
+                "can_resume": can_resume,
+                "has_session": can_resume,
+                "buy_count": len(open_buy),
+                "sell_count": len(open_sell),
+                "offer_count": total,
+                "saved_settings": saved,
+                "active_cat": {
+                    "asset_id": saved.get("cat_asset_id") or "",
+                    "wallet_id": saved.get("cat_wallet_id"),
+                    "decimals": saved.get("cat_decimals"),
+                    "ticker_id": saved.get("cat_ticker_id") or "",
+                    "name": saved.get("cat_name") or "CAT",
+                },
+                "gap_closer": gap_closer_info,
+                "last_active": _resume_last_active_label(open_buy + open_sell),
+            }
+        )
     except Exception as e:
-        log_event("error", "api_error", f"Resume session check failed: {e}", {"endpoint": request.path})
-        return jsonify({"can_resume": False, "has_session": False,
-                        "error": "Internal server error", "code": "SERVER_ERROR"})
+        log_event(
+            "error",
+            "api_error",
+            f"Resume session check failed: {e}",
+            {"endpoint": request.path},
+        )
+        return jsonify(
+            {
+                "can_resume": False,
+                "has_session": False,
+                "error": "Internal server error",
+                "code": "SERVER_ERROR",
+            }
+        )

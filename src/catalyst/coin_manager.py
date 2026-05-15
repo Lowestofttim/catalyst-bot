@@ -94,8 +94,11 @@ def request_fast_reconcile(reason: str = "unspecified") -> None:
         _fast_reconcile_flag = True
     # Log at debug so we can correlate requests with cycle-level reconciles
     try:
-        log_event("debug", "fast_reconcile_requested",
-                  f"Fast reconcile requested (reason={reason})")
+        log_event(
+            "debug",
+            "fast_reconcile_requested",
+            f"Fast reconcile requested (reason={reason})",
+        )
     except Exception:
         pass
 
@@ -109,6 +112,8 @@ def consume_fast_reconcile() -> bool:
         was = _fast_reconcile_flag
         _fast_reconcile_flag = False
     return was
+
+
 from tx_fees import (
     fee_pool_enabled,
     get_effective_transaction_fee_mojos,
@@ -119,7 +124,8 @@ from tx_fees import (
 )
 from wallet import (
     get_exact_spendable_coins_rpc,
-    get_next_address, send_transaction,
+    get_next_address,
+    send_transaction,
     split_coins_rpc,
     get_wallet_type,
     WALLET_ID_XCH,
@@ -130,12 +136,12 @@ from win_subprocess import hidden_subprocess_kwargs
 
 
 # Cooldowns
-_TOPUP_COOLDOWN = 600            # 10 minutes between emergency topups (normal)
-_TOPUP_BACKOFF_BASE = 300        # 5 minutes — first retry when nothing available
-_TOPUP_BACKOFF_MAX = 3600        # 60 minutes — ceiling for exponential backoff
+_TOPUP_COOLDOWN = 600  # 10 minutes between emergency topups (normal)
+_TOPUP_BACKOFF_BASE = 300  # 5 minutes — first retry when nothing available
+_TOPUP_BACKOFF_MAX = 3600  # 60 minutes — ceiling for exponential backoff
 # Old fixed 2-hour constant removed. Backoff is now exponential:
 # attempt 0 → 5 min, 1 → 10 min, 2 → 20 min, 3 → 40 min, 4+ → 60 min (capped)
-_TOPUP_DRIP_INTERVAL = 90        # 90 seconds between proactive drip checks
+_TOPUP_DRIP_INTERVAL = 90  # 90 seconds between proactive drip checks
 _DRIP_SOURCE_NOTICE_INTERVAL = 3600  # 60 minutes between optional no-source notices
 
 
@@ -205,6 +211,7 @@ def _coin_prep_worker_environment(base_env: Optional[dict] = None) -> dict:
 
     try:
         from sage_node import detect_sage_cert_path
+
         detected_cert = detect_sage_cert_path()
     except Exception as exc:
         try:
@@ -240,6 +247,7 @@ class _TopupWalletDegraded(Exception):
 # Fee Coin Pool — thread-safe reservation for concurrent operations
 # -----------------------------------------------------------------------
 
+
 class FeeCoinPool:
     """Thread-safe pool for reserving dedicated fee coins.
 
@@ -262,7 +270,7 @@ class FeeCoinPool:
     """
 
     def __init__(self):
-        self._available: list = []   # [(coin_id, amount_mojos), ...]
+        self._available: list = []  # [(coin_id, amount_mojos), ...]
         self._reserved: set = set()  # coin IDs handed out this cycle
         self._lock = threading.Lock()
 
@@ -310,6 +318,7 @@ class FeeCoinPool:
 # Coin record helpers
 # -----------------------------------------------------------------------
 
+
 def _extract_coin_records(rpc_result) -> list:
     """Extract coin records from an RPC get_spendable_coins response.
 
@@ -323,8 +332,11 @@ def _extract_coin_records(rpc_result) -> list:
     # Check for RPC error responses (Sage returns these as dicts with 'error' key)
     if rpc_result.get("error") or rpc_result.get("success") is False:
         err = rpc_result.get("error", "unknown")
-        log_event("warning", "rpc_error_in_coins",
-                  f"Wallet RPC returned error instead of coins: {str(err)[:200]}")
+        log_event(
+            "warning",
+            "rpc_error_in_coins",
+            f"Wallet RPC returned error instead of coins: {str(err)[:200]}",
+        )
         return []
 
     return rpc_result.get("confirmed_records") or rpc_result.get("records") or []
@@ -374,10 +386,12 @@ def _coin_id_from_record(record: dict) -> str:
 
     # ---- Strategy 1: Use wallet-provided ID ----
     # Chia wallet uses 'name', Sage wallet uses 'coin_id' at record level
-    name = (coin.get("name", "")
-            or record.get("name", "")
-            or record.get("coin_id", "")
-            or coin.get("coin_id", ""))
+    name = (
+        coin.get("name", "")
+        or record.get("name", "")
+        or record.get("coin_id", "")
+        or coin.get("coin_id", "")
+    )
     if name:
         # Always normalize: lowercase + 0x prefix.
         # Sage wallet may return mixed-case hex; reconcile_coins_with_wallet
@@ -441,13 +455,12 @@ def _load_advised_deposit_coin_ids() -> set:
     """Load deposit-advisory coin IDs that the user has already allocated."""
     try:
         from database import get_setting
+
         raw = get_setting("deposit_advisory_advised_coins", "") or ""
     except Exception:
         return set()
     return {
-        str(part).strip().lower()
-        for part in str(raw).split(",")
-        if str(part).strip()
+        str(part).strip().lower() for part in str(raw).split(",") if str(part).strip()
     }
 
 
@@ -514,7 +527,9 @@ def _deposit_advisory_source_threshold_mojos(
     return int(smallest * 10)
 
 
-def _classify_coins_tiered(records: list, tier_sizes_mojos: Dict[str, int]) -> Dict[str, list]:
+def _classify_coins_tiered(
+    records: list, tier_sizes_mojos: Dict[str, int]
+) -> Dict[str, list]:
     """Classify coins into tier-specific buckets when TIER_ENABLED.
 
     LEGACY fallback — used by non-designation-aware code paths.
@@ -530,7 +545,14 @@ def _classify_coins_tiered(records: list, tier_sizes_mojos: Dict[str, int]) -> D
 
     Returns dict with keys: reserve, inner, mid, outer, extreme, small
     """
-    result = {"reserve": [], "inner": [], "mid": [], "outer": [], "extreme": [], "small": []}
+    result = {
+        "reserve": [],
+        "inner": [],
+        "mid": [],
+        "outer": [],
+        "extreme": [],
+        "small": [],
+    }
     if "sniper" in tier_sizes_mojos:
         result["sniper"] = []
     if "fees" in tier_sizes_mojos:
@@ -592,7 +614,9 @@ def _classify_coins_tiered(records: list, tier_sizes_mojos: Dict[str, int]) -> D
     return result
 
 
-def _infer_designation_by_size(amt: int, tier_sizes_mojos: Dict[str, int]) -> Tuple[str, str]:
+def _infer_designation_by_size(
+    amt: int, tier_sizes_mojos: Dict[str, int]
+) -> Tuple[str, str]:
     """Infer a coin's designation from its amount (for NEW/UNKNOWN coins only).
 
     Used when a coin has no designation yet. Once designated, this is NOT
@@ -607,6 +631,7 @@ def _infer_designation_by_size(amt: int, tier_sizes_mojos: Dict[str, int]) -> Tu
     Returns: ``(designation_str, assigned_tier_str)``
     """
     from coin_classifier import infer_designation_by_size as _cc_infer
+
     return _cc_infer(amt, tier_sizes_mojos)
 
 
@@ -617,6 +642,7 @@ def _effective_tier_size_drift_bounds(
     """Return the same coin-fit bounds used by tier offer selection."""
     try:
         from coin_classifier import DEFAULT_FLOOR_TOLERANCE
+
         default_low = float(DEFAULT_FLOOR_TOLERANCE)
     except Exception:
         default_low = 0.98
@@ -678,19 +704,22 @@ def check_tier_size_drift_standalone(
                 continue
             n = len(amounts)
             median = (
-                float(amounts[n // 2]) if n % 2 == 1
+                float(amounts[n // 2])
+                if n % 2 == 1
                 else (amounts[n // 2 - 1] + amounts[n // 2]) / 2.0
             )
             ratio = float(median) / float(live_size)
             if ratio < low_ratio or ratio > high_ratio:
-                findings.append({
-                    "side": wallet_type,
-                    "tier": tier_name,
-                    "median_mojos": int(median),
-                    "live_size_mojos": live_size,
-                    "ratio": round(ratio, 3),
-                    "coin_count": n,
-                })
+                findings.append(
+                    {
+                        "side": wallet_type,
+                        "tier": tier_name,
+                        "median_mojos": int(median),
+                        "live_size_mojos": live_size,
+                        "ratio": round(ratio, 3),
+                        "coin_count": n,
+                    }
+                )
     return findings
 
 
@@ -775,8 +804,9 @@ def reclassify_tier_spare_coins() -> Dict[str, int]:
                 continue
 
             try:
-                set_coin_designation(coin_id, new_designation,
-                                     assigned_tier=new_tier or "none")
+                set_coin_designation(
+                    coin_id, new_designation, assigned_tier=new_tier or "none"
+                )
                 if new_designation == "dust":
                     moved["to_dust"] += 1
                 else:
@@ -892,6 +922,7 @@ def get_tier_sizes_mojos_from_cfg(is_cat: bool = False) -> Dict[str, int]:
         price = None
         try:
             import os as _os
+
             _cli_price = (_os.getenv("_CLI_LIVE_PRICE") or "").strip()
             if _cli_price:
                 try:
@@ -912,6 +943,7 @@ def get_tier_sizes_mojos_from_cfg(is_cat: bool = False) -> Dict[str, int]:
         if price is None or price <= 0:
             try:
                 import api_server as _api
+
                 _bot = getattr(_api, "bot", None)
                 if _bot is not None:
                     pe = getattr(_bot, "price_engine", None)
@@ -936,7 +968,11 @@ def get_tier_sizes_mojos_from_cfg(is_cat: bool = False) -> Dict[str, int]:
                         try:
                             fresh = pe.get_price()
                             if isinstance(fresh, dict):
-                                p = fresh.get("mid_price") or fresh.get("mid") or fresh.get("price")
+                                p = (
+                                    fresh.get("mid_price")
+                                    or fresh.get("mid")
+                                    or fresh.get("price")
+                                )
                             else:
                                 p = fresh
                             if p:
@@ -992,9 +1028,9 @@ def get_tier_sizes_mojos_from_cfg(is_cat: bool = False) -> Dict[str, int]:
 # slot actually spends". Mirrors the logic in risk_manager.get_tier_size() so
 # the two stay in sync.
 _BUY_REVERSED_POSITION_TO_COIN_SIZE = {
-    "inner":   "extreme",
-    "mid":     "outer",
-    "outer":   "mid",
+    "inner": "extreme",
+    "mid": "outer",
+    "outer": "mid",
     "extreme": "inner",
 }
 # Inverse: coin-size bucket → position whose offer size lives in that bucket.
@@ -1021,7 +1057,9 @@ def flip_position_tiers_to_coin_size_tiers(
     "fees") are preserved untouched.
     """
     base_tiers = ("inner", "mid", "outer", "extreme")
-    out: Dict[str, int] = {tn: int(position_counts.get(tn, 0) or 0) for tn in base_tiers}
+    out: Dict[str, int] = {
+        tn: int(position_counts.get(tn, 0) or 0) for tn in base_tiers
+    }
     # Preserve any non-positional tiers (sniper, fees, etc.)
     for k, v in (position_counts or {}).items():
         if k not in base_tiers:
@@ -1188,7 +1226,9 @@ def get_tier_spare_distribution(
             }
         else:
             configured = {
-                tier: int(getattr(cfg, f"{prefix}{tier.upper()}_TIER_SPARE_COUNT", 0) or 0)
+                tier: int(
+                    getattr(cfg, f"{prefix}{tier.upper()}_TIER_SPARE_COUNT", 0) or 0
+                )
                 for tier in ("inner", "mid", "outer", "extreme")
             }
     sanitized = {
@@ -1241,7 +1281,9 @@ def _get_tier_size_weights(
     normalized = {}
     for tier_name in ("inner", "mid", "outer", "extreme"):
         try:
-            normalized[tier_name] = max(Decimal("0"), Decimal(str(sizes.get(tier_name, 0) or 0)))
+            normalized[tier_name] = max(
+                Decimal("0"), Decimal(str(sizes.get(tier_name, 0) or 0))
+            )
         except Exception:
             normalized[tier_name] = Decimal("0")
 
@@ -1269,10 +1311,10 @@ def _get_tier_size_weights(
     # extreme-sized coin — so extreme coins churn fastest on buys.
     # Flip inner↔extreme and mid↔outer to reflect reversed fill order.
     reversed_sizes = {
-        "inner":   normalized.get("extreme", Decimal("0")),
-        "mid":     normalized.get("outer",   Decimal("0")),
-        "outer":   normalized.get("mid",     Decimal("0")),
-        "extreme": normalized.get("inner",   Decimal("0")),
+        "inner": normalized.get("extreme", Decimal("0")),
+        "mid": normalized.get("outer", Decimal("0")),
+        "outer": normalized.get("mid", Decimal("0")),
+        "extreme": normalized.get("inner", Decimal("0")),
     }
     buy_weights: Dict[str, float] = {}
     for tier_name, size in reversed_sizes.items():
@@ -1284,7 +1326,9 @@ def _get_tier_size_weights(
     # Average both sides — coins serve both sell and buy simultaneously
     weights: Dict[str, float] = {}
     for tier_name in ("inner", "mid", "outer", "extreme"):
-        weights[tier_name] = (sell_weights.get(tier_name, 0.0) + buy_weights.get(tier_name, 0.0)) / 2.0
+        weights[tier_name] = (
+            sell_weights.get(tier_name, 0.0) + buy_weights.get(tier_name, 0.0)
+        ) / 2.0
     return weights
 
 
@@ -1302,7 +1346,9 @@ def get_weighted_tier_prep_counts(
     budget from the coin-prep multiplier is then redistributed toward larger
     live tiers, so inner/mid tiers keep more spare coins than outer/extreme.
     """
-    dist = get_tier_distribution(max_offers_per_side, tier_counts=tier_counts, side=side)
+    dist = get_tier_distribution(
+        max_offers_per_side, tier_counts=tier_counts, side=side
+    )
     counts = {tier_name: int(count or 0) for tier_name, count in dist.items()}
     total_slots = sum(counts.values())
     if total_slots <= 0:
@@ -1391,7 +1437,9 @@ def get_recommended_tier_spare_counts(
         spare_counts={},
     )
     return {
-        tier_name: max(0, int(prepared.get(tier_name, 0) or 0) - int(dist.get(tier_name, 0) or 0))
+        tier_name: max(
+            0, int(prepared.get(tier_name, 0) or 0) - int(dist.get(tier_name, 0) or 0)
+        )
         for tier_name in ("inner", "mid", "outer", "extreme")
     }
 
@@ -1403,7 +1451,7 @@ def _format_amount_xch(mojos: int) -> str:
 
 def _format_amount_cat(mojos: int, decimals: int) -> str:
     """Format CAT mojos as human-readable token amount."""
-    scale = Decimal(10 ** decimals)
+    scale = Decimal(10**decimals)
     return f"{Decimal(mojos) / scale:.2f}"
 
 
@@ -1423,15 +1471,23 @@ class CoinManager:
         # Locked coin tracking — coins locked in active offers
         self._xch_locked_coins: int = 0
         self._cat_locked_coins: int = 0
-        self._xch_locked_amount: int = 0   # mojos
-        self._cat_locked_amount: int = 0   # mojos
-        self._xch_total_coins: int = 0     # free + locked
-        self._cat_total_coins: int = 0     # free + locked
+        self._xch_locked_amount: int = 0  # mojos
+        self._cat_locked_amount: int = 0  # mojos
+        self._xch_total_coins: int = 0  # free + locked
+        self._cat_total_coins: int = 0  # free + locked
 
         # Coin inventory — last snapshot of classified coins
         # When TIER_ENABLED, this also has inner/mid/outer/extreme keys
-        self._xch_inventory: Dict[str, list] = {"reserve": [], "trading": [], "small": []}
-        self._cat_inventory: Dict[str, list] = {"reserve": [], "trading": [], "small": []}
+        self._xch_inventory: Dict[str, list] = {
+            "reserve": [],
+            "trading": [],
+            "small": [],
+        }
+        self._cat_inventory: Dict[str, list] = {
+            "reserve": [],
+            "trading": [],
+            "small": [],
+        }
 
         # Coin prep state
         self._prep_running: bool = False
@@ -1445,14 +1501,17 @@ class CoinManager:
         # its RPC call and releases them in a finally block.
         # Reservations are TTL'd so a crash can't leak them forever.
         from coin_reservations import ReservationRegistry
+
         self.reservations = ReservationRegistry()
 
         # Backoff state
         self._no_coins_backoff: bool = False
-        self._no_coins_backoff_count: int = 0   # consecutive "nothing to work with" hits
+        self._no_coins_backoff_count: int = 0  # consecutive "nothing to work with" hits
         self._last_topup_time: float = 0
-        self._last_drip_time: float = 0          # last proactive drip check timestamp
-        self._topup_is_drip: bool = False        # current run was drip-triggered (not emergency)
+        self._last_drip_time: float = 0  # last proactive drip check timestamp
+        self._topup_is_drip: bool = (
+            False  # current run was drip-triggered (not emergency)
+        )
         self._topup_budget_backoff_until: float = 0
         self._topup_budget_backoff_count: int = 0
         self._topup_budget_backoff_probe: Optional[Dict[str, int | bool | str]] = None
@@ -1490,25 +1549,40 @@ class CoinManager:
         # Replaces pure amount-based classification with explicit role tracking.
         # Reserve coins are reserve because we SAY they are, not because
         # they happen to be big enough.
-        self._reserve_ids_xch: set = set()    # Coin IDs designated as XCH reserve
-        self._reserve_ids_cat: set = set()    # Coin IDs designated as CAT reserve
+        self._reserve_ids_xch: set = set()  # Coin IDs designated as XCH reserve
+        self._reserve_ids_cat: set = set()  # Coin IDs designated as CAT reserve
         self._tier_spares: Dict[str, Dict[str, int]] = {
-            "xch": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0},
-            "cat": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0},
+            "xch": {
+                "inner": 0,
+                "mid": 0,
+                "outer": 0,
+                "extreme": 0,
+                "sniper": 0,
+                "fees": 0,
+            },
+            "cat": {
+                "inner": 0,
+                "mid": 0,
+                "outer": 0,
+                "extreme": 0,
+                "sniper": 0,
+                "fees": 0,
+            },
         }
         # Pre-populate from DB so needs_topup/needs_prep have valid data before
         # the first update_coin_counts() cycle completes.
         try:
             from database import get_tier_spare_counts
+
             for _wt in ("xch", "cat"):
                 _spares = get_tier_spare_counts(_wt)
                 if _spares:
                     self._tier_spares[_wt] = _spares
         except Exception:
             pass  # DB may not be ready yet — zeros are safe defaults
-        self._trading_pace: str = "normal"    # Current pace: slow/normal/busy
-        self._last_pace_calc: float = 0       # Timestamp of last pace calculation
-        self._reconcile_counter: int = 0      # Counts loops between reconciliations
+        self._trading_pace: str = "normal"  # Current pace: slow/normal/busy
+        self._last_pace_calc: float = 0  # Timestamp of last pace calculation
+        self._reconcile_counter: int = 0  # Counts loops between reconciliations
 
         # ---- Fee Coin Pool (concurrent operation support) ----
         # Each operation (create / cancel) reserves a dedicated fee coin
@@ -1537,7 +1611,8 @@ class CoinManager:
             low = int(fee_size * 0.8)
             high = int(fee_size * 1.2)
             fee_records = [
-                r for r in records
+                r
+                for r in records
                 if low <= int((r.get("coin") or {}).get("amount", 0)) <= high
             ]
             self.fee_pool.refresh(fee_records)
@@ -1568,7 +1643,9 @@ class CoinManager:
             and sniper_size > 0
         )
 
-    def _optional_topup_source_available(self, wallet_type: str, target_size_mojos: int = 0) -> bool:
+    def _optional_topup_source_available(
+        self, wallet_type: str, target_size_mojos: int = 0
+    ) -> bool:
         """Return True when a drip-only optional pool has a cheap source to split.
 
         Optional pools (sniper/fee buffers) are useful, but they should not
@@ -1615,8 +1692,9 @@ class CoinManager:
             tiers.append("sniper")
         return tiers
 
-    def _configured_tier_sizes_xch(self, include_sniper: bool = True,
-                                    side: str = "sell") -> Dict[str, Decimal]:
+    def _configured_tier_sizes_xch(
+        self, include_sniper: bool = True, side: str = "sell"
+    ) -> Dict[str, Decimal]:
         """Return {tier: size_xch} for prepping coins on a given side.
 
         F62 (2026-04-09): side-aware. Buy offers and sell offers can now
@@ -1625,18 +1703,21 @@ class CoinManager:
         behaviour of callers that don't pass a side.
         """
         from config import get_buy_tier_size_xch, get_sell_tier_size_xch
+
         if (side or "sell").strip().lower() == "buy":
             _get = get_buy_tier_size_xch
         else:
             _get = get_sell_tier_size_xch
         sizes = {
-            "inner":   Decimal(str(_get("inner") or 0)),
-            "mid":     Decimal(str(_get("mid") or 0)),
-            "outer":   Decimal(str(_get("outer") or 0)),
+            "inner": Decimal(str(_get("inner") or 0)),
+            "mid": Decimal(str(_get("mid") or 0)),
+            "outer": Decimal(str(_get("outer") or 0)),
             "extreme": Decimal(str(_get("extreme") or 0)),
         }
         if include_sniper and self._sniper_pool_enabled():
-            sizes["sniper"] = Decimal(str(getattr(cfg, "SNIPER_SIZE_XCH", Decimal("0"))))
+            sizes["sniper"] = Decimal(
+                str(getattr(cfg, "SNIPER_SIZE_XCH", Decimal("0")))
+            )
         return sizes
 
     def _configured_xch_prep_sizes(self) -> Dict[str, Decimal]:
@@ -1662,7 +1743,8 @@ class CoinManager:
 
         multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
         tier_counts = get_weighted_tier_prep_counts(
-            max_offers, multiplier, side=wallet_type)
+            max_offers, multiplier, side=wallet_type
+        )
 
         if self._sniper_pool_enabled():
             tier_counts["sniper"] = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
@@ -1690,28 +1772,33 @@ class CoinManager:
         text = str(detail or "").strip().lower()
         if not text:
             return True
-        return any(token in text for token in (
-            "timed out",
-            "timeout",
-            "connection",
-            "rpc",
-            "http",
-            "ssl",
-            "empty",
-            "none",
-        ))
+        return any(
+            token in text
+            for token in (
+                "timed out",
+                "timeout",
+                "connection",
+                "rpc",
+                "http",
+                "ssl",
+                "empty",
+                "none",
+            )
+        )
 
     def _spacescan_coin_state(self, coin_id: str) -> Optional[Dict]:
         if not coin_id:
             return None
         try:
             from spacescan import is_coin_spent
+
             return is_coin_spent(coin_id)
         except Exception:
             return None
 
-    def _spacescan_self_send_confirmed(self, coin_id: str, expected_address: str,
-                                       tag: str) -> bool:
+    def _spacescan_self_send_confirmed(
+        self, coin_id: str, expected_address: str, tag: str
+    ) -> bool:
         state = self._spacescan_coin_state(coin_id)
         if not state or not state.get("spent"):
             return False
@@ -1728,7 +1815,11 @@ class CoinManager:
                 f"{receiver[:16]}... even though Sage response was weak",
             )
             return True
-        if receiver and is_known_wallet_address and is_known_wallet_address(receiver, {expected_address}):
+        if (
+            receiver
+            and is_known_wallet_address
+            and is_known_wallet_address(receiver, {expected_address})
+        ):
             log_event(
                 "info",
                 f"{tag}_spacescan_self_send_known_wallet",
@@ -1738,8 +1829,9 @@ class CoinManager:
             return True
         return False
 
-    def _spacescan_coin_spent_confirmed(self, coin_id: str, tag: str,
-                                        label: str) -> bool:
+    def _spacescan_coin_spent_confirmed(
+        self, coin_id: str, tag: str, label: str
+    ) -> bool:
         state = self._spacescan_coin_state(coin_id)
         if not state or not state.get("spent"):
             return False
@@ -1752,8 +1844,9 @@ class CoinManager:
         )
         return True
 
-    def _abort_topup_for_wallet_degradation(self, reason: str,
-                                            event_type: str = "topup_wallet_degraded"):
+    def _abort_topup_for_wallet_degradation(
+        self, reason: str, event_type: str = "topup_wallet_degraded"
+    ):
         if not self._topup_abort_logged:
             log_event("warning", event_type, reason)
             self._topup_abort_logged = True
@@ -1805,6 +1898,7 @@ class CoinManager:
     def _sage_pending_transaction_count(self) -> Optional[int]:
         try:
             from wallet_sage import get_pending_transactions
+
             pending = get_pending_transactions()
             if pending is not None:
                 return len(pending or [])
@@ -1886,16 +1980,30 @@ class CoinManager:
             "elapsed": int(time.time() - started),
         }
 
-    def _get_transaction_confirmation_state(self, tx_ids: List[str]) -> Dict[str, object]:
+    def _get_transaction_confirmation_state(
+        self, tx_ids: List[str]
+    ) -> Dict[str, object]:
         """Summarize Sage transaction confirmation state for runtime top-up."""
         tx_ids = [tid for tid in (tx_ids or []) if tid]
         if not tx_ids or get_wallet_type() != "sage":
-            return {"known": False, "confirmed": False, "confirmed_count": 0, "total": 0, "height": 0}
+            return {
+                "known": False,
+                "confirmed": False,
+                "confirmed_count": 0,
+                "total": 0,
+                "height": 0,
+            }
 
         try:
             from wallet_sage import get_transaction
         except Exception:
-            return {"known": False, "confirmed": False, "confirmed_count": 0, "total": len(tx_ids), "height": 0}
+            return {
+                "known": False,
+                "confirmed": False,
+                "confirmed_count": 0,
+                "total": len(tx_ids),
+                "height": 0,
+            }
 
         confirmed_count = 0
         best_height = 0
@@ -1917,7 +2025,9 @@ class CoinManager:
         total = len(tx_ids)
         return {
             "known": any_known,
-            "confirmed": (confirmed_count > 0 if total == 1 else confirmed_count == total),
+            "confirmed": (
+                confirmed_count > 0 if total == 1 else confirmed_count == total
+            ),
             "confirmed_count": confirmed_count,
             "total": total,
             "height": best_height,
@@ -1938,8 +2048,11 @@ class CoinManager:
                     owned_map[clean] = int(amount or 0)
             return owned_map
         except Exception as e:
-            log_event("warning", f"{name}_owned_unavailable",
-                      f"Owned coin view unavailable: {str(e)[:160]}")
+            log_event(
+                "warning",
+                f"{name}_owned_unavailable",
+                f"Owned coin view unavailable: {str(e)[:160]}",
+            )
             # Safe lower-bound fallback: if Sage's owned view flakes out but the
             # strict selectable view is still healthy, treat selectable coins as
             # the minimum owned set instead of silently reporting "0 owned".
@@ -1953,9 +2066,12 @@ class CoinManager:
                     if cid:
                         fallback_map[cid] = _coin_amount(record)
                 if fallback_map:
-                    log_event("info", f"{name}_owned_fallback_selectable",
-                              f"Using selectable coin view as owned lower-bound "
-                              f"({len(fallback_map)} coins)")
+                    log_event(
+                        "info",
+                        f"{name}_owned_fallback_selectable",
+                        f"Using selectable coin view as owned lower-bound "
+                        f"({len(fallback_map)} coins)",
+                    )
                 return fallback_map
             except Exception:
                 return {}
@@ -1965,12 +2081,16 @@ class CoinManager:
         try:
             if get_wallet_type() == "sage":
                 from wallet_sage import get_selectable_coins_only
+
                 result = get_selectable_coins_only(wallet_id)
             else:
                 result = _get_free_coins_rpc(wallet_id)
         except Exception as e:
-            log_event("warning", f"{name}_selectable_unavailable",
-                      f"Selectable coin view unavailable: {str(e)[:160]}")
+            log_event(
+                "warning",
+                f"{name}_selectable_unavailable",
+                f"Selectable coin view unavailable: {str(e)[:160]}",
+            )
             return set()
 
         if self._wallet_rpc_failed(result):
@@ -1997,8 +2117,9 @@ class CoinManager:
         # Try config first
         fp = str(getattr(cfg, "WALLET_FINGERPRINT", "") or "").strip()
         if fp and fp.isdigit():
-            log_event("info", "coin_mgr_fingerprint",
-                      f"Using fingerprint from config: {fp}")
+            log_event(
+                "info", "coin_mgr_fingerprint", f"Using fingerprint from config: {fp}"
+            )
             return fp
 
         # Auto-detect via RPC
@@ -2010,42 +2131,57 @@ class CoinManager:
             # up when the bot initializes (e.g. user closed Sage and let the app
             # launch it fresh). Non-fatal: fingerprint is re-resolved later if needed.
             from wallet_sage import get_current_key
+
             for _attempt in range(4):
                 try:
                     key = get_current_key()
                     if key and key.get("fingerprint"):
                         fp_str = str(key["fingerprint"])
-                        log_event("info", "coin_mgr_fingerprint",
-                                  f"Auto-detected Sage fingerprint: {fp_str}")
+                        log_event(
+                            "info",
+                            "coin_mgr_fingerprint",
+                            f"Auto-detected Sage fingerprint: {fp_str}",
+                        )
                         return fp_str
                 except Exception as e:
                     if _attempt < 3:
                         import time as _time
+
                         _time.sleep(3)
                     else:
-                        log_event("warning", "coin_mgr_fingerprint_rpc_fail",
-                                  f"Sage fingerprint detection failed after 4 attempts: {e}")
+                        log_event(
+                            "warning",
+                            "coin_mgr_fingerprint_rpc_fail",
+                            f"Sage fingerprint detection failed after 4 attempts: {e}",
+                        )
         else:
             # Chia: use get_logged_in_fingerprint RPC
             try:
                 from wallet import rpc
+
                 result = rpc("get_logged_in_fingerprint", {})
                 rpc_fp = result.get("fingerprint") if result else None
                 if rpc_fp:
                     fp_str = str(rpc_fp)
-                    log_event("info", "coin_mgr_fingerprint",
-                              f"Auto-detected fingerprint via RPC: {fp_str}")
+                    log_event(
+                        "info",
+                        "coin_mgr_fingerprint",
+                        f"Auto-detected fingerprint via RPC: {fp_str}",
+                    )
                     return fp_str
             except Exception as e:
-                log_event("warning", "coin_mgr_fingerprint_rpc_fail",
-                          f"RPC fingerprint detection failed: {e}")
+                log_event(
+                    "warning",
+                    "coin_mgr_fingerprint_rpc_fail",
+                    f"RPC fingerprint detection failed: {e}",
+                )
 
             # CLI fallback (Chia only)
             try:
                 import subprocess as sp
+
                 proc = sp.run(
-                    ["chia", "keys", "show"],
-                    capture_output=True, text=True, timeout=30
+                    ["chia", "keys", "show"], capture_output=True, text=True, timeout=30
                 )
                 for line in proc.stdout.splitlines():
                     if "fingerprint:" in line.lower():
@@ -2053,12 +2189,18 @@ class CoinManager:
                         if len(parts) >= 2:
                             maybe_fp = parts[-1].strip()
                             if maybe_fp.isdigit():
-                                log_event("info", "coin_mgr_fingerprint",
-                                          f"Auto-detected fingerprint via CLI: {maybe_fp}")
+                                log_event(
+                                    "info",
+                                    "coin_mgr_fingerprint",
+                                    f"Auto-detected fingerprint via CLI: {maybe_fp}",
+                                )
                                 return maybe_fp
             except Exception as e:
-                log_event("warning", "coin_mgr_fingerprint_cli_fail",
-                          f"CLI fingerprint detection failed: {e}")
+                log_event(
+                    "warning",
+                    "coin_mgr_fingerprint_cli_fail",
+                    f"CLI fingerprint detection failed: {e}",
+                )
 
         log_event(
             "info",
@@ -2071,8 +2213,9 @@ class CoinManager:
     # V3: Designation-based coin classification (replaces amount-only)
     # -------------------------------------------------------------------
 
-    def _classify_coins_by_designation(self, records: list, wallet_type: str,
-                                        tier_sizes_mojos: Dict[str, int]) -> Dict[str, list]:
+    def _classify_coins_by_designation(
+        self, records: list, wallet_type: str, tier_sizes_mojos: Dict[str, int]
+    ) -> Dict[str, list]:
         """Classify coins using DB designations first, size-inference as fallback.
 
         This is the HEART of the V3 adaptive system. Instead of classifying
@@ -2151,10 +2294,12 @@ class CoinManager:
                         break
 
                 if matched_group is None:
-                    duplicate_tier_groups.append({
-                        "amount": amount_int,
-                        "tiers": [tier_name],
-                    })
+                    duplicate_tier_groups.append(
+                        {
+                            "amount": amount_int,
+                            "tiers": [tier_name],
+                        }
+                    )
                 else:
                     matched_group["tiers"].append(tier_name)
                     matched_group["amount"] = min(matched_group["amount"], amount_int)
@@ -2197,10 +2342,13 @@ class CoinManager:
                 reassigned = {}
                 cursor = 0
                 for tier_name in tiers_for_amount:
-                    take = min(max(0, len(matching_coin_ids) - cursor), free_targets.get(tier_name, 0))
+                    take = min(
+                        max(0, len(matching_coin_ids) - cursor),
+                        free_targets.get(tier_name, 0),
+                    )
                     if take <= 0:
                         continue
-                    for cid in matching_coin_ids[cursor:cursor + take]:
+                    for cid in matching_coin_ids[cursor : cursor + take]:
                         reassigned[cid] = tier_name
                     cursor += take
 
@@ -2208,7 +2356,11 @@ class CoinManager:
                     leftovers = matching_coin_ids[cursor:]
                     for cid in leftovers:
                         prior_tier = db_desig_map.get(cid, ("unknown", "none"))[1]
-                        fallback_tier = prior_tier if prior_tier in tiers_for_amount else tiers_for_amount[-1]
+                        fallback_tier = (
+                            prior_tier
+                            if prior_tier in tiers_for_amount
+                            else tiers_for_amount[-1]
+                        )
                         reassigned[cid] = fallback_tier
 
                 for cid, tier_name in reassigned.items():
@@ -2228,7 +2380,7 @@ class CoinManager:
 
                 # Check DB designation first
                 db_info = db_desig_map.get(cid)
-                if db_info and db_info[0] not in ('unknown', None):
+                if db_info and db_info[0] not in ("unknown", None):
                     desig, atier = db_info
                 else:
                     # New/unknown coin — infer by size
@@ -2237,12 +2389,12 @@ class CoinManager:
                     set_coin_designation(cid, desig, atier)
 
                 # Place into the appropriate bucket
-                if desig == 'reserve':
+                if desig == "reserve":
                     result["reserve"].append(rec)
                     reserve_ids.add(cid)
-                elif desig == 'dust':
+                elif desig == "dust":
                     result["small"].append(rec)
-                elif desig in ('tier_spare', 'tier_active'):
+                elif desig in ("tier_spare", "tier_active"):
                     bucket = atier if atier in result else "small"
                     result[bucket].append(rec)
                 else:
@@ -2255,12 +2407,15 @@ class CoinManager:
 
             # Warn if coins were skipped (missing coin_id — likely wallet format issue)
             if skipped_no_id > 0:
-                log_event("warning", "coins_skipped_no_id",
-                          f"{skipped_no_id} {wallet_type} coins skipped — "
-                          f"could not determine coin_id (check wallet response format)")
+                log_event(
+                    "warning",
+                    "coins_skipped_no_id",
+                    f"{skipped_no_id} {wallet_type} coins skipped — "
+                    f"could not determine coin_id (check wallet response format)",
+                )
 
             # Update in-memory reserve tracking
-            if wallet_type == 'xch':
+            if wallet_type == "xch":
                 self._reserve_ids_xch = reserve_ids
             else:
                 self._reserve_ids_cat = reserve_ids
@@ -2269,7 +2424,11 @@ class CoinManager:
             # close enough that Sage split dust/fees can blur them together
             # (notably XCH sniper vs fees). If DB designations are stale or the
             # exact amounts drift a little, rebalance buckets to expected counts.
-            if wallet_type == "xch" and result.get("sniper") and self._fee_pool_enabled():
+            if (
+                wallet_type == "xch"
+                and result.get("sniper")
+                and self._fee_pool_enabled()
+            ):
                 fee_target = int(expected_counts.get("fees", 0) or 0)
                 sniper_target = int(expected_counts.get("sniper", 0) or 0)
                 fee_have = len(result.get("fees", []))
@@ -2279,7 +2438,9 @@ class CoinManager:
                 if need_fees > 0 and excess_sniper > 0:
                     fee_size = int(tier_sizes_mojos.get("fees", 0) or 0)
                     sniper_bucket = result.get("sniper", [])
-                    sniper_bucket.sort(key=lambda rec: abs(_coin_amount(rec) - fee_size))
+                    sniper_bucket.sort(
+                        key=lambda rec: abs(_coin_amount(rec) - fee_size)
+                    )
                     move_count = min(need_fees, excess_sniper, len(sniper_bucket))
                     moved = []
                     for _ in range(move_count):
@@ -2295,18 +2456,27 @@ class CoinManager:
             # Update spare counts from DB
             try:
                 from database import get_tier_spare_counts
+
                 self._tier_spares[wallet_type] = get_tier_spare_counts(wallet_type)
             except Exception as e:
-                log_event("warning", "tier_spare_counts_failed",
-                          f"Could not update tier spare counts for {wallet_type}: {e}")
+                log_event(
+                    "warning",
+                    "tier_spare_counts_failed",
+                    f"Could not update tier spare counts for {wallet_type}: {e}",
+                )
 
         except Exception as e:
             # Fallback when DB is unavailable — use SSOT size inference so the
             # old ±20% bounds from _classify_coins_tiered never reintroduce the
             # 2026-04-17 misfit-as-inner bug on DB hiccups.
-            log_event("warning", "designation_fallback",
-                      f"Designation classification failed ({e}), using SSOT size-inference fallback")
-            result = {k: [] for k in ["reserve", "inner", "mid", "outer", "extreme", "small"]}
+            log_event(
+                "warning",
+                "designation_fallback",
+                f"Designation classification failed ({e}), using SSOT size-inference fallback",
+            )
+            result = {
+                k: [] for k in ["reserve", "inner", "mid", "outer", "extreme", "small"]
+            }
             for tier_name in tier_sizes_mojos:
                 if tier_name not in result:
                     result[tier_name] = []
@@ -2337,8 +2507,11 @@ class CoinManager:
         finds and promotes the next largest free coin.
         """
         try:
-            from database import (get_reserve_coins, designate_reserve,
-                                   get_coins_by_designation)
+            from database import (
+                get_reserve_coins,
+                designate_reserve,
+                get_coins_by_designation,
+            )
 
             existing = get_reserve_coins(wallet_type)
             if existing:
@@ -2347,35 +2520,41 @@ class CoinManager:
 
             # No reserve — find the largest free undesignated coin
             # Prefer 'unknown' coins, then 'dust' (consolidation material)
-            unknowns = get_coins_by_designation(wallet_type, 'unknown')
+            unknowns = get_coins_by_designation(wallet_type, "unknown")
             if unknowns:
                 best = unknowns[0]  # Already sorted by amount DESC
-                designate_reserve(best['coin_id'], wallet_type, best['amount_mojos'])
-                if wallet_type == 'xch':
-                    self._reserve_ids_xch.add(best['coin_id'])
+                designate_reserve(best["coin_id"], wallet_type, best["amount_mojos"])
+                if wallet_type == "xch":
+                    self._reserve_ids_xch.add(best["coin_id"])
                 else:
-                    self._reserve_ids_cat.add(best['coin_id'])
+                    self._reserve_ids_cat.add(best["coin_id"])
                 return
 
             # No unknown coins — check if we have any large dust
-            dust = get_coins_by_designation(wallet_type, 'dust')
+            dust = get_coins_by_designation(wallet_type, "dust")
             if dust:
                 best = dust[0]
-                designate_reserve(best['coin_id'], wallet_type, best['amount_mojos'])
-                if wallet_type == 'xch':
-                    self._reserve_ids_xch.add(best['coin_id'])
+                designate_reserve(best["coin_id"], wallet_type, best["amount_mojos"])
+                if wallet_type == "xch":
+                    self._reserve_ids_xch.add(best["coin_id"])
                 else:
-                    self._reserve_ids_cat.add(best['coin_id'])
+                    self._reserve_ids_cat.add(best["coin_id"])
                 return
 
             # No coins to promote — reserve is empty (will be created from
             # freed coins when offers fill/cancel, or consolidated by Strategy 3)
-            log_event("debug", "no_reserve_available",
-                      f"No {wallet_type.upper()} reserve coin — will create from freed coins")
+            log_event(
+                "debug",
+                "no_reserve_available",
+                f"No {wallet_type.upper()} reserve coin — will create from freed coins",
+            )
 
         except Exception as e:
-            log_event("warning", "ensure_reserve_error",
-                      f"Failed to ensure {wallet_type} reserve: {e}")
+            log_event(
+                "warning",
+                "ensure_reserve_error",
+                f"Failed to ensure {wallet_type} reserve: {e}",
+            )
 
     # -------------------------------------------------------------------
     # V3: Trading pace and adaptive thresholds
@@ -2392,12 +2571,16 @@ class CoinManager:
 
         try:
             from database import get_current_pace
+
             pace = get_current_pace()
             self._trading_pace = pace
             self._last_pace_calc = now
         except Exception as e:
-            log_event("debug", "trading_pace_fetch_failed",
-                      f"Trading pace DB fetch failed (keeping previous value '{self._trading_pace}'): {e}")
+            log_event(
+                "debug",
+                "trading_pace_fetch_failed",
+                f"Trading pace DB fetch failed (keeping previous value '{self._trading_pace}'): {e}",
+            )
 
         return self._trading_pace
 
@@ -2425,7 +2608,9 @@ class CoinManager:
             xch_bal = get_wallet_balance(cfg.WALLET_ID_XCH)
             wb = xch_bal.get("wallet_balance") or xch_bal if xch_bal else {}
             spendable_mojos = wb.get("spendable_balance", 0) or 0
-            confirmed_mojos = wb.get("confirmed_wallet_balance", spendable_mojos) or spendable_mojos
+            confirmed_mojos = (
+                wb.get("confirmed_wallet_balance", spendable_mojos) or spendable_mojos
+            )
             if isinstance(spendable_mojos, str):
                 spendable_mojos = int(spendable_mojos)
             if isinstance(confirmed_mojos, str):
@@ -2444,7 +2629,8 @@ class CoinManager:
             if cfg.TIER_ENABLED:
                 tier_dist = get_tier_distribution(max_buy_offers, side="xch")
                 prepared_counts = get_weighted_tier_prep_counts(
-                    max_buy_offers, multiplier, side="xch")
+                    max_buy_offers, multiplier, side="xch"
+                )
                 per_tier_needs = {}
                 total_tier_xch = Decimal("0")
                 # F62 (2026-04-09): this block computes XCH wallet needs
@@ -2461,26 +2647,34 @@ class CoinManager:
                 # the "inner" slot (biggest XCH coin) uses position-extreme's
                 # size, etc.
                 from config import get_buy_tier_size_xch
+
                 _buy_ladder_reversed = bool(getattr(cfg, "BUY_LADDER_REVERSED", False))
                 if _buy_ladder_reversed:
                     _size_indexed_buy = {
-                        "inner":   get_buy_tier_size_xch("extreme"),  # biggest coin = pos extreme
-                        "mid":     get_buy_tier_size_xch("outer"),
-                        "outer":   get_buy_tier_size_xch("mid"),
-                        "extreme": get_buy_tier_size_xch("inner"),    # smallest coin = pos inner
+                        "inner": get_buy_tier_size_xch(
+                            "extreme"
+                        ),  # biggest coin = pos extreme
+                        "mid": get_buy_tier_size_xch("outer"),
+                        "outer": get_buy_tier_size_xch("mid"),
+                        "extreme": get_buy_tier_size_xch(
+                            "inner"
+                        ),  # smallest coin = pos inner
                     }
                 else:
                     _size_indexed_buy = {
-                        t: get_buy_tier_size_xch(t) for t in ("inner", "mid", "outer", "extreme")
+                        t: get_buy_tier_size_xch(t)
+                        for t in ("inner", "mid", "outer", "extreme")
                     }
                 for t, _slots in tier_dist.items():
                     coins_needed = int(prepared_counts.get(t, 0) or 0)
-                    tier_size = Decimal(str(_size_indexed_buy.get(t) or cfg.MID_SIZE_XCH))
+                    tier_size = Decimal(
+                        str(_size_indexed_buy.get(t) or cfg.MID_SIZE_XCH)
+                    )
                     tier_xch = tier_size * coins_needed
                     per_tier_needs[t] = {
-                        'coins': coins_needed,
-                        'xch_each': float(tier_size),
-                        'xch_total': float(tier_xch)
+                        "coins": coins_needed,
+                        "xch_each": float(tier_size),
+                        "xch_total": float(tier_xch),
                     }
                     total_tier_xch += tier_xch
 
@@ -2502,8 +2696,10 @@ class CoinManager:
                 # (b) topup_pool — whatever remains after configured_reserve;
                 #     large unbroken coins the topup worker splits when tier
                 #     coins run low.  Topup cannot function if this is too thin.
-                configured_reserve = max(Decimal("0"),
-                    Decimal(str(getattr(cfg, "XCH_RESERVE", Decimal("0")) or "0")))
+                configured_reserve = max(
+                    Decimal("0"),
+                    Decimal(str(getattr(cfg, "XCH_RESERVE", Decimal("0")) or "0")),
+                )
                 topup_pool = max(Decimal("0"), reserve_xch - configured_reserve)
 
                 total_str = f"{float(total_xch):.1f}"
@@ -2520,9 +2716,7 @@ class CoinManager:
                         f"({configured_str} configured + {topup_pool_str} topup pool)"
                     )
                 else:
-                    _reserve_detail = (
-                        f"{reserve_str} XCH reserve ({topup_pool_str} available for topup splits)"
-                    )
+                    _reserve_detail = f"{reserve_str} XCH reserve ({topup_pool_str} available for topup splits)"
 
                 if has_locked_collateral:
                     resume_prefix = (
@@ -2531,12 +2725,11 @@ class CoinManager:
                     )
                 else:
                     resume_prefix = (
-                        f"{total_str} XCH available. "
-                        f"Tiers need {needed_str}"
+                        f"{total_str} XCH available. Tiers need {needed_str}"
                     )
 
                 if reserve_xch < 0:
-                    assessment = 'CRITICAL'
+                    assessment = "CRITICAL"
                     if has_locked_collateral:
                         msg = (
                             f"{resume_prefix}, so the wallet is short by "
@@ -2545,15 +2738,17 @@ class CoinManager:
                             f"cannot be fully rebuilt at these settings."
                         )
                     else:
-                        msg = (f"Need {needed_str} XCH for tiers but only "
-                               f"have {total_str} XCH. Reduce tier sizes or "
-                               f"number of offers.")
+                        msg = (
+                            f"Need {needed_str} XCH for tiers but only "
+                            f"have {total_str} XCH. Reduce tier sizes or "
+                            f"number of offers."
+                        )
                 elif topup_pool < largest_tier * 2:
                     # Warn when the topup pool (not just total reserve) is too thin
                     # to fund a full split of the largest tier.
                     # A topup pool smaller than 2× largest_tier can't reliably
                     # replenish both buy and sell sides in a single split pass.
-                    assessment = 'LOW'
+                    assessment = "LOW"
                     if has_locked_collateral:
                         msg = (
                             f"{resume_prefix}, leaving {_reserve_detail} (topup pool low). "
@@ -2563,11 +2758,13 @@ class CoinManager:
                             f"to reliably replenish the largest tier."
                         )
                     else:
-                        msg = (f"{total_str} XCH available. "
-                               f"Tiers need {needed_str}, leaving {_reserve_detail} (topup pool low). "
-                               f"Topup needs ≥{float(largest_tier * 2):.1f} XCH to split the largest tier.")
+                        msg = (
+                            f"{total_str} XCH available. "
+                            f"Tiers need {needed_str}, leaving {_reserve_detail} (topup pool low). "
+                            f"Topup needs ≥{float(largest_tier * 2):.1f} XCH to split the largest tier."
+                        )
                 elif reserve_xch > largest_tier * 3:
-                    assessment = 'EXCESS'
+                    assessment = "EXCESS"
                     if has_locked_collateral:
                         msg = (
                             f"{resume_prefix}, leaving {_reserve_detail} (plenty). "
@@ -2575,10 +2772,12 @@ class CoinManager:
                             f"{spendable_str} XCH remains free for topups."
                         )
                     else:
-                        msg = (f"{total_str} XCH available. "
-                               f"Tiers need {needed_str}, leaving {_reserve_detail} (plenty).")
+                        msg = (
+                            f"{total_str} XCH available. "
+                            f"Tiers need {needed_str}, leaving {_reserve_detail} (plenty)."
+                        )
                 else:
-                    assessment = 'ADEQUATE'
+                    assessment = "ADEQUATE"
                     if has_locked_collateral:
                         msg = (
                             f"{resume_prefix}, leaving {_reserve_detail}. "
@@ -2586,20 +2785,22 @@ class CoinManager:
                             f"{spendable_str} XCH remains free for topups."
                         )
                     else:
-                        msg = (f"{total_str} XCH available. "
-                               f"Tiers need {needed_str}, leaving {_reserve_detail}.")
+                        msg = (
+                            f"{total_str} XCH available. "
+                            f"Tiers need {needed_str}, leaving {_reserve_detail}."
+                        )
 
                 return {
-                    'total_available': float(total_xch),
-                    'spendable_available': float(spendable_xch),
-                    'locked_estimate': float(locked_xch),
-                    'per_tier_needs': per_tier_needs,
-                    'total_tier_xch': float(total_tier_xch),
-                    'reserve_size': float(reserve_xch),
-                    'configured_reserve': float(configured_reserve),
-                    'topup_pool': float(topup_pool),
-                    'assessment': assessment,
-                    'message': msg
+                    "total_available": float(total_xch),
+                    "spendable_available": float(spendable_xch),
+                    "locked_estimate": float(locked_xch),
+                    "per_tier_needs": per_tier_needs,
+                    "total_tier_xch": float(total_tier_xch),
+                    "reserve_size": float(reserve_xch),
+                    "configured_reserve": float(configured_reserve),
+                    "topup_pool": float(topup_pool),
+                    "assessment": assessment,
+                    "message": msg,
                 }
             else:
                 # Non-tiered mode — simpler calculation
@@ -2609,32 +2810,34 @@ class CoinManager:
                 reserve_xch = total_xch - needed_xch
 
                 if reserve_xch < 0:
-                    assessment = 'CRITICAL'
+                    assessment = "CRITICAL"
                 elif reserve_xch < coin_size * 2:
-                    assessment = 'LOW'
+                    assessment = "LOW"
                 else:
-                    assessment = 'ADEQUATE'
+                    assessment = "ADEQUATE"
 
                 return {
-                    'total_available': float(total_xch),
-                    'spendable_available': float(spendable_xch),
-                    'locked_estimate': float(locked_xch),
-                    'target_coins': target_coins,
-                    'coin_size': float(coin_size),
-                    'needed_xch': float(needed_xch),
-                    'reserve_size': float(reserve_xch),
-                    'assessment': assessment,
-                    'message': (f"{float(total_xch):.1f} XCH available. "
-                                f"Need {float(needed_xch):.1f} for {target_coins} coins, "
-                                f"leaving {float(reserve_xch):.1f} reserve. "
-                                f"Status: {assessment}")
+                    "total_available": float(total_xch),
+                    "spendable_available": float(spendable_xch),
+                    "locked_estimate": float(locked_xch),
+                    "target_coins": target_coins,
+                    "coin_size": float(coin_size),
+                    "needed_xch": float(needed_xch),
+                    "reserve_size": float(reserve_xch),
+                    "assessment": assessment,
+                    "message": (
+                        f"{float(total_xch):.1f} XCH available. "
+                        f"Need {float(needed_xch):.1f} for {target_coins} coins, "
+                        f"leaving {float(reserve_xch):.1f} reserve. "
+                        f"Status: {assessment}"
+                    ),
                 }
 
         except Exception as e:
             return {
-                'total_available': 0,
-                'assessment': 'UNKNOWN',
-                'message': f"Could not calculate advisory: {e}"
+                "total_available": 0,
+                "assessment": "UNKNOWN",
+                "message": f"Could not calculate advisory: {e}",
             }
 
     def reconcile_with_wallet(self):
@@ -2653,8 +2856,7 @@ class CoinManager:
           - Reserve coins that disappeared (promote next largest)
         """
         try:
-            from database import (reconcile_coins_with_wallet,
-                                   get_reserve_coins)
+            from database import reconcile_coins_with_wallet, get_reserve_coins
             from wallet import get_wallet_type
 
             wallet_type_str = get_wallet_type()
@@ -2662,8 +2864,10 @@ class CoinManager:
             wallet_open_offers = None
             wallet_confirmed_locked = set()
 
-            for wt, wallet_id in [("xch", cfg.WALLET_ID_XCH),
-                                   ("cat", cfg.CAT_WALLET_ID)]:
+            for wt, wallet_id in [
+                ("xch", cfg.WALLET_ID_XCH),
+                ("cat", cfg.CAT_WALLET_ID),
+            ]:
                 offer_id_map = {}
                 selectable_records = None
 
@@ -2677,7 +2881,9 @@ class CoinManager:
                     #   selectable_coins = same + offer_hash IS NULL (free only)
                     # The CoinRecord includes offer_id for locked coins.
                     try:
-                        detailed_snapshot = self._get_sage_owned_coin_snapshot(wallet_id)
+                        detailed_snapshot = self._get_sage_owned_coin_snapshot(
+                            wallet_id
+                        )
                     except Exception:
                         detailed_snapshot = None
 
@@ -2688,35 +2894,49 @@ class CoinManager:
                         # the owned and selectable calls.
                         owned_map = dict(detailed_snapshot["owned_map"])
                         selectable_map = dict(detailed_snapshot["selectable_map"])
-                        selectable_records = list(detailed_snapshot["selectable_records"])
+                        selectable_records = list(
+                            detailed_snapshot["selectable_records"]
+                        )
                         offer_id_map = dict(detailed_snapshot["offer_id_map"])
                         wallet_confirmed_locked.update(detailed_snapshot["locked_ids"])
                     else:
                         # Fallback: use old owned+selectable approach
                         from wallet import get_owned_coins, get_selectable_coins_map
+
                         owned_map = get_owned_coins(wallet_id)
                         selectable_map = get_selectable_coins_map(wallet_id)
 
                     if owned_map is None or selectable_map is None:
-                        log_event("warning", "reconcile_skip",
-                                  f"Could not fetch {wt} coins from Sage — skipping")
+                        log_event(
+                            "warning",
+                            "reconcile_skip",
+                            f"Could not fetch {wt} coins from Sage — skipping",
+                        )
                         continue
 
                     # Run the full reconciliation
                     stats = reconcile_coins_with_wallet(
                         wallet_selectable=selectable_map,
                         wallet_owned=owned_map,
-                        wallet_type=wt
+                        wallet_type=wt,
                     )
-                    total = (stats["added"] + stats.get("reappeared", 0)
-                             + stats["marked_gone"] + stats["freed"] + stats["locked"])
+                    total = (
+                        stats["added"]
+                        + stats.get("reappeared", 0)
+                        + stats["marked_gone"]
+                        + stats["freed"]
+                        + stats["locked"]
+                    )
                     if total > 0:
-                        print(f"  [CoinMgr] {wt.upper()} reconcile: "
-                              f"+{stats['added']} new, "
-                              f"{stats.get('reappeared', 0)} reappeared, "
-                              f"-{stats['marked_gone']} gone, "
-                              f"{stats['locked']} locked, {stats['freed']} freed, "
-                              f"{stats['already_ok']} ok", flush=True)
+                        print(
+                            f"  [CoinMgr] {wt.upper()} reconcile: "
+                            f"+{stats['added']} new, "
+                            f"{stats.get('reappeared', 0)} reappeared, "
+                            f"-{stats['marked_gone']} gone, "
+                            f"{stats['locked']} locked, {stats['freed']} freed, "
+                            f"{stats['already_ok']} ok",
+                            flush=True,
+                        )
 
                     # V5 FIX: Use offer_id from wallet to directly link coins.
                     # The offer_id field from Sage tells us exactly which offer
@@ -2742,19 +2962,24 @@ class CoinManager:
                     if offer_id_map is not None:
                         try:
                             from database import get_connection, _now
+
                             conn = get_connection()
                             now = _now()
-                            audit_linked = 0     # NULL → trade_id set
-                            audit_relinked = 0   # stale trade_id overwritten
-                            audit_freed = 0      # orphan lock freed
+                            audit_linked = 0  # NULL → trade_id set
+                            audit_relinked = 0  # stale trade_id overwritten
+                            audit_freed = 0  # orphan lock freed
                             # Get all open offers from wallet to map offer_hash → trade_id
                             if wallet_open_offers is None:
                                 from wallet import get_all_offers
-                                wallet_open_offers = get_all_offers(
-                                    include_completed=False,
-                                    start=0,
-                                    end=500,
-                                ) or []
+
+                                wallet_open_offers = (
+                                    get_all_offers(
+                                        include_completed=False,
+                                        start=0,
+                                        end=500,
+                                    )
+                                    or []
+                                )
                             all_open = wallet_open_offers
                             # Build {offer_hash: trade_id} mapping. For Sage,
                             # the offer's trade_id IS the offer_hash, so this
@@ -2783,11 +3008,14 @@ class CoinManager:
                             # ---- Pass 1: Reconcile each wallet-locked coin ----
                             # The DB row should be (status='locked',
                             # trade_id=canonical). Apply the minimum update.
-                            for store_id, canonical_tid in wallet_locked_to_trade.items():
+                            for (
+                                store_id,
+                                canonical_tid,
+                            ) in wallet_locked_to_trade.items():
                                 row = conn.execute(
                                     "SELECT status, trade_id FROM coins "
                                     "WHERE coin_id=?",
-                                    (store_id,)
+                                    (store_id,),
                                 ).fetchone()
                                 if row is None:
                                     # Coin not in DB yet — reconcile_coins_with_wallet
@@ -2796,27 +3024,27 @@ class CoinManager:
                                     # the upsert; skip silently here so we
                                     # don't double-commit.
                                     continue
-                                cur_status = row['status']
-                                cur_tid = row['trade_id'] or ""
+                                cur_status = row["status"]
+                                cur_tid = row["trade_id"] or ""
                                 if cur_status != "locked":
                                     conn.execute(
                                         "UPDATE coins SET status='locked', "
                                         "trade_id=?, last_seen=? WHERE coin_id=?",
-                                        (canonical_tid, now, store_id)
+                                        (canonical_tid, now, store_id),
                                     )
                                     audit_relinked += 1
                                 elif not cur_tid:
                                     conn.execute(
                                         "UPDATE coins SET trade_id=?, "
                                         "last_seen=? WHERE coin_id=?",
-                                        (canonical_tid, now, store_id)
+                                        (canonical_tid, now, store_id),
                                     )
                                     audit_linked += 1
                                 elif cur_tid != canonical_tid:
                                     conn.execute(
                                         "UPDATE coins SET trade_id=?, "
                                         "last_seen=? WHERE coin_id=?",
-                                        (canonical_tid, now, store_id)
+                                        (canonical_tid, now, store_id),
                                     )
                                     audit_relinked += 1
 
@@ -2837,17 +3065,18 @@ class CoinManager:
                                 "SELECT coin_id, trade_id, last_seen "
                                 "FROM coins "
                                 "WHERE wallet_type=? AND status='locked'",
-                                (wt,)
+                                (wt,),
                             ).fetchall()
                             for row in db_locked_rows:
-                                cid_db = row['coin_id']
-                                cid_norm = (cid_db if cid_db.startswith("0x")
-                                            else "0x" + cid_db).lower()
+                                cid_db = row["coin_id"]
+                                cid_norm = (
+                                    cid_db if cid_db.startswith("0x") else "0x" + cid_db
+                                ).lower()
                                 if cid_norm in wallet_locked_to_trade:
                                     continue  # Wallet still locks it — fine
                                 # Wallet doesn't lock it. Is it freshly
                                 # locked by us in the last 60s?
-                                last_seen = row['last_seen'] or 0
+                                last_seen = row["last_seen"] or 0
                                 try:
                                     age = now - int(last_seen)
                                 except Exception:
@@ -2857,7 +3086,7 @@ class CoinManager:
                                 # Also: if the row's trade_id is in our open
                                 # offers list, the wallet just hasn't reported
                                 # the lock yet (rare RPC race); leave it alone.
-                                cur_tid = row['trade_id'] or ""
+                                cur_tid = row["trade_id"] or ""
                                 if cur_tid and cur_tid in open_trade_ids:
                                     continue
                                 # Genuine orphan lock — free it.
@@ -2865,52 +3094,76 @@ class CoinManager:
                                     "UPDATE coins SET status='free', "
                                     "trade_id=NULL, last_seen=? "
                                     "WHERE coin_id=?",
-                                    (now, cid_db)
+                                    (now, cid_db),
                                 )
                                 audit_freed += 1
 
                             conn.commit()
 
                             if audit_linked or audit_relinked or audit_freed:
-                                log_event("info", "reconcile_audit",
-                                          f"{wt.upper()} wallet audit: "
-                                          f"linked={audit_linked}, "
-                                          f"relinked={audit_relinked}, "
-                                          f"freed_orphans={audit_freed}")
+                                log_event(
+                                    "info",
+                                    "reconcile_audit",
+                                    f"{wt.upper()} wallet audit: "
+                                    f"linked={audit_linked}, "
+                                    f"relinked={audit_relinked}, "
+                                    f"freed_orphans={audit_freed}",
+                                )
                         except Exception as audit_e:
-                            log_event("warning", "reconcile_audit_failed",
-                                      f"Wallet audit failed for {wt}: {audit_e}")
+                            log_event(
+                                "warning",
+                                "reconcile_audit_failed",
+                                f"Wallet audit failed for {wt}: {audit_e}",
+                            )
 
                     # Fallback: amount-based linking ONLY when direct offer_id
                     # linking is not available (i.e. no offer_id_map from Sage)
                     if stats["locked"] > 0 and not offer_id_map:
                         try:
                             from database import link_offers_to_locked_coins
+
                             if wallet_open_offers is None:
                                 from wallet import get_all_offers
-                                wallet_open_offers = get_all_offers(
-                                    include_completed=False,
-                                    start=0,
-                                    end=500,
-                                ) or []
+
+                                wallet_open_offers = (
+                                    get_all_offers(
+                                        include_completed=False,
+                                        start=0,
+                                        end=500,
+                                    )
+                                    or []
+                                )
                             all_open = wallet_open_offers
                             if all_open:
                                 link_stats = link_offers_to_locked_coins(
-                                    all_open, cfg.CAT_ASSET_ID)
+                                    all_open, cfg.CAT_ASSET_ID
+                                )
                                 linked = link_stats.get("linked", 0)
                                 if linked > 0:
-                                    log_event("debug", "reconcile_link_offers",
-                                              f"{wt.upper()} linked {linked} coins to offers "
-                                              f"after reconcile (amount-based fallback)")
+                                    log_event(
+                                        "debug",
+                                        "reconcile_link_offers",
+                                        f"{wt.upper()} linked {linked} coins to offers "
+                                        f"after reconcile (amount-based fallback)",
+                                    )
                         except Exception as link_e:
-                            log_event("debug", "reconcile_link_failed",
-                                      f"Post-reconcile offer linking failed: {link_e}")
+                            log_event(
+                                "debug",
+                                "reconcile_link_failed",
+                                f"Post-reconcile offer linking failed: {link_e}",
+                            )
 
                 else:
                     # Chia wallet: original approach using spendable-only RPC
-                    from database import (get_free_coins, get_locked_coins,
-                                           mark_coins_gone, mark_coin_spent,
-                                           free_coin, upsert_coin, get_open_offers)
+                    from database import (
+                        get_free_coins,
+                        get_locked_coins,
+                        mark_coins_gone,
+                        mark_coin_spent,
+                        free_coin,
+                        upsert_coin,
+                        get_open_offers,
+                    )
 
                     rpc_result = self._get_coins_fast(wallet_id)
                     rpc_records = _extract_coin_records(rpc_result)
@@ -2947,15 +3200,22 @@ class CoinManager:
             # ---- Chia-only: Reconcile locked coins (Sage handles this above) ----
             if not is_sage:
                 try:
-                    from database import (get_locked_coins, get_open_offers,
-                                           free_coin, mark_coin_spent)
+                    from database import (
+                        get_locked_coins,
+                        get_open_offers,
+                        free_coin,
+                        mark_coin_spent,
+                    )
+
                     open_offers_list = get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
                     open_trade_ids = {o["trade_id"] for o in open_offers_list}
 
                     xch_rpc = self._get_coins_fast(cfg.WALLET_ID_XCH)
                     cat_rpc = self._get_coins_fast(cfg.CAT_WALLET_ID)
                     wallet_spendable = set()
-                    for rec in _extract_coin_records(xch_rpc) + _extract_coin_records(cat_rpc):
+                    for rec in _extract_coin_records(xch_rpc) + _extract_coin_records(
+                        cat_rpc
+                    ):
                         cid = _coin_id_from_record(rec)
                         if cid:
                             wallet_spendable.add(cid)
@@ -2972,11 +3232,17 @@ class CoinManager:
                             mark_coin_spent(cid)
                             reconciled += 1
                     if reconciled > 0:
-                        log_event("info", "reconcile_locked",
-                                  f"Reconciled {reconciled} stale locked coins")
+                        log_event(
+                            "info",
+                            "reconcile_locked",
+                            f"Reconciled {reconciled} stale locked coins",
+                        )
                 except Exception as lock_e:
-                    log_event("debug", "reconcile_locked_error",
-                              f"Locked coin reconciliation failed: {lock_e}")
+                    log_event(
+                        "debug",
+                        "reconcile_locked_error",
+                        f"Locked coin reconciliation failed: {lock_e}",
+                    )
 
             # ---- Link offers to their locked coins (assign trade_ids) ----
             try:
@@ -2985,28 +3251,40 @@ class CoinManager:
                 # Get all active offers with normalized summaries
                 if wallet_open_offers is None:
                     from wallet import get_all_offers
-                    wallet_open_offers = get_all_offers(
-                        include_completed=False,
-                        start=0,
-                        end=500,
-                    ) or []
+
+                    wallet_open_offers = (
+                        get_all_offers(
+                            include_completed=False,
+                            start=0,
+                            end=500,
+                        )
+                        or []
+                    )
                 all_offers = wallet_open_offers
                 if all_offers and isinstance(all_offers, list):
-                    active = [o for o in all_offers
-                              if o.get("status") in ("active", "PENDING_ACCEPT")]
+                    active = [
+                        o
+                        for o in all_offers
+                        if o.get("status") in ("active", "PENDING_ACCEPT")
+                    ]
                     if active:
                         link_stats = link_offers_to_locked_coins(
                             active, cfg.CAT_ASSET_ID
                         )
                         if link_stats["linked"] > 0:
-                            print(f"  [CoinMgr] Linked {link_stats['linked']} offers to coins "
-                                  f"({link_stats['already_linked']} already linked, "
-                                  f"{link_stats['unmatched_offers']} unmatched offers, "
-                                  f"{link_stats['unmatched_coins']} unmatched coins)",
-                                  flush=True)
+                            print(
+                                f"  [CoinMgr] Linked {link_stats['linked']} offers to coins "
+                                f"({link_stats['already_linked']} already linked, "
+                                f"{link_stats['unmatched_offers']} unmatched offers, "
+                                f"{link_stats['unmatched_coins']} unmatched coins)",
+                                flush=True,
+                            )
             except Exception as link_e:
-                log_event("debug", "offer_link_error",
-                          f"Offer-to-coin linking failed: {link_e}")
+                log_event(
+                    "debug",
+                    "offer_link_error",
+                    f"Offer-to-coin linking failed: {link_e}",
+                )
 
             # ---- Orphaned locked coin cleanup (V5 FIX) ----
             # Free locked coins whose trade_id no longer matches an open offer.
@@ -3018,27 +3296,33 @@ class CoinManager:
             # This breaks the tug-of-war: reconcile locks → orphan frees → repeat.
             try:
                 from database import cleanup_orphaned_locked_coins, get_open_offers
+
                 db_open = get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
-                wallet_open_ids = {o.get("trade_id", "") for o in db_open
-                                   if o.get("trade_id")}
+                wallet_open_ids = {
+                    o.get("trade_id", "") for o in db_open if o.get("trade_id")
+                }
 
                 orphan_stats = cleanup_orphaned_locked_coins(
-                    wallet_open_ids,
-                    wallet_confirmed_locked=wallet_confirmed_locked
+                    wallet_open_ids, wallet_confirmed_locked=wallet_confirmed_locked
                 )
                 if orphan_stats["total_freed"] > 0:
-                    print(f"  [CoinMgr] Freed {orphan_stats['total_freed']} orphaned locked coins",
-                          flush=True)
+                    print(
+                        f"  [CoinMgr] Freed {orphan_stats['total_freed']} orphaned locked coins",
+                        flush=True,
+                    )
             except Exception as orphan_e:
-                log_event("debug", "orphan_cleanup_error",
-                          f"Orphan cleanup during reconcile failed: {orphan_e}")
+                log_event(
+                    "debug",
+                    "orphan_cleanup_error",
+                    f"Orphan cleanup during reconcile failed: {orphan_e}",
+                )
 
-            log_event("debug", "reconcile_done",
-                      "Wallet reconciliation complete")
+            log_event("debug", "reconcile_done", "Wallet reconciliation complete")
 
         except Exception as e:
-            log_event("warning", "reconcile_error",
-                      f"Wallet reconciliation failed: {e}")
+            log_event(
+                "warning", "reconcile_error", f"Wallet reconciliation failed: {e}"
+            )
 
     # -------------------------------------------------------------------
     # V3: Coinset-aware coin query (fast cloud API with wallet fallback)
@@ -3118,7 +3402,9 @@ class CoinManager:
                 locked_ids.add(coin_id)
             else:
                 selectable_map[coin_id] = amount
-                selectable_records.append(self._make_simple_coin_record(coin_id, amount))
+                selectable_records.append(
+                    self._make_simple_coin_record(coin_id, amount)
+                )
 
         return {
             "owned_map": owned_map,
@@ -3133,9 +3419,14 @@ class CoinManager:
     # CLI-based coin splitting (reliable — RPC split doesn't broadcast)
     # -------------------------------------------------------------------
 
-    def _split_via_cli(self, wallet_id: int, coin_id: str,
-                       num_coins: int, coin_size: Decimal,
-                       name: str = "topup") -> bool:
+    def _split_via_cli(
+        self,
+        wallet_id: int,
+        coin_id: str,
+        num_coins: int,
+        coin_size: Decimal,
+        name: str = "topup",
+    ) -> bool:
         """Split a coin into smaller coins.
 
         Uses Sage RPC /split when WALLET_TYPE=sage, or the Chia CLI
@@ -3151,12 +3442,15 @@ class CoinManager:
         Returns:
             True if split confirmed (or partially confirmed)
         """
-        is_cat = (wallet_id != WALLET_ID_XCH)
+        is_cat = wallet_id != WALLET_ID_XCH
 
-        log_event("info", f"split_cli_{name}",
-                  f"Split: {num_coins} coins of {coin_size} "
-                  f"{'CAT tokens' if is_cat else 'XCH'} (display units) "
-                  f"[source: {coin_id[:16]}...]")
+        log_event(
+            "info",
+            f"split_cli_{name}",
+            f"Split: {num_coins} coins of {coin_size} "
+            f"{'CAT tokens' if is_cat else 'XCH'} (display units) "
+            f"[source: {coin_id[:16]}...]",
+        )
 
         # Get starting coin count for confirmation polling
         start_result = _get_free_coins_rpc(wallet_id)
@@ -3170,8 +3464,11 @@ class CoinManager:
             # Sage native /split endpoint — uses output_count, auto-sizes
             # Sage splits evenly (no amount param needed), so we just specify
             # the number of outputs. The coin is divided equally.
-            log_event("info", f"split_sage_{name}",
-                      f"Using Sage /split RPC for {num_coins} outputs")
+            log_event(
+                "info",
+                f"split_sage_{name}",
+                f"Using Sage /split RPC for {num_coins} outputs",
+            )
             try:
                 # output_count = num_coins + 1 because we want N trading coins
                 # plus a remainder. Sage splits the coin into output_count pieces.
@@ -3187,19 +3484,27 @@ class CoinManager:
                     is_cat=is_cat,
                 )
                 if result is None:
-                    log_event("warning", f"split_sage_{name}_fail",
-                              "Sage /split returned None")
+                    log_event(
+                        "warning",
+                        f"split_sage_{name}_fail",
+                        "Sage /split returned None",
+                    )
                     return False
                 # Check for error in response
                 if isinstance(result, dict) and result.get("error"):
-                    log_event("warning", f"split_sage_{name}_fail",
-                              f"Sage /split error: {result['error']}")
+                    log_event(
+                        "warning",
+                        f"split_sage_{name}_fail",
+                        f"Sage /split error: {result['error']}",
+                    )
                     return False
-                log_event("info", f"split_sage_{name}",
-                          "Sage /split submitted successfully")
+                log_event(
+                    "info", f"split_sage_{name}", "Sage /split submitted successfully"
+                )
             except Exception as e:
-                log_event("warning", f"split_sage_{name}_error",
-                          f"Sage /split error: {e}")
+                log_event(
+                    "warning", f"split_sage_{name}_error", f"Sage /split error: {e}"
+                )
                 return False
         else:
             # Chia CLI split (reliable — broadcasts to network every time)
@@ -3211,38 +3516,47 @@ class CoinManager:
                 self._fingerprint = self._resolve_fingerprint()
 
             cmd = [
-                "chia", "wallet", "coins", "split",
-                "-f", self._fingerprint,
-                "-i", str(wallet_id),
-                "-n", str(num_coins),
-                "-a", str(coin_size),
-                "-t", bare_coin_id,
-                "-m", "0"
+                "chia",
+                "wallet",
+                "coins",
+                "split",
+                "-f",
+                self._fingerprint,
+                "-i",
+                str(wallet_id),
+                "-n",
+                str(num_coins),
+                "-a",
+                str(coin_size),
+                "-t",
+                bare_coin_id,
+                "-m",
+                "0",
             ]
 
             try:
                 import subprocess as sp
+
                 process = sp.Popen(
-                    cmd,
-                    stdin=sp.PIPE,
-                    stdout=sp.PIPE,
-                    stderr=sp.PIPE,
-                    text=True
+                    cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE, text=True
                 )
                 stdout, stderr = process.communicate(input="y\n", timeout=60)
                 output = stdout + stderr
 
                 if "submitted to" in output.lower() or "transaction" in output.lower():
-                    log_event("info", f"split_cli_{name}",
-                              "CLI split submitted successfully")
+                    log_event(
+                        "info", f"split_cli_{name}", "CLI split submitted successfully"
+                    )
                 else:
-                    log_event("warning", f"split_cli_{name}_fail",
-                              f"CLI split failed: {output[:200]}")
+                    log_event(
+                        "warning",
+                        f"split_cli_{name}_fail",
+                        f"CLI split failed: {output[:200]}",
+                    )
                     return False
 
             except Exception as e:
-                log_event("warning", f"split_cli_{name}_error",
-                          f"CLI split error: {e}")
+                log_event("warning", f"split_cli_{name}_error", f"CLI split error: {e}")
                 return False
 
         # --- Wait for confirmation via coin count polling ---
@@ -3259,14 +3573,20 @@ class CoinManager:
             elapsed = int(time.time() - poll_start)
 
             if current_count >= expected_count:
-                log_event("info", f"split_{name}",
-                          f"Split confirmed ({current_count} coins, {elapsed}s)")
+                log_event(
+                    "info",
+                    f"split_{name}",
+                    f"Split confirmed ({current_count} coins, {elapsed}s)",
+                )
                 confirmed = True
                 break
 
             if elapsed % 30 == 0 and elapsed > 0:
-                log_event("info", f"split_{name}_wait",
-                          f"Waiting for split... ({current_count}/{expected_count} coins, {elapsed}s)")
+                log_event(
+                    "info",
+                    f"split_{name}_wait",
+                    f"Waiting for split... ({current_count}/{expected_count} coins, {elapsed}s)",
+                )
 
         if not confirmed:
             # Check if at least some coins were created
@@ -3275,12 +3595,18 @@ class CoinManager:
             final_count = len(final_records)
             new_coins = final_count - start_count
             if new_coins > 0:
-                log_event("info", f"split_{name}",
-                          f"Partial split: {new_coins}/{num_coins} coins created after {max_wait}s")
+                log_event(
+                    "info",
+                    f"split_{name}",
+                    f"Partial split: {new_coins}/{num_coins} coins created after {max_wait}s",
+                )
                 confirmed = True
             else:
-                log_event("warning", f"split_{name}_timeout",
-                          f"Split not confirmed after {max_wait}s (still {final_count} coins)")
+                log_event(
+                    "warning",
+                    f"split_{name}_timeout",
+                    f"Split not confirmed after {max_wait}s (still {final_count} coins)",
+                )
 
         return confirmed
 
@@ -3304,10 +3630,19 @@ class CoinManager:
             # bot sees newly-created coins without interfering with the worker.
             try:
                 from database import get_all_coins_state
+
                 _db_coins = get_all_coins_state()
                 if _db_coins is not None:
-                    _xch_free = sum(1 for c in _db_coins if c.get("wallet_type") == "xch" and c.get("status") == "free")
-                    _cat_free = sum(1 for c in _db_coins if c.get("wallet_type") == "cat" and c.get("status") == "free")
+                    _xch_free = sum(
+                        1
+                        for c in _db_coins
+                        if c.get("wallet_type") == "xch" and c.get("status") == "free"
+                    )
+                    _cat_free = sum(
+                        1
+                        for c in _db_coins
+                        if c.get("wallet_type") == "cat" and c.get("status") == "free"
+                    )
                     if _xch_free != self._xch_coins or _cat_free != self._cat_coins:
                         self._xch_coins = _xch_free
                         self._cat_coins = _cat_free
@@ -3321,7 +3656,8 @@ class CoinManager:
             wallet_type = get_wallet_type()
             xch_owned_snapshot = (
                 self._get_sage_owned_coin_snapshot(cfg.WALLET_ID_XCH)
-                if wallet_type == "sage" else None
+                if wallet_type == "sage"
+                else None
             )
             if xch_owned_snapshot is not None:
                 xch_records = list(xch_owned_snapshot["selectable_records"])
@@ -3333,18 +3669,29 @@ class CoinManager:
             # Sage wallet sometimes returns empty on the first call after startup.
             if len(xch_records) == 0:
                 import time as _time
-                log_event("warning", "coin_count_retry",
-                          "XCH wallet returned 0 coins — retrying in 3s...")
+
+                log_event(
+                    "warning",
+                    "coin_count_retry",
+                    "XCH wallet returned 0 coins — retrying in 3s...",
+                )
                 _time.sleep(3)
                 if wallet_type == "sage":
-                    xch_owned_snapshot = self._get_sage_owned_coin_snapshot(cfg.WALLET_ID_XCH)
-                    xch_records = list((xch_owned_snapshot or {}).get("selectable_records", []))
+                    xch_owned_snapshot = self._get_sage_owned_coin_snapshot(
+                        cfg.WALLET_ID_XCH
+                    )
+                    xch_records = list(
+                        (xch_owned_snapshot or {}).get("selectable_records", [])
+                    )
                 else:
                     xch_result = self._get_coins_fast(cfg.WALLET_ID_XCH)
                     xch_records = _extract_coin_records(xch_result)
                 if len(xch_records) > 0:
-                    log_event("info", "coin_count_retry_ok",
-                              f"Retry succeeded: {len(xch_records)} XCH coins found")
+                    log_event(
+                        "info",
+                        "coin_count_retry_ok",
+                        f"Retry succeeded: {len(xch_records)} XCH coins found",
+                    )
 
             self._xch_coins = len(xch_records)
 
@@ -3352,7 +3699,8 @@ class CoinManager:
             # V3: uses Coinset fast path if available, falls back to wallet RPC
             cat_owned_snapshot = (
                 self._get_sage_owned_coin_snapshot(cfg.CAT_WALLET_ID)
-                if wallet_type == "sage" else None
+                if wallet_type == "sage"
+                else None
             )
             if cat_owned_snapshot is not None:
                 cat_records = list(cat_owned_snapshot["selectable_records"])
@@ -3363,18 +3711,29 @@ class CoinManager:
             # RETRY: Same retry for CAT wallet
             if len(cat_records) == 0:
                 import time as _time
-                log_event("warning", "coin_count_retry",
-                          "CAT wallet returned 0 coins — retrying in 3s...")
+
+                log_event(
+                    "warning",
+                    "coin_count_retry",
+                    "CAT wallet returned 0 coins — retrying in 3s...",
+                )
                 _time.sleep(3)
                 if wallet_type == "sage":
-                    cat_owned_snapshot = self._get_sage_owned_coin_snapshot(cfg.CAT_WALLET_ID)
-                    cat_records = list((cat_owned_snapshot or {}).get("selectable_records", []))
+                    cat_owned_snapshot = self._get_sage_owned_coin_snapshot(
+                        cfg.CAT_WALLET_ID
+                    )
+                    cat_records = list(
+                        (cat_owned_snapshot or {}).get("selectable_records", [])
+                    )
                 else:
                     cat_result = self._get_coins_fast(cfg.CAT_WALLET_ID)
                     cat_records = _extract_coin_records(cat_result)
                 if len(cat_records) > 0:
-                    log_event("info", "coin_count_retry_ok",
-                              f"Retry succeeded: {len(cat_records)} CAT coins found")
+                    log_event(
+                        "info",
+                        "coin_count_retry_ok",
+                        f"Retry succeeded: {len(cat_records)} CAT coins found",
+                    )
 
             self._cat_coins = len(cat_records)
 
@@ -3409,15 +3768,19 @@ class CoinManager:
             if cfg.TIER_ENABLED:
                 xch_tier_mojos = self._get_tier_sizes_mojos(is_cat=False)
                 self._xch_inventory = self._classify_coins_by_designation(
-                    xch_records, "xch", xch_tier_mojos)
+                    xch_records, "xch", xch_tier_mojos
+                )
                 self._ensure_reserve_exists("xch", xch_records)
 
                 cat_tier_mojos = self._get_tier_sizes_mojos(is_cat=True)
                 self._cat_inventory = self._classify_coins_by_designation(
-                    cat_records, "cat", cat_tier_mojos)
+                    cat_records, "cat", cat_tier_mojos
+                )
                 self._ensure_reserve_exists("cat", cat_records)
             else:
-                xch_trading_mojos = int(self.get_target_xch_coin_size() * Decimal("1000000000000"))
+                xch_trading_mojos = int(
+                    self.get_target_xch_coin_size() * Decimal("1000000000000")
+                )
                 self._xch_inventory = _classify_coins(xch_records, xch_trading_mojos)
 
                 cat_scale = Decimal(10) ** Decimal(cfg.CAT_DECIMALS)
@@ -3437,8 +3800,13 @@ class CoinManager:
 
         return (self._xch_coins, self._cat_coins)
 
-    def _persist_coins_to_db(self, records: list, wallet_type: str,
-                                inventory: Dict[str, list], owned_ids: set = None):
+    def _persist_coins_to_db(
+        self,
+        records: list,
+        wallet_type: str,
+        inventory: Dict[str, list],
+        owned_ids: set = None,
+    ):
         """Persist all spendable coins to the coins table in the database.
 
         For each coin in the current snapshot:
@@ -3487,9 +3855,13 @@ class CoinManager:
             # Mark coins that vanished — were 'free' in DB but not in current snapshot
             # Normalize DB coin IDs to match the format from _coin_id_from_record()
             from database import norm_coin_id
+
             db_free = get_free_coins(wallet_type)
-            missing_ids = [c["coin_id"] for c in db_free
-                           if norm_coin_id(c["coin_id"]) not in seen_ids]
+            missing_ids = [
+                c["coin_id"]
+                for c in db_free
+                if norm_coin_id(c["coin_id"]) not in seen_ids
+            ]
             gone_count = 0
             sage_hidden_count = 0
             if missing_ids:
@@ -3497,10 +3869,13 @@ class CoinManager:
                 # this is a wallet RPC failure, not mass disappearance.
                 # Don't nuke the entire coin DB — it destroys prep designations.
                 if len(seen_ids) == 0 and len(missing_ids) > 5:
-                    log_event("warning", "coin_persist_skip_gone",
-                              f"Wallet returned 0 {wallet_type} coins but DB has "
-                              f"{len(missing_ids)} free — skipping mark-gone "
-                              f"(likely RPC failure, not mass disappearance)")
+                    log_event(
+                        "warning",
+                        "coin_persist_skip_gone",
+                        f"Wallet returned 0 {wallet_type} coins but DB has "
+                        f"{len(missing_ids)} free — skipping mark-gone "
+                        f"(likely RPC failure, not mass disappearance)",
+                    )
                 else:
                     # SAGE FIX: Check if coins are missing from selectable but present
                     # in owned_ids. If so, they're just hidden (receive-side of offer),
@@ -3513,34 +3888,49 @@ class CoinManager:
                             if normalized in owned_ids:
                                 # Coin is in owned but not selectable → hidden by Sage
                                 sage_hidden_count += 1
-                                log_event("debug", "sage_receive_side_hidden",
-                                          f"{wallet_type.upper()} coin {normalized[:12]}... "
-                                          f"hidden (receive-side of offer)")
+                                log_event(
+                                    "debug",
+                                    "sage_receive_side_hidden",
+                                    f"{wallet_type.upper()} coin {normalized[:12]}... "
+                                    f"hidden (receive-side of offer)",
+                                )
                             else:
                                 # Truly gone
                                 truly_gone_ids.append(coin_id)
-                        gone_count = mark_coins_gone(truly_gone_ids) if truly_gone_ids else 0
+                        gone_count = (
+                            mark_coins_gone(truly_gone_ids) if truly_gone_ids else 0
+                        )
                     else:
                         # Chia wallet case: no owned_ids available, use original behavior
                         gone_count = mark_coins_gone(missing_ids)
 
             # Log sync summary with structured data
             # (individual coin events already logged by database.py)
-            summary_msg = (f"{wallet_type.upper()} sync: {len(seen_ids)} in wallet, "
-                          f"{gone_count} gone, {len(db_free)} were free in DB")
+            summary_msg = (
+                f"{wallet_type.upper()} sync: {len(seen_ids)} in wallet, "
+                f"{gone_count} gone, {len(db_free)} were free in DB"
+            )
             if sage_hidden_count > 0:
                 summary_msg += f", {sage_hidden_count} hidden by Sage"
-            log_event("debug", "coin_sync_summary",
-                      summary_msg,
-                      data={"wallet_type": wallet_type,
-                            "coins_in_wallet": len(seen_ids),
-                            "gone_count": gone_count,
-                            "sage_hidden_count": sage_hidden_count,
-                            "db_free_before": len(db_free)})
+            log_event(
+                "debug",
+                "coin_sync_summary",
+                summary_msg,
+                data={
+                    "wallet_type": wallet_type,
+                    "coins_in_wallet": len(seen_ids),
+                    "gone_count": gone_count,
+                    "sage_hidden_count": sage_hidden_count,
+                    "db_free_before": len(db_free),
+                },
+            )
 
         except Exception as e:
-            log_event("warning", "coin_persist_failed",
-                      f"Failed to persist {wallet_type} coins to DB: {e}")
+            log_event(
+                "warning",
+                "coin_persist_failed",
+                f"Failed to persist {wallet_type} coins to DB: {e}",
+            )
 
     def _update_locked_coins(self, xch_spendable: list, cat_spendable: list):
         """Calculate locked coins using BOTH the coins table AND the offers table.
@@ -3564,17 +3954,22 @@ class CoinManager:
             coins_cat_locked_mojos = 0
             try:
                 from database import get_coin_summary
+
                 summary = get_coin_summary()
-                coins_xch_locked = summary.get('xch_locked_count', 0)
-                coins_xch_locked_mojos = summary.get('xch_locked_mojos', 0)
-                coins_cat_locked = summary.get('cat_locked_count', 0)
-                coins_cat_locked_mojos = summary.get('cat_locked_mojos', 0)
+                coins_xch_locked = summary.get("xch_locked_count", 0)
+                coins_xch_locked_mojos = summary.get("xch_locked_mojos", 0)
+                coins_cat_locked = summary.get("cat_locked_count", 0)
+                coins_cat_locked_mojos = summary.get("cat_locked_mojos", 0)
             except Exception as e:
-                log_event("warning", "coin_summary_fetch_failed",
-                          f"Coin summary DB fetch failed (locked counts will be zero): {e}")
+                log_event(
+                    "warning",
+                    "coin_summary_fetch_failed",
+                    f"Coin summary DB fetch failed (locked counts will be zero): {e}",
+                )
 
             # ---- Source 2: Offers table (always check) ----
             from database import get_open_offers
+
             open_offers = get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
 
             buy_offers = [o for o in open_offers if o.get("side") == "buy"]
@@ -3585,8 +3980,11 @@ class CoinManager:
                     size_xch = Decimal(str(o.get("size_xch", 0)))
                     offers_xch_locked_mojos += int(size_xch * Decimal("1000000000000"))
                 except Exception as e:
-                    log_event("debug", "buy_offer_mojo_calc_failed",
-                              f"XCH locked mojo calc failed for offer {o.get('trade_id','?')[:12]}: {e}")
+                    log_event(
+                        "debug",
+                        "buy_offer_mojo_calc_failed",
+                        f"XCH locked mojo calc failed for offer {o.get('trade_id', '?')[:12]}: {e}",
+                    )
 
             sell_offers = [o for o in open_offers if o.get("side") == "sell"]
             offers_cat_locked = len(sell_offers)
@@ -3597,8 +3995,11 @@ class CoinManager:
                     size_cat = Decimal(str(o.get("size_cat", 0)))
                     offers_cat_locked_mojos += int(size_cat * cat_scale)
                 except Exception as e:
-                    log_event("debug", "sell_offer_mojo_calc_failed",
-                              f"CAT locked mojo calc failed for offer {o.get('trade_id','?')[:12]}: {e}")
+                    log_event(
+                        "debug",
+                        "sell_offer_mojo_calc_failed",
+                        f"CAT locked mojo calc failed for offer {o.get('trade_id', '?')[:12]}: {e}",
+                    )
 
             # ---- Use the OFFERS table as the authoritative source ----
             # The offers table knows exactly which side each offer locks:
@@ -3606,10 +4007,22 @@ class CoinManager:
             # The coins table may be inflated because Sage's "non-selectable"
             # includes coins on BOTH sides of an offer, not just the offered side.
             # Fall back to coins table only if offers table is empty (shouldn't happen).
-            self._xch_locked_coins = offers_xch_locked if offers_xch_locked > 0 else coins_xch_locked
-            self._xch_locked_amount = offers_xch_locked_mojos if offers_xch_locked > 0 else coins_xch_locked_mojos
-            self._cat_locked_coins = offers_cat_locked if offers_cat_locked > 0 else coins_cat_locked
-            self._cat_locked_amount = offers_cat_locked_mojos if offers_cat_locked > 0 else coins_cat_locked_mojos
+            self._xch_locked_coins = (
+                offers_xch_locked if offers_xch_locked > 0 else coins_xch_locked
+            )
+            self._xch_locked_amount = (
+                offers_xch_locked_mojos
+                if offers_xch_locked > 0
+                else coins_xch_locked_mojos
+            )
+            self._cat_locked_coins = (
+                offers_cat_locked if offers_cat_locked > 0 else coins_cat_locked
+            )
+            self._cat_locked_amount = (
+                offers_cat_locked_mojos
+                if offers_cat_locked > 0
+                else coins_cat_locked_mojos
+            )
 
             # Total = free (from RPC) + locked
             self._xch_total_coins = len(xch_spendable) + self._xch_locked_coins
@@ -3627,14 +4040,22 @@ class CoinManager:
             try:
                 self._normalize_tier_labels()
             except Exception as _norm_err:
-                log_event("warning", "tier_normalize_failed",
-                          f"Tier label normalisation pass failed: {_norm_err}",
-                          data={"exc_type": type(_norm_err).__name__,
-                                "exc_msg": str(_norm_err)})
+                log_event(
+                    "warning",
+                    "tier_normalize_failed",
+                    f"Tier label normalisation pass failed: {_norm_err}",
+                    data={
+                        "exc_type": type(_norm_err).__name__,
+                        "exc_msg": str(_norm_err),
+                    },
+                )
 
         except Exception as e:
-            log_event("warning", "locked_coin_count_failed",
-                      f"Failed to count locked coins: {e}")
+            log_event(
+                "warning",
+                "locked_coin_count_failed",
+                f"Failed to count locked coins: {e}",
+            )
 
     def _normalize_tier_labels(self) -> Dict[str, int]:
         """Re-classify free tier_spare coins by SIZE and fix label drift.
@@ -3655,18 +4076,21 @@ class CoinManager:
 
         Idempotent — writes nothing when labels already match sizes.
         """
-        log_event("debug", "tier_normalize_entry",
-                  "Running tier label normalisation pass")
+        log_event(
+            "debug", "tier_normalize_entry", "Running tier label normalisation pass"
+        )
         try:
             from coin_classifier import classify_coin, CoinDesignation as _CD  # noqa: F401
         except Exception as _imp_err:
-            log_event("debug", "tier_normalize_import_failed",
-                      f"classify_coin import failed: {_imp_err}")
+            log_event(
+                "debug",
+                "tier_normalize_import_failed",
+                f"classify_coin import failed: {_imp_err}",
+            )
             return {"relabeled": 0, "demoted": 0}
         from database import get_connection, _now
 
-        summary = {"relabeled": 0, "demoted_reserve": 0,
-                   "demoted_unknown": 0}
+        summary = {"relabeled": 0, "demoted_reserve": 0, "demoted_unknown": 0}
         # Diagnostic counters so we can see why nothing fires even
         # when drift is present.
         scanned = {"xch": 0, "cat": 0}
@@ -3676,12 +4100,18 @@ class CoinManager:
             try:
                 tier_sizes = get_tier_sizes_mojos_from_cfg(is_cat=(wt == "cat"))
             except Exception as _ts_err:
-                log_event("debug", "tier_normalize_sizes_failed",
-                          f"get_tier_sizes_mojos_from_cfg({wt}) failed: {_ts_err}")
+                log_event(
+                    "debug",
+                    "tier_normalize_sizes_failed",
+                    f"get_tier_sizes_mojos_from_cfg({wt}) failed: {_ts_err}",
+                )
                 tier_sizes = {}
             if not tier_sizes:
-                log_event("debug", "tier_normalize_no_sizes",
-                          f"No tier sizes available for {wt} — skipping")
+                log_event(
+                    "debug",
+                    "tier_normalize_no_sizes",
+                    f"No tier sizes available for {wt} — skipping",
+                )
                 continue
             rows = conn.execute(
                 "SELECT coin_id, amount_mojos, assigned_tier "
@@ -3715,8 +4145,7 @@ class CoinManager:
 
                 if _des_val == "tier_spare" and best and best != current:
                     conn.execute(
-                        "UPDATE coins SET assigned_tier=?, last_seen=? "
-                        "WHERE coin_id=?",
+                        "UPDATE coins SET assigned_tier=?, last_seen=? WHERE coin_id=?",
                         (best, _now(), r["coin_id"]),
                     )
                     summary["relabeled"] += 1
@@ -3781,16 +4210,22 @@ class CoinManager:
                     )
                     summary["demoted_overstock"] += 1
 
-        total_changes = (summary["relabeled"] + summary["demoted_reserve"]
-                         + summary["demoted_unknown"]
-                         + summary["demoted_overstock"])
-        log_event("debug", "tier_normalize_exit",
-                  f"scanned xch={scanned['xch']} cat={scanned['cat']} "
-                  f"relabeled={summary['relabeled']} "
-                  f"→reserve={summary['demoted_reserve']} "
-                  f"→unknown={summary['demoted_unknown']} "
-                  f"overstock→reserve={summary['demoted_overstock']} "
-                  f"total_changes={total_changes}")
+        total_changes = (
+            summary["relabeled"]
+            + summary["demoted_reserve"]
+            + summary["demoted_unknown"]
+            + summary["demoted_overstock"]
+        )
+        log_event(
+            "debug",
+            "tier_normalize_exit",
+            f"scanned xch={scanned['xch']} cat={scanned['cat']} "
+            f"relabeled={summary['relabeled']} "
+            f"→reserve={summary['demoted_reserve']} "
+            f"→unknown={summary['demoted_unknown']} "
+            f"overstock→reserve={summary['demoted_overstock']} "
+            f"total_changes={total_changes}",
+        )
         if total_changes > 0:
             try:
                 conn.commit()
@@ -3819,8 +4254,11 @@ class CoinManager:
                 )
                 self._last_normalize_summary = dict(summary)
             except Exception as _commit_err:
-                log_event("warning", "tier_normalize_commit_failed",
-                          f"Commit failed: {_commit_err}")
+                log_event(
+                    "warning",
+                    "tier_normalize_commit_failed",
+                    f"Commit failed: {_commit_err}",
+                )
         return summary
 
     def get_inventory_summary(self) -> Dict:
@@ -3839,7 +4277,9 @@ class CoinManager:
             "xch_small": len(xch_inv.get("small", [])),
             "xch_small_total": _format_amount_xch(xch_small_total),
             "cat_reserve": len(cat_inv.get("reserve", [])),
-            "cat_reserve_total": _format_amount_cat(cat_reserve_total, cfg.CAT_DECIMALS),
+            "cat_reserve_total": _format_amount_cat(
+                cat_reserve_total, cfg.CAT_DECIMALS
+            ),
             "cat_small": len(cat_inv.get("small", [])),
             "cat_small_total": _format_amount_cat(cat_small_total, cfg.CAT_DECIMALS),
             "tier_enabled": cfg.TIER_ENABLED,
@@ -3867,7 +4307,9 @@ class CoinManager:
         summary["xch_locked_amount"] = _format_amount_xch(self._xch_locked_amount)
         summary["xch_locked_amount_raw"] = self._xch_locked_amount
         summary["cat_locked_coins"] = self._cat_locked_coins
-        summary["cat_locked_amount"] = _format_amount_cat(self._cat_locked_amount, cfg.CAT_DECIMALS)
+        summary["cat_locked_amount"] = _format_amount_cat(
+            self._cat_locked_amount, cfg.CAT_DECIMALS
+        )
         summary["cat_locked_amount_raw"] = self._cat_locked_amount
         summary["xch_total_coins"] = self._xch_total_coins
         summary["cat_total_coins"] = self._cat_total_coins
@@ -3934,18 +4376,21 @@ class CoinManager:
                     median = (amounts[n // 2 - 1] + amounts[n // 2]) / 2.0
                 ratio = float(median) / float(live_size)
                 if ratio < low_ratio or ratio > high_ratio:
-                    findings.append({
-                        "side": wallet_type,
-                        "tier": tier_name,
-                        "median_mojos": int(median),
-                        "live_size_mojos": live_size,
-                        "ratio": round(ratio, 3),
-                        "coin_count": n,
-                    })
+                    findings.append(
+                        {
+                            "side": wallet_type,
+                            "tier": tier_name,
+                            "median_mojos": int(median),
+                            "live_size_mojos": live_size,
+                            "ratio": round(ratio, 3),
+                            "coin_count": n,
+                        }
+                    )
         return findings
 
-    def get_free_coin_counts(self, active_buy_count: int = 0,
-                              active_sell_count: int = 0) -> Dict[str, int]:
+    def get_free_coin_counts(
+        self, active_buy_count: int = 0, active_sell_count: int = 0
+    ) -> Dict[str, int]:
         """Get truly free coins (spendable minus active offers).
 
         Includes active reservation totals as informational fields so callers
@@ -3981,6 +4426,7 @@ class CoinManager:
         reserved_cat_mojos = 0
         try:
             from reservation_manager import ReservationManager as _RM
+
             _totals = _RM().get_reserved_totals()
             reserved_xch_mojos = _totals.get("xch", 0)
             reserved_cat_mojos = _totals.get("cat", 0)
@@ -4025,10 +4471,13 @@ class CoinManager:
             if xch_trading < target_xch or cat_trading < target_cat:
                 report["overall_ready"] = False
                 report["overall_status"] = "LOW"
-            log_event("info", "coin_readiness",
-                      f"COIN READINESS: XCH {xch_trading}/{target_xch} trading, "
-                      f"CAT {cat_trading}/{target_cat} trading — "
-                      f"Status: {report['overall_status']}")
+            log_event(
+                "info",
+                "coin_readiness",
+                f"COIN READINESS: XCH {xch_trading}/{target_xch} trading, "
+                f"CAT {cat_trading}/{target_cat} trading — "
+                f"Status: {report['overall_status']}",
+            )
             return report
 
         # ---- Tiered readiness ----
@@ -4046,9 +4495,11 @@ class CoinManager:
         }
         multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
         prepared_xch = get_weighted_tier_prep_counts(
-            max_buy_offers, multiplier, side="xch")
+            max_buy_offers, multiplier, side="xch"
+        )
         prepared_cat = get_weighted_tier_prep_counts(
-            max_sell_offers, multiplier, side="cat")
+            max_sell_offers, multiplier, side="cat"
+        )
 
         any_critical = False
         any_low = False
@@ -4060,14 +4511,18 @@ class CoinManager:
         _locked_by_tier: Dict[str, Dict[str, int]] = {"xch": {}, "cat": {}}
         try:
             from database import get_connection as _get_conn
+
             _conn = _get_conn()
             for _wt in ("xch", "cat"):
                 for _tn in ("inner", "mid", "outer", "extreme"):
-                    _locked_by_tier[_wt][_tn] = int(_conn.execute(
-                        "SELECT COUNT(*) FROM coins "
-                        "WHERE status='locked' AND wallet_type=? AND assigned_tier=?",
-                        (_wt, _tn),
-                    ).fetchone()[0] or 0)
+                    _locked_by_tier[_wt][_tn] = int(
+                        _conn.execute(
+                            "SELECT COUNT(*) FROM coins "
+                            "WHERE status='locked' AND wallet_type=? AND assigned_tier=?",
+                            (_wt, _tn),
+                        ).fetchone()[0]
+                        or 0
+                    )
         except Exception:
             pass
 
@@ -4078,8 +4533,12 @@ class CoinManager:
             # Each asset uses ITS OWN side's tier distribution.
             xch_needed = int(xch_dist.get(tier_name, 0) or 0) if cfg.ENABLE_BUY else 0
             cat_needed = int(cat_dist.get(tier_name, 0) or 0) if cfg.ENABLE_SELL else 0
-            xch_target = int(prepared_xch.get(tier_name, 0) or 0) if cfg.ENABLE_BUY else 0
-            cat_target = int(prepared_cat.get(tier_name, 0) or 0) if cfg.ENABLE_SELL else 0
+            xch_target = (
+                int(prepared_xch.get(tier_name, 0) or 0) if cfg.ENABLE_BUY else 0
+            )
+            cat_target = (
+                int(prepared_cat.get(tier_name, 0) or 0) if cfg.ENABLE_SELL else 0
+            )
             xch_spare = xch_target - xch_needed
             cat_spare = cat_target - cat_needed
             active_needed = xch_needed + cat_needed  # Total for summary
@@ -4101,8 +4560,9 @@ class CoinManager:
             xch_spare_target = max(0, xch_target - xch_needed)
             cat_spare_target = max(0, cat_target - cat_needed)
 
-            def _compute_status(have: int, locked: int, slot_need: int,
-                                spare_tgt: int, enabled: bool) -> str:
+            def _compute_status(
+                have: int, locked: int, slot_need: int, spare_tgt: int, enabled: bool
+            ) -> str:
                 if not enabled or slot_need == 0:
                     return "READY"
                 if spare_tgt <= 0:
@@ -4119,10 +4579,12 @@ class CoinManager:
                     return "LOW"
                 return "EMPTY"
 
-            xch_status = _compute_status(xch_have, xch_locked, xch_needed,
-                                         xch_spare_target, cfg.ENABLE_BUY)
-            cat_status = _compute_status(cat_have, cat_locked, cat_needed,
-                                         cat_spare_target, cfg.ENABLE_SELL)
+            xch_status = _compute_status(
+                xch_have, xch_locked, xch_needed, xch_spare_target, cfg.ENABLE_BUY
+            )
+            cat_status = _compute_status(
+                cat_have, cat_locked, cat_needed, cat_spare_target, cfg.ENABLE_SELL
+            )
 
             # F62: Spare buffer remaining — after a full deployment, the entire
             # free pool IS the spare buffer (slot coins are locked). Before
@@ -4164,12 +4626,15 @@ class CoinManager:
             # to just the spare buffer. Showing `have/target` (e.g. 1/4) is
             # still a bit terse — so we also print an explicit spare summary
             # that makes the buffer state unambiguous.
-            log_event("debug", "coin_readiness",
-                      f"  {tier_name.upper():>8}: "
-                      f"XCH {xch_have:>3}/{xch_target} [{xch_status}] | "
-                      f"CAT {cat_have:>3}/{cat_target} [{cat_status}] | "
-                      f"Spares: XCH {xch_spare_remaining}/{xch_spare_target}, "
-                      f"CAT {cat_spare_remaining}/{cat_spare_target}")
+            log_event(
+                "debug",
+                "coin_readiness",
+                f"  {tier_name.upper():>8}: "
+                f"XCH {xch_have:>3}/{xch_target} [{xch_status}] | "
+                f"CAT {cat_have:>3}/{cat_target} [{cat_status}] | "
+                f"Spares: XCH {xch_spare_remaining}/{xch_spare_target}, "
+                f"CAT {cat_spare_remaining}/{cat_spare_target}",
+            )
 
         if self._sniper_pool_enabled():
             sniper_target = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
@@ -4181,6 +4646,7 @@ class CoinManager:
             # count to SNIPER_PREP_COUNT-1 and triggered a false LOW_SPARES.
             try:
                 from database import get_connection as _get_conn
+
                 _conn = _get_conn()
                 _locked_sniper_xch = _conn.execute(
                     "SELECT COUNT(*) FROM coins WHERE status='locked' AND assigned_tier='sniper' AND wallet_type='xch'"
@@ -4196,8 +4662,16 @@ class CoinManager:
             sniper_xch_needed = sniper_target if cfg.ENABLE_BUY else 0
             # Snipers are XCH-only (opportunistic buys) — no CAT sniper coins needed
             sniper_cat_needed = 0
-            sniper_xch_status = "READY" if sniper_xch_have >= sniper_xch_needed else ("LOW" if sniper_xch_have > 0 else "EMPTY")
-            sniper_cat_status = "READY" if sniper_cat_have >= sniper_cat_needed else ("LOW" if sniper_cat_have > 0 else "EMPTY")
+            sniper_xch_status = (
+                "READY"
+                if sniper_xch_have >= sniper_xch_needed
+                else ("LOW" if sniper_xch_have > 0 else "EMPTY")
+            )
+            sniper_cat_status = (
+                "READY"
+                if sniper_cat_have >= sniper_cat_needed
+                else ("LOW" if sniper_cat_have > 0 else "EMPTY")
+            )
             report["tiers"]["sniper"] = {
                 "slots_per_side": 0,
                 "active_needed": 0,
@@ -4212,15 +4686,22 @@ class CoinManager:
                 "xch_status": sniper_xch_status if cfg.ENABLE_BUY else "READY",
                 "cat_status": sniper_cat_status if cfg.ENABLE_SELL else "READY",
             }
-            if (cfg.ENABLE_BUY and sniper_xch_status == "EMPTY") or (cfg.ENABLE_SELL and sniper_cat_status == "EMPTY"):
+            if (cfg.ENABLE_BUY and sniper_xch_status == "EMPTY") or (
+                cfg.ENABLE_SELL and sniper_cat_status == "EMPTY"
+            ):
                 any_critical = True
-            elif (cfg.ENABLE_BUY and sniper_xch_status == "LOW") or (cfg.ENABLE_SELL and sniper_cat_status == "LOW"):
+            elif (cfg.ENABLE_BUY and sniper_xch_status == "LOW") or (
+                cfg.ENABLE_SELL and sniper_cat_status == "LOW"
+            ):
                 any_low = True
-            log_event("debug", "coin_readiness",
-                      f"  {'SNIPER':>8}: "
-                      f"XCH {sniper_xch_have:>3}/{sniper_xch_needed} [{sniper_xch_status}] | "
-                      f"CAT {sniper_cat_have:>3}/{sniper_cat_needed} [{sniper_cat_status}] | "
-                      f"Dedicated pool")
+            log_event(
+                "debug",
+                "coin_readiness",
+                f"  {'SNIPER':>8}: "
+                f"XCH {sniper_xch_have:>3}/{sniper_xch_needed} [{sniper_xch_status}] | "
+                f"CAT {sniper_cat_have:>3}/{sniper_cat_needed} [{sniper_cat_status}] | "
+                f"Dedicated pool",
+            )
 
         if self._fee_pool_enabled():
             fee_target = get_fee_pool_count()
@@ -4229,13 +4710,22 @@ class CoinManager:
             # locked in an active offer is still part of the pool.
             try:
                 from database import get_connection as _get_conn
-                _locked_fees = _get_conn().execute(
-                    "SELECT COUNT(*) FROM coins WHERE status='locked' AND assigned_tier='fees' AND wallet_type='xch'"
-                ).fetchone()[0]
+
+                _locked_fees = (
+                    _get_conn()
+                    .execute(
+                        "SELECT COUNT(*) FROM coins WHERE status='locked' AND assigned_tier='fees' AND wallet_type='xch'"
+                    )
+                    .fetchone()[0]
+                )
             except Exception:
                 _locked_fees = 0
             fee_have += int(_locked_fees or 0)
-            fee_status = "READY" if fee_have >= fee_target else ("LOW" if fee_have > 0 else "EMPTY")
+            fee_status = (
+                "READY"
+                if fee_have >= fee_target
+                else ("LOW" if fee_have > 0 else "EMPTY")
+            )
             report["tiers"]["fees"] = {
                 "slots_per_side": 0,
                 "active_needed": 0,
@@ -4277,10 +4767,13 @@ class CoinManager:
         total_needed = sum(t["active_needed"] for t in report["tiers"].values())
         total_target = sum(t["total_prepped"] for t in report["tiers"].values())
 
-        log_event("info", "coin_readiness",
-                  f"COIN READINESS: {total_xch} XCH + {total_cat} CAT trading coins | "
-                  f"Active slots: {total_needed} | Target (with spares): {total_target} | "
-                  f"Multiplier: {multiplier}x | Status: {report['overall_status']}")
+        log_event(
+            "info",
+            "coin_readiness",
+            f"COIN READINESS: {total_xch} XCH + {total_cat} CAT trading coins | "
+            f"Active slots: {total_needed} | Target (with spares): {total_target} | "
+            f"Multiplier: {multiplier}x | Status: {report['overall_status']}",
+        )
 
         return report
 
@@ -4311,29 +4804,37 @@ class CoinManager:
 
             xch_tier_detail = " | ".join(
                 f"{t}: {inv.get(f'xch_{t}', 0)} total, {xch_spares.get(t, 0)} spare"
-                for t in self._configured_tier_names())
+                for t in self._configured_tier_names()
+            )
             cat_tier_detail = " | ".join(
                 f"{t}: {inv.get(f'cat_{t}', 0)} total, {cat_spares.get(t, 0)} spare"
-                for t in self._configured_tier_names())
+                for t in self._configured_tier_names()
+            )
             fee_detail = ""
             if self._fee_pool_enabled():
                 fee_detail = f" | fees: {inv.get('xch_fees', 0)} total, {xch_spares.get('fees', 0)} spare"
 
-            log_event("info", "coin_inventory",
-                      f"[{reason.upper()}] XCH: topup_pool={inv['xch_reserve']} "
-                      f"({inv['xch_reserve_total']} XCH) | {xch_tier_detail}{fee_detail} | "
-                      f"dust={inv['xch_small']} | "
-                      f"CAT: topup_pool={inv['cat_reserve']} | {cat_tier_detail} | "
-                      f"dust={inv['cat_small']} | pace={pace}"
-                      f"{locked_line}")
+            log_event(
+                "info",
+                "coin_inventory",
+                f"[{reason.upper()}] XCH: topup_pool={inv['xch_reserve']} "
+                f"({inv['xch_reserve_total']} XCH) | {xch_tier_detail}{fee_detail} | "
+                f"dust={inv['xch_small']} | "
+                f"CAT: topup_pool={inv['cat_reserve']} | {cat_tier_detail} | "
+                f"dust={inv['cat_small']} | pace={pace}"
+                f"{locked_line}",
+            )
         else:
-            log_event("info", "coin_inventory",
-                      f"[{reason.upper()}] FREE — "
-                      f"XCH: {inv['xch_reserve']} topup_pool ({inv['xch_reserve_total']} XCH), "
-                      f"{inv['xch_trading']} trading, {inv['xch_small']} small ({inv['xch_small_total']} XCH) | "
-                      f"CAT: {inv['cat_reserve']} topup_pool ({inv['cat_reserve_total']}), "
-                      f"{inv['cat_trading']} trading, {inv['cat_small']} small ({inv['cat_small_total']})"
-                      f"{locked_line}")
+            log_event(
+                "info",
+                "coin_inventory",
+                f"[{reason.upper()}] FREE — "
+                f"XCH: {inv['xch_reserve']} topup_pool ({inv['xch_reserve_total']} XCH), "
+                f"{inv['xch_trading']} trading, {inv['xch_small']} small ({inv['xch_small_total']} XCH) | "
+                f"CAT: {inv['cat_reserve']} topup_pool ({inv['cat_reserve_total']}), "
+                f"{inv['cat_trading']} trading, {inv['cat_small']} small ({inv['cat_small_total']})"
+                f"{locked_line}",
+            )
 
     def snapshot_coins(self, reason: str = "check") -> Dict:
         """Take a fresh coin snapshot, classify, and log with reason tag.
@@ -4387,7 +4888,7 @@ class CoinManager:
         # to avoid noisy per-coin logging that clutters the system log
         # during price adjustments (multiple snapshot_coins calls per cycle).
         _changes = []
-        if hasattr(self, '_prev_xch_coin_ids') and self._prev_xch_coin_ids is not None:
+        if hasattr(self, "_prev_xch_coin_ids") and self._prev_xch_coin_ids is not None:
             new_xch = current_xch_ids - self._prev_xch_coin_ids
             gone_xch = self._prev_xch_coin_ids - current_xch_ids
             if new_xch or gone_xch:
@@ -4396,7 +4897,7 @@ class CoinManager:
                     f"({len(self._prev_xch_coin_ids)}→{len(current_xch_ids)})"
                 )
 
-        if hasattr(self, '_prev_cat_coin_ids') and self._prev_cat_coin_ids is not None:
+        if hasattr(self, "_prev_cat_coin_ids") and self._prev_cat_coin_ids is not None:
             new_cat = current_cat_ids - self._prev_cat_coin_ids
             gone_cat = self._prev_cat_coin_ids - current_cat_ids
             if new_cat or gone_cat:
@@ -4407,9 +4908,16 @@ class CoinManager:
 
         if _changes:
             # Use debug for routine requote snapshots, info for fills/startup
-            _level = "info" if reason in ("startup", "offer_filled", "coin_prep") else "debug"
-            log_event(_level, "coin_state_change",
-                      f"[{reason.upper()}] {' | '.join(_changes)}")
+            _level = (
+                "info"
+                if reason in ("startup", "offer_filled", "coin_prep")
+                else "debug"
+            )
+            log_event(
+                _level,
+                "coin_state_change",
+                f"[{reason.upper()}] {' | '.join(_changes)}",
+            )
 
         # Save for next comparison
         self._prev_xch_coin_ids = current_xch_ids
@@ -4419,8 +4927,9 @@ class CoinManager:
     # Coin prep threshold checks
     # -------------------------------------------------------------------
 
-    def needs_coin_prep(self, active_buy_count: int = 0,
-                        active_sell_count: int = 0) -> bool:
+    def needs_coin_prep(
+        self, active_buy_count: int = 0, active_sell_count: int = 0
+    ) -> bool:
         """Check if FULL coin prep needed (total coins critically low).
 
         Target is calculated dynamically — same logic as start_coin_prep() —
@@ -4452,9 +4961,11 @@ class CoinManager:
         multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", 1.0)
         if cfg.TIER_ENABLED:
             xch_tier_counts = get_weighted_tier_prep_counts(
-                max_buy, multiplier, side="xch")
+                max_buy, multiplier, side="xch"
+            )
             cat_tier_counts = get_weighted_tier_prep_counts(
-                max_sell, multiplier, side="cat")
+                max_sell, multiplier, side="cat"
+            )
             target_xch = sum(xch_tier_counts.values())
             target_cat = sum(cat_tier_counts.values())
         else:
@@ -4476,20 +4987,22 @@ class CoinManager:
         critical_xch = max(1, int(target_xch * 0.1)) if target_xch > 0 else 0
         critical_cat = max(1, int(target_cat * 0.1)) if target_cat > 0 else 0
 
-        needs_xch = (buy_enabled and target_xch > 0
-                     and est_xch_total < critical_xch)
-        needs_cat = (sell_enabled and target_cat > 0
-                     and est_cat_total < critical_cat)
+        needs_xch = buy_enabled and target_xch > 0 and est_xch_total < critical_xch
+        needs_cat = sell_enabled and target_cat > 0 and est_cat_total < critical_cat
 
         if needs_xch or needs_cat:
-            log_event("warning", "low_coins_total",
-                      f"LOW COINS! XCH: {self._xch_coins} spendable + {active_buy_count} in offers = "
-                      f"{est_xch_total}/{target_xch}, CAT: {self._cat_coins} spendable + "
-                      f"{active_sell_count} in offers = {est_cat_total}/{target_cat}")
+            log_event(
+                "warning",
+                "low_coins_total",
+                f"LOW COINS! XCH: {self._xch_coins} spendable + {active_buy_count} in offers = "
+                f"{est_xch_total}/{target_xch}, CAT: {self._cat_coins} spendable + "
+                f"{active_sell_count} in offers = {est_cat_total}/{target_cat}",
+            )
         return needs_xch or needs_cat
 
-    def needs_topup(self, active_buy_count: int = 0,
-                    active_sell_count: int = 0) -> bool:
+    def needs_topup(
+        self, active_buy_count: int = 0, active_sell_count: int = 0
+    ) -> bool:
         """Check if live coin top-up should run (free coins low).
 
         V3 ADAPTIVE: Uses trading pace to adjust the trigger threshold.
@@ -4518,7 +5031,7 @@ class CoinManager:
                         "dead — clearing flag so topups can resume. The worker "
                         "likely crashed without unwinding its outer try/except. "
                         "Investigate the previous superlog for an unhandled "
-                        "exception in coin-topup thread."
+                        "exception in coin-topup thread.",
                     )
                     # Fall through — re-evaluate cooldown and trigger fresh
                 else:
@@ -4536,12 +5049,12 @@ class CoinManager:
         if self._no_coins_backoff:
             cooldown = min(
                 _TOPUP_BACKOFF_MAX,
-                _TOPUP_BACKOFF_BASE * (2 ** self._no_coins_backoff_count),
+                _TOPUP_BACKOFF_BASE * (2**self._no_coins_backoff_count),
             )
         else:
             cooldown = _TOPUP_COOLDOWN
-        _emergency_ready = (time.time() - self._last_topup_time >= cooldown)
-        _drip_ready = (time.time() - self._last_drip_time >= _TOPUP_DRIP_INTERVAL)
+        _emergency_ready = time.time() - self._last_topup_time >= cooldown
+        _drip_ready = time.time() - self._last_drip_time >= _TOPUP_DRIP_INTERVAL
         if not _emergency_ready and not _drip_ready:
             return False
 
@@ -4552,9 +5065,9 @@ class CoinManager:
         # often → tolerates the deepest drawdown before triggering.
         pace = self.get_trading_pace()
         if getattr(cfg, "TIER_TRIGGER_PACE_SCALE", True):
-            if pace == 'busy':
+            if pace == "busy":
                 pace_scale = 1.4
-            elif pace == 'slow':
+            elif pace == "slow":
                 pace_scale = 0.7
             else:
                 pace_scale = 1.0
@@ -4570,12 +5083,12 @@ class CoinManager:
         # stays consistent.
         def _position_pct(position_tier: str) -> float:
             base = {
-                "inner":   getattr(cfg, "TIER_TRIGGER_PCT_INNER", 50),
-                "mid":     getattr(cfg, "TIER_TRIGGER_PCT_MID", 40),
-                "outer":   getattr(cfg, "TIER_TRIGGER_PCT_OUTER", 25),
+                "inner": getattr(cfg, "TIER_TRIGGER_PCT_INNER", 50),
+                "mid": getattr(cfg, "TIER_TRIGGER_PCT_MID", 40),
+                "outer": getattr(cfg, "TIER_TRIGGER_PCT_OUTER", 25),
                 "extreme": getattr(cfg, "TIER_TRIGGER_PCT_EXTREME", 15),
-                "sniper":  getattr(cfg, "TIER_TRIGGER_PCT_SNIPER", 40),
-                "fees":    getattr(cfg, "TIER_TRIGGER_PCT_FEES", 30),
+                "sniper": getattr(cfg, "TIER_TRIGGER_PCT_SNIPER", 40),
+                "fees": getattr(cfg, "TIER_TRIGGER_PCT_FEES", 30),
             }.get(position_tier, 30)
             scaled = (float(base) / 100.0) * pace_scale
             # Clamp to [0.05, 0.95] to avoid degenerate settings
@@ -4617,9 +5130,11 @@ class CoinManager:
             xch_dist = get_tier_distribution(max_buy_offers, side="xch")
             cat_dist = get_tier_distribution(max_sell_offers, side="cat")
             prepared_xch = get_weighted_tier_prep_counts(
-                max_buy_offers, multiplier, side="xch")
+                max_buy_offers, multiplier, side="xch"
+            )
             prepared_cat = get_weighted_tier_prep_counts(
-                max_sell_offers, multiplier, side="cat")
+                max_sell_offers, multiplier, side="cat"
+            )
 
             for tier_name in ("inner", "mid", "outer", "extreme"):
                 # XCH coins serve buy offers, CAT coins serve sell offers.
@@ -4643,30 +5158,56 @@ class CoinManager:
                 cat_pct = _pct_for_coin_size_tier(tier_name, "cat")
                 # Threshold is relative to THIS tier's starting pool size.
                 # If the pool size is 0 (tier not configured), skip it.
-                xch_threshold = max(1, int(round(xch_spare_target * xch_pct))) if xch_spare_target > 0 else 0
-                cat_threshold = max(1, int(round(cat_spare_target * cat_pct))) if cat_spare_target > 0 else 0
+                xch_threshold = (
+                    max(1, int(round(xch_spare_target * xch_pct)))
+                    if xch_spare_target > 0
+                    else 0
+                )
+                cat_threshold = (
+                    max(1, int(round(cat_spare_target * cat_pct)))
+                    if cat_spare_target > 0
+                    else 0
+                )
 
-                xch_trip = (xch_threshold > 0 and xch_spares_now < xch_threshold and cfg.ENABLE_BUY)
-                cat_trip = (cat_threshold > 0 and cat_spares_now < cat_threshold and cfg.ENABLE_SELL)
+                xch_trip = (
+                    xch_threshold > 0
+                    and xch_spares_now < xch_threshold
+                    and cfg.ENABLE_BUY
+                )
+                cat_trip = (
+                    cat_threshold > 0
+                    and cat_spares_now < cat_threshold
+                    and cfg.ENABLE_SELL
+                )
 
                 if xch_trip or cat_trip:
                     needs_any = True
                     if xch_trip:
                         trigger_wallet_types.add("xch")
-                        trigger_source_checks.append((
-                            "xch", tier_name, xch_spares_now,
-                            xch_spare_target, xch_threshold,
-                        ))
+                        trigger_source_checks.append(
+                            (
+                                "xch",
+                                tier_name,
+                                xch_spares_now,
+                                xch_spare_target,
+                                xch_threshold,
+                            )
+                        )
                     if cat_trip:
                         trigger_wallet_types.add("cat")
-                        trigger_source_checks.append((
-                            "cat", tier_name, cat_spares_now,
-                            cat_spare_target, cat_threshold,
-                        ))
+                        trigger_source_checks.append(
+                            (
+                                "cat",
+                                tier_name,
+                                cat_spares_now,
+                                cat_spare_target,
+                                cat_threshold,
+                            )
+                        )
                     trigger_log.append(
                         f"{tier_name} "
-                        f"xch@{int(xch_pct*100)}%={xch_spares_now}/{xch_spare_target}(<{xch_threshold}) "
-                        f"cat@{int(cat_pct*100)}%={cat_spares_now}/{cat_spare_target}(<{cat_threshold})"
+                        f"xch@{int(xch_pct * 100)}%={xch_spares_now}/{xch_spare_target}(<{xch_threshold}) "
+                        f"cat@{int(cat_pct * 100)}%={cat_spares_now}/{cat_spare_target}(<{cat_threshold})"
                     )
                     # Don't break — collect all trips for better log context
                     continue
@@ -4675,28 +5216,42 @@ class CoinManager:
                 sniper_target = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
                 # Sniper is its own pool — not flipped by reverse-buy.
                 sniper_pct = _position_pct("sniper")
-                sniper_threshold = max(1, int(round(sniper_target * sniper_pct))) if sniper_target > 0 else 0
+                sniper_threshold = (
+                    max(1, int(round(sniper_target * sniper_pct)))
+                    if sniper_target > 0
+                    else 0
+                )
                 sniper_xch_now = self._tier_spares.get("xch", {}).get("sniper", 0)
                 sniper_cat_now = self._tier_spares.get("cat", {}).get("sniper", 0)
                 if sniper_threshold > 0 and (
-                    (cfg.ENABLE_BUY and sniper_xch_now < sniper_threshold) or
-                    (cfg.ENABLE_SELL and sniper_cat_now < sniper_threshold)
+                    (cfg.ENABLE_BUY and sniper_xch_now < sniper_threshold)
+                    or (cfg.ENABLE_SELL and sniper_cat_now < sniper_threshold)
                 ):
                     needs_any = True
                     if cfg.ENABLE_BUY and sniper_xch_now < sniper_threshold:
                         trigger_wallet_types.add("xch")
-                        trigger_source_checks.append((
-                            "xch", "sniper", sniper_xch_now,
-                            sniper_target, sniper_threshold,
-                        ))
+                        trigger_source_checks.append(
+                            (
+                                "xch",
+                                "sniper",
+                                sniper_xch_now,
+                                sniper_target,
+                                sniper_threshold,
+                            )
+                        )
                     if cfg.ENABLE_SELL and sniper_cat_now < sniper_threshold:
                         trigger_wallet_types.add("cat")
-                        trigger_source_checks.append((
-                            "cat", "sniper", sniper_cat_now,
-                            sniper_target, sniper_threshold,
-                        ))
+                        trigger_source_checks.append(
+                            (
+                                "cat",
+                                "sniper",
+                                sniper_cat_now,
+                                sniper_target,
+                                sniper_threshold,
+                            )
+                        )
                     trigger_log.append(
-                        f"sniper@{int(sniper_pct*100)}% "
+                        f"sniper@{int(sniper_pct * 100)}% "
                         f"xch={sniper_xch_now}/{sniper_target}(<{sniper_threshold}) "
                         f"cat={sniper_cat_now}/{sniper_target}(<{sniper_threshold})"
                     )
@@ -4705,25 +5260,36 @@ class CoinManager:
                 fee_target = get_fee_pool_count()
                 # Fee pool is its own XCH-only pool — not flipped by reverse-buy.
                 fee_pct = _position_pct("fees")
-                fee_threshold = max(1, int(round(fee_target * fee_pct))) if fee_target > 0 else 0
+                fee_threshold = (
+                    max(1, int(round(fee_target * fee_pct))) if fee_target > 0 else 0
+                )
                 fee_xch_now = self._tier_spares.get("xch", {}).get("fees", 0)
                 if fee_threshold > 0 and fee_xch_now < fee_threshold:
                     needs_any = True
                     trigger_wallet_types.add("xch")
-                    trigger_source_checks.append((
-                        "xch", "fees", fee_xch_now,
-                        fee_target, fee_threshold,
-                    ))
+                    trigger_source_checks.append(
+                        (
+                            "xch",
+                            "fees",
+                            fee_xch_now,
+                            fee_target,
+                            fee_threshold,
+                        )
+                    )
                     trigger_log.append(
-                        f"fees@{int(fee_pct*100)}% "
+                        f"fees@{int(fee_pct * 100)}% "
                         f"xch={fee_xch_now}/{fee_target}(<{fee_threshold})"
                     )
 
             if needs_any and _emergency_ready:
                 source_ready_wallets: set[str] = set()
-                for wallet_type, tier_name, spares_now, spare_target, threshold in (
-                    trigger_source_checks
-                ):
+                for (
+                    wallet_type,
+                    tier_name,
+                    spares_now,
+                    spare_target,
+                    threshold,
+                ) in trigger_source_checks:
                     try:
                         if tier_name == get_fee_tier_name():
                             target_size_mojos = int(get_fee_coin_size_mojos())
@@ -4731,7 +5297,8 @@ class CoinManager:
                             target_size_mojos = int(
                                 self._get_tier_sizes_mojos(
                                     is_cat=(wallet_type == "cat")
-                                ).get(tier_name, 0) or 0
+                                ).get(tier_name, 0)
+                                or 0
                             )
                     except Exception:
                         target_size_mojos = 0
@@ -4756,9 +5323,12 @@ class CoinManager:
                     if not trigger_wallet_types:
                         return False
 
-                log_event("info", "low_coins_adaptive",
-                          f"Per-tier trigger fired (pace={pace}, scale={pace_scale:.2f}x). "
-                          f"Trips: {'; '.join(trigger_log) if trigger_log else 'n/a'}")
+                log_event(
+                    "info",
+                    "low_coins_adaptive",
+                    f"Per-tier trigger fired (pace={pace}, scale={pace_scale:.2f}x). "
+                    f"Trips: {'; '.join(trigger_log) if trigger_log else 'n/a'}",
+                )
                 self._topup_is_drip = False
                 self._topup_needed_wallet_types = set(trigger_wallet_types)
                 return True
@@ -4770,25 +5340,39 @@ class CoinManager:
             # Uses its own _TOPUP_DRIP_INTERVAL cooldown (90s) independent of
             # the emergency gate. Only runs if emergency check found nothing.
             if _drip_ready:
-                drip_pct = max(0.05, min(1.0, getattr(cfg, "TIER_DRIP_PCT", 100) / 100.0))
+                drip_pct = max(
+                    0.05, min(1.0, getattr(cfg, "TIER_DRIP_PCT", 100) / 100.0)
+                )
                 for tier_name in ("inner", "mid", "outer", "extreme"):
                     _xch_slots = int(xch_dist.get(tier_name, 0) or 0)
                     _cat_slots = int(cat_dist.get(tier_name, 0) or 0)
-                    _xch_sp_tgt = max(0, int(prepared_xch.get(tier_name, 0) or 0) - _xch_slots)
-                    _cat_sp_tgt = max(0, int(prepared_cat.get(tier_name, 0) or 0) - _cat_slots)
+                    _xch_sp_tgt = max(
+                        0, int(prepared_xch.get(tier_name, 0) or 0) - _xch_slots
+                    )
+                    _cat_sp_tgt = max(
+                        0, int(prepared_cat.get(tier_name, 0) or 0) - _cat_slots
+                    )
                     _xch_sp = self._tier_spares.get("xch", {}).get(tier_name, 0)
                     _cat_sp = self._tier_spares.get("cat", {}).get(tier_name, 0)
-                    _xch_drip = int(round(_xch_sp_tgt * drip_pct)) if _xch_sp_tgt > 0 else 0
-                    _cat_drip = int(round(_cat_sp_tgt * drip_pct)) if _cat_sp_tgt > 0 else 0
+                    _xch_drip = (
+                        int(round(_xch_sp_tgt * drip_pct)) if _xch_sp_tgt > 0 else 0
+                    )
+                    _cat_drip = (
+                        int(round(_cat_sp_tgt * drip_pct)) if _cat_sp_tgt > 0 else 0
+                    )
                     _xch_low = _xch_drip > 0 and _xch_sp < _xch_drip and cfg.ENABLE_BUY
                     _cat_low = _cat_drip > 0 and _cat_sp < _cat_drip and cfg.ENABLE_SELL
                     if _xch_low or _cat_low:
                         if _xch_low:
                             try:
-                                _xch_mojos = self._get_tier_sizes_mojos(is_cat=False).get(tier_name, 0)
+                                _xch_mojos = self._get_tier_sizes_mojos(
+                                    is_cat=False
+                                ).get(tier_name, 0)
                             except Exception:
                                 _xch_mojos = 0
-                            if not self._optional_topup_source_available("xch", _xch_mojos):
+                            if not self._optional_topup_source_available(
+                                "xch", _xch_mojos
+                            ):
                                 _xch_low = False
                                 self._log_drip_source_unavailable(
                                     f"xch:{tier_name}",
@@ -4797,10 +5381,14 @@ class CoinManager:
                                 )
                         if _cat_low:
                             try:
-                                _cat_mojos = self._get_tier_sizes_mojos(is_cat=True).get(tier_name, 0)
+                                _cat_mojos = self._get_tier_sizes_mojos(
+                                    is_cat=True
+                                ).get(tier_name, 0)
                             except Exception:
                                 _cat_mojos = 0
-                            if not self._optional_topup_source_available("cat", _cat_mojos):
+                            if not self._optional_topup_source_available(
+                                "cat", _cat_mojos
+                            ):
                                 _cat_low = False
                                 self._log_drip_source_unavailable(
                                     f"cat:{tier_name}",
@@ -4819,18 +5407,25 @@ class CoinManager:
                             )
                             if low
                         }
-                        log_event("info", "drip_trigger",
-                                  f"Proactive drip: {tier_name} "
-                                  f"xch={_xch_sp}/{_xch_drip} (tgt {_xch_sp_tgt}) "
-                                  f"cat={_cat_sp}/{_cat_drip} (tgt {_cat_sp_tgt})")
+                        log_event(
+                            "info",
+                            "drip_trigger",
+                            f"Proactive drip: {tier_name} "
+                            f"xch={_xch_sp}/{_xch_drip} (tgt {_xch_sp_tgt}) "
+                            f"cat={_cat_sp}/{_cat_drip} (tgt {_cat_sp_tgt})",
+                        )
                         return True
                 # Sniper pool drip (XCH + CAT, separate from trading tiers).
                 if self._sniper_pool_enabled():
                     _sniper_target = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
                     if _sniper_target > 0:
                         _sniper_drip_tgt = int(round(_sniper_target * drip_pct))
-                        _sniper_xch_sp = self._tier_spares.get("xch", {}).get("sniper", 0)
-                        _sniper_cat_sp = self._tier_spares.get("cat", {}).get("sniper", 0)
+                        _sniper_xch_sp = self._tier_spares.get("xch", {}).get(
+                            "sniper", 0
+                        )
+                        _sniper_cat_sp = self._tier_spares.get("cat", {}).get(
+                            "sniper", 0
+                        )
                         _sniper_xch_low = (
                             _sniper_drip_tgt > 0
                             and cfg.ENABLE_BUY
@@ -4843,11 +5438,17 @@ class CoinManager:
                         )
                         if _sniper_xch_low:
                             try:
-                                _sniper_xch_dec = self._configured_tier_sizes_xch().get("sniper", Decimal("0"))
-                                _sniper_xch_mojos = int(_sniper_xch_dec * Decimal("1000000000000"))
+                                _sniper_xch_dec = self._configured_tier_sizes_xch().get(
+                                    "sniper", Decimal("0")
+                                )
+                                _sniper_xch_mojos = int(
+                                    _sniper_xch_dec * Decimal("1000000000000")
+                                )
                             except Exception:
                                 _sniper_xch_mojos = 0
-                            if not self._optional_topup_source_available("xch", _sniper_xch_mojos):
+                            if not self._optional_topup_source_available(
+                                "xch", _sniper_xch_mojos
+                            ):
                                 _sniper_xch_low = False
                                 self._log_drip_source_unavailable(
                                     "xch:sniper",
@@ -4856,10 +5457,14 @@ class CoinManager:
                                 )
                         if _sniper_cat_low:
                             try:
-                                _sniper_cat_mojos = self._get_tier_sizes_mojos(is_cat=True).get("sniper", 0)
+                                _sniper_cat_mojos = self._get_tier_sizes_mojos(
+                                    is_cat=True
+                                ).get("sniper", 0)
                             except Exception:
                                 _sniper_cat_mojos = 0
-                            if not self._optional_topup_source_available("cat", _sniper_cat_mojos):
+                            if not self._optional_topup_source_available(
+                                "cat", _sniper_cat_mojos
+                            ):
                                 _sniper_cat_low = False
                                 self._log_drip_source_unavailable(
                                     "cat:sniper",
@@ -4877,11 +5482,14 @@ class CoinManager:
                                 )
                                 if low
                             }
-                            log_event("info", "drip_trigger",
-                                      f"Proactive drip: sniper "
-                                      f"xch={_sniper_xch_sp}/{_sniper_drip_tgt} "
-                                      f"cat={_sniper_cat_sp}/{_sniper_drip_tgt} "
-                                      f"(tgt {_sniper_target})")
+                            log_event(
+                                "info",
+                                "drip_trigger",
+                                f"Proactive drip: sniper "
+                                f"xch={_sniper_xch_sp}/{_sniper_drip_tgt} "
+                                f"cat={_sniper_cat_sp}/{_sniper_drip_tgt} "
+                                f"(tgt {_sniper_target})",
+                            )
                             return True
                 # Fee pool drip (XCH-only pool, separate from trading tiers).
                 if self._fee_pool_enabled():
@@ -4893,9 +5501,12 @@ class CoinManager:
                             self._last_drip_time = time.time()
                             self._topup_is_drip = True
                             self._topup_needed_wallet_types = {"xch"}
-                            log_event("info", "drip_trigger",
-                                      f"Proactive drip: fees "
-                                      f"xch={_fee_sp}/{_fee_drip_tgt} (tgt {_fee_target})")
+                            log_event(
+                                "info",
+                                "drip_trigger",
+                                f"Proactive drip: fees "
+                                f"xch={_fee_sp}/{_fee_drip_tgt} (tgt {_fee_target})",
+                            )
                             return True
                 # Orphan reclaim: fire the topup worker (which runs the
                 # misfit absorber as Step 0) when the 'small' bucket has
@@ -4910,16 +5521,22 @@ class CoinManager:
                     if cfg.ENABLE_BUY:
                         _xch_tier = self._get_tier_sizes_mojos(is_cat=False)
                         _xch_small_total = sum(
-                            _coin_amount(r) for r in self._xch_inventory.get("small", [])
+                            _coin_amount(r)
+                            for r in self._xch_inventory.get("small", [])
                         )
                         _xch_smallest = min(
-                            (v for k, v in _xch_tier.items()
-                             if k in ("inner", "mid", "outer", "extreme") and v > 0),
+                            (
+                                v
+                                for k, v in _xch_tier.items()
+                                if k in ("inner", "mid", "outer", "extreme") and v > 0
+                            ),
                             default=0,
                         )
-                        if (_xch_smallest > 0
-                                and _xch_small_total >= _xch_smallest
-                                and len(self._xch_inventory.get("small", [])) >= 2):
+                        if (
+                            _xch_smallest > 0
+                            and _xch_small_total >= _xch_smallest
+                            and len(self._xch_inventory.get("small", [])) >= 2
+                        ):
                             _orphan_wallets.append(
                                 f"xch small×{len(self._xch_inventory.get('small', []))}="
                                 f"{_format_amount_xch(_xch_small_total)}"
@@ -4927,16 +5544,22 @@ class CoinManager:
                     if cfg.ENABLE_SELL:
                         _cat_tier = self._get_tier_sizes_mojos(is_cat=True)
                         _cat_small_total = sum(
-                            _coin_amount(r) for r in self._cat_inventory.get("small", [])
+                            _coin_amount(r)
+                            for r in self._cat_inventory.get("small", [])
                         )
                         _cat_smallest = min(
-                            (v for k, v in _cat_tier.items()
-                             if k in ("inner", "mid", "outer", "extreme") and v > 0),
+                            (
+                                v
+                                for k, v in _cat_tier.items()
+                                if k in ("inner", "mid", "outer", "extreme") and v > 0
+                            ),
                             default=0,
                         )
-                        if (_cat_smallest > 0
-                                and _cat_small_total >= _cat_smallest
-                                and len(self._cat_inventory.get("small", [])) >= 2):
+                        if (
+                            _cat_smallest > 0
+                            and _cat_small_total >= _cat_smallest
+                            and len(self._cat_inventory.get("small", [])) >= 2
+                        ):
                             _orphan_wallets.append(
                                 f"cat small×{len(self._cat_inventory.get('small', []))}="
                                 f"{_format_amount_cat(_cat_small_total, cfg.CAT_DECIMALS)}"
@@ -4949,15 +5572,17 @@ class CoinManager:
                             for entry in _orphan_wallets
                         }
                         log_event(
-                            "info", "drip_trigger",
-                            "Proactive drip: orphan reclaim — " +
-                            ", ".join(_orphan_wallets)
+                            "info",
+                            "drip_trigger",
+                            "Proactive drip: orphan reclaim — "
+                            + ", ".join(_orphan_wallets),
                         )
                         return True
                 except Exception as _orphan_err:
                     log_event(
-                        "debug", "orphan_reclaim_check_failed",
-                        f"Orphan reclaim trigger check failed: {_orphan_err}"
+                        "debug",
+                        "orphan_reclaim_check_failed",
+                        f"Orphan reclaim trigger check failed: {_orphan_err}",
                     )
 
                 self._last_drip_time = time.time()  # nothing to drip — reset timer
@@ -4984,15 +5609,19 @@ class CoinManager:
                     )
                     if low
                 }
-                log_event("warning", "low_coins_free",
-                          f"Low FREE coins! XCH: {free_xch} free (threshold {target_free_xch}), "
-                          f"CAT: {free_cat} free (threshold {target_free_cat}) "
-                          f"[pace={pace}, spare buffer at {spare_keep_pct*100:.0f}%, "
-                          f"multiplier={multiplier}x]")
+                log_event(
+                    "warning",
+                    "low_coins_free",
+                    f"Low FREE coins! XCH: {free_xch} free (threshold {target_free_xch}), "
+                    f"CAT: {free_cat} free (threshold {target_free_cat}) "
+                    f"[pace={pace}, spare buffer at {spare_keep_pct * 100:.0f}%, "
+                    f"multiplier={multiplier}x]",
+                )
             return needs_xch or needs_cat
 
-    def check_runtime_health(self, active_buy_count: int = 0,
-                              active_sell_count: int = 0) -> bool:
+    def check_runtime_health(
+        self, active_buy_count: int = 0, active_sell_count: int = 0
+    ) -> bool:
         """Runtime coin health check — every 5 loops, independent."""
         if not getattr(cfg, "ENABLE_RUNTIME_COIN_HEALTH", False):
             return False
@@ -5016,32 +5645,53 @@ class CoinManager:
         needs_cat = free_cat < target_free_cat and cfg.ENABLE_SELL
 
         if needs_xch or needs_cat:
-            cooldown = min(_TOPUP_BACKOFF_MAX, _TOPUP_BACKOFF_BASE * (2 ** self._no_coins_backoff_count)) if self._no_coins_backoff else _TOPUP_COOLDOWN
+            cooldown = (
+                min(
+                    _TOPUP_BACKOFF_MAX,
+                    _TOPUP_BACKOFF_BASE * (2**self._no_coins_backoff_count),
+                )
+                if self._no_coins_backoff
+                else _TOPUP_COOLDOWN
+            )
             if time.time() - self._last_topup_time < cooldown:
                 if time.time() - self._last_low_coin_warning > 600:
-                    remaining = int((cooldown - (time.time() - self._last_topup_time)) / 60)
-                    log_event("info", "coin_health_cooldown",
-                              f"Low coins but topup on cooldown ({remaining}m remaining)")
+                    remaining = int(
+                        (cooldown - (time.time() - self._last_topup_time)) / 60
+                    )
+                    log_event(
+                        "info",
+                        "coin_health_cooldown",
+                        f"Low coins but topup on cooldown ({remaining}m remaining)",
+                    )
                     self._last_low_coin_warning = time.time()
                 return False
 
-            log_event("info", "coin_health_trigger",
-                      f"[COIN HEALTH] XCH: {free_xch} free (need {target_free_xch}), "
-                      f"CAT: {free_cat} free (need {target_free_cat})")
+            log_event(
+                "info",
+                "coin_health_trigger",
+                f"[COIN HEALTH] XCH: {free_xch} free (need {target_free_xch}), "
+                f"CAT: {free_cat} free (need {target_free_cat})",
+            )
             return True
 
         if self._health_check_counter % 50 == 0:
-            log_event("debug", "coin_health_ok",
-                      f"Coin health OK: XCH={free_xch} free, CAT={free_cat} free")
+            log_event(
+                "debug",
+                "coin_health_ok",
+                f"Coin health OK: XCH={free_xch} free, CAT={free_cat} free",
+            )
         return False
 
     # -------------------------------------------------------------------
     # Live coin top-up (background thread)
     # -------------------------------------------------------------------
 
-    def start_topup(self, active_buy_count: int = 0,
-                    active_sell_count: int = 0,
-                    is_drip: Optional[bool] = None) -> bool:
+    def start_topup(
+        self,
+        active_buy_count: int = 0,
+        active_sell_count: int = 0,
+        is_drip: Optional[bool] = None,
+    ) -> bool:
         """Start a live coin top-up in a background thread.
 
         ``is_drip`` lets the caller force the drip/emergency classification
@@ -5075,18 +5725,25 @@ class CoinManager:
             target=self._topup_worker,
             args=(active_buy_count, active_sell_count),
             daemon=True,
-            name="coin-topup"
+            name="coin-topup",
         )
         try:
             self._topup_thread.start()
         except Exception as e:
             with self._lock:
                 self._topup_running = False
-            log_event("error", "topup_thread_start_failed", f"Failed to start topup thread: {e}")
+            log_event(
+                "error",
+                "topup_thread_start_failed",
+                f"Failed to start topup thread: {e}",
+            )
             return False
 
-        log_event("info", "topup_started",
-                  "Live coin top-up started (existing offers stay active)")
+        log_event(
+            "info",
+            "topup_started",
+            "Live coin top-up started (existing offers stay active)",
+        )
         return True
 
     def stop_topup(self, wait_secs: float = 10.0) -> bool:
@@ -5170,12 +5827,17 @@ class CoinManager:
                     continue
 
                 active = {tier: 0 for tier in tiers}
-                for offer in get_open_offers(
-                    side=side,
-                    cat_asset_id=getattr(cfg, "CAT_ASSET_ID", None),
-                ) or []:
+                for offer in (
+                    get_open_offers(
+                        side=side,
+                        cat_asset_id=getattr(cfg, "CAT_ASSET_ID", None),
+                    )
+                    or []
+                ):
                     position_tier = str(offer.get("tier") or "mid").lower()
-                    coin_tier = coin_size_tier_for_slot_position(position_tier, side=side)
+                    coin_tier = coin_size_tier_for_slot_position(
+                        position_tier, side=side
+                    )
                     if coin_tier in active:
                         active[coin_tier] += 1
 
@@ -5201,7 +5863,9 @@ class CoinManager:
         try:
             self._topup_abort_logged = False
             if self._topup_should_stop():
-                log_event("info", "topup_stopped", "Coin top-up stopped before work began")
+                log_event(
+                    "info", "topup_stopped", "Coin top-up stopped before work began"
+                )
                 return
 
             # ---- Pre-check: is wallet synced? ----
@@ -5210,12 +5874,19 @@ class CoinManager:
             # which would cause a false "no coins" backoff of 2 hours.
             # Wait briefly for sync before proceeding.
             wallet_ready = False
-            wallet_backend = str(os.getenv("WALLET_TYPE", "sage") or "sage").strip().lower()
+            wallet_backend = (
+                str(os.getenv("WALLET_TYPE", "sage") or "sage").strip().lower()
+            )
             for sync_attempt in range(6):  # Up to 30 seconds
                 try:
                     from wallet import get_wallet_sync_status
+
                     sync_info = get_wallet_sync_status()
-                    sync_state = str(sync_info.get("sync_state") or "").strip().lower() if sync_info else ""
+                    sync_state = (
+                        str(sync_info.get("sync_state") or "").strip().lower()
+                        if sync_info
+                        else ""
+                    )
                     if sync_info and sync_info.get("synced", False):
                         wallet_ready = True
                         break
@@ -5230,8 +5901,11 @@ class CoinManager:
                         break
                     else:
                         if sync_attempt == 0:
-                            log_event("info", "topup_wait_sync",
-                                      "Wallet not synced — waiting before topup scan...")
+                            log_event(
+                                "info",
+                                "topup_wait_sync",
+                                "Wallet not synced — waiting before topup scan...",
+                            )
                         time.sleep(5)
                 except Exception as e:
                     # get_wallet_sync_status may not exist for some backends.
@@ -5241,13 +5915,19 @@ class CoinManager:
                         wallet_ready = True
                         break
                     else:
-                        log_event("warning", "topup_sync_check_error",
-                                  f"Sync check threw on attempt {sync_attempt}: {e}")
+                        log_event(
+                            "warning",
+                            "topup_sync_check_error",
+                            f"Sync check threw on attempt {sync_attempt}: {e}",
+                        )
                         time.sleep(5)
 
             if not wallet_ready:
-                log_event("warning", "topup_wallet_unsynced",
-                          "Wallet still not synced after 30s — short cooldown, will retry next cycle")
+                log_event(
+                    "warning",
+                    "topup_wallet_unsynced",
+                    "Wallet still not synced after 30s — short cooldown, will retry next cycle",
+                )
                 self._last_topup_time = time.time()
                 # DON'T set _no_coins_backoff — this is temporary, not "no coins"
                 return
@@ -5258,13 +5938,18 @@ class CoinManager:
 
             # Detect RPC errors: if the wallet returned an error (not just empty),
             # don't treat it as "no coins" and enter backoff — short cooldown instead.
-            xch_is_error = (isinstance(xch_result, dict) and
-                            (xch_result.get("error") or xch_result.get("success") is False))
-            cat_is_error = (isinstance(cat_result, dict) and
-                            (cat_result.get("error") or cat_result.get("success") is False))
+            xch_is_error = isinstance(xch_result, dict) and (
+                xch_result.get("error") or xch_result.get("success") is False
+            )
+            cat_is_error = isinstance(cat_result, dict) and (
+                cat_result.get("error") or cat_result.get("success") is False
+            )
             if xch_is_error or cat_is_error or xch_result is None or cat_result is None:
-                log_event("warning", "topup_rpc_error",
-                          "Wallet RPC returned error during topup — short cooldown, will retry next cycle")
+                log_event(
+                    "warning",
+                    "topup_rpc_error",
+                    "Wallet RPC returned error during topup — short cooldown, will retry next cycle",
+                )
                 self._last_topup_time = time.time()
                 return
 
@@ -5278,9 +5963,12 @@ class CoinManager:
             total_records = len(xch_records) + len(cat_records)
             total_active = active_buy + active_sell
             if total_records == 0 and total_active > 0:
-                log_event("info", "topup_zero_transient",
-                          f"Wallet returned 0 spendable coins but {total_active} offers are active — "
-                          f"wallet likely still catching up. Short cooldown, will retry.")
+                log_event(
+                    "info",
+                    "topup_zero_transient",
+                    f"Wallet returned 0 spendable coins but {total_active} offers are active — "
+                    f"wallet likely still catching up. Short cooldown, will retry.",
+                )
                 self._last_topup_time = time.time()
                 return
 
@@ -5288,38 +5976,52 @@ class CoinManager:
             if cfg.TIER_ENABLED:
                 xch_tier_mojos = self._get_tier_sizes_mojos(is_cat=False)
                 cat_tier_mojos = self._get_tier_sizes_mojos(is_cat=True)
-                xch_inv = self._classify_coins_by_designation(xch_records, "xch", xch_tier_mojos)
-                cat_inv = self._classify_coins_by_designation(cat_records, "cat", cat_tier_mojos)
+                xch_inv = self._classify_coins_by_designation(
+                    xch_records, "xch", xch_tier_mojos
+                )
+                cat_inv = self._classify_coins_by_designation(
+                    cat_records, "cat", cat_tier_mojos
+                )
                 if self._fee_pool_enabled():
                     self.fee_pool.refresh(xch_inv.get("fees", []))
 
                 # Log tier breakdown
                 tier_names = self._configured_tier_names()
                 xch_tier_counts = ", ".join(
-                    f"{t}={len(xch_inv.get(t, []))}" for t in tier_names)
+                    f"{t}={len(xch_inv.get(t, []))}" for t in tier_names
+                )
                 cat_tier_counts = ", ".join(
-                    f"{t}={len(cat_inv.get(t, []))}" for t in tier_names)
-                log_event(_topup_event_log_level("topup_inventory"), "topup_inventory",
-                          f"Topup inventory (tiered) — "
-                          f"XCH: {len(xch_inv['reserve'])} reserve, {xch_tier_counts}, "
-                          f"{len(xch_inv['small'])} small | "
-                          f"CAT: {len(cat_inv['reserve'])} reserve, {cat_tier_counts}, "
-                          f"{len(cat_inv['small'])} small")
+                    f"{t}={len(cat_inv.get(t, []))}" for t in tier_names
+                )
+                log_event(
+                    _topup_event_log_level("topup_inventory"),
+                    "topup_inventory",
+                    f"Topup inventory (tiered) — "
+                    f"XCH: {len(xch_inv['reserve'])} reserve, {xch_tier_counts}, "
+                    f"{len(xch_inv['small'])} small | "
+                    f"CAT: {len(cat_inv['reserve'])} reserve, {cat_tier_counts}, "
+                    f"{len(cat_inv['small'])} small",
+                )
             else:
-                xch_trading_mojos = int(self.get_target_xch_coin_size() * Decimal("1000000000000"))
+                xch_trading_mojos = int(
+                    self.get_target_xch_coin_size() * Decimal("1000000000000")
+                )
                 cat_scale = Decimal(10) ** Decimal(cfg.CAT_DECIMALS)
                 cat_trading_mojos = int(self.get_target_cat_coin_size() * cat_scale)
                 xch_inv = _classify_coins(xch_records, xch_trading_mojos)
                 cat_inv = _classify_coins(cat_records, cat_trading_mojos)
 
-                log_event(_topup_event_log_level("topup_inventory"), "topup_inventory",
-                          f"Topup inventory — "
-                          f"XCH: {len(xch_inv['reserve'])} reserve, {len(xch_inv['trading'])} trading, "
-                          f"{len(xch_inv['small'])} small | "
-                          f"CAT: {len(cat_inv['reserve'])} reserve, {len(cat_inv['trading'])} trading, "
-                          f"{len(cat_inv['small'])} small")
+                log_event(
+                    _topup_event_log_level("topup_inventory"),
+                    "topup_inventory",
+                    f"Topup inventory — "
+                    f"XCH: {len(xch_inv['reserve'])} reserve, {len(xch_inv['trading'])} trading, "
+                    f"{len(xch_inv['small'])} small | "
+                    f"CAT: {len(cat_inv['reserve'])} reserve, {len(cat_inv['trading'])} trading, "
+                    f"{len(cat_inv['small'])} small",
+                )
 
-            any_tier_needed = False   # tracks whether any tier was below its threshold
+            any_tier_needed = False  # tracks whether any tier was below its threshold
             did_anything = False
             topup_offer_deficits = {
                 "xch": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0},
@@ -5331,9 +6033,11 @@ class CoinManager:
             spare_deficit_summary = ""
             if cfg.TIER_ENABLED:
                 max_buy_for_priority = int(
-                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25
+                )
                 max_sell_for_priority = int(
-                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
+                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25
+                )
                 xch_dist_for_priority = get_tier_distribution(
                     max_buy_for_priority, side="xch"
                 )
@@ -5356,7 +6060,9 @@ class CoinManager:
                             parts.append(f"{side_label}/{tier_name}={count}")
                 offer_deficit_summary = ", ".join(parts)
 
-                multiplier_for_priority = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
+                multiplier_for_priority = getattr(
+                    cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")
+                )
                 buy_sizes_for_priority = self._configured_tier_sizes_xch(side="buy")
                 sell_sizes_for_priority = self._configured_tier_sizes_xch(side="sell")
                 prepared_xch_for_priority = get_weighted_tier_prep_counts(
@@ -5375,7 +6081,8 @@ class CoinManager:
                 if getattr(cfg, "TIER_TRIGGER_PACE_SCALE", True):
                     pace_for_priority = self.get_trading_pace()
                     pace_scale_for_priority = (
-                        1.4 if pace_for_priority == "busy"
+                        1.4
+                        if pace_for_priority == "busy"
                         else (0.7 if pace_for_priority == "slow" else 1.0)
                     )
                 else:
@@ -5427,29 +6134,47 @@ class CoinManager:
                     xch_threshold = (
                         max(
                             1,
-                            int(round(
-                                xch_spare_target
-                                * _priority_tier_pct(tier_name, "xch")
-                            )),
+                            int(
+                                round(
+                                    xch_spare_target
+                                    * _priority_tier_pct(tier_name, "xch")
+                                )
+                            ),
                         )
-                        if xch_spare_target > 0 else 0
+                        if xch_spare_target > 0
+                        else 0
                     )
                     cat_threshold = (
                         max(
                             1,
-                            int(round(
-                                cat_spare_target
-                                * _priority_tier_pct(tier_name, "cat")
-                            )),
+                            int(
+                                round(
+                                    cat_spare_target
+                                    * _priority_tier_pct(tier_name, "cat")
+                                )
+                            ),
                         )
-                        if cat_spare_target > 0 else 0
+                        if cat_spare_target > 0
+                        else 0
                     )
-                    if xch_threshold > 0 and xch_have < xch_threshold and cfg.ENABLE_BUY:
+                    if (
+                        xch_threshold > 0
+                        and xch_have < xch_threshold
+                        and cfg.ENABLE_BUY
+                    ):
                         spare_deficit_total += xch_threshold - xch_have
-                        spare_parts.append(f"buy/{tier_name}={xch_have}/{xch_threshold}")
-                    if cat_threshold > 0 and cat_have < cat_threshold and cfg.ENABLE_SELL:
+                        spare_parts.append(
+                            f"buy/{tier_name}={xch_have}/{xch_threshold}"
+                        )
+                    if (
+                        cat_threshold > 0
+                        and cat_have < cat_threshold
+                        and cfg.ENABLE_SELL
+                    ):
                         spare_deficit_total += cat_threshold - cat_have
-                        spare_parts.append(f"sell/{tier_name}={cat_have}/{cat_threshold}")
+                        spare_parts.append(
+                            f"sell/{tier_name}={cat_have}/{cat_threshold}"
+                        )
                 spare_deficit_summary = ", ".join(spare_parts)
 
             # ---- Step 0: Absorb misfit tier_spare coins into reserve ----
@@ -5458,15 +6183,25 @@ class CoinManager:
             # the next). With COIN_MAX_SIZE_RATIO capping selection, these
             # coins sit idle indefinitely. Fold them back into the reserve so
             # their value is recaptured for the next targeted split cycle.
-            if cfg.TIER_ENABLED and offer_deficit_total <= 0 and spare_deficit_total <= 0:
+            if (
+                cfg.TIER_ENABLED
+                and offer_deficit_total <= 0
+                and spare_deficit_total <= 0
+            ):
                 _xch_absorbed = self._absorb_misfits_to_reserve(
-                    "XCH", cfg.WALLET_ID_XCH, xch_inv,
-                    xch_tier_mojos, is_cat=False,
+                    "XCH",
+                    cfg.WALLET_ID_XCH,
+                    xch_inv,
+                    xch_tier_mojos,
+                    is_cat=False,
                 )
                 _cat_absorbed = (
                     self._absorb_misfits_to_reserve(
-                        "CAT", cfg.CAT_WALLET_ID, cat_inv,
-                        cat_tier_mojos, is_cat=True,
+                        "CAT",
+                        cfg.CAT_WALLET_ID,
+                        cat_inv,
+                        cat_tier_mojos,
+                        is_cat=True,
                     )
                     if cfg.ENABLE_SELL
                     else False
@@ -5479,9 +6214,12 @@ class CoinManager:
                     # → misfits return → infinite absorb-defer loop.
                     did_anything = True
                     self._last_drip_time = time.time()
-                    log_event("info", "topup_absorb_defer",
-                              "XCH misfits absorbed into reserve — tier splits "
-                              "deferred to next cycle (awaiting on-chain confirmation)")
+                    log_event(
+                        "info",
+                        "topup_absorb_defer",
+                        "XCH misfits absorbed into reserve — tier splits "
+                        "deferred to next cycle (awaiting on-chain confirmation)",
+                    )
                     return
                 if _cat_absorbed:
                     # CAT reserve consumed — CAT tier splits are deferred this
@@ -5491,9 +6229,12 @@ class CoinManager:
                     # The CAT split section will find no valid reserve and skip
                     # gracefully without double-spending the pending coin.
                     did_anything = True
-                    log_event("info", "topup_cat_absorb_continue_xch",
-                              "CAT misfits absorbed into reserve — proceeding with "
-                              "XCH tier splits this cycle (CAT splits deferred)")
+                    log_event(
+                        "info",
+                        "topup_cat_absorb_continue_xch",
+                        "CAT misfits absorbed into reserve — proceeding with "
+                        "XCH tier splits this cycle (CAT splits deferred)",
+                    )
 
             elif cfg.TIER_ENABLED and offer_deficit_total > 0:
                 log_event(
@@ -5514,10 +6255,10 @@ class CoinManager:
 
             if cfg.TIER_ENABLED:
                 # ---- Tier-aware topup: check each tier ----
-                max_buy_for_topup = int(
-                    getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
+                max_buy_for_topup = int(getattr(cfg, "MAX_ACTIVE_BUY_OFFERS", 25) or 25)
                 max_sell_for_topup = int(
-                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25)
+                    getattr(cfg, "MAX_ACTIVE_SELL_OFFERS", 25) or 25
+                )
                 # Per-side distributions: BUY_*_TIER_COUNT shapes XCH topup,
                 # SELL_*_TIER_COUNT shapes CAT topup. They no longer have to
                 # match — reverse-buy ladders are typically asymmetric.
@@ -5537,7 +6278,9 @@ class CoinManager:
                 # had already fired — producing a misleading "coins locked" log message
                 # even when the reserve coin was free to split.
                 if getattr(cfg, "TIER_TRIGGER_PACE_SCALE", True):
-                    _topup_pace_scale = 1.4 if pace == 'busy' else (0.7 if pace == 'slow' else 1.0)
+                    _topup_pace_scale = (
+                        1.4 if pace == "busy" else (0.7 if pace == "slow" else 1.0)
+                    )
                 else:
                     _topup_pace_scale = 1.0
 
@@ -5548,7 +6291,9 @@ class CoinManager:
                 # is much lower (e.g. sniper trigger=75%, worker=40% → buffer
                 # never restored until the harder reactive threshold is hit).
                 _is_drip_invocation = bool(getattr(self, "_topup_is_drip", False))
-                _drip_pct_norm = max(0.05, min(1.0, float(getattr(cfg, "TIER_DRIP_PCT", 100)) / 100.0))
+                _drip_pct_norm = max(
+                    0.05, min(1.0, float(getattr(cfg, "TIER_DRIP_PCT", 100)) / 100.0)
+                )
 
                 def _topup_tier_pct(tier_name: str, wallet_side: str) -> float:
                     """Return the action-threshold pct for this tier/side. For
@@ -5558,12 +6303,12 @@ class CoinManager:
                     if _is_drip_invocation:
                         return _drip_pct_norm
                     _pct_map = {
-                        "inner":   getattr(cfg, "TIER_TRIGGER_PCT_INNER", 50),
-                        "mid":     getattr(cfg, "TIER_TRIGGER_PCT_MID", 40),
-                        "outer":   getattr(cfg, "TIER_TRIGGER_PCT_OUTER", 25),
+                        "inner": getattr(cfg, "TIER_TRIGGER_PCT_INNER", 50),
+                        "mid": getattr(cfg, "TIER_TRIGGER_PCT_MID", 40),
+                        "outer": getattr(cfg, "TIER_TRIGGER_PCT_OUTER", 25),
                         "extreme": getattr(cfg, "TIER_TRIGGER_PCT_EXTREME", 15),
-                        "sniper":  getattr(cfg, "TIER_TRIGGER_PCT_SNIPER", 40),
-                        "fees":    getattr(cfg, "TIER_TRIGGER_PCT_FEES", 30),
+                        "sniper": getattr(cfg, "TIER_TRIGGER_PCT_SNIPER", 40),
+                        "fees": getattr(cfg, "TIER_TRIGGER_PCT_FEES", 30),
                     }
                     _base = _pct_map.get(tier_name, 30)
                     # Reversed-buy: translate coin-size tier → slot position for pct
@@ -5573,14 +6318,16 @@ class CoinManager:
                         _base = _pct_map.get(_pos, _base)
                     except Exception:
                         pass
-                    return max(0.05, min(0.95, (float(_base) / 100.0) * _topup_pace_scale))
+                    return max(
+                        0.05, min(0.95, (float(_base) / 100.0) * _topup_pace_scale)
+                    )
 
                 xch_scale = Decimal("1000000000000")
                 # F62 (2026-04-09): topup worker needs to know each side's
                 # own tier sizes so it can split to the right target. The
                 # XCH wallet replenishes coins at BUY sizes; the CAT wallet
                 # at SELL sizes. Pre-F62 these were forced to be the same.
-                buy_tier_sizes_xch  = self._configured_tier_sizes_xch(side="buy")
+                buy_tier_sizes_xch = self._configured_tier_sizes_xch(side="buy")
                 sell_tier_sizes_xch = self._configured_tier_sizes_xch(side="sell")
                 # Backward-compat alias used by downstream code paths below
                 # (they read `live_tier_sizes_xch` for the XCH-side split
@@ -5604,9 +6351,11 @@ class CoinManager:
                 # positions and should be replenished before outer/mid/inner pools.
                 # Sell side is never reversed so always inner → extreme.
                 _buy_reversed = getattr(cfg, "BUY_LADDER_REVERSED", False)
-                _default_tier_order = (["extreme", "outer", "mid", "inner"]
-                                       if _buy_reversed else
-                                       ["inner", "mid", "outer", "extreme"])
+                _default_tier_order = (
+                    ["extreme", "outer", "mid", "inner"]
+                    if _buy_reversed
+                    else ["inner", "mid", "outer", "extreme"]
+                )
 
                 # EMPTY-FIRST priority: a tier with zero free coins blocks any
                 # offer on that slot. Single-action topup means only one split
@@ -5625,9 +6374,9 @@ class CoinManager:
                     cat_offer_deficit_n = int(
                         topup_offer_deficits.get("cat", {}).get(tier_name, 0) or 0
                     )
-                    offer_deficit_rank = 0 if (
-                        xch_offer_deficit_n > 0 or cat_offer_deficit_n > 0
-                    ) else 1
+                    offer_deficit_rank = (
+                        0 if (xch_offer_deficit_n > 0 or cat_offer_deficit_n > 0) else 1
+                    )
                     xch_empty = xch_slots_n > 0 and xch_have_n == 0
                     cat_empty = cat_slots_n > 0 and cat_have_n == 0
                     empty_rank = 0 if (xch_empty or cat_empty) else 1
@@ -5641,7 +6390,11 @@ class CoinManager:
                 _xch_split_done = False  # True only for real splits, not pool rebuilds
                 for tier_name in _tier_order:
                     if self._topup_should_stop():
-                        log_event("info", "topup_stopped", "Coin top-up stopped during tier replenishment")
+                        log_event(
+                            "info",
+                            "topup_stopped",
+                            "Coin top-up stopped during tier replenishment",
+                        )
                         return
                     xch_slots = int(xch_dist.get(tier_name, 0) or 0)
                     cat_slots = int(cat_dist.get(tier_name, 0) or 0)
@@ -5656,11 +6409,24 @@ class CoinManager:
 
                     # XCH: check if this tier needs coins (XCH = buy side)
                     xch_have = len(xch_inv.get(tier_name, []))
-                    xch_topup_threshold = max(1, int(round(xch_spare_target * _topup_tier_pct(tier_name, "xch")))) if xch_spare_target > 0 else 0
+                    xch_topup_threshold = (
+                        max(
+                            1,
+                            int(
+                                round(
+                                    xch_spare_target * _topup_tier_pct(tier_name, "xch")
+                                )
+                            ),
+                        )
+                        if xch_spare_target > 0
+                        else 0
+                    )
                     xch_offer_deficit = int(
                         topup_offer_deficits.get("xch", {}).get(tier_name, 0) or 0
                     )
-                    xch_needs_spares = xch_spare_target > 0 and xch_have < xch_topup_threshold
+                    xch_needs_spares = (
+                        xch_spare_target > 0 and xch_have < xch_topup_threshold
+                    )
                     target_full = max(0, xch_spare_target, xch_offer_deficit)
                     xch_needs_offer_rebuild = (
                         xch_offer_deficit > 0 and xch_have < target_full
@@ -5670,7 +6436,13 @@ class CoinManager:
                         xch_tier_size = int(xch_tier_mojos.get(tier_name, 0) or 0)
                         if xch_tier_size <= 0:
                             xch_tier_size = int(
-                                Decimal(str(live_tier_sizes_xch.get(tier_name, cfg.MID_SIZE_XCH)))
+                                Decimal(
+                                    str(
+                                        live_tier_sizes_xch.get(
+                                            tier_name, cfg.MID_SIZE_XCH
+                                        )
+                                    )
+                                )
                                 * self._get_coin_prep_headroom_multiplier()
                                 * xch_scale
                             )
@@ -5686,16 +6458,20 @@ class CoinManager:
                                 f"({xch_offer_deficit} missing, threshold {xch_topup_threshold})"
                             )
                         else:
-                            topup_reason = (
-                                f"spare buffer low: {xch_have}/{xch_topup_threshold} threshold"
-                            )
-                        log_event("info", f"topup_xch_{tier_name}",
-                                  f"XCH {tier_name} {topup_reason} "
-                                  f"(target {target_full}) — "
-                                  f"need {deficit} at {_format_amount_xch(xch_tier_size)} each")
+                            topup_reason = f"spare buffer low: {xch_have}/{xch_topup_threshold} threshold"
+                        log_event(
+                            "info",
+                            f"topup_xch_{tier_name}",
+                            f"XCH {tier_name} {topup_reason} "
+                            f"(target {target_full}) — "
+                            f"need {deficit} at {_format_amount_xch(xch_tier_size)} each",
+                        )
                         result = self._smart_topup_wallet(
-                            f"XCH-{tier_name}", cfg.WALLET_ID_XCH,
-                            xch_inv, xch_tier_size, deficit,
+                            f"XCH-{tier_name}",
+                            cfg.WALLET_ID_XCH,
+                            xch_inv,
+                            xch_tier_size,
+                            deficit,
                             is_cat=False,
                             tier_is_empty=(xch_have == 0),
                             soft_budget_bypass_reason=(
@@ -5727,46 +6503,73 @@ class CoinManager:
                             time.sleep(3)
                             fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
                             fresh_records = _extract_coin_records(fresh)
-                            xch_inv = self._classify_coins_by_designation(fresh_records, "xch", self._get_tier_sizes_mojos(is_cat=False))
+                            xch_inv = self._classify_coins_by_designation(
+                                fresh_records,
+                                "xch",
+                                self._get_tier_sizes_mojos(is_cat=False),
+                            )
 
                     if _xch_split_done:
                         break  # propagate single-action exit only for real XCH splits
 
                     # CAT: check if this tier needs coins (CAT = sell side)
                     cat_have = len(cat_inv.get(tier_name, []))
-                    cat_topup_threshold = max(1, int(round(cat_spare_target * _topup_tier_pct(tier_name, "cat")))) if cat_spare_target > 0 else 0
+                    cat_topup_threshold = (
+                        max(
+                            1,
+                            int(
+                                round(
+                                    cat_spare_target * _topup_tier_pct(tier_name, "cat")
+                                )
+                            ),
+                        )
+                        if cat_spare_target > 0
+                        else 0
+                    )
                     cat_offer_deficit = int(
                         topup_offer_deficits.get("cat", {}).get(tier_name, 0) or 0
                     )
-                    cat_needs_spares = cat_spare_target > 0 and cat_have < cat_topup_threshold
+                    cat_needs_spares = (
+                        cat_spare_target > 0 and cat_have < cat_topup_threshold
+                    )
                     target_full = max(0, cat_spare_target, cat_offer_deficit)
                     cat_needs_offer_rebuild = (
                         cat_offer_deficit > 0 and cat_have < target_full
                     )
-                    if (cat_needs_offer_rebuild or cat_needs_spares) and cfg.ENABLE_SELL:
+                    if (
+                        cat_needs_offer_rebuild or cat_needs_spares
+                    ) and cfg.ENABLE_SELL:
                         any_tier_needed = True
-                        cat_tier_mojos_val = self._get_tier_sizes_mojos(is_cat=True).get(tier_name, 0)
+                        cat_tier_mojos_val = self._get_tier_sizes_mojos(
+                            is_cat=True
+                        ).get(tier_name, 0)
                         if cat_tier_mojos_val > 0:
                             _buf_base = max(1, cat_spare_target, cat_offer_deficit)
                             _buf = max(1, min(2, int(_buf_base * 0.25)))
                             deficit = max(0, target_full - cat_have) + _buf
-                            cat_size_display = _format_amount_cat(cat_tier_mojos_val, cfg.CAT_DECIMALS)
+                            cat_size_display = _format_amount_cat(
+                                cat_tier_mojos_val, cfg.CAT_DECIMALS
+                            )
                             if cat_needs_offer_rebuild:
                                 topup_reason = (
                                     f"missing sell offers: {cat_have}/{target_full} rebuild target "
                                     f"({cat_offer_deficit} missing, threshold {cat_topup_threshold})"
                                 )
                             else:
-                                topup_reason = (
-                                    f"spare buffer low: {cat_have}/{cat_topup_threshold} threshold"
-                                )
-                            log_event("info", f"topup_cat_{tier_name}",
-                                      f"CAT {tier_name} {topup_reason} "
-                                      f"(target {target_full}) — "
-                                      f"need {deficit} at {cat_size_display} each")
+                                topup_reason = f"spare buffer low: {cat_have}/{cat_topup_threshold} threshold"
+                            log_event(
+                                "info",
+                                f"topup_cat_{tier_name}",
+                                f"CAT {tier_name} {topup_reason} "
+                                f"(target {target_full}) — "
+                                f"need {deficit} at {cat_size_display} each",
+                            )
                             result = self._smart_topup_wallet(
-                                f"CAT-{tier_name}", cfg.CAT_WALLET_ID,
-                                cat_inv, cat_tier_mojos_val, deficit,
+                                f"CAT-{tier_name}",
+                                cfg.CAT_WALLET_ID,
+                                cat_inv,
+                                cat_tier_mojos_val,
+                                deficit,
                                 is_cat=True,
                                 tier_is_empty=(cat_have == 0),
                                 soft_budget_bypass_reason=(
@@ -5787,22 +6590,49 @@ class CoinManager:
                             time.sleep(3)
                             fresh = _get_free_coins_rpc(cfg.CAT_WALLET_ID)
                             fresh_records = _extract_coin_records(fresh)
-                            cat_inv = self._classify_coins_by_designation(fresh_records, "cat", self._get_tier_sizes_mojos(is_cat=True))
+                            cat_inv = self._classify_coins_by_designation(
+                                fresh_records,
+                                "cat",
+                                self._get_tier_sizes_mojos(is_cat=True),
+                            )
 
                 # SINGLE-ACTION: skip sniper/fee checks if a tier split already ran.
                 if not did_anything and self._sniper_pool_enabled():
                     if self._topup_should_stop():
-                        log_event("info", "topup_stopped", "Coin top-up stopped during sniper replenishment")
+                        log_event(
+                            "info",
+                            "topup_stopped",
+                            "Coin top-up stopped during sniper replenishment",
+                        )
                         return
                     sniper_target = int(getattr(cfg, "SNIPER_PREP_COUNT", 0) or 0)
-                    sniper_threshold = max(1, int(round(sniper_target * _topup_tier_pct("sniper", "xch"))))
-                    sniper_xch_size_dec = live_tier_sizes_xch.get("sniper", Decimal("0"))
-                    sniper_cat_mojos_val = self._get_tier_sizes_mojos(is_cat=True).get("sniper", 0)
+                    sniper_threshold = max(
+                        1, int(round(sniper_target * _topup_tier_pct("sniper", "xch")))
+                    )
+                    sniper_xch_size_dec = live_tier_sizes_xch.get(
+                        "sniper", Decimal("0")
+                    )
+                    sniper_cat_mojos_val = self._get_tier_sizes_mojos(is_cat=True).get(
+                        "sniper", 0
+                    )
 
                     sniper_xch_have = len(xch_inv.get("sniper", []))
-                    if sniper_xch_have < sniper_threshold and cfg.ENABLE_BUY and sniper_xch_size_dec > 0:
-                        sniper_xch_size = int(sniper_xch_size_dec * self._get_coin_prep_headroom_multiplier() * xch_scale)
-                        if _is_drip_invocation and not self._optional_topup_source_available("xch", sniper_xch_size):
+                    if (
+                        sniper_xch_have < sniper_threshold
+                        and cfg.ENABLE_BUY
+                        and sniper_xch_size_dec > 0
+                    ):
+                        sniper_xch_size = int(
+                            sniper_xch_size_dec
+                            * self._get_coin_prep_headroom_multiplier()
+                            * xch_scale
+                        )
+                        if (
+                            _is_drip_invocation
+                            and not self._optional_topup_source_available(
+                                "xch", sniper_xch_size
+                            )
+                        ):
                             self._log_drip_source_unavailable(
                                 "xch:sniper",
                                 f"XCH sniper drip waiting: {sniper_xch_have}/{sniper_threshold} threshold "
@@ -5811,13 +6641,19 @@ class CoinManager:
                         else:
                             any_tier_needed = True
                             deficit = (sniper_target - sniper_xch_have) + 2
-                            log_event("info", "topup_xch_sniper",
-                                      f"XCH sniper pool low: {sniper_xch_have}/{sniper_threshold} threshold "
-                                      f"(target {sniper_target}) — need {deficit} at {_format_amount_xch(sniper_xch_size)} each")
+                            log_event(
+                                "info",
+                                "topup_xch_sniper",
+                                f"XCH sniper pool low: {sniper_xch_have}/{sniper_threshold} threshold "
+                                f"(target {sniper_target}) — need {deficit} at {_format_amount_xch(sniper_xch_size)} each",
+                            )
                             result = self._smart_topup_wallet(
-                                "XCH-sniper", cfg.WALLET_ID_XCH,
-                                xch_inv, sniper_xch_size, deficit,
-                                is_cat=False
+                                "XCH-sniper",
+                                cfg.WALLET_ID_XCH,
+                                xch_inv,
+                                sniper_xch_size,
+                                deficit,
+                                is_cat=False,
                             )
                             if result:
                                 did_anything = True
@@ -5825,12 +6661,25 @@ class CoinManager:
                                 time.sleep(3)
                                 fresh = _get_free_coins_rpc(cfg.WALLET_ID_XCH)
                                 fresh_records = _extract_coin_records(fresh)
-                                xch_inv = self._classify_coins_by_designation(fresh_records, "xch", self._get_tier_sizes_mojos(is_cat=False))
+                                xch_inv = self._classify_coins_by_designation(
+                                    fresh_records,
+                                    "xch",
+                                    self._get_tier_sizes_mojos(is_cat=False),
+                                )
 
                     if not did_anything:
                         sniper_cat_have = len(cat_inv.get("sniper", []))
-                        if sniper_cat_have < sniper_threshold and cfg.ENABLE_SELL and sniper_cat_mojos_val > 0:
-                            if _is_drip_invocation and not self._optional_topup_source_available("cat", sniper_cat_mojos_val):
+                        if (
+                            sniper_cat_have < sniper_threshold
+                            and cfg.ENABLE_SELL
+                            and sniper_cat_mojos_val > 0
+                        ):
+                            if (
+                                _is_drip_invocation
+                                and not self._optional_topup_source_available(
+                                    "cat", sniper_cat_mojos_val
+                                )
+                            ):
                                 self._log_drip_source_unavailable(
                                     "cat:sniper",
                                     f"CAT sniper drip waiting: {sniper_cat_have}/{sniper_threshold} threshold "
@@ -5839,13 +6688,21 @@ class CoinManager:
                             else:
                                 any_tier_needed = True
                                 deficit = (sniper_target - sniper_cat_have) + 2
-                                sniper_cat_display = _format_amount_cat(sniper_cat_mojos_val, cfg.CAT_DECIMALS)
-                                log_event("info", "topup_cat_sniper",
-                                          f"CAT sniper pool low: {sniper_cat_have}/{sniper_threshold} threshold "
-                                          f"(target {sniper_target}) — need {deficit} at {sniper_cat_display} each")
+                                sniper_cat_display = _format_amount_cat(
+                                    sniper_cat_mojos_val, cfg.CAT_DECIMALS
+                                )
+                                log_event(
+                                    "info",
+                                    "topup_cat_sniper",
+                                    f"CAT sniper pool low: {sniper_cat_have}/{sniper_threshold} threshold "
+                                    f"(target {sniper_target}) — need {deficit} at {sniper_cat_display} each",
+                                )
                                 result = self._smart_topup_wallet(
-                                    "CAT-sniper", cfg.CAT_WALLET_ID,
-                                    cat_inv, sniper_cat_mojos_val, deficit,
+                                    "CAT-sniper",
+                                    cfg.CAT_WALLET_ID,
+                                    cat_inv,
+                                    sniper_cat_mojos_val,
+                                    deficit,
                                     is_cat=True,
                                 )
                                 if result:
@@ -5854,10 +6711,16 @@ class CoinManager:
                 # SINGLE-ACTION: skip fee check if a split already ran.
                 if not did_anything and self._fee_pool_enabled():
                     if self._topup_should_stop():
-                        log_event("info", "topup_stopped", "Coin top-up stopped during fee replenishment")
+                        log_event(
+                            "info",
+                            "topup_stopped",
+                            "Coin top-up stopped during fee replenishment",
+                        )
                         return
                     fee_target = get_fee_pool_count()
-                    fee_threshold = max(1, int(round(fee_target * _topup_tier_pct("fees", "xch"))))
+                    fee_threshold = max(
+                        1, int(round(fee_target * _topup_tier_pct("fees", "xch")))
+                    )
                     fee_xch_mojos = get_fee_coin_size_mojos()
                     fee_xch_have = len(xch_inv.get("fees", []))
                     if fee_xch_have < fee_threshold and fee_xch_mojos > 0:
@@ -5870,9 +6733,12 @@ class CoinManager:
                             f"(target {fee_target}) — need {deficit} at {_format_amount_xch(fee_xch_mojos)} each",
                         )
                         result = self._smart_topup_wallet(
-                            "XCH-fees", cfg.WALLET_ID_XCH,
-                            xch_inv, fee_xch_mojos, deficit,
-                            is_cat=False
+                            "XCH-fees",
+                            cfg.WALLET_ID_XCH,
+                            xch_inv,
+                            fee_xch_mojos,
+                            deficit,
+                            is_cat=False,
                         )
                         if result:
                             did_anything = True
@@ -5887,11 +6753,16 @@ class CoinManager:
 
                 if free_xch_trading < target_free_xch and cfg.ENABLE_BUY:
                     needed = target_free_xch - free_xch_trading + 5
-                    xch_trading_mojos = int(self.get_target_xch_coin_size() * Decimal("1000000000000"))
+                    xch_trading_mojos = int(
+                        self.get_target_xch_coin_size() * Decimal("1000000000000")
+                    )
                     xch_result = self._smart_topup_wallet(
-                        "XCH", cfg.WALLET_ID_XCH,
-                        xch_inv, xch_trading_mojos, needed,
-                        is_cat=False
+                        "XCH",
+                        cfg.WALLET_ID_XCH,
+                        xch_inv,
+                        xch_trading_mojos,
+                        needed,
+                        is_cat=False,
                     )
                     if xch_result:
                         did_anything = True
@@ -5901,11 +6772,16 @@ class CoinManager:
                         time.sleep(5)
                     needed = target_free_cat - free_cat_trading + 3
                     cat_scale_val = Decimal(10) ** Decimal(cfg.CAT_DECIMALS)
-                    cat_trading_mojos = int(self.get_target_cat_coin_size() * cat_scale_val)
+                    cat_trading_mojos = int(
+                        self.get_target_cat_coin_size() * cat_scale_val
+                    )
                     cat_result = self._smart_topup_wallet(
-                        "CAT", cfg.CAT_WALLET_ID,
-                        cat_inv, cat_trading_mojos, needed,
-                        is_cat=True
+                        "CAT",
+                        cfg.CAT_WALLET_ID,
+                        cat_inv,
+                        cat_trading_mojos,
+                        needed,
+                        is_cat=True,
                     )
                     if cat_result:
                         did_anything = True
@@ -5931,10 +6807,13 @@ class CoinManager:
                 # inside "wallet_balance", not at the top level. Fixed by reading
                 # from the nested dict.
                 from wallet import get_wallet_balance
+
                 try:
                     xch_bal = get_wallet_balance(cfg.WALLET_ID_XCH)
                     wb_nested = (xch_bal or {}).get("wallet_balance") or {}
-                    xch_total = Decimal(str(wb_nested.get("confirmed_wallet_balance", 0))) / Decimal("1000000000000")
+                    xch_total = Decimal(
+                        str(wb_nested.get("confirmed_wallet_balance", 0))
+                    ) / Decimal("1000000000000")
                 except Exception:
                     xch_total = Decimal("0")
 
@@ -5954,22 +6833,31 @@ class CoinManager:
                         # immediately re-enter the same impossible split while
                         # the emergency cooldown is doing its job.
                         self._last_drip_time = time.time()
-                    log_event("info", "topup_split_blocked",
-                              f"{'Drip' if _is_drip else 'Topup'} needed but split did not complete "
-                              f"this cycle ({xch_total:.4f} XCH in wallet) — will re-evaluate next cycle")
+                    log_event(
+                        "info",
+                        "topup_split_blocked",
+                        f"{'Drip' if _is_drip else 'Topup'} needed but split did not complete "
+                        f"this cycle ({xch_total:.4f} XCH in wallet) — will re-evaluate next cycle",
+                    )
                     return
                 elif xch_total > cfg.XCH_RESERVE + Decimal("1"):
                     # All tiers above the current invocation threshold.
                     if _is_drip:
                         self._last_drip_time = time.time()
-                        log_event("info", "drip_adequate",
-                                  f"Drip: all tiers at or above refill threshold ({xch_total:.4f} XCH) "
-                                  f"— next drip in {_TOPUP_DRIP_INTERVAL}s")
+                        log_event(
+                            "info",
+                            "drip_adequate",
+                            f"Drip: all tiers at or above refill threshold ({xch_total:.4f} XCH) "
+                            f"— next drip in {_TOPUP_DRIP_INTERVAL}s",
+                        )
                     else:
                         self._last_topup_time = time.time()
-                        log_event("info", "topup_tiers_adequate",
-                                  f"All tiers above emergency threshold ({xch_total:.4f} XCH in wallet) "
-                                  f"— coins deployed in active offers (normal state)")
+                        log_event(
+                            "info",
+                            "topup_tiers_adequate",
+                            f"All tiers above emergency threshold ({xch_total:.4f} XCH in wallet) "
+                            f"— coins deployed in active offers (normal state)",
+                        )
                     return
                 else:
                     if _is_drip:
@@ -5977,22 +6865,28 @@ class CoinManager:
                         # don't set emergency backoff (reserve shortage is expected during
                         # a full ladder; emergency topup handles it when truly needed).
                         self._last_drip_time = time.time()
-                        log_event("info", "drip_no_coins",
-                                  f"Drip: no reserve coins available to split "
-                                  f"— next drip in {_TOPUP_DRIP_INTERVAL}s")
+                        log_event(
+                            "info",
+                            "drip_no_coins",
+                            f"Drip: no reserve coins available to split "
+                            f"— next drip in {_TOPUP_DRIP_INTERVAL}s",
+                        )
                     else:
                         self._no_coins_backoff = True
                         self._no_coins_backoff_count += 1
                         self._last_topup_time = time.time()
                         backoff_secs = min(
                             _TOPUP_BACKOFF_MAX,
-                            _TOPUP_BACKOFF_BASE * (2 ** self._no_coins_backoff_count),
+                            _TOPUP_BACKOFF_BASE * (2**self._no_coins_backoff_count),
                         )
-                        log_event("info", "topup_no_action",
-                                  f"No coins available to split or consolidate — "
-                                  f"backing off {backoff_secs//60:.0f} min "
-                                  f"(attempt {self._no_coins_backoff_count}, "
-                                  f"resets on fills or successful topup)")
+                        log_event(
+                            "info",
+                            "topup_no_action",
+                            f"No coins available to split or consolidate — "
+                            f"backing off {backoff_secs // 60:.0f} min "
+                            f"(attempt {self._no_coins_backoff_count}, "
+                            f"resets on fills or successful topup)",
+                        )
                     return
 
             # SINGLE-ACTION success path: skip the long confirmation poll.
@@ -6010,9 +6904,12 @@ class CoinManager:
                 self._no_coins_backoff = False
                 self._no_coins_backoff_count = 0
                 self._clear_topup_budget_backoff("topup action succeeded")
-                log_event("info", "topup_single_action_done",
-                          f"Single-action topup complete — "
-                          f"next check in ~{_TOPUP_DRIP_INTERVAL}s for TX confirmation")
+                log_event(
+                    "info",
+                    "topup_single_action_done",
+                    f"Single-action topup complete — "
+                    f"next check in ~{_TOPUP_DRIP_INTERVAL}s for TX confirmation",
+                )
                 return
 
             # No split happened — run the confirmation poll in case a previous
@@ -6023,7 +6920,7 @@ class CoinManager:
 
             # Success — reset appropriate cooldown timer and backoff counter
             if self._topup_is_drip:
-                self._last_drip_time = 0   # check again soon for more drip work
+                self._last_drip_time = 0  # check again soon for more drip work
             else:
                 self._last_topup_time = 0  # immediate re-evaluation next cycle
             self._no_coins_backoff = False
@@ -6043,12 +6940,16 @@ class CoinManager:
             # actually diagnose the crash. Bare repr() loses the call site.
             try:
                 import traceback as _tb
+
                 _trace = _tb.format_exc()
             except Exception:
                 _trace = ""
-            log_event("error", "topup_error",
-                      f"Topup worker error: {e}",
-                      data={"traceback": _trace[:2000]})
+            log_event(
+                "error",
+                "topup_error",
+                f"Topup worker error: {e}",
+                data={"traceback": _trace[:2000]},
+            )
         finally:
             # F9 fix (2026-04-08): the original finally cleared the running
             # flag and then called update_coin_counts() + log_inventory()
@@ -6063,25 +6964,39 @@ class CoinManager:
                     self._topup_running = False
                     self._topup_stop_requested = False
             except Exception as _flag_err:
-                log_event("error", "topup_flag_clear_failed",
-                          f"Failed to clear _topup_running flag: {_flag_err}")
+                log_event(
+                    "error",
+                    "topup_flag_clear_failed",
+                    f"Failed to clear _topup_running flag: {_flag_err}",
+                )
             try:
                 self.update_coin_counts()
             except Exception as _count_err:
-                log_event("warning", "topup_post_count_failed",
-                          f"update_coin_counts after topup failed: {_count_err}")
+                log_event(
+                    "warning",
+                    "topup_post_count_failed",
+                    f"update_coin_counts after topup failed: {_count_err}",
+                )
             try:
                 self.log_inventory()
             except Exception as _inv_err:
-                log_event("warning", "topup_post_inv_failed",
-                          f"log_inventory after topup failed: {_inv_err}")
+                log_event(
+                    "warning",
+                    "topup_post_inv_failed",
+                    f"log_inventory after topup failed: {_inv_err}",
+                )
 
-    def _smart_topup_wallet(self, name: str, wallet_id: int,
-                             inventory: Dict[str, list],
-                             trading_size_mojos: int, needed: int,
-                             is_cat: bool = False,
-                             tier_is_empty: bool = False,
-                             soft_budget_bypass_reason: Optional[str] = None) -> bool:
+    def _smart_topup_wallet(
+        self,
+        name: str,
+        wallet_id: int,
+        inventory: Dict[str, list],
+        trading_size_mojos: int,
+        needed: int,
+        is_cat: bool = False,
+        tier_is_empty: bool = False,
+        soft_budget_bypass_reason: Optional[str] = None,
+    ) -> bool:
         """Smart topup for one wallet. Returns True if an action was taken.
 
         Two-step process (mirrors coin_prep_worker):
@@ -6101,8 +7016,11 @@ class CoinManager:
         if reserve_coins:
             # Re-fetch FRESH coins (IDs may be stale after other transactions)
             _refetch_event = f"topup_{name.lower()}_refetch"
-            log_event(_topup_event_log_level(_refetch_event), _refetch_event,
-                      f"Re-fetching fresh {name} coins before split...")
+            log_event(
+                _topup_event_log_level(_refetch_event),
+                _refetch_event,
+                f"Re-fetching fresh {name} coins before split...",
+            )
 
             fresh_result = _get_free_coins_rpc(wallet_id)
             fresh_records = _extract_coin_records(fresh_result)
@@ -6128,12 +7046,17 @@ class CoinManager:
             # fails (fail-open) so a DB blip can't block every topup.
             try:
                 from database import get_connection as _db_conn_fresh
+
                 _wallet_type_str = "cat" if is_cat else "xch"
-                _rows_fresh = _db_conn_fresh().execute(
-                    "SELECT coin_id, designation, assigned_tier FROM coins "
-                    "WHERE wallet_type=? AND status IN ('free', 'locked')",
-                    (_wallet_type_str,),
-                ).fetchall()
+                _rows_fresh = (
+                    _db_conn_fresh()
+                    .execute(
+                        "SELECT coin_id, designation, assigned_tier FROM coins "
+                        "WHERE wallet_type=? AND status IN ('free', 'locked')",
+                        (_wallet_type_str,),
+                    )
+                    .fetchall()
+                )
                 _db_designations = {
                     str(_r["coin_id"]).lower(): str(
                         _r["designation"] or "unknown"
@@ -6144,7 +7067,8 @@ class CoinManager:
                 _reserved_for_tiers = {
                     str(_r["coin_id"]).lower()
                     for _r in _rows_fresh
-                    if (_r["designation"] or "").lower() in ("tier_spare", "tier_active")
+                    if (_r["designation"] or "").lower()
+                    in ("tier_spare", "tier_active")
                 }
                 if _reserved_for_tiers:
                     _safe_reserve = []
@@ -6202,10 +7126,13 @@ class CoinManager:
                     _fresh_reserve = fresh_records_by_id.get(str(_reserve_id).lower())
                     if _fresh_reserve is not None:
                         pool_rebuild_extra_records.append(_fresh_reserve)
-                log_event("info", f"topup_{name.lower()}_reserve_gone",
-                          f"{name} topup pool coin is no longer large enough "
-                          f"or selectable for a direct split — checking pool "
-                          f"rebuild options.")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_reserve_gone",
+                    f"{name} topup pool coin is no longer large enough "
+                    f"or selectable for a direct split — checking pool "
+                    f"rebuild options.",
+                )
                 small_coins = fresh_inv["small"]
             else:
                 largest = fresh_inv["reserve"][0]
@@ -6263,7 +7190,7 @@ class CoinManager:
                                 f"topup_{name.lower()}_budget_empty_skip",
                                 f"{name} topup pool budget exhausted — skipping "
                                 f"split (would fund 0 coins). Re-run Smart "
-                                f"Settings to replenish the budget."
+                                f"Settings to replenish the budget.",
                             )
                             num_to_create = 0
                         else:
@@ -6273,20 +7200,25 @@ class CoinManager:
                                 f"{name} request scaled {num_to_create} → "
                                 f"{budget_cap} to fit remaining topup pool "
                                 f"budget. Deficit will be refilled over "
-                                f"multiple cycles."
+                                f"multiple cycles.",
                             )
                             num_to_create = budget_cap
 
                 if num_to_create < 1:
-                    log_event("info", f"topup_{name.lower()}_skip",
-                              f"{name} topup skipped — "
-                              f"{'pool coin ({}) too small for even 1 trading coin ({})'.format(amt_str, size_str) if largest_amount < trading_size_mojos else 'budget cap reached'}")
+                    log_event(
+                        "info",
+                        f"topup_{name.lower()}_skip",
+                        f"{name} topup skipped — "
+                        f"{'pool coin ({}) too small for even 1 trading coin ({})'.format(amt_str, size_str) if largest_amount < trading_size_mojos else 'budget cap reached'}",
+                    )
                 else:
                     # Calculate exact intermediate coin size
                     pool_amount_mojos = num_to_create * trading_size_mojos
 
                     if is_cat:
-                        pool_str = _format_amount_cat(pool_amount_mojos, cfg.CAT_DECIMALS)
+                        pool_str = _format_amount_cat(
+                            pool_amount_mojos, cfg.CAT_DECIMALS
+                        )
                     else:
                         pool_str = _format_amount_xch(pool_amount_mojos)
 
@@ -6320,10 +7252,13 @@ class CoinManager:
                         # refill source that doesn't risk the reserve.
                         small_coins = fresh_inv["small"]
                     else:
-                        log_event("info", f"topup_{name.lower()}_start",
-                                  f"Creating {name} pool coin ({pool_str}) from topup pool coin "
-                                  f"({amt_str}) → will split into {num_to_create} × {size_str} "
-                                  f"[source: {source_coin_id[:12]}...]")
+                        log_event(
+                            "info",
+                            f"topup_{name.lower()}_start",
+                            f"Creating {name} pool coin ({pool_str}) from topup pool coin "
+                            f"({amt_str}) → will split into {num_to_create} × {size_str} "
+                            f"[source: {source_coin_id[:12]}...]",
+                        )
 
                         success = self._two_step_split(
                             name=name,
@@ -6344,20 +7279,32 @@ class CoinManager:
                                     amount_mojos=pool_amount_mojos,
                                 )
                             except Exception as _budget_err:
-                                log_event("debug", f"topup_{name.lower()}_budget_record_failed",
-                                          f"Failed to record topup pool spend: {_budget_err}")
+                                log_event(
+                                    "debug",
+                                    f"topup_{name.lower()}_budget_record_failed",
+                                    f"Failed to record topup pool spend: {_budget_err}",
+                                )
 
-                            log_event("success", f"topup_{name.lower()}_split_ok",
-                                      f"{name} topup complete: {num_to_create} new trading coins")
+                            log_event(
+                                "success",
+                                f"topup_{name.lower()}_split_ok",
+                                f"{name} topup complete: {num_to_create} new trading coins",
+                            )
                             return True
                         elif success == _TOPUP_PENDING:
-                            log_event("info", f"topup_{name.lower()}_split_wait",
-                                      f"{name} split already submitted — waiting for "
-                                      "wallet/chain state to settle")
+                            log_event(
+                                "info",
+                                f"topup_{name.lower()}_split_wait",
+                                f"{name} split already submitted — waiting for "
+                                "wallet/chain state to settle",
+                            )
                             return False
                         else:
-                            log_event("info", f"topup_{name.lower()}_split_fail",
-                                      f"{name} two-step split failed — will retry next cycle")
+                            log_event(
+                                "info",
+                                f"topup_{name.lower()}_split_fail",
+                                f"{name} two-step split failed — will retry next cycle",
+                            )
                             # Fall through to strategy 2
 
         # ---- Strategy 2: Consolidate small coins ----
@@ -6372,29 +7319,39 @@ class CoinManager:
                 else:
                     total_str = _format_amount_xch(total_small)
 
-                log_event("info", f"topup_{name.lower()}_consolidate",
-                          f"Consolidating {len(small_coins)} small {name} coins "
-                          f"({total_str} total) into one coin for splitting")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_consolidate",
+                    f"Consolidating {len(small_coins)} small {name} coins "
+                    f"({total_str} total) into one coin for splitting",
+                )
 
                 # Explicit coin IDs prevent Sage from picking coins from other
                 # tiers (e.g. freshly-created tier_spare coins) when building
                 # this consolidation transaction.
-                _small_ids = [
-                    _coin_id_from_record(r) for r in small_coins
-                ]
+                _small_ids = [_coin_id_from_record(r) for r in small_coins]
                 _small_ids = [cid for cid in _small_ids if cid]
                 success = self._consolidate_coins(
-                    name, wallet_id, total_small, is_cat,
+                    name,
+                    wallet_id,
+                    total_small,
+                    is_cat,
                     source_coin_ids=_small_ids or None,
                 )
                 if success is True:
-                    log_event("success", f"topup_{name.lower()}_consolidate_ok",
-                              f"{name} consolidation submitted — will split after confirmation")
+                    log_event(
+                        "success",
+                        f"topup_{name.lower()}_consolidate_ok",
+                        f"{name} consolidation submitted — will split after confirmation",
+                    )
                     return True
                 elif success == _TOPUP_PENDING:
-                    log_event("info", f"topup_{name.lower()}_consolidate_wait",
-                              f"{name} consolidation already submitted — waiting for "
-                              "wallet/chain state to settle")
+                    log_event(
+                        "info",
+                        f"topup_{name.lower()}_consolidate_wait",
+                        f"{name} consolidation already submitted — waiting for "
+                        "wallet/chain state to settle",
+                    )
                     return False
                 elif self._last_consolidate_not_submitted:
                     log_event(
@@ -6404,18 +7361,26 @@ class CoinManager:
                     )
                     return False
                 else:
-                    log_event("warning", f"topup_{name.lower()}_consolidate_fail",
-                              f"{name} consolidation failed")
+                    log_event(
+                        "warning",
+                        f"topup_{name.lower()}_consolidate_fail",
+                        f"{name} consolidation failed",
+                    )
             else:
                 if is_cat:
                     total_str = _format_amount_cat(total_small, cfg.CAT_DECIMALS)
-                    need_str = _format_amount_cat(trading_size_mojos * 2, cfg.CAT_DECIMALS)
+                    need_str = _format_amount_cat(
+                        trading_size_mojos * 2, cfg.CAT_DECIMALS
+                    )
                 else:
                     total_str = _format_amount_xch(total_small)
                     need_str = _format_amount_xch(trading_size_mojos * 2)
-                log_event("info", f"topup_{name.lower()}_small_insufficient",
-                          f"{len(small_coins)} small {name} coins total {total_str} "
-                          f"(need at least {need_str} to consolidate)")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_small_insufficient",
+                    f"{len(small_coins)} small {name} coins total {total_str} "
+                    f"(need at least {need_str} to consolidate)",
+                )
 
         # ---- Strategy 3: Reconstitute topup pool from excess tier_spare coins ----
         #
@@ -6433,8 +7398,8 @@ class CoinManager:
         # then consolidate the remainder into one large coin. That coin will be
         # classified as "reserve" on the next inventory scan and Strategy 1 can
         # split it for whichever tier is low.
-        _POOL_REBUILD_KEEP = 1   # spare coins to leave in each tier bucket
-        _POOL_REBUILD_MIN  = 2   # minimum excess coins required to attempt rebuild
+        _POOL_REBUILD_KEEP = 1  # spare coins to leave in each tier bucket
+        _POOL_REBUILD_MIN = 2  # minimum excess coins required to attempt rebuild
 
         # Compute per-tier targets so we never poach from a tier that is
         # itself below target. Previously the rebuild treated any coins
@@ -6448,17 +7413,19 @@ class CoinManager:
                     cfg,
                     "MAX_ACTIVE_SELL_OFFERS" if is_cat else "MAX_ACTIVE_BUY_OFFERS",
                     25,
-                ) or 25
+                )
+                or 25
             )
             _rebuild_multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
             _rebuild_side_key = "cat" if is_cat else "xch"
             _rebuild_tier_sizes = (
                 self._configured_tier_sizes_xch(side="sell")
-                if is_cat else
-                self._configured_tier_sizes_xch(side="buy")
+                if is_cat
+                else self._configured_tier_sizes_xch(side="buy")
             )
             _per_tier_targets = get_weighted_tier_prep_counts(
-                _rebuild_max_offers, _rebuild_multiplier,
+                _rebuild_max_offers,
+                _rebuild_multiplier,
                 tier_sizes_xch=_rebuild_tier_sizes,
                 side=_rebuild_side_key,
             )
@@ -6515,7 +7482,7 @@ class CoinManager:
             )
             try:
                 _borrow_order = _tier_priority[
-                    _tier_priority.index(_requested_tier) + 1:
+                    _tier_priority.index(_requested_tier) + 1 :
                 ]
             except ValueError:
                 _borrow_order = []
@@ -6563,11 +7530,14 @@ class CoinManager:
                 else:
                     _pool_str = _format_amount_xch(_pool_total)
 
-                log_event("info", f"topup_{name.lower()}_pool_rebuild",
-                          f"No {name} reserve coin — rebuilding topup pool from "
-                          f"{len(_pool_candidates)} excess spare coins "
-                          f"({_pool_str} total). Pool will be available after "
-                          f"on-chain confirmation.")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_pool_rebuild",
+                    f"No {name} reserve coin — rebuilding topup pool from "
+                    f"{len(_pool_candidates)} excess spare coins "
+                    f"({_pool_str} total). Pool will be available after "
+                    f"on-chain confirmation.",
+                )
 
                 # Pass explicit coin IDs so Sage only spends the intended
                 # excess spare coins — not freshly-created coins from concurrent
@@ -6577,13 +7547,19 @@ class CoinManager:
                 ]
                 _pool_candidate_ids = [cid for cid in _pool_candidate_ids if cid]
                 _rebuild_ok = self._consolidate_coins(
-                    name, wallet_id, _pool_total, is_cat,
+                    name,
+                    wallet_id,
+                    _pool_total,
+                    is_cat,
                     source_coin_ids=_pool_candidate_ids or None,
                 )
                 if _rebuild_ok is True:
-                    log_event("success", f"topup_{name.lower()}_pool_rebuild_ok",
-                              f"{name} topup pool rebuild submitted — new reserve coin "
-                              f"will be classified and split on the next topup cycle.")
+                    log_event(
+                        "success",
+                        f"topup_{name.lower()}_pool_rebuild_ok",
+                        f"{name} topup pool rebuild submitted — new reserve coin "
+                        f"will be classified and split on the next topup cycle.",
+                    )
                     # Excess tier_spare coins are value returning to the topup
                     # pool, same as misfit absorption. Credit the soft-budget
                     # counter back now so a successful pool rebuild does not
@@ -6597,9 +7573,12 @@ class CoinManager:
                     # blocking it for a consolidation causes CAT inner to starve.
                     return "rebuild"
                 elif _rebuild_ok == _TOPUP_PENDING:
-                    log_event("info", f"topup_{name.lower()}_pool_rebuild_wait",
-                              f"{name} topup pool rebuild already submitted — "
-                              "waiting for wallet/chain state to settle")
+                    log_event(
+                        "info",
+                        f"topup_{name.lower()}_pool_rebuild_wait",
+                        f"{name} topup pool rebuild already submitted — "
+                        "waiting for wallet/chain state to settle",
+                    )
                     return False
                 elif self._last_consolidate_not_submitted:
                     log_event(
@@ -6609,21 +7588,32 @@ class CoinManager:
                     )
                     return False
                 else:
-                    log_event("warning", f"topup_{name.lower()}_pool_rebuild_fail",
-                              f"{name} topup pool rebuild consolidation failed")
+                    log_event(
+                        "warning",
+                        f"topup_{name.lower()}_pool_rebuild_fail",
+                        f"{name} topup pool rebuild consolidation failed",
+                    )
             else:
                 if is_cat:
                     _pool_str = _format_amount_cat(_pool_total, cfg.CAT_DECIMALS)
-                    _need_str = _format_amount_cat(trading_size_mojos * 2, cfg.CAT_DECIMALS)
+                    _need_str = _format_amount_cat(
+                        trading_size_mojos * 2, cfg.CAT_DECIMALS
+                    )
                 else:
                     _pool_str = _format_amount_xch(_pool_total)
                     _need_str = _format_amount_xch(trading_size_mojos * 2)
-                log_event("info", f"topup_{name.lower()}_pool_rebuild_insufficient",
-                          f"{len(_pool_candidates)} candidate coins total {_pool_str} "
-                          f"(need at least {_need_str} to rebuild pool)")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_pool_rebuild_insufficient",
+                    f"{len(_pool_candidates)} candidate coins total {_pool_str} "
+                    f"(need at least {_need_str} to rebuild pool)",
+                )
 
-        log_event("info", f"topup_{name.lower()}_none",
-                  f"No {name} reserve or consolidatable coins available")
+        log_event(
+            "info",
+            f"topup_{name.lower()}_none",
+            f"No {name} reserve or consolidatable coins available",
+        )
         return False
 
     # -------------------------------------------------------------------
@@ -6651,12 +7641,16 @@ class CoinManager:
     # Settings saves new values).
     # -------------------------------------------------------------------
 
-    def _check_topup_reserve_guards(self, name: str, wallet_id: int,
-                                    pool_amount_mojos: int,
-                                    is_cat: bool,
-                                    tier_is_empty: bool = False,
-                                    inventory: Optional[Dict[str, list]] = None,
-                                    soft_budget_bypass_reason: Optional[str] = None) -> bool:
+    def _check_topup_reserve_guards(
+        self,
+        name: str,
+        wallet_id: int,
+        pool_amount_mojos: int,
+        is_cat: bool,
+        tier_is_empty: bool = False,
+        inventory: Optional[Dict[str, list]] = None,
+        soft_budget_bypass_reason: Optional[str] = None,
+    ) -> bool:
         """Return True if a split of `pool_amount_mojos` is permitted.
 
         Checks (in order):
@@ -6747,6 +7741,7 @@ class CoinManager:
         else:
             try:
                 from wallet_sage import get_effective_transaction_fee_mojos as _est_fee
+
                 single_fee_mojos = int(_est_fee() or 0)
             except Exception:
                 single_fee_mojos = int(
@@ -6791,6 +7786,7 @@ class CoinManager:
             if budget_mojos > 0:
                 # Budget explicitly set — track against it
                 from database import get_setting as _get_setting
+
                 try:
                     spent_raw = _get_setting(spent_key, "0")
                     spent_mojos = int(str(spent_raw) or "0")
@@ -6802,9 +7798,13 @@ class CoinManager:
                     # CAT mojos have CAT_DECIMALS precision (default 3),
                     # XCH mojos have 12. Using /1e12 for both printed CAT
                     # amounts as 0.0001 when actual values were thousands.
-                    _display_scale = float(
-                        Decimal(10) ** Decimal(str(getattr(cfg, "CAT_DECIMALS", 3)))
-                    ) if is_cat else 1e12
+                    _display_scale = (
+                        float(
+                            Decimal(10) ** Decimal(str(getattr(cfg, "CAT_DECIMALS", 3)))
+                        )
+                        if is_cat
+                        else 1e12
+                    )
                     _unit = "CAT" if is_cat else "XCH"
 
                     if tier_is_empty:
@@ -6880,14 +7880,18 @@ class CoinManager:
                     )
                     return False
         except Exception as exc:
-            log_event("debug", f"topup_{name.lower()}_budget_check_failed",
-                      f"Budget check raised {exc} — allowing split (hard reserve "
-                      f"guard still enforced).")
+            log_event(
+                "debug",
+                f"topup_{name.lower()}_budget_check_failed",
+                f"Budget check raised {exc} — allowing split (hard reserve "
+                f"guard still enforced).",
+            )
 
         return True
 
-    def _unlocked_excess_spare_mojos(self, inventory: Optional[Dict[str, list]],
-                                     is_cat: bool) -> int:
+    def _unlocked_excess_spare_mojos(
+        self, inventory: Optional[Dict[str, list]], is_cat: bool
+    ) -> int:
         """Sum the mojos of unlocked tier_spare coins that exceed each
         tier's own target. Used by the budget guard's excess-spares
         bypass to know whether the wallet can cover a refill from
@@ -6910,17 +7914,19 @@ class CoinManager:
                     cfg,
                     "MAX_ACTIVE_SELL_OFFERS" if is_cat else "MAX_ACTIVE_BUY_OFFERS",
                     25,
-                ) or 25
+                )
+                or 25
             )
             multiplier = getattr(cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0"))
             side_key = "cat" if is_cat else "xch"
             tier_sizes = (
                 self._configured_tier_sizes_xch(side="sell")
-                if is_cat else
-                self._configured_tier_sizes_xch(side="buy")
+                if is_cat
+                else self._configured_tier_sizes_xch(side="buy")
             )
             per_tier_targets = get_weighted_tier_prep_counts(
-                max_offers, multiplier,
+                max_offers,
+                multiplier,
                 tier_sizes_xch=tier_sizes,
                 side=side_key,
             )
@@ -6946,8 +7952,9 @@ class CoinManager:
                 total += int(_coin_amount(rec) or 0)
         return total
 
-    def _max_coins_within_topup_budget(self, is_cat: bool,
-                                       trading_size_mojos: int) -> Optional[int]:
+    def _max_coins_within_topup_budget(
+        self, is_cat: bool, trading_size_mojos: int
+    ) -> Optional[int]:
         """Return the largest number of trading coins the remaining topup
         budget can fund, or None when no budget is configured (unlimited).
 
@@ -6979,6 +7986,7 @@ class CoinManager:
 
         try:
             from database import get_setting
+
             spent_mojos = int(str(get_setting(spent_key, "0") or "0"))
         except Exception:
             spent_mojos = 0
@@ -6986,8 +7994,9 @@ class CoinManager:
         remaining = max(0, budget_mojos - spent_mojos)
         return remaining // trading_size_mojos
 
-    def _mark_topup_budget_backoff(self, name: str, is_cat: bool,
-                                   trading_size_mojos: int) -> None:
+    def _mark_topup_budget_backoff(
+        self, name: str, is_cat: bool, trading_size_mojos: int
+    ) -> None:
         """Back off when the soft topup budget cannot fund one more coin."""
         now = time.time()
         self._topup_budget_backoff_count += 1
@@ -7014,13 +8023,19 @@ class CoinManager:
         )
 
     def _clear_topup_budget_backoff(self, reason: str) -> None:
-        if self._topup_budget_backoff_until <= 0 and self._topup_budget_backoff_count == 0:
+        if (
+            self._topup_budget_backoff_until <= 0
+            and self._topup_budget_backoff_count == 0
+        ):
             return
         self._topup_budget_backoff_until = 0
         self._topup_budget_backoff_count = 0
         self._topup_budget_backoff_probe = None
-        log_event("debug", "topup_budget_backoff_reset",
-                  f"Topup budget backoff reset: {reason}")
+        log_event(
+            "debug",
+            "topup_budget_backoff_reset",
+            f"Topup budget backoff reset: {reason}",
+        )
 
     def _topup_budget_backoff_active(self) -> bool:
         """Return True while a budget-exhausted topup is cooling down.
@@ -7071,13 +8086,19 @@ class CoinManager:
             return
         try:
             from database import get_setting, set_setting
-            key = "topup_pool_cat_spent_mojos" if is_cat else "topup_pool_xch_spent_mojos"
+
+            key = (
+                "topup_pool_cat_spent_mojos" if is_cat else "topup_pool_xch_spent_mojos"
+            )
             current = int(str(get_setting(key, "0") or "0"))
             set_setting(key, str(current + int(amount_mojos)))
         except Exception as exc:
-            log_event("debug", "topup_pool_spend_record_failed",
-                      f"Could not record topup pool spend ({amount_mojos} mojos, "
-                      f"is_cat={is_cat}): {exc}")
+            log_event(
+                "debug",
+                "topup_pool_spend_record_failed",
+                f"Could not record topup pool spend ({amount_mojos} mojos, "
+                f"is_cat={is_cat}): {exc}",
+            )
 
     def _record_topup_pool_refund(self, is_cat: bool, amount_mojos: int) -> None:
         """Credit an amount back to the topup pool spend counter.
@@ -7098,19 +8119,29 @@ class CoinManager:
             return
         try:
             from database import get_setting, set_setting
-            key = "topup_pool_cat_spent_mojos" if is_cat else "topup_pool_xch_spent_mojos"
+
+            key = (
+                "topup_pool_cat_spent_mojos" if is_cat else "topup_pool_xch_spent_mojos"
+            )
             current = int(str(get_setting(key, "0") or "0"))
             updated = max(0, current - int(amount_mojos))
             set_setting(key, str(updated))
         except Exception as exc:
-            log_event("debug", "topup_pool_refund_record_failed",
-                      f"Could not record topup pool refund ({amount_mojos} mojos, "
-                      f"is_cat={is_cat}): {exc}")
+            log_event(
+                "debug",
+                "topup_pool_refund_record_failed",
+                f"Could not record topup pool refund ({amount_mojos} mojos, "
+                f"is_cat={is_cat}): {exc}",
+            )
 
-    def _stamp_topup_output_designations(self, name: str, wallet_id: int,
-                                         output_coin_ids: List[str],
-                                         owned_amounts: Dict[str, int],
-                                         is_cat: bool) -> None:
+    def _stamp_topup_output_designations(
+        self,
+        name: str,
+        wallet_id: int,
+        output_coin_ids: List[str],
+        owned_amounts: Dict[str, int],
+        is_cat: bool,
+    ) -> None:
         """Persist intended tier designations for freshly split topup outputs.
 
         Sage one-step splits surface output IDs before the normal inventory scan
@@ -7122,7 +8153,14 @@ class CoinManager:
         """
         label = str(name or "").strip().lower()
         tier_name = label.rsplit("-", 1)[-1] if "-" in label else label
-        valid_tiers = {"inner", "mid", "outer", "extreme", "sniper", get_fee_tier_name()}
+        valid_tiers = {
+            "inner",
+            "mid",
+            "outer",
+            "extreme",
+            "sniper",
+            get_fee_tier_name(),
+        }
         if tier_name not in valid_tiers:
             return
 
@@ -7130,13 +8168,16 @@ class CoinManager:
         stamped = 0
         try:
             from database import upsert_coin, set_coin_designation
+
             for raw_cid in output_coin_ids or []:
                 cid = str(raw_cid or "").strip()
                 if not cid:
                     continue
-                amount = int((owned_amounts or {}).get(raw_cid)
-                             or (owned_amounts or {}).get(cid)
-                             or 0)
+                amount = int(
+                    (owned_amounts or {}).get(raw_cid)
+                    or (owned_amounts or {}).get(cid)
+                    or 0
+                )
                 if amount <= 0:
                     continue
                 upsert_coin(
@@ -7150,19 +8191,31 @@ class CoinManager:
                 set_coin_designation(cid, "tier_spare", tier_name)
                 stamped += 1
         except Exception as exc:
-            log_event("warning", f"topup_{label}_stamp_failed",
-                      f"Could not stamp {wallet_type.upper()} topup outputs "
-                      f"as {tier_name}: {exc}")
+            log_event(
+                "warning",
+                f"topup_{label}_stamp_failed",
+                f"Could not stamp {wallet_type.upper()} topup outputs "
+                f"as {tier_name}: {exc}",
+            )
             return
 
         if stamped:
-            log_event("debug", f"topup_{label}_outputs_stamped",
-                      f"Stamped {stamped} {wallet_type.upper()} topup output "
-                      f"coin(s) as tier_spare/{tier_name}")
+            log_event(
+                "debug",
+                f"topup_{label}_outputs_stamped",
+                f"Stamped {stamped} {wallet_type.upper()} topup output "
+                f"coin(s) as tier_spare/{tier_name}",
+            )
 
-    def _sage_one_step_split(self, name: str, wallet_id: int,
-                              source_coin_id: str, num_to_create: int,
-                              trading_size_mojos: int, is_cat: bool) -> bool:
+    def _sage_one_step_split(
+        self,
+        name: str,
+        wallet_id: int,
+        source_coin_id: str,
+        num_to_create: int,
+        trading_size_mojos: int,
+        is_cat: bool,
+    ) -> bool:
         """Single-step topup split for Sage wallets using /create_transaction.
 
         /send_xch does not honour coin_ids hints (the SendXch Rust struct has no
@@ -7184,8 +8237,9 @@ class CoinManager:
         tag = f"topup_{name.lower()}"
 
         if self._topup_should_stop():
-            log_event("info", f"{tag}_stopped",
-                      f"{name} top-up stopped before one-step split")
+            log_event(
+                "info", f"{tag}_stopped", f"{name} top-up stopped before one-step split"
+            )
             return False
 
         if not hasattr(self, "_recent_topup_split_submissions"):
@@ -7198,7 +8252,8 @@ class CoinManager:
         if debounce_secs > 0:
             now = time.time()
             self._recent_topup_split_submissions = {
-                k: ts for k, ts in self._recent_topup_split_submissions.items()
+                k: ts
+                for k, ts in self._recent_topup_split_submissions.items()
                 if now - ts < debounce_secs
             }
             last_submitted = self._recent_topup_split_submissions.get(split_key)
@@ -7242,7 +8297,9 @@ class CoinManager:
             size_str = _format_amount_xch(trading_size_mojos)
 
         # --- Snapshot before ---
-        pre_owned_map = self._get_owned_coin_amount_map(wallet_id, f"{tag}-pre-osstep") or {}
+        pre_owned_map = (
+            self._get_owned_coin_amount_map(wallet_id, f"{tag}-pre-osstep") or {}
+        )
         pre_owned_ids = set(pre_owned_map.keys())
 
         fee_mojos = self._tx_fee_mojos()
@@ -7251,20 +8308,28 @@ class CoinManager:
             fee_coin_id = self.fee_pool.reserve()
             if fee_coin_id:
                 _fee_event = f"{tag}_fee_coin_reserved"
-                log_event(_topup_event_log_level(_fee_event), _fee_event,
-                          f"Reserved XCH fee coin {fee_coin_id[:12]}... "
-                          f"for CAT top-up split")
+                log_event(
+                    _topup_event_log_level(_fee_event),
+                    _fee_event,
+                    f"Reserved XCH fee coin {fee_coin_id[:12]}... for CAT top-up split",
+                )
             else:
-                log_event("warning", f"{tag}_fee_coin_unavailable",
-                          "Fee pool enabled but no unreserved XCH fee coin "
-                          "is available for CAT top-up; refusing this split "
-                          "so Sage cannot auto-select a pending fee input")
+                log_event(
+                    "warning",
+                    f"{tag}_fee_coin_unavailable",
+                    "Fee pool enabled but no unreserved XCH fee coin "
+                    "is available for CAT top-up; refusing this split "
+                    "so Sage cannot auto-select a pending fee input",
+                )
                 return False
 
         _start_event = f"{tag}_osstep_start"
-        log_event(_topup_event_log_level(_start_event), _start_event,
-                  f"Sage one-step split: {num_to_create}×{size_str} from "
-                  f"topup pool coin {source_coin_id[:12]}... via /create_transaction")
+        log_event(
+            _topup_event_log_level(_start_event),
+            _start_event,
+            f"Sage one-step split: {num_to_create}×{size_str} from "
+            f"topup pool coin {source_coin_id[:12]}... via /create_transaction",
+        )
 
         # --- Submit the single create_transaction RPC ---
         weak_submit_onchain_confirmed = False
@@ -7280,9 +8345,12 @@ class CoinManager:
             )
             if not result:
                 if self._spacescan_self_send_confirmed(source_coin_id, address, tag):
-                    log_event("info", f"{tag}_osstep_onchain_pending",
-                              "Spacescan confirms the one-step split landed on-chain — "
-                              "continuing while Sage catches up")
+                    log_event(
+                        "info",
+                        f"{tag}_osstep_onchain_pending",
+                        "Spacescan confirms the one-step split landed on-chain — "
+                        "continuing while Sage catches up",
+                    )
                     weak_submit_onchain_confirmed = True
                     result = {}
                 else:
@@ -7292,25 +8360,34 @@ class CoinManager:
             if isinstance(result, dict) and result.get("error"):
                 err = result["error"]
                 if self._spacescan_self_send_confirmed(source_coin_id, address, tag):
-                    log_event("info", f"{tag}_osstep_onchain_pending",
-                              "Spacescan confirms the one-step split landed on-chain — "
-                              "continuing while Sage catches up")
+                    log_event(
+                        "info",
+                        f"{tag}_osstep_onchain_pending",
+                        "Spacescan confirms the one-step split landed on-chain — "
+                        "continuing while Sage catches up",
+                    )
                     weak_submit_onchain_confirmed = True
                 elif self._looks_like_wallet_rpc_degradation(err):
                     self._abort_topup_for_wallet_degradation(
                         f"{name} topup paused: /create_transaction degraded ({err})."
                     )
                 else:
-                    log_event("warning", f"{tag}_osstep_fail",
-                              f"/create_transaction error: {err}")
+                    log_event(
+                        "warning",
+                        f"{tag}_osstep_fail",
+                        f"/create_transaction error: {err}",
+                    )
                     return False
         except _TopupWalletDegraded:
             raise
         except Exception as e:
             if self._spacescan_self_send_confirmed(source_coin_id, address, tag):
-                log_event("info", f"{tag}_osstep_onchain_pending",
-                          "Spacescan confirms the one-step split landed on-chain — "
-                          "continuing while Sage catches up")
+                log_event(
+                    "info",
+                    f"{tag}_osstep_onchain_pending",
+                    "Spacescan confirms the one-step split landed on-chain — "
+                    "continuing while Sage catches up",
+                )
                 weak_submit_onchain_confirmed = True
                 result = {}
             elif self._looks_like_wallet_rpc_degradation(e):
@@ -7318,8 +8395,9 @@ class CoinManager:
                     f"{name} topup paused: /create_transaction RPC error ({e})."
                 )
             else:
-                log_event("warning", f"{tag}_osstep_error",
-                          f"/create_transaction failed: {e}")
+                log_event(
+                    "warning", f"{tag}_osstep_error", f"/create_transaction failed: {e}"
+                )
                 return False
 
         tx_ids = self._extract_sage_transaction_ids(result or {})
@@ -7335,6 +8413,7 @@ class CoinManager:
         def _sage_pending_count() -> Optional[int]:
             try:
                 from wallet_sage import get_pending_transactions
+
                 pending = get_pending_transactions()
                 if pending is not None:
                     return len(pending or [])
@@ -7351,7 +8430,8 @@ class CoinManager:
             selectable_now = (
                 self._get_strict_selectable_coin_id_set(
                     wallet_id, f"{tag}-osstep-no-txid-sel"
-                ) or set()
+                )
+                or set()
             )
             if pending_count == 0 and _source_still_selectable(selectable_now):
                 log_event(
@@ -7373,9 +8453,12 @@ class CoinManager:
                 return False
         if debounce_secs > 0:
             self._recent_topup_split_submissions[split_key] = time.time()
-        log_event("info", f"{tag}_osstep_submitted",
-                  "One-step split submitted"
-                  + (f" (tx: {tx_ids[0][:16]}...)" if tx_ids else ""))
+        log_event(
+            "info",
+            f"{tag}_osstep_submitted",
+            "One-step split submitted"
+            + (f" (tx: {tx_ids[0][:16]}...)" if tx_ids else ""),
+        )
 
         def _amount_matches_target(amount: int, target: int) -> bool:
             if amount == target:
@@ -7393,26 +8476,38 @@ class CoinManager:
 
         while (time.time() - wait_start) < wait_max:
             if self._topup_should_stop():
-                log_event("info", f"{tag}_stopped",
-                          f"{name} top-up stopped while waiting for one-step split outputs")
+                log_event(
+                    "info",
+                    f"{tag}_stopped",
+                    f"{name} top-up stopped while waiting for one-step split outputs",
+                )
                 return False
 
             time.sleep(poll_interval)
-            owned_map = self._get_owned_coin_amount_map(wallet_id, f"{tag}-osstep-owned") or {}
+            owned_map = (
+                self._get_owned_coin_amount_map(wallet_id, f"{tag}-osstep-owned") or {}
+            )
             selectable_ids = (
-                self._get_strict_selectable_coin_id_set(wallet_id, f"{tag}-osstep-sel") or set()
+                self._get_strict_selectable_coin_id_set(wallet_id, f"{tag}-osstep-sel")
+                or set()
             )
             tx_state = self._get_transaction_confirmation_state(tx_ids)
             elapsed = int(time.time() - wait_start)
 
             if tx_state["confirmed"] and not tx_logged:
-                suffix = f" at height {tx_state['height']}" if tx_state["height"] else ""
-                log_event("info", f"{tag}_osstep_tx_confirmed",
-                          f"One-step split transaction confirmed{suffix}")
+                suffix = (
+                    f" at height {tx_state['height']}" if tx_state["height"] else ""
+                )
+                log_event(
+                    "info",
+                    f"{tag}_osstep_tx_confirmed",
+                    f"One-step split transaction confirmed{suffix}",
+                )
                 tx_logged = True
 
             new_coins = [
-                cid for cid, amt in owned_map.items()
+                cid
+                for cid, amt in owned_map.items()
                 if cid not in pre_owned_ids
                 and _amount_matches_target(amt, trading_size_mojos)
             ]
@@ -7452,15 +8547,26 @@ class CoinManager:
 
             if owned_count >= num_to_create and not owned_logged:
                 _owned_event = f"{tag}_osstep_outputs_owned"
-                log_event(_topup_event_log_level(_owned_event), _owned_event,
-                          f"One-step split outputs owned ({owned_count}/{num_to_create})")
+                log_event(
+                    _topup_event_log_level(_owned_event),
+                    _owned_event,
+                    f"One-step split outputs owned ({owned_count}/{num_to_create})",
+                )
                 owned_logged = True
 
-            if owned_count >= num_to_create and (outputs_ready or tx_state["confirmed"]):
-                detail = (f"{sel_count}/{num_to_create} selectable" if outputs_ready
-                          else f"{owned_count}/{num_to_create} owned, selectable lagging")
-                log_event("info", f"{tag}_osstep_confirmed",
-                          f"One-step split confirmed after {elapsed}s ({detail})")
+            if owned_count >= num_to_create and (
+                outputs_ready or tx_state["confirmed"]
+            ):
+                detail = (
+                    f"{sel_count}/{num_to_create} selectable"
+                    if outputs_ready
+                    else f"{owned_count}/{num_to_create} owned, selectable lagging"
+                )
+                log_event(
+                    "info",
+                    f"{tag}_osstep_confirmed",
+                    f"One-step split confirmed after {elapsed}s ({detail})",
+                )
                 self._stamp_topup_output_designations(
                     name=name,
                     wallet_id=wallet_id,
@@ -7472,29 +8578,41 @@ class CoinManager:
 
             if elapsed % 20 == 0 and elapsed > 0:
                 _wait_event = f"{tag}_osstep_wait"
-                log_event(_topup_event_log_level(_wait_event), _wait_event,
-                          f"Waiting for one-step split outputs... "
-                          f"(tx={'confirmed' if tx_state['confirmed'] else 'pending'}, "
-                          f"{owned_count}/{num_to_create} owned, "
-                          f"{sel_count}/{num_to_create} selectable, {elapsed}s)")
+                log_event(
+                    _topup_event_log_level(_wait_event),
+                    _wait_event,
+                    f"Waiting for one-step split outputs... "
+                    f"(tx={'confirmed' if tx_state['confirmed'] else 'pending'}, "
+                    f"{owned_count}/{num_to_create} owned, "
+                    f"{sel_count}/{num_to_create} selectable, {elapsed}s)",
+                )
 
         # --- Post-timeout check ---
-        owned_map = self._get_owned_coin_amount_map(wallet_id, f"{tag}-osstep-timeout") or {}
+        owned_map = (
+            self._get_owned_coin_amount_map(wallet_id, f"{tag}-osstep-timeout") or {}
+        )
         selectable_ids = (
-            self._get_strict_selectable_coin_id_set(wallet_id, f"{tag}-osstep-timeout-sel") or set()
+            self._get_strict_selectable_coin_id_set(
+                wallet_id, f"{tag}-osstep-timeout-sel"
+            )
+            or set()
         )
         tx_state = self._get_transaction_confirmation_state(tx_ids)
         new_coins = [
-            cid for cid, amt in owned_map.items()
+            cid
+            for cid, amt in owned_map.items()
             if cid not in pre_owned_ids
             and _amount_matches_target(amt, trading_size_mojos)
         ]
         owned_count = len(new_coins)
         sel_count = sum(1 for c in new_coins if c in selectable_ids)
         if tx_state["confirmed"] and owned_count >= num_to_create:
-            log_event("info", f"{tag}_osstep_confirmed",
-                      f"One-step split confirmed after timeout "
-                      f"({owned_count}/{num_to_create} owned, selectable lagging)")
+            log_event(
+                "info",
+                f"{tag}_osstep_confirmed",
+                f"One-step split confirmed after timeout "
+                f"({owned_count}/{num_to_create} owned, selectable lagging)",
+            )
             self._stamp_topup_output_designations(
                 name=name,
                 wallet_id=wallet_id,
@@ -7558,17 +8676,27 @@ class CoinManager:
             "info" if outputs_owned else "warning",
             f"{tag}_osstep_timeout",
             message,
-            data={"tag": tag, "wait_max": wait_max,
-                  "tx_confirmed": tx_state["confirmed"],
-                  "owned": owned_count, "needed": num_to_create,
-                  "selectable": sel_count},
+            data={
+                "tag": tag,
+                "wait_max": wait_max,
+                "tx_confirmed": tx_state["confirmed"],
+                "owned": owned_count,
+                "needed": num_to_create,
+                "selectable": sel_count,
+            },
         )
         return False
 
-    def _two_step_split(self, name: str, wallet_id: int,
-                         source_coin_id: str, pool_amount_mojos: int,
-                         num_to_create: int, trading_size_mojos: int,
-                         is_cat: bool) -> bool:
+    def _two_step_split(
+        self,
+        name: str,
+        wallet_id: int,
+        source_coin_id: str,
+        pool_amount_mojos: int,
+        num_to_create: int,
+        trading_size_mojos: int,
+        is_cat: bool,
+    ) -> bool:
         """Two-step coin split (mirrors coin_prep_worker approach).
 
         Step 1: Send exact amount to self → creates a pool coin of precise size
@@ -7600,7 +8728,8 @@ class CoinManager:
             return False
         amount_str = (
             _format_amount_cat(pool_amount_mojos, cfg.CAT_DECIMALS)
-            if is_cat else _format_amount_xch(pool_amount_mojos)
+            if is_cat
+            else _format_amount_xch(pool_amount_mojos)
         )
 
         # ---- Step 1: Send-to-self to create pool coin ----
@@ -7633,10 +8762,16 @@ class CoinManager:
         # Snapshot coins BEFORE the send. Use owned view as the primary truth so
         # a newly-created pool coin does not get confused with older hidden coins.
         before_snapshot = self._snapshot_coin_ids(wallet_id, f"{name}-before-pool")
-        before_owned_map = self._get_owned_coin_amount_map(wallet_id, f"{name}-before-pool-owned") or {}
+        before_owned_map = (
+            self._get_owned_coin_amount_map(wallet_id, f"{name}-before-pool-owned")
+            or {}
+        )
 
-        log_event("info", f"{tag}_send_to_self",
-                  f"Sending {amount_str} to self to create pool coin...")
+        log_event(
+            "info",
+            f"{tag}_send_to_self",
+            f"Sending {amount_str} to self to create pool coin...",
+        )
 
         result = {}
         try:
@@ -7651,9 +8786,12 @@ class CoinManager:
             verify_records = _extract_coin_records(verify_result)
             verify_ids = {_coin_id_from_record(r) for r in verify_records}
             if source_coin_id not in verify_ids:
-                log_event("warning", f"{tag}_source_gone",
-                          f"Source coin {source_coin_id[:16]}... no longer spendable — "
-                          f"may have been consumed by another operation. Aborting split.")
+                log_event(
+                    "warning",
+                    f"{tag}_source_gone",
+                    f"Source coin {source_coin_id[:16]}... no longer spendable — "
+                    f"may have been consumed by another operation. Aborting split.",
+                )
                 return False
 
             # Use source_coin_ids on Sage to ensure we spend from the reserve coin.
@@ -7672,9 +8810,12 @@ class CoinManager:
             result = send_transaction(**send_kwargs)
             if not result:
                 if self._spacescan_self_send_confirmed(source_coin_id, address, tag):
-                    log_event("info", f"{tag}_send_onchain_pending",
-                              "Spacescan confirms the pool self-send landed on-chain — "
-                              "continuing while Sage catches up")
+                    log_event(
+                        "info",
+                        f"{tag}_send_onchain_pending",
+                        "Spacescan confirms the pool self-send landed on-chain — "
+                        "continuing while Sage catches up",
+                    )
                     result = {}
                 else:
                     self._abort_topup_for_wallet_degradation(
@@ -7683,16 +8824,22 @@ class CoinManager:
             if isinstance(result, dict) and result.get("error"):
                 send_error = result.get("error")
                 if self._spacescan_self_send_confirmed(source_coin_id, address, tag):
-                    log_event("info", f"{tag}_send_onchain_pending",
-                              "Spacescan confirms the pool self-send landed on-chain — "
-                              "continuing while Sage catches up")
+                    log_event(
+                        "info",
+                        f"{tag}_send_onchain_pending",
+                        "Spacescan confirms the pool self-send landed on-chain — "
+                        "continuing while Sage catches up",
+                    )
                 elif self._looks_like_wallet_rpc_degradation(send_error):
                     self._abort_topup_for_wallet_degradation(
                         f"{name} topup paused: send-to-self RPC degraded ({send_error})."
                     )
                 else:
-                    log_event("warning", f"{tag}_send_fail",
-                              f"send_transaction error: {send_error}")
+                    log_event(
+                        "warning",
+                        f"{tag}_send_fail",
+                        f"send_transaction error: {send_error}",
+                    )
                     return False
 
             # Extract transaction info from response for tracking
@@ -7701,27 +8848,37 @@ class CoinManager:
                 # Sage may return coin_spends with output coin info
                 coin_spends = result.get("coin_spends", [])
                 if coin_spends:
-                    log_event("info", f"{tag}_send_tx_info",
-                              f"Transaction has {len(coin_spends)} coin spends")
+                    log_event(
+                        "info",
+                        f"{tag}_send_tx_info",
+                        f"Transaction has {len(coin_spends)} coin spends",
+                    )
 
             send_info = "Pool coin creation submitted"
             if tx_ids:
                 send_info += f" (tx: {tx_ids[0][:16]}...)"
-            send_info += f" [source: {source_coin_id[:12]}..., amount: {pool_amount_mojos}]"
+            send_info += (
+                f" [source: {source_coin_id[:12]}..., amount: {pool_amount_mojos}]"
+            )
             log_event("info", f"{tag}_send_ok", send_info)
         except _TopupWalletDegraded:
             raise
         except Exception as e:
             if self._spacescan_self_send_confirmed(source_coin_id, address, tag):
-                log_event("info", f"{tag}_send_onchain_pending",
-                          "Spacescan confirms the pool self-send landed on-chain — "
-                          "continuing while Sage catches up")
+                log_event(
+                    "info",
+                    f"{tag}_send_onchain_pending",
+                    "Spacescan confirms the pool self-send landed on-chain — "
+                    "continuing while Sage catches up",
+                )
             elif self._looks_like_wallet_rpc_degradation(e):
                 self._abort_topup_for_wallet_degradation(
                     f"{name} topup paused: send-to-self RPC error ({e})."
                 )
             else:
-                log_event("warning", f"{tag}_send_error", f"send_transaction failed: {e}")
+                log_event(
+                    "warning", f"{tag}_send_error", f"send_transaction failed: {e}"
+                )
                 return False
 
         # ---- Wait for the pool coin to appear ----
@@ -7745,12 +8902,17 @@ class CoinManager:
         # Log the send response for debugging
         if isinstance(result, dict):
             resp_keys = list(result.keys())
-            log_event("debug", f"{tag}_send_response",
-                      f"send_xch response keys: {resp_keys}")
+            log_event(
+                "debug", f"{tag}_send_response", f"send_xch response keys: {resp_keys}"
+            )
 
         while (time.time() - poll_start) < max_wait:
             if self._topup_should_stop():
-                log_event("info", f"{tag}_stopped", f"{name} top-up stopped while waiting for pool coin")
+                log_event(
+                    "info",
+                    f"{tag}_stopped",
+                    f"{name} top-up stopped while waiting for pool coin",
+                )
                 return False
             time.sleep(poll_interval_s)
             # Fresh scan of ALL current spendable coins
@@ -7766,25 +8928,42 @@ class CoinManager:
                     f"waiting for the pool coin."
                 )
             records = _extract_coin_records(current)
-            owned_map = self._get_owned_coin_amount_map(wallet_id, f"{tag}-pool-owned") or {}
-            selectable_ids = self._get_strict_selectable_coin_id_set(wallet_id, f"{tag}-pool-selectable") or set()
+            owned_map = (
+                self._get_owned_coin_amount_map(wallet_id, f"{tag}-pool-owned") or {}
+            )
+            selectable_ids = (
+                self._get_strict_selectable_coin_id_set(
+                    wallet_id, f"{tag}-pool-selectable"
+                )
+                or set()
+            )
             tx_state = self._get_transaction_confirmation_state(tx_ids)
 
             if tx_state["confirmed"] and not pool_tx_logged:
-                suffix = f" at height {tx_state['height']}" if tx_state["height"] else ""
-                log_event("info", f"{tag}_pool_tx_confirmed",
-                          f"Pool coin transaction confirmed{suffix}")
+                suffix = (
+                    f" at height {tx_state['height']}" if tx_state["height"] else ""
+                )
+                log_event(
+                    "info",
+                    f"{tag}_pool_tx_confirmed",
+                    f"Pool coin transaction confirmed{suffix}",
+                )
                 pool_tx_logged = True
 
             candidate_ids = sorted(
-                cid for cid, amt in owned_map.items()
-                if cid not in known_coin_ids and _amount_matches_target(amt, pool_amount_mojos)
+                cid
+                for cid, amt in owned_map.items()
+                if cid not in known_coin_ids
+                and _amount_matches_target(amt, pool_amount_mojos)
             )
             if candidate_ids:
                 pool_coin_id = candidate_ids[0]
                 if not pool_owned_logged:
-                    log_event("info", f"{tag}_pool_owned",
-                              f"Pool coin is present in owned wallet view [ID: {pool_coin_id[:12]}...]")
+                    log_event(
+                        "info",
+                        f"{tag}_pool_owned",
+                        f"Pool coin is present in owned wallet view [ID: {pool_coin_id[:12]}...]",
+                    )
                     pool_owned_logged = True
                 if pool_coin_id in selectable_ids:
                     pool_confirmed = True
@@ -7806,17 +8985,25 @@ class CoinManager:
                 else:
                     coin_str = _format_amount_xch(pool_amount_mojos)
 
-                log_event("info", f"{tag}_pool_found",
-                          f"Pool coin confirmed: {coin_str} "
-                          f"[ID: {pool_coin_id[:12]}...] "
-                          f"({int(time.time() - poll_start)}s)")
+                log_event(
+                    "info",
+                    f"{tag}_pool_found",
+                    f"Pool coin confirmed: {coin_str} "
+                    f"[ID: {pool_coin_id[:12]}...] "
+                    f"({int(time.time() - poll_start)}s)",
+                )
                 break
 
             elapsed = int(time.time() - poll_start)
             if elapsed % 30 == 0 and elapsed > 0:
                 total_coins = len(records)
-                new_count = len([1 for r in records
-                                  if _coin_id_from_record(r) not in before_snapshot])
+                new_count = len(
+                    [
+                        1
+                        for r in records
+                        if _coin_id_from_record(r) not in before_snapshot
+                    ]
+                )
                 pool_state = "no exact owned output yet"
                 if pool_coin_id:
                     owned_ready = pool_coin_id in owned_map
@@ -7826,24 +9013,34 @@ class CoinManager:
                         f"selectable={'yes' if selectable_ready else 'no'}, "
                         f"tx={'confirmed' if tx_state['confirmed'] else 'pending'}"
                     )
-                log_event("info", f"{tag}_pool_wait",
-                          f"Waiting for pool coin ({_format_amount_xch(pool_amount_mojos) if not is_cat else _format_amount_cat(pool_amount_mojos, cfg.CAT_DECIMALS)})... "
-                          f"({elapsed}s, {total_coins} spendable coins, "
-                          f"{new_count} new since send, {pool_state})")
+                log_event(
+                    "info",
+                    f"{tag}_pool_wait",
+                    f"Waiting for pool coin ({_format_amount_xch(pool_amount_mojos) if not is_cat else _format_amount_cat(pool_amount_mojos, cfg.CAT_DECIMALS)})... "
+                    f"({elapsed}s, {total_coins} spendable coins, "
+                    f"{new_count} new since send, {pool_state})",
+                )
 
             # At 120s mark, try get_pending_transactions to check if tx is still alive
             if 118 < elapsed < 125:
                 try:
                     if get_wallet_type() == "sage":
                         from wallet_sage import get_pending_transactions
+
                         pending = get_pending_transactions() or []
                         pending_count = len(pending) if isinstance(pending, list) else 0
-                        log_event("info", f"{tag}_pending_check",
-                                  f"Pending transactions: {pending_count} "
-                                  f"(if 0, tx may have been dropped)")
+                        log_event(
+                            "info",
+                            f"{tag}_pending_check",
+                            f"Pending transactions: {pending_count} "
+                            f"(if 0, tx may have been dropped)",
+                        )
                 except Exception as e:
-                    log_event("debug", f"{tag}_pending_check_failed",
-                              f"Pending tx check failed (non-critical): {e}")
+                    log_event(
+                        "debug",
+                        f"{tag}_pending_check_failed",
+                        f"Pending tx check failed (non-critical): {e}",
+                    )
 
         if not pool_confirmed or not pool_coin_id:
             if pool_coin_id:
@@ -7856,14 +9053,20 @@ class CoinManager:
                     f"{name} topup paused: pool self-send is on-chain but Sage did "
                     f"not surface the new pool coin after {max_wait}s."
                 )
-            log_event("warning", f"{tag}_pool_timeout",
-                      f"Pool coin not confirmed after {max_wait}s")
+            log_event(
+                "warning",
+                f"{tag}_pool_timeout",
+                f"Pool coin not confirmed after {max_wait}s",
+            )
             return False
 
         # ---- Step 2: Split the tracked pool coin ----
-        log_event("info", f"{tag}_splitting",
-                  f"Splitting pool coin into {num_to_create} trading coins "
-                  f"[pool ID: {pool_coin_id[:12]}...]")
+        log_event(
+            "info",
+            f"{tag}_splitting",
+            f"Splitting pool coin into {num_to_create} trading coins "
+            f"[pool ID: {pool_coin_id[:12]}...]",
+        )
 
         wallet_type = get_wallet_type()
 
@@ -7880,9 +9083,12 @@ class CoinManager:
                 )
                 if split_result is None:
                     if self._spacescan_coin_spent_confirmed(pool_coin_id, tag, "split"):
-                        log_event("info", f"{tag}_split_onchain_pending",
-                                  "Spacescan shows the pool coin spent on-chain despite "
-                                  "a weak Sage split response — continuing confirmation poll")
+                        log_event(
+                            "info",
+                            f"{tag}_split_onchain_pending",
+                            "Spacescan shows the pool coin spent on-chain despite "
+                            "a weak Sage split response — continuing confirmation poll",
+                        )
                     else:
                         self._abort_topup_for_wallet_degradation(
                             f"{name} topup paused: Sage /split returned no result."
@@ -7890,16 +9096,22 @@ class CoinManager:
                 if isinstance(split_result, dict) and split_result.get("error"):
                     split_error = split_result.get("error")
                     if self._spacescan_coin_spent_confirmed(pool_coin_id, tag, "split"):
-                        log_event("info", f"{tag}_split_onchain_pending",
-                                  "Spacescan shows the pool coin spent on-chain despite "
-                                  "a weak Sage split response — continuing confirmation poll")
+                        log_event(
+                            "info",
+                            f"{tag}_split_onchain_pending",
+                            "Spacescan shows the pool coin spent on-chain despite "
+                            "a weak Sage split response — continuing confirmation poll",
+                        )
                     elif self._looks_like_wallet_rpc_degradation(split_error):
                         self._abort_topup_for_wallet_degradation(
                             f"{name} topup paused: Sage /split degraded ({split_error})."
                         )
                     else:
-                        log_event("warning", f"{tag}_split_rpc_fail",
-                                  f"Sage /split error: {split_error}")
+                        log_event(
+                            "warning",
+                            f"{tag}_split_rpc_fail",
+                            f"Sage /split error: {split_error}",
+                        )
                         return False
                 split_tx_ids = self._extract_sage_transaction_ids(split_result)
                 split_msg = "Sage /split submitted successfully"
@@ -7910,16 +9122,20 @@ class CoinManager:
                 raise
             except Exception as e:
                 if self._spacescan_coin_spent_confirmed(pool_coin_id, tag, "split"):
-                    log_event("info", f"{tag}_split_onchain_pending",
-                              "Spacescan shows the pool coin spent on-chain despite "
-                              "a Sage split exception — continuing confirmation poll")
+                    log_event(
+                        "info",
+                        f"{tag}_split_onchain_pending",
+                        "Spacescan shows the pool coin spent on-chain despite "
+                        "a Sage split exception — continuing confirmation poll",
+                    )
                 elif self._looks_like_wallet_rpc_degradation(e):
                     self._abort_topup_for_wallet_degradation(
                         f"{name} topup paused: Sage /split RPC error ({e})."
                     )
                 else:
-                    log_event("warning", f"{tag}_split_rpc_error",
-                              f"Sage /split error: {e}")
+                    log_event(
+                        "warning", f"{tag}_split_rpc_error", f"Sage /split error: {e}"
+                    )
                     return False
         else:
             split_tx_ids = []
@@ -7935,17 +9151,27 @@ class CoinManager:
                 self._fingerprint = self._resolve_fingerprint()
 
             cmd = [
-                "chia", "wallet", "coins", "split",
-                "-f", self._fingerprint,
-                "-i", str(wallet_id),
-                "-n", str(num_to_create),
-                "-a", str(cli_coin_size),
-                "-t", bare_coin_id,
-                "-m", "0"
+                "chia",
+                "wallet",
+                "coins",
+                "split",
+                "-f",
+                self._fingerprint,
+                "-i",
+                str(wallet_id),
+                "-n",
+                str(num_to_create),
+                "-a",
+                str(cli_coin_size),
+                "-t",
+                bare_coin_id,
+                "-m",
+                "0",
             ]
 
             try:
                 import subprocess as sp
+
                 process = sp.Popen(
                     cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE, text=True
                 )
@@ -7953,11 +9179,17 @@ class CoinManager:
                 output = stdout + stderr
 
                 if "submitted to" in output.lower() or "transaction" in output.lower():
-                    log_event("info", f"{tag}_split_submitted",
-                              "CLI split submitted successfully")
+                    log_event(
+                        "info",
+                        f"{tag}_split_submitted",
+                        "CLI split submitted successfully",
+                    )
                 else:
-                    log_event("warning", f"{tag}_split_cli_fail",
-                              f"CLI split failed: {output[:200]}")
+                    log_event(
+                        "warning",
+                        f"{tag}_split_cli_fail",
+                        f"CLI split failed: {output[:200]}",
+                    )
                     return False
             except Exception as e:
                 log_event("warning", f"{tag}_split_cli_error", f"CLI split error: {e}")
@@ -7970,12 +9202,19 @@ class CoinManager:
         split_tx_logged = False
         split_owned_logged = False
         pre_split_owned_ids = set(
-            (self._get_owned_coin_amount_map(wallet_id, f"{tag}-pre-split-owned") or {}).keys()
+            (
+                self._get_owned_coin_amount_map(wallet_id, f"{tag}-pre-split-owned")
+                or {}
+            ).keys()
         )
 
         while (time.time() - split_start) < split_max_wait:
             if self._topup_should_stop():
-                log_event("info", f"{tag}_stopped", f"{name} top-up stopped while waiting for split confirmation")
+                log_event(
+                    "info",
+                    f"{tag}_stopped",
+                    f"{name} top-up stopped while waiting for split confirmation",
+                )
                 return False
             time.sleep(split_poll_interval_s)
             result = _get_free_coins_rpc(wallet_id)
@@ -7989,8 +9228,15 @@ class CoinManager:
                     f"{name} topup paused: spendable-coin polling failed while "
                     f"waiting for split confirmation."
                 )
-            owned_map = self._get_owned_coin_amount_map(wallet_id, f"{tag}-split-owned") or {}
-            selectable_ids = self._get_strict_selectable_coin_id_set(wallet_id, f"{tag}-split-selectable") or set()
+            owned_map = (
+                self._get_owned_coin_amount_map(wallet_id, f"{tag}-split-owned") or {}
+            )
+            selectable_ids = (
+                self._get_strict_selectable_coin_id_set(
+                    wallet_id, f"{tag}-split-selectable"
+                )
+                or set()
+            )
             tx_state = self._get_transaction_confirmation_state(split_tx_ids)
             elapsed = int(time.time() - split_start)
 
@@ -7998,47 +9244,76 @@ class CoinManager:
             pool_selectable = pool_coin_id in selectable_ids
             pool_consumed = (not pool_visible) or (pool_coin_id and not pool_selectable)
             new_output_ids = sorted(
-                cid for cid, amount in owned_map.items()
-                if cid not in pre_split_owned_ids and _amount_matches_target(amount, trading_size_mojos)
+                cid
+                for cid, amount in owned_map.items()
+                if cid not in pre_split_owned_ids
+                and _amount_matches_target(amount, trading_size_mojos)
             )
             owned_output_count = len(new_output_ids)
-            selectable_output_count = sum(1 for cid in new_output_ids if cid in selectable_ids)
+            selectable_output_count = sum(
+                1 for cid in new_output_ids if cid in selectable_ids
+            )
             outputs_selectable = (
-                owned_output_count >= num_to_create and
-                selectable_output_count >= num_to_create
+                owned_output_count >= num_to_create
+                and selectable_output_count >= num_to_create
             )
 
             if tx_state["confirmed"] and not split_tx_logged:
-                suffix = f" at height {tx_state['height']}" if tx_state["height"] else ""
-                log_event("info", f"{tag}_split_tx_confirmed",
-                          f"Split transaction confirmed{suffix}")
+                suffix = (
+                    f" at height {tx_state['height']}" if tx_state["height"] else ""
+                )
+                log_event(
+                    "info",
+                    f"{tag}_split_tx_confirmed",
+                    f"Split transaction confirmed{suffix}",
+                )
                 split_tx_logged = True
 
-            if pool_consumed and owned_output_count >= num_to_create and not split_owned_logged:
+            if (
+                pool_consumed
+                and owned_output_count >= num_to_create
+                and not split_owned_logged
+            ):
                 if outputs_selectable:
-                    log_event("info", f"{tag}_split_outputs_ready",
-                              f"Split outputs are owned and selectable ({owned_output_count}/{num_to_create})")
+                    log_event(
+                        "info",
+                        f"{tag}_split_outputs_ready",
+                        f"Split outputs are owned and selectable ({owned_output_count}/{num_to_create})",
+                    )
                 else:
-                    log_event("info", f"{tag}_split_outputs_owned",
-                              f"Split outputs are owned ({owned_output_count}/{num_to_create}) — "
-                              f"waiting for selectable view to catch up")
+                    log_event(
+                        "info",
+                        f"{tag}_split_outputs_owned",
+                        f"Split outputs are owned ({owned_output_count}/{num_to_create}) — "
+                        f"waiting for selectable view to catch up",
+                    )
                 split_owned_logged = True
 
-            if pool_consumed and owned_output_count >= num_to_create and (outputs_selectable or tx_state["confirmed"]):
+            if (
+                pool_consumed
+                and owned_output_count >= num_to_create
+                and (outputs_selectable or tx_state["confirmed"])
+            ):
                 if outputs_selectable:
                     detail = f"{selectable_output_count}/{num_to_create} selectable"
                 else:
                     detail = f"{owned_output_count}/{num_to_create} owned, selectable lagging"
-                log_event("info", f"{tag}_split_confirmed",
-                          f"Split confirmed after {elapsed}s ({detail})")
+                log_event(
+                    "info",
+                    f"{tag}_split_confirmed",
+                    f"Split confirmed after {elapsed}s ({detail})",
+                )
                 return True
 
             if elapsed % 20 == 0 and elapsed > 0:
                 tx_label = "confirmed" if tx_state["confirmed"] else "pending"
-                log_event("info", f"{tag}_split_wait",
-                          f"Waiting for split... (tx={tx_label}, "
-                          f"{owned_output_count}/{num_to_create} owned, "
-                          f"{selectable_output_count}/{num_to_create} selectable, {elapsed}s)")
+                log_event(
+                    "info",
+                    f"{tag}_split_wait",
+                    f"Waiting for split... (tx={tx_label}, "
+                    f"{owned_output_count}/{num_to_create} owned, "
+                    f"{selectable_output_count}/{num_to_create} selectable, {elapsed}s)",
+                )
 
         # Final post-timeout diagnostic
         final_result = _get_free_coins_rpc(wallet_id)
@@ -8052,26 +9327,44 @@ class CoinManager:
                 f"{name} topup paused: spendable-coin refresh failed after split timeout."
             )
 
-        owned_map = self._get_owned_coin_amount_map(wallet_id, f"{tag}-split-timeout-owned") or {}
-        selectable_ids = self._get_strict_selectable_coin_id_set(wallet_id, f"{tag}-split-timeout-selectable") or set()
+        owned_map = (
+            self._get_owned_coin_amount_map(wallet_id, f"{tag}-split-timeout-owned")
+            or {}
+        )
+        selectable_ids = (
+            self._get_strict_selectable_coin_id_set(
+                wallet_id, f"{tag}-split-timeout-selectable"
+            )
+            or set()
+        )
         tx_state = self._get_transaction_confirmation_state(split_tx_ids)
         new_output_ids = sorted(
-            cid for cid, amount in owned_map.items()
-            if cid not in pre_split_owned_ids and _amount_matches_target(amount, trading_size_mojos)
+            cid
+            for cid, amount in owned_map.items()
+            if cid not in pre_split_owned_ids
+            and _amount_matches_target(amount, trading_size_mojos)
         )
         owned_output_count = len(new_output_ids)
-        selectable_output_count = sum(1 for cid in new_output_ids if cid in selectable_ids)
+        selectable_output_count = sum(
+            1 for cid in new_output_ids if cid in selectable_ids
+        )
         if tx_state["confirmed"] and owned_output_count >= num_to_create:
-            log_event("info", f"{tag}_split_confirmed",
-                      f"Split confirmed after {split_max_wait}s "
-                      f"({owned_output_count}/{num_to_create} owned, selectable lagging)")
+            log_event(
+                "info",
+                f"{tag}_split_confirmed",
+                f"Split confirmed after {split_max_wait}s "
+                f"({owned_output_count}/{num_to_create} owned, selectable lagging)",
+            )
             return True
 
-        log_event("info", f"{tag}_split_timeout",
-                  f"Split not confirmed after {split_max_wait}s "
-                  f"(tx={'confirmed' if tx_state['confirmed'] else 'pending'}, "
-                  f"{owned_output_count}/{num_to_create} owned, "
-                  f"{selectable_output_count}/{num_to_create} selectable)")
+        log_event(
+            "info",
+            f"{tag}_split_timeout",
+            f"Split not confirmed after {split_max_wait}s "
+            f"(tx={'confirmed' if tx_state['confirmed'] else 'pending'}, "
+            f"{owned_output_count}/{num_to_create} owned, "
+            f"{selectable_output_count}/{num_to_create} selectable)",
+        )
         return False
 
     def _snapshot_coin_ids(self, wallet_id: int, label: str) -> dict:
@@ -8098,9 +9391,14 @@ class CoinManager:
         new_ids = set(after.keys()) - set(before.keys())
         return [{"coin_id": cid, "amount": after[cid]} for cid in new_ids]
 
-    def _consolidate_coins(self, name: str, wallet_id: int,
-                           total_amount: int, is_cat: bool,
-                           source_coin_ids: Optional[List[str]] = None) -> bool:
+    def _consolidate_coins(
+        self,
+        name: str,
+        wallet_id: int,
+        total_amount: int,
+        is_cat: bool,
+        source_coin_ids: Optional[List[str]] = None,
+    ) -> bool:
         """Consolidate specific coins into one large coin using Sage's /combine.
 
         F68 FIX: switched from send_xch/send_cat (which silently ignore coin_ids
@@ -8116,9 +9414,12 @@ class CoinManager:
         self._last_consolidate_not_submitted = False
         try:
             if not source_coin_ids:
-                log_event("warning", f"consolidate_{name.lower()}_no_ids",
-                          "Consolidation aborted: no source_coin_ids provided. "
-                          "Caller must specify exact coins to combine.")
+                log_event(
+                    "warning",
+                    f"consolidate_{name.lower()}_no_ids",
+                    "Consolidation aborted: no source_coin_ids provided. "
+                    "Caller must specify exact coins to combine.",
+                )
                 return False
 
             # Defensive filter: NEVER combine sniper or fee coins. The sniper and
@@ -8127,20 +9428,29 @@ class CoinManager:
             # leaks a sniper/fee coin ID into source_coin_ids, we strip it here.
             filtered_ids = self._filter_out_protected_coin_ids(source_coin_ids)
             if len(filtered_ids) < len(source_coin_ids):
-                log_event("warning", f"consolidate_{name.lower()}_filtered_protected",
-                          f"Stripped {len(source_coin_ids) - len(filtered_ids)} "
-                          f"sniper/fees coin(s) from consolidation input "
-                          f"(defensive guard — should not normally fire)")
+                log_event(
+                    "warning",
+                    f"consolidate_{name.lower()}_filtered_protected",
+                    f"Stripped {len(source_coin_ids) - len(filtered_ids)} "
+                    f"sniper/fees coin(s) from consolidation input "
+                    f"(defensive guard — should not normally fire)",
+                )
             if len(filtered_ids) < 2:
-                log_event("info", f"consolidate_{name.lower()}_too_few_after_filter",
-                          f"Consolidation skipped: only {len(filtered_ids)} "
-                          f"coin(s) remain after protected-pool filter")
+                log_event(
+                    "info",
+                    f"consolidate_{name.lower()}_too_few_after_filter",
+                    f"Consolidation skipped: only {len(filtered_ids)} "
+                    f"coin(s) remain after protected-pool filter",
+                )
                 return False
 
             if get_wallet_type() != "sage":
-                log_event("info", f"consolidate_{name.lower()}_skip_non_sage",
-                          "Consolidation skipped: /combine is Sage-only. "
-                          "Chia wallet path not supported for targeted combine.")
+                log_event(
+                    "info",
+                    f"consolidate_{name.lower()}_skip_non_sage",
+                    "Consolidation skipped: /combine is Sage-only. "
+                    "Chia wallet path not supported for targeted combine.",
+                )
                 return False
 
             if not hasattr(self, "_recent_consolidate_submissions"):
@@ -8155,7 +9465,8 @@ class CoinManager:
             if debounce_secs > 0:
                 now = time.time()
                 self._recent_consolidate_submissions = {
-                    k: ts for k, ts in self._recent_consolidate_submissions.items()
+                    k: ts
+                    for k, ts in self._recent_consolidate_submissions.items()
                     if now - ts < debounce_secs
                 }
                 last_submitted = self._recent_consolidate_submissions.get(
@@ -8173,12 +9484,14 @@ class CoinManager:
 
             fee = self._tx_fee_mojos()
             from wallet_sage import combine_coins
+
             result = combine_coins(coin_ids=filtered_ids, fee_mojos=fee)
 
             # /combine returns {summary, coin_spends} on success — same shape
             # as send_xch/send_cat.
-            if result and (result.get("success") is True
-                           or result.get("coin_spends") is not None):
+            if result and (
+                result.get("success") is True or result.get("coin_spends") is not None
+            ):
                 tx_ids = self._extract_sage_transaction_ids(result)
                 if not tx_ids:
                     result_keys = (
@@ -8218,19 +9531,28 @@ class CoinManager:
                 if debounce_secs > 0:
                     self._recent_consolidate_submissions[consolidate_key] = time.time()
                 n_spends = len(result.get("coin_spends") or [])
-                log_event("info", f"consolidate_{name.lower()}_combine_ok",
-                          f"Combined {len(filtered_ids)} coin(s) via /combine "
-                          f"(Sage spent {n_spends} input coin(s))")
+                log_event(
+                    "info",
+                    f"consolidate_{name.lower()}_combine_ok",
+                    f"Combined {len(filtered_ids)} coin(s) via /combine "
+                    f"(Sage spent {n_spends} input coin(s))",
+                )
                 return True
             else:
                 error = (result or {}).get("error", "Unknown")
-                log_event("warning", f"consolidate_{name.lower()}_fail",
-                          f"/combine failed: {error}")
+                log_event(
+                    "warning",
+                    f"consolidate_{name.lower()}_fail",
+                    f"/combine failed: {error}",
+                )
                 return False
 
         except Exception as e:
-            log_event("error", f"consolidate_{name.lower()}_error",
-                      f"Consolidation error: {e}")
+            log_event(
+                "error",
+                f"consolidate_{name.lower()}_error",
+                f"Consolidation error: {e}",
+            )
             return False
 
     def _filter_out_protected_coin_ids(self, coin_ids: List[str]) -> List[str]:
@@ -8250,6 +9572,7 @@ class CoinManager:
         """
         try:
             from database import get_connection, norm_coin_id
+
             # Build a (original → normalised_with_0x) map so we can reject
             # each original id without losing its caller-facing format.
             orig_to_norm = {}
@@ -8261,10 +9584,14 @@ class CoinManager:
                 return []
             normalised_list = list(orig_to_norm.values())
             placeholders = ",".join(["?"] * len(normalised_list))
-            rows = get_connection().execute(
-                f"SELECT coin_id, assigned_tier FROM coins WHERE coin_id IN ({placeholders})",
-                normalised_list,
-            ).fetchall()
+            rows = (
+                get_connection()
+                .execute(
+                    f"SELECT coin_id, assigned_tier FROM coins WHERE coin_id IN ({placeholders})",
+                    normalised_list,
+                )
+                .fetchall()
+            )
             protected = {
                 str(r["coin_id"]).lower()
                 for r in rows
@@ -8285,8 +9612,7 @@ class CoinManager:
                     "protected_coin_filter_skipped",
                     f"Defensive combine guard removed {skipped} sniper/fee "
                     f"coin(s) from a consolidation input",
-                    data={"skipped_count": skipped,
-                          "remaining": len(out)},
+                    data={"skipped_count": skipped, "remaining": len(out)},
                 )
             return out
         except Exception:
@@ -8298,10 +9624,12 @@ class CoinManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _is_misfit_coin(coin_amount_mojos: int,
-                        tier_sizes_mojos: Dict[str, int],
-                        max_size_ratio: float,
-                        floor_tolerance: float = 0.98) -> bool:
+    def _is_misfit_coin(
+        coin_amount_mojos: int,
+        tier_sizes_mojos: Dict[str, int],
+        max_size_ratio: float,
+        floor_tolerance: float = 0.98,
+    ) -> bool:
         """Return True if this coin cannot fund any configured tier offer.
 
         This is a thin wrapper that routes through the single-source-of-truth
@@ -8322,6 +9650,7 @@ class CoinManager:
                                the exact tier size before it is flagged.
         """
         from coin_classifier import is_misfit_coin as _cc_is_misfit
+
         return _cc_is_misfit(
             coin_amount_mojos,
             tier_sizes_mojos,
@@ -8329,10 +9658,14 @@ class CoinManager:
             floor_tolerance=floor_tolerance,
         )
 
-    def _absorb_misfits_to_reserve(self, name: str, wallet_id: int,
-                                   inventory: Dict[str, list],
-                                   tier_sizes_mojos: Dict[str, int],
-                                   is_cat: bool) -> bool:
+    def _absorb_misfits_to_reserve(
+        self,
+        name: str,
+        wallet_id: int,
+        inventory: Dict[str, list],
+        tier_sizes_mojos: Dict[str, int],
+        is_cat: bool,
+    ) -> bool:
         """Fold stranded misfit tier_spare coins back into the reserve coin.
 
         When a fill returns change that lands between tier sizes (e.g. a
@@ -8378,13 +9711,17 @@ class CoinManager:
             # the reserve on the very next cycle, causing an infinite loop.
             # Dividing by prep_mult restores the true offer sizes.
             prep_mult = self._get_coin_prep_headroom_multiplier()
-            pm = Decimal(str(prep_mult)) if prep_mult and prep_mult > 1 else Decimal("1")
+            pm = (
+                Decimal(str(prep_mult)) if prep_mult and prep_mult > 1 else Decimal("1")
+            )
             if pm > Decimal("1"):
                 # fees tier uses an absolute coin size (not prepped), keep it as-is
                 base_tier_mojos: Dict[str, int] = {
-                    k: (int(Decimal(str(v)) / pm)
+                    k: (
+                        int(Decimal(str(v)) / pm)
                         if k not in (get_fee_tier_name(),)
-                        else v)
+                        else v
+                    )
                     for k, v in tier_sizes_mojos.items()
                 }
             else:
@@ -8460,25 +9797,29 @@ class CoinManager:
             # cycle (the topup will retry next time needs_topup() fires).
             fresh_result = _get_free_coins_rpc(wallet_id)
             fresh_sel = {
-                _coin_id_from_record(r)
-                for r in _extract_coin_records(fresh_result)
+                _coin_id_from_record(r) for r in _extract_coin_records(fresh_result)
             }
             if reserve_id not in fresh_sel:
-                log_event("info", f"topup_{name.lower()}_absorb_skip_race",
-                          "Reserve coin no longer selectable — "
-                          "skipping absorption this cycle (will retry)")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_absorb_skip_race",
+                    "Reserve coin no longer selectable — "
+                    "skipping absorption this cycle (will retry)",
+                )
                 return False
             # Filter misfits to only those still selectable
             misfit_ids = [cid for cid in misfit_ids if cid in fresh_sel]
             if not misfit_ids:
-                log_event("info", f"topup_{name.lower()}_absorb_skip_race",
-                          "All misfit coins were locked since inventory scan — "
-                          "skipping absorption this cycle (will retry)")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_absorb_skip_race",
+                    "All misfit coins were locked since inventory scan — "
+                    "skipping absorption this cycle (will retry)",
+                )
                 return False
             # Recalculate total with the confirmed-selectable set
             confirmed_misfit_records = [
-                r for r in misfit_records
-                if _coin_id_from_record(r) in set(misfit_ids)
+                r for r in misfit_records if _coin_id_from_record(r) in set(misfit_ids)
             ]
             total_misfit = sum(_coin_amount(r) for r in confirmed_misfit_records)
 
@@ -8489,9 +9830,12 @@ class CoinManager:
             send_amount = total_amount - fee if not is_cat else total_amount
 
             if send_amount <= 0:
-                log_event("debug", f"topup_{name.lower()}_absorb_skip",
-                          "Misfit absorption skipped — combined amount cannot "
-                          "cover transaction fee")
+                log_event(
+                    "debug",
+                    f"topup_{name.lower()}_absorb_skip",
+                    "Misfit absorption skipped — combined amount cannot "
+                    "cover transaction fee",
+                )
                 return False
 
             if is_cat:
@@ -8510,14 +9854,20 @@ class CoinManager:
             # Defensive filter: strip any sniper/fees coin IDs that leaked in
             filtered_ids = self._filter_out_protected_coin_ids(combine_ids)
             if len(filtered_ids) < len(combine_ids):
-                log_event("warning", f"topup_{name.lower()}_absorb_filtered_protected",
-                          f"Stripped {len(combine_ids) - len(filtered_ids)} "
-                          f"sniper/fees coin(s) from misfit absorption input "
-                          f"(defensive guard — should not normally fire)")
+                log_event(
+                    "warning",
+                    f"topup_{name.lower()}_absorb_filtered_protected",
+                    f"Stripped {len(combine_ids) - len(filtered_ids)} "
+                    f"sniper/fees coin(s) from misfit absorption input "
+                    f"(defensive guard — should not normally fire)",
+                )
             if len(filtered_ids) < 2:
-                log_event("info", f"topup_{name.lower()}_absorb_too_few_after_filter",
-                          f"Absorption aborted: only {len(filtered_ids)} "
-                          f"coin(s) remain after protected-pool filter")
+                log_event(
+                    "info",
+                    f"topup_{name.lower()}_absorb_too_few_after_filter",
+                    f"Absorption aborted: only {len(filtered_ids)} "
+                    f"coin(s) remain after protected-pool filter",
+                )
                 return False
 
             absorb_key = None
@@ -8525,7 +9875,8 @@ class CoinManager:
             if debounce_secs > 0:
                 now = time.time()
                 self._recent_absorb_submissions = {
-                    k: ts for k, ts in self._recent_absorb_submissions.items()
+                    k: ts
+                    for k, ts in self._recent_absorb_submissions.items()
                     if now - ts < debounce_secs
                 }
                 absorb_key = (
@@ -8535,23 +9886,31 @@ class CoinManager:
                 last_submitted = self._recent_absorb_submissions.get(absorb_key)
                 if last_submitted is not None and now - last_submitted < debounce_secs:
                     elapsed = int(now - last_submitted)
-                    log_event("info", f"topup_{name.lower()}_absorb_debounce",
-                              f"Skipping duplicate {name} misfit absorption submitted "
-                              f"{elapsed}s ago; waiting for wallet/chain state to settle")
+                    log_event(
+                        "info",
+                        f"topup_{name.lower()}_absorb_debounce",
+                        f"Skipping duplicate {name} misfit absorption submitted "
+                        f"{elapsed}s ago; waiting for wallet/chain state to settle",
+                    )
                     return _TOPUP_PENDING
 
-            log_event("info", f"topup_{name.lower()}_absorb_misfits",
-                      f"Absorbing {len(confirmed_misfit_records)} stranded {name} "
-                      f"misfit coin(s) ({mis_str}) into reserve "
-                      f"[{reserve_id[:12]}...] — new reserve will be {amt_str}")
+            log_event(
+                "info",
+                f"topup_{name.lower()}_absorb_misfits",
+                f"Absorbing {len(confirmed_misfit_records)} stranded {name} "
+                f"misfit coin(s) ({mis_str}) into reserve "
+                f"[{reserve_id[:12]}...] — new reserve will be {amt_str}",
+            )
 
             from wallet_sage import combine_coins
+
             result = combine_coins(coin_ids=filtered_ids, fee_mojos=fee)
 
             # Sage's send_xch/send_cat returns {summary, coin_spends} on success
             # (no "success" key in that response format). Accept either form.
             sage_submitted = bool(
-                result and (
+                result
+                and (
                     result.get("success") is True
                     or result.get("coin_spends") is not None
                 )
@@ -8596,11 +9955,17 @@ class CoinManager:
                     self._recent_absorb_submissions[absorb_key] = time.time()
                 # Log how many coin_spends Sage included for transparency
                 n_spends = len(result.get("coin_spends") or [])
-                extra = (f" (Sage used {n_spends} input coin(s) in the spend)"
-                         if n_spends else "")
-                log_event("success", f"topup_{name.lower()}_absorb_ok",
-                          f"Misfit absorption submitted — enlarged reserve "
-                          f"({amt_str}) will be available after confirmation{extra}")
+                extra = (
+                    f" (Sage used {n_spends} input coin(s) in the spend)"
+                    if n_spends
+                    else ""
+                )
+                log_event(
+                    "success",
+                    f"topup_{name.lower()}_absorb_ok",
+                    f"Misfit absorption submitted — enlarged reserve "
+                    f"({amt_str}) will be available after confirmation{extra}",
+                )
                 # Credit the absorbed misfit total back to the topup pool
                 # spend counter. The misfits were originally carved from the
                 # reserve (contributing to spent), and folding them back in
@@ -8615,8 +9980,12 @@ class CoinManager:
                 # genuine deposit from outside).
                 try:
                     from database import set_setting as _set_setting
-                    _abs_key = ("last_misfit_absorb_cat_at" if is_cat
-                                else "last_misfit_absorb_xch_at")
+
+                    _abs_key = (
+                        "last_misfit_absorb_cat_at"
+                        if is_cat
+                        else "last_misfit_absorb_xch_at"
+                    )
                     _set_setting(_abs_key, str(int(time.time())))
                 except Exception:
                     pass  # advisory is best-effort — don't block absorption
@@ -8625,18 +9994,25 @@ class CoinManager:
             # Log the actual Sage error (not just "Unknown") for diagnosis
             sage_error = (result or {}).get("error") or (result or {}).get("message")
             error_detail = str(sage_error) if sage_error else f"result={result!r}"
-            log_event("info", f"topup_{name.lower()}_absorb_skip_sage",
-                      f"Misfit absorption declined by Sage ({error_detail}) — "
-                      "will retry next topup cycle")
+            log_event(
+                "info",
+                f"topup_{name.lower()}_absorb_skip_sage",
+                f"Misfit absorption declined by Sage ({error_detail}) — "
+                "will retry next topup cycle",
+            )
             return False
 
         except Exception as exc:
-            log_event("error", f"topup_{name.lower()}_absorb_error",
-                      f"Misfit absorption unexpected error: {exc}")
+            log_event(
+                "error",
+                f"topup_{name.lower()}_absorb_error",
+                f"Misfit absorption unexpected error: {exc}",
+            )
             return False
 
-    def _poll_for_confirmation(self, pre_xch: int, pre_cat: int,
-                                max_polls: int = 36, poll_interval: int = 5):
+    def _poll_for_confirmation(
+        self, pre_xch: int, pre_cat: int, max_polls: int = 36, poll_interval: int = 5
+    ):
         """Poll until coin counts change (confirms splits/consolidation).
 
         Max 3 minutes (36 polls × 5 seconds). Shorter than the old 10-minute
@@ -8646,7 +10022,11 @@ class CoinManager:
         """
         for i in range(max_polls):
             if self._topup_should_stop():
-                log_event("info", "topup_stopped", "Coin top-up stopped while waiting for inventory confirmation")
+                log_event(
+                    "info",
+                    "topup_stopped",
+                    "Coin top-up stopped while waiting for inventory confirmation",
+                )
                 return
             time.sleep(poll_interval)
             elapsed = (i + 1) * poll_interval
@@ -8661,24 +10041,35 @@ class CoinManager:
                 if new_xch != pre_xch or new_cat != pre_cat:
                     self._xch_coins = new_xch
                     self._cat_coins = new_cat
-                    log_event(_topup_event_log_level("topup_inventory_changed"),
-                              "topup_inventory_changed",
-                              f"Coin inventory changed in {elapsed}s. "
-                              f"XCH: {pre_xch}→{new_xch}, CAT: {pre_cat}→{new_cat}")
+                    log_event(
+                        _topup_event_log_level("topup_inventory_changed"),
+                        "topup_inventory_changed",
+                        f"Coin inventory changed in {elapsed}s. "
+                        f"XCH: {pre_xch}→{new_xch}, CAT: {pre_cat}→{new_cat}",
+                    )
                     return
 
                 if elapsed % 15 == 0:
-                    log_event(_topup_event_log_level("topup_waiting"), "topup_waiting",
-                              f"Waiting for confirmation... XCH: {new_xch}, "
-                              f"CAT: {new_cat} ({elapsed}s / {max_polls * poll_interval}s max)")
+                    log_event(
+                        _topup_event_log_level("topup_waiting"),
+                        "topup_waiting",
+                        f"Waiting for confirmation... XCH: {new_xch}, "
+                        f"CAT: {new_cat} ({elapsed}s / {max_polls * poll_interval}s max)",
+                    )
 
             except Exception as e:
-                log_event("warning", "topup_wait_poll_failed",
-                          f"Topup confirmation poll failed: {e}")
+                log_event(
+                    "warning",
+                    "topup_wait_poll_failed",
+                    f"Topup confirmation poll failed: {e}",
+                )
 
-        log_event("warning", "topup_timeout",
-                  f"No coin count change after {max_polls * poll_interval}s — "
-                  f"will retry next cycle")
+        log_event(
+            "warning",
+            "topup_timeout",
+            f"No coin count change after {max_polls * poll_interval}s — "
+            f"will retry next cycle",
+        )
 
     # -------------------------------------------------------------------
     # Full coin prep (subprocess)
@@ -8690,8 +10081,11 @@ class CoinManager:
         # Two workers on the same wallet causes coin conflicts.
         if self._prep_process and self._prep_process.poll() is None:
             old_pid = self._prep_process.pid
-            log_event("warning", "coin_prep_kill",
-                      f"Killing previous coin prep worker (PID: {old_pid}) before new run")
+            log_event(
+                "warning",
+                "coin_prep_kill",
+                f"Killing previous coin prep worker (PID: {old_pid}) before new run",
+            )
             try:
                 self._prep_process.terminate()
                 try:
@@ -8700,8 +10094,11 @@ class CoinManager:
                     self._prep_process.kill()
                     self._prep_process.wait(timeout=2)
             except Exception as e:
-                log_event("warning", "coin_prep_kill_failed",
-                          f"Could not terminate previous coin prep worker (PID {self._prep_process.pid}): {e}")
+                log_event(
+                    "warning",
+                    "coin_prep_kill_failed",
+                    f"Could not terminate previous coin prep worker (PID {self._prep_process.pid}): {e}",
+                )
             self._prep_process = None
             with self._lock:
                 self._prep_running = False
@@ -8716,13 +10113,15 @@ class CoinManager:
 
         try:
             worker_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "coin_prep_worker.py"
+                os.path.dirname(os.path.abspath(__file__)), "coin_prep_worker.py"
             )
 
             if not os.path.exists(worker_path):
-                log_event("error", "coin_prep_missing",
-                          f"coin_prep_worker.py not found at {worker_path}")
+                log_event(
+                    "error",
+                    "coin_prep_missing",
+                    f"coin_prep_worker.py not found at {worker_path}",
+                )
                 with self._lock:
                     self._prep_running = False
                 return False
@@ -8739,9 +10138,11 @@ class CoinManager:
             # side so no sell coins get prepared (and vice versa). The fee
             # pool is kept in both single-sided modes because buying AND
             # selling both require fee coins.
-            _liquidity_mode = (getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided").lower()
-            _is_buy_only = (_liquidity_mode == "buy_only")
-            _is_sell_only = (_liquidity_mode == "sell_only")
+            _liquidity_mode = (
+                getattr(cfg, "LIQUIDITY_MODE", "two_sided") or "two_sided"
+            ).lower()
+            _is_buy_only = _liquidity_mode == "buy_only"
+            _is_sell_only = _liquidity_mode == "sell_only"
             if _is_buy_only:
                 max_sell = 0
             if _is_sell_only:
@@ -8756,14 +10157,14 @@ class CoinManager:
                 # worker preps XCH coins at BUY sizes and CAT coins at SELL sizes.
                 # Using the old shared --tier-sizes defaulted to SELL-side sizes for
                 # both wallets, causing XCH coins to be wrong size when BUY≠SELL.
-                buy_tier_sizes  = self._configured_tier_sizes_xch(side="buy")
+                buy_tier_sizes = self._configured_tier_sizes_xch(side="buy")
                 sell_tier_sizes = self._configured_tier_sizes_xch(side="sell")
                 xch_tier_counts = get_weighted_tier_prep_counts(
-                    max_buy, multiplier,
-                    tier_sizes_xch=buy_tier_sizes, side="xch")
+                    max_buy, multiplier, tier_sizes_xch=buy_tier_sizes, side="xch"
+                )
                 cat_tier_counts = get_weighted_tier_prep_counts(
-                    max_sell, multiplier,
-                    tier_sizes_xch=sell_tier_sizes, side="cat")
+                    max_sell, multiplier, tier_sizes_xch=sell_tier_sizes, side="cat"
+                )
                 # Liquidity mode overrides — zero the disabled side's tier
                 # counts so coin prep doesn't build a pool that won't be used.
                 if _is_buy_only:
@@ -8810,15 +10211,17 @@ class CoinManager:
                 else:
                     buy_tier_sizes_for_coins = buy_tier_sizes
 
-                buy_tier_sizes_str  = ",".join(
+                buy_tier_sizes_str = ",".join(
                     f"{t}={s}" for t, s in buy_tier_sizes_for_coins.items()
                 )
-                sell_tier_sizes_str = ",".join(f"{t}={s}" for t, s in sell_tier_sizes.items())
+                sell_tier_sizes_str = ",".join(
+                    f"{t}={s}" for t, s in sell_tier_sizes.items()
+                )
                 # Fee/sniper tiers reuse their buy-side size (XCH-only)
                 if self._fee_pool_enabled():
                     fee_name = get_fee_tier_name()
                     fee_sz = Decimal(str(get_fee_coin_size_xch()))
-                    buy_tier_sizes_str  += f",{fee_name}={fee_sz}"
+                    buy_tier_sizes_str += f",{fee_name}={fee_sz}"
                     sell_tier_sizes_str += f",{fee_name}={fee_sz}"
                 # Sniper: when the pool is enabled the counts were added to
                 # xch_tier_counts/cat_tier_counts above (line ~6330). The prep
@@ -8828,17 +10231,23 @@ class CoinManager:
                 # no matching size and never preps the pool.
                 if self._sniper_pool_enabled():
                     try:
-                        sniper_sz = Decimal(str(getattr(cfg, "SNIPER_SIZE_XCH", Decimal("0"))))
+                        sniper_sz = Decimal(
+                            str(getattr(cfg, "SNIPER_SIZE_XCH", Decimal("0")))
+                        )
                     except Exception:
                         sniper_sz = Decimal("0")
                     if sniper_sz > 0:
-                        buy_tier_sizes_str  += f",sniper={sniper_sz}"
+                        buy_tier_sizes_str += f",sniper={sniper_sz}"
                         sell_tier_sizes_str += f",sniper={sniper_sz}"
-                xch_counts_str = ",".join(f"{k}={v}" for k, v in xch_tier_counts.items())
-                cat_counts_str = ",".join(f"{k}={v}" for k, v in cat_tier_counts.items())
+                xch_counts_str = ",".join(
+                    f"{k}={v}" for k, v in xch_tier_counts.items()
+                )
+                cat_counts_str = ",".join(
+                    f"{k}={v}" for k, v in cat_tier_counts.items()
+                )
 
                 cmd.extend(["--xch-target", str(total_coins)])
-                cmd.extend(["--buy-tier-sizes",  buy_tier_sizes_str])
+                cmd.extend(["--buy-tier-sizes", buy_tier_sizes_str])
                 cmd.extend(["--sell-tier-sizes", sell_tier_sizes_str])
                 cmd.extend(["--tier-counts-xch", xch_counts_str])
                 cmd.extend(["--tier-counts-cat", cat_counts_str])
@@ -8847,11 +10256,15 @@ class CoinManager:
 
                 tier_detail = " + ".join(
                     f"{c} {t} × {buy_tier_sizes_for_coins.get(t, Decimal('0'))}"
-                    for t, c in xch_tier_counts.items() if c > 0
+                    for t, c in xch_tier_counts.items()
+                    if c > 0
                 )
-                log_event("info", "coin_prep_config",
-                          f"Tier coin prep ({multiplier}×): {total_coins} XCH coins = {tier_detail} "
-                          f"(+{prep_headroom_pct}% headroom, BUY sizes for XCH / SELL sizes for CAT)")
+                log_event(
+                    "info",
+                    "coin_prep_config",
+                    f"Tier coin prep ({multiplier}×): {total_coins} XCH coins = {tier_detail} "
+                    f"(+{prep_headroom_pct}% headroom, BUY sizes for XCH / SELL sizes for CAT)",
+                )
             else:
                 # Uniform coin prep with multiplier
                 target_xch_size = self.get_target_xch_coin_size()
@@ -8862,10 +10275,13 @@ class CoinManager:
                 cmd.extend(["--xch-size", str(target_xch_size)])
                 cmd.extend(["--cat-target", str(total_coins)])
                 cmd.extend(["--prep-headroom-pct", str(prep_headroom_pct)])
-                log_event("info", "coin_prep_config",
-                          f"Coin prep config ({multiplier}×): {total_coins} XCH coins × "
-                          f"{target_xch_size} each, {total_coins} CAT coins "
-                          f"(+{prep_headroom_pct}% headroom)")
+                log_event(
+                    "info",
+                    "coin_prep_config",
+                    f"Coin prep config ({multiplier}×): {total_coins} XCH coins × "
+                    f"{target_xch_size} each, {total_coins} CAT coins "
+                    f"(+{prep_headroom_pct}% headroom)",
+                )
 
             # Pass the bot's current weighted mid to the worker so CAT sizing
             # reflects what the bot is actually quoting, not Dexie's last_price
@@ -8884,6 +10300,7 @@ class CoinManager:
                     # Fall back to whatever the api_server helper exposes.
                     try:
                         from api_server import _get_live_mid_price_str  # type: ignore
+
                         _live_mid = _get_live_mid_price_str()
                     except Exception:
                         _live_mid = None
@@ -8931,15 +10348,21 @@ class CoinManager:
             )
             _drain_thread.start()
 
-            log_event("info", "coin_prep_started",
-                      f"Coin prep worker started (PID: {self._prep_process.pid})")
+            log_event(
+                "info",
+                "coin_prep_started",
+                f"Coin prep worker started (PID: {self._prep_process.pid})",
+            )
             return True
 
         except Exception as e:
             with self._lock:
                 self._prep_running = False
-            log_event("error", "coin_prep_start_failed",
-                      f"Failed to start coin prep worker: {e}")
+            log_event(
+                "error",
+                "coin_prep_start_failed",
+                f"Failed to start coin prep worker: {e}",
+            )
             return False
 
     def check_coin_prep_status(self) -> Dict:
@@ -8957,15 +10380,13 @@ class CoinManager:
             return {"running": False}
 
         # Runtime-ceiling escape hatch.
-        max_runtime = float(
-            getattr(cfg, "COIN_PREP_MAX_RUNTIME_SECS", 600) or 600
-        )
-        started_at = float(
-            getattr(self, "_prep_process_started_at", 0) or 0
-        )
-        if (self._prep_process.poll() is None
-                and started_at > 0
-                and (time.time() - started_at) > max_runtime):
+        max_runtime = float(getattr(cfg, "COIN_PREP_MAX_RUNTIME_SECS", 600) or 600)
+        started_at = float(getattr(self, "_prep_process_started_at", 0) or 0)
+        if (
+            self._prep_process.poll() is None
+            and started_at > 0
+            and (time.time() - started_at) > max_runtime
+        ):
             age = time.time() - started_at
             log_event(
                 "critical",
@@ -8976,9 +10397,11 @@ class CoinManager:
                 f"and releasing _prep_running so coin maintenance can resume. "
                 f"Investigate the worker if this recurs — it usually means "
                 f"a wallet RPC hang inside the subprocess.",
-                data={"pid": self._prep_process.pid,
-                      "age_secs": age,
-                      "ceiling_secs": max_runtime},
+                data={
+                    "pid": self._prep_process.pid,
+                    "age_secs": age,
+                    "ceiling_secs": max_runtime,
+                },
             )
             try:
                 self._prep_process.kill()
@@ -8987,13 +10410,15 @@ class CoinManager:
                 except Exception:
                     pass
             except Exception as _kill_err:
-                log_event("warning", "coin_prep_kill_failed",
-                          f"Could not kill wedged coin prep worker: {_kill_err}")
+                log_event(
+                    "warning",
+                    "coin_prep_kill_failed",
+                    f"Could not kill wedged coin prep worker: {_kill_err}",
+                )
             with self._lock:
                 self._prep_running = False
             self._prep_process = None
-            return {"running": False, "exit_code": -1,
-                    "killed_for_runtime": True}
+            return {"running": False, "exit_code": -1, "killed_for_runtime": True}
 
         poll = self._prep_process.poll()
 
@@ -9002,28 +10427,49 @@ class CoinManager:
                 self._prep_running = False
 
             try:
-                stdout_data = self._prep_process.stdout.read() if self._prep_process.stdout else ""
-                stderr_data = self._prep_process.stderr.read() if self._prep_process.stderr else ""
+                stdout_data = (
+                    self._prep_process.stdout.read()
+                    if self._prep_process.stdout
+                    else ""
+                )
+                stderr_data = (
+                    self._prep_process.stderr.read()
+                    if self._prep_process.stderr
+                    else ""
+                )
                 if stdout_data:
-                    log_event("info", "coin_prep_stdout",
-                              f"Worker output (last 500 chars): ...{stdout_data[-500:]}")
+                    log_event(
+                        "info",
+                        "coin_prep_stdout",
+                        f"Worker output (last 500 chars): ...{stdout_data[-500:]}",
+                    )
                 if stderr_data:
-                    log_event("error", "coin_prep_stderr",
-                              f"Worker errors: {stderr_data[-500:]}")
+                    log_event(
+                        "error",
+                        "coin_prep_stderr",
+                        f"Worker errors: {stderr_data[-500:]}",
+                    )
                 if poll != 0:
-                    log_event("error", "coin_prep_failed",
-                              f"Worker exited with code {poll}. stderr: {stderr_data[-300:]}")
+                    log_event(
+                        "error",
+                        "coin_prep_failed",
+                        f"Worker exited with code {poll}. stderr: {stderr_data[-300:]}",
+                    )
             except Exception as e:
-                log_event("warning", "coin_prep_output_read_failed",
-                          f"Could not read coin prep worker output: {e}")
+                log_event(
+                    "warning",
+                    "coin_prep_output_read_failed",
+                    f"Could not read coin prep worker output: {e}",
+                )
 
             try:
                 from user_paths import worker_cancelled_ids_file
+
                 cancelled_file = worker_cancelled_ids_file()
             except Exception:
                 cancelled_file = os.path.join(
                     os.path.dirname(os.path.abspath(__file__)),
-                    "worker_cancelled_ids.json"
+                    "worker_cancelled_ids.json",
                 )
             if os.path.exists(cancelled_file):
                 try:
@@ -9031,11 +10477,17 @@ class CoinManager:
                         cancelled = json.load(f)
                     self._worker_cancelled_ids.update(cancelled)
                     os.remove(cancelled_file)
-                    log_event("info", "coin_prep_cancelled_ids",
-                              f"Loaded {len(cancelled)} cancelled IDs from worker")
+                    log_event(
+                        "info",
+                        "coin_prep_cancelled_ids",
+                        f"Loaded {len(cancelled)} cancelled IDs from worker",
+                    )
                 except Exception as e:
-                    log_event("warning", "coin_prep_cancelled_ids_load_failed",
-                              f"Could not load worker cancelled IDs file: {e}")
+                    log_event(
+                        "warning",
+                        "coin_prep_cancelled_ids_load_failed",
+                        f"Could not load worker cancelled IDs file: {e}",
+                    )
 
             self.update_coin_counts()
 
@@ -9104,6 +10556,7 @@ class CoinManager:
         prep_mult = self._get_coin_prep_headroom_multiplier()
         if cfg.TIER_ENABLED:
             from config import get_buy_tier_size_xch, get_sell_tier_size_xch
+
             if (side or "buy").strip().lower() == "sell":
                 mid = get_sell_tier_size_xch("mid")
             else:
@@ -9137,15 +10590,20 @@ class CoinManager:
                 cat_coin_size = cat_per_offer.quantize(Decimal("1"))
                 return cat_coin_size
         except Exception as e:
-            log_event("debug", "cat_coin_size_calc_failed",
-                      f"CAT coin size calculation failed (falling back to config): {e}")
+            log_event(
+                "debug",
+                "cat_coin_size_calc_failed",
+                f"CAT coin size calculation failed (falling back to config): {e}",
+            )
         # Fallback to config value
         return cfg.CAT_COIN_SIZE
 
     def _get_coin_prep_headroom_multiplier(self) -> Decimal:
         """Return the multiplier applied to prepared coin sizes."""
         try:
-            headroom_pct = Decimal(str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10"))))
+            headroom_pct = Decimal(
+                str(getattr(cfg, "COIN_PREP_HEADROOM_PCT", Decimal("10")))
+            )
         except Exception:
             headroom_pct = Decimal("10")
         if headroom_pct < 0:
@@ -9168,14 +10626,17 @@ class CoinManager:
              inner at startup (13.65M-mojo coins fell inside the wrong-
              price "inner" range and got reassigned by the rebalancer).
         """
-        if hasattr(self, '_price_engine') and self._price_engine:
+        if hasattr(self, "_price_engine") and self._price_engine:
             try:
                 last = self._price_engine.get_last_price()
                 if last and last > 0:
                     return last
             except Exception as e:
-                log_event("debug", "price_engine_cache_fetch_failed",
-                          f"Price engine cache fetch failed (will try fresh fetch): {e}")
+                log_event(
+                    "debug",
+                    "price_engine_cache_fetch_failed",
+                    f"Price engine cache fetch failed (will try fresh fetch): {e}",
+                )
 
             # Cache empty (e.g. startup before first cycle). Force a fresh
             # weighted-mid fetch so classification agrees with what the bot
@@ -9191,24 +10652,32 @@ class CoinManager:
                     if p_dec > 0:
                         return p_dec
             except Exception as e:
-                log_event("debug", "price_engine_fresh_fetch_failed",
-                          f"Price engine fresh fetch failed (will try Dexie): {e}")
+                log_event(
+                    "debug",
+                    "price_engine_fresh_fetch_failed",
+                    f"Price engine fresh fetch failed (will try Dexie): {e}",
+                )
 
         # Last resort: Dexie last_price ticker. Can lag the live mid —
         # avoid when possible.
         try:
             import requests
+
             cat_asset_id = cfg.CAT_ASSET_ID
             if cat_asset_id:
-                _dexie_base = str(getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space") or "https://api.dexie.space").rstrip("/")
+                _dexie_base = str(
+                    getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
+                    or "https://api.dexie.space"
+                ).rstrip("/")
                 try:
                     from api_call_tracker import record as _t
+
                     _t("dexie", "/v2/prices/tickers")
                 except Exception:
                     pass
                 resp = requests.get(
                     f"{_dexie_base}/v2/prices/tickers?ticker_id={cat_asset_id}_xch",
-                    timeout=10
+                    timeout=10,
                 )
                 if resp.status_code == 200:
                     data = resp.json()
@@ -9216,13 +10685,19 @@ class CoinManager:
                     if tickers and tickers[0].get("last_price"):
                         price = Decimal(str(tickers[0]["last_price"]))
                         if price > 0:
-                            log_event("debug", "price_dexie_last_fallback",
-                                      f"Using Dexie last_price {price} for CAT sizing "
-                                      f"(may lag live mid)")
+                            log_event(
+                                "debug",
+                                "price_dexie_last_fallback",
+                                f"Using Dexie last_price {price} for CAT sizing "
+                                f"(may lag live mid)",
+                            )
                             return price
         except Exception as e:
-            log_event("debug", "dexie_price_fetch_failed",
-                      f"Direct Dexie price fetch failed (coin sizing will use config default): {e}")
+            log_event(
+                "debug",
+                "dexie_price_fetch_failed",
+                f"Direct Dexie price fetch failed (coin sizing will use config default): {e}",
+            )
         return None
 
     def is_busy(self) -> bool:
@@ -9240,9 +10715,12 @@ class CoinManager:
             self._no_coins_backoff = False
             self._no_coins_backoff_count = 0
             self._last_topup_time = 0  # clear emergency cooldown
-            self._last_drip_time = 0   # clear drip cooldown too
-            log_event("debug", "topup_backoff_reset",
-                      "Topup backoff reset — fills brought new coins, cooldown cleared")
+            self._last_drip_time = 0  # clear drip cooldown too
+            log_event(
+                "debug",
+                "topup_backoff_reset",
+                "Topup backoff reset — fills brought new coins, cooldown cleared",
+            )
         self._clear_topup_budget_backoff("fills brought new coins")
 
     def get_status(self) -> Dict:

@@ -18,8 +18,13 @@ class _FakeConnection:
 
 def _load_coin_manager_with_fakes():
     names = [
-        "config", "database", "wallet", "tx_fees", "win_subprocess",
-        "coin_reservations", "coin_manager",
+        "config",
+        "database",
+        "wallet",
+        "tx_fees",
+        "win_subprocess",
+        "coin_reservations",
+        "coin_manager",
     ]
     originals = {name: sys.modules.get(name) for name in names}
 
@@ -46,9 +51,7 @@ def _load_coin_manager_with_fakes():
     sys.modules["database"] = fake_database
 
     fake_wallet = types.ModuleType("wallet")
-    fake_wallet.get_exact_spendable_coins_rpc = (
-        lambda *args, **kwargs: {"records": []}
-    )
+    fake_wallet.get_exact_spendable_coins_rpc = lambda *args, **kwargs: {"records": []}
     fake_wallet.get_next_address = lambda *args, **kwargs: {"success": True}
     fake_wallet.send_transaction = lambda *args, **kwargs: {"success": True}
     fake_wallet.split_coins_rpc = lambda *args, **kwargs: {"success": True}
@@ -93,24 +96,31 @@ class CoinReadinessBufferStatusTests(unittest.TestCase):
         coin_manager, originals = _load_coin_manager_with_fakes()
         try:
             manager = coin_manager.CoinManager()
-            manager._xch_inventory.update({
-                "inner": [object()],
-                "mid": [],
-                "outer": [],
-                "extreme": [],
-            })
-            manager._cat_inventory.update({
-                "inner": [object()],
-                "mid": [],
-                "outer": [],
-                "extreme": [],
-            })
+            manager._xch_inventory.update(
+                {
+                    "inner": [object()],
+                    "mid": [],
+                    "outer": [],
+                    "extreme": [],
+                }
+            )
+            manager._cat_inventory.update(
+                {
+                    "inner": [object()],
+                    "mid": [],
+                    "outer": [],
+                    "extreme": [],
+                }
+            )
 
             dist = {"inner": 2, "mid": 0, "outer": 0, "extreme": 0}
             prep = {"inner": 4, "mid": 0, "outer": 0, "extreme": 0}
-            with patch.object(coin_manager, "get_tier_distribution", return_value=dist), \
-                    patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                                 return_value=prep):
+            with (
+                patch.object(coin_manager, "get_tier_distribution", return_value=dist),
+                patch.object(
+                    coin_manager, "get_weighted_tier_prep_counts", return_value=prep
+                ),
+            ):
                 report = manager.coin_readiness_report()
 
             self.assertTrue(report["overall_ready"])
@@ -124,39 +134,47 @@ class CoinReadinessBufferStatusTests(unittest.TestCase):
         coin_manager, originals = _load_coin_manager_with_fakes()
         try:
             manager = coin_manager.CoinManager()
-            manager._xch_inventory.update({
-                "inner": [object()],
-                "mid": [],
-                "outer": [],
-                "extreme": [],
-            })
-            manager._cat_inventory.update({
-                "inner": [object()],
-                "mid": [],
-                "outer": [],
-                "extreme": [],
-            })
+            manager._xch_inventory.update(
+                {
+                    "inner": [object()],
+                    "mid": [],
+                    "outer": [],
+                    "extreme": [],
+                }
+            )
+            manager._cat_inventory.update(
+                {
+                    "inner": [object()],
+                    "mid": [],
+                    "outer": [],
+                    "extreme": [],
+                }
+            )
 
             dist = {"inner": 2, "mid": 0, "outer": 0, "extreme": 0}
             prep = {"inner": 4, "mid": 0, "outer": 0, "extreme": 0}
-            with patch.object(coin_manager, "get_tier_distribution", return_value=dist), \
-                    patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                                 return_value=prep), \
-                    patch.object(coin_manager, "log_event") as log_event:
+            with (
+                patch.object(coin_manager, "get_tier_distribution", return_value=dist),
+                patch.object(
+                    coin_manager, "get_weighted_tier_prep_counts", return_value=prep
+                ),
+                patch.object(coin_manager, "log_event") as log_event,
+            ):
                 manager.coin_readiness_report()
 
             readiness_calls = [
-                call for call in log_event.call_args_list
+                call
+                for call in log_event.call_args_list
                 if len(call.args) >= 3 and call.args[1] == "coin_readiness"
             ]
             self.assertGreaterEqual(len(readiness_calls), 2)
             tier_lines = [
-                call for call in readiness_calls
+                call
+                for call in readiness_calls
                 if "COIN READINESS:" not in call.args[2]
             ]
             summary_lines = [
-                call for call in readiness_calls
-                if "COIN READINESS:" in call.args[2]
+                call for call in readiness_calls if "COIN READINESS:" in call.args[2]
             ]
             self.assertTrue(tier_lines)
             self.assertEqual({call.args[0] for call in tier_lines}, {"debug"})

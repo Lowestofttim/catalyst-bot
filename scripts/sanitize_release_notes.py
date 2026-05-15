@@ -49,7 +49,9 @@ def main() -> int:
     parser.add_argument("--private-repo", required=True)
     args = parser.parse_args()
 
-    cleaned = sanitize_release_notes(args.input.read_text(encoding="utf-8"), args.private_repo)
+    cleaned = sanitize_release_notes(
+        args.input.read_text(encoding="utf-8"), args.private_repo
+    )
     args.output.write_text(cleaned + "\n", encoding="utf-8")
     return 0
 

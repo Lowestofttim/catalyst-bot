@@ -101,8 +101,9 @@ class OrphanReclaimTests(unittest.TestCase):
             sys.modules.pop(name, None)
 
     def _make_manager(self):
-        with patch.object(coin_manager.CoinManager, "_resolve_fingerprint",
-                          return_value="123456789"):
+        with patch.object(
+            coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"
+        ):
             return coin_manager.CoinManager()
 
     # ==================================================================
@@ -115,20 +116,23 @@ class OrphanReclaimTests(unittest.TestCase):
         m = self._make_manager()
 
         # 16 CAT orphans reproducing the exact 2026-04-21 scenario.
-        small_bucket = [
-            _coin(f"0xcat_large_{i}", 4_850_000) for i in range(9)
-        ] + [
+        small_bucket = [_coin(f"0xcat_large_{i}", 4_850_000) for i in range(9)] + [
             _coin(f"0xcat_small_{i}", 1_900_000) for i in range(7)
         ]
         reserve_coin = _coin("0xreserve", 4_920_633)  # current tiny reserve
         inventory = {
             "reserve": [reserve_coin],
-            "inner": [], "mid": [], "outer": [], "extreme": [],
+            "inner": [],
+            "mid": [],
+            "outer": [],
+            "extreme": [],
             "small": small_bucket,
         }
         tier_sizes = {
-            "inner": 18_970_000, "mid": 10_657_000,
-            "outer": 5_760_000, "extreme": 2_618_000,
+            "inner": 18_970_000,
+            "mid": 10_657_000,
+            "outer": 5_760_000,
+            "extreme": 2_618_000,
         }
 
         # Patch out the Sage combine_coins call and the fresh-coins fetch
@@ -145,19 +149,26 @@ class OrphanReclaimTests(unittest.TestCase):
             return {"confirmed_records": [reserve_coin] + small_bucket}
 
         cfg = coin_manager.cfg
-        with patch("wallet.get_wallet_type", return_value="sage"), \
-             patch("wallet_sage.combine_coins", side_effect=_fake_combine), \
-             patch("coin_manager._get_free_coins_rpc", side_effect=_fake_fresh), \
-             patch.object(cfg, "COIN_MAX_SIZE_RATIO", "1.5"), \
-             patch.object(cfg, "CAT_DECIMALS", 3), \
-             patch.object(m, "_tx_fee_mojos", return_value=0), \
-             patch.object(m, "_get_coin_prep_headroom_multiplier",
-                          return_value=Decimal("1")), \
-             patch.object(m, "_filter_out_protected_coin_ids",
-                          side_effect=lambda ids: ids):
+        with (
+            patch("wallet.get_wallet_type", return_value="sage"),
+            patch("wallet_sage.combine_coins", side_effect=_fake_combine),
+            patch("coin_manager._get_free_coins_rpc", side_effect=_fake_fresh),
+            patch.object(cfg, "COIN_MAX_SIZE_RATIO", "1.5"),
+            patch.object(cfg, "CAT_DECIMALS", 3),
+            patch.object(m, "_tx_fee_mojos", return_value=0),
+            patch.object(
+                m, "_get_coin_prep_headroom_multiplier", return_value=Decimal("1")
+            ),
+            patch.object(
+                m, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+        ):
             result = m._absorb_misfits_to_reserve(
-                name="CAT", wallet_id=2, inventory=inventory,
-                tier_sizes_mojos=tier_sizes, is_cat=True,
+                name="CAT",
+                wallet_id=2,
+                inventory=inventory,
+                tier_sizes_mojos=tier_sizes,
+                is_cat=True,
             )
 
         self.assertTrue(result, "Absorption should have been submitted")
@@ -180,12 +191,17 @@ class OrphanReclaimTests(unittest.TestCase):
         reserve_coin = _coin("0xreserve", 10_000_000)
         inventory = {
             "reserve": [reserve_coin],
-            "inner": [], "mid": [], "outer": [], "extreme": [],
+            "inner": [],
+            "mid": [],
+            "outer": [],
+            "extreme": [],
             "small": small_bucket,
         }
         tier_sizes = {
-            "inner": 20_000_000, "mid": 10_000_000,
-            "outer": 5_000_000, "extreme": 2_000_000,
+            "inner": 20_000_000,
+            "mid": 10_000_000,
+            "outer": 5_000_000,
+            "extreme": 2_000_000,
         }
 
         gathered = {"ids": None}
@@ -198,19 +214,26 @@ class OrphanReclaimTests(unittest.TestCase):
             return {"confirmed_records": [reserve_coin] + small_bucket}
 
         cfg = coin_manager.cfg
-        with patch("wallet.get_wallet_type", return_value="sage"), \
-             patch("wallet_sage.combine_coins", side_effect=_fake_combine), \
-             patch("coin_manager._get_free_coins_rpc", side_effect=_fake_fresh), \
-             patch.object(cfg, "COIN_MAX_SIZE_RATIO", "1.5"), \
-             patch.object(cfg, "CAT_DECIMALS", 3), \
-             patch.object(m, "_tx_fee_mojos", return_value=0), \
-             patch.object(m, "_get_coin_prep_headroom_multiplier",
-                          return_value=Decimal("1")), \
-             patch.object(m, "_filter_out_protected_coin_ids",
-                          side_effect=lambda ids: ids):
+        with (
+            patch("wallet.get_wallet_type", return_value="sage"),
+            patch("wallet_sage.combine_coins", side_effect=_fake_combine),
+            patch("coin_manager._get_free_coins_rpc", side_effect=_fake_fresh),
+            patch.object(cfg, "COIN_MAX_SIZE_RATIO", "1.5"),
+            patch.object(cfg, "CAT_DECIMALS", 3),
+            patch.object(m, "_tx_fee_mojos", return_value=0),
+            patch.object(
+                m, "_get_coin_prep_headroom_multiplier", return_value=Decimal("1")
+            ),
+            patch.object(
+                m, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+        ):
             m._absorb_misfits_to_reserve(
-                name="CAT", wallet_id=2, inventory=inventory,
-                tier_sizes_mojos=tier_sizes, is_cat=True,
+                name="CAT",
+                wallet_id=2,
+                inventory=inventory,
+                tier_sizes_mojos=tier_sizes,
+                is_cat=True,
             )
 
         # Reserve + 20 orphans = 21 combine inputs (cap of 20 orphans applied).
@@ -223,20 +246,25 @@ class OrphanReclaimTests(unittest.TestCase):
 
         # tx_fee_mojos returns 10B mojos (0.00001 XCH). 2× = 20B threshold.
         small_bucket = [
-            _coin("0xtiny_1", 10_000_000_000),   # == fee × 1 — skip
-            _coin("0xtiny_2", 19_000_000_000),   # < fee × 2 — skip
+            _coin("0xtiny_1", 10_000_000_000),  # == fee × 1 — skip
+            _coin("0xtiny_2", 19_000_000_000),  # < fee × 2 — skip
             _coin("0xuseful_1", 50_000_000_000),  # > threshold — include
-            _coin("0xuseful_2", 100_000_000_000), # include
+            _coin("0xuseful_2", 100_000_000_000),  # include
         ]
         reserve_coin = _coin("0xreserve", 500_000_000_000)
         inventory = {
             "reserve": [reserve_coin],
-            "inner": [], "mid": [], "outer": [], "extreme": [],
+            "inner": [],
+            "mid": [],
+            "outer": [],
+            "extreme": [],
             "small": small_bucket,
         }
         tier_sizes = {
-            "inner": 200_000_000_000, "mid": 100_000_000_000,
-            "outer": 50_000_000_000, "extreme": 10_000_000_000,
+            "inner": 200_000_000_000,
+            "mid": 100_000_000_000,
+            "outer": 50_000_000_000,
+            "extreme": 10_000_000_000,
         }
 
         gathered = {"ids": None}
@@ -249,18 +277,25 @@ class OrphanReclaimTests(unittest.TestCase):
             return {"confirmed_records": [reserve_coin] + small_bucket}
 
         cfg = coin_manager.cfg
-        with patch("wallet.get_wallet_type", return_value="sage"), \
-             patch("wallet_sage.combine_coins", side_effect=_fake_combine), \
-             patch("coin_manager._get_free_coins_rpc", side_effect=_fake_fresh), \
-             patch.object(cfg, "COIN_MAX_SIZE_RATIO", "1.5"), \
-             patch.object(m, "_tx_fee_mojos", return_value=10_000_000_000), \
-             patch.object(m, "_get_coin_prep_headroom_multiplier",
-                          return_value=Decimal("1")), \
-             patch.object(m, "_filter_out_protected_coin_ids",
-                          side_effect=lambda ids: ids):
+        with (
+            patch("wallet.get_wallet_type", return_value="sage"),
+            patch("wallet_sage.combine_coins", side_effect=_fake_combine),
+            patch("coin_manager._get_free_coins_rpc", side_effect=_fake_fresh),
+            patch.object(cfg, "COIN_MAX_SIZE_RATIO", "1.5"),
+            patch.object(m, "_tx_fee_mojos", return_value=10_000_000_000),
+            patch.object(
+                m, "_get_coin_prep_headroom_multiplier", return_value=Decimal("1")
+            ),
+            patch.object(
+                m, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+        ):
             m._absorb_misfits_to_reserve(
-                name="XCH", wallet_id=1, inventory=inventory,
-                tier_sizes_mojos=tier_sizes, is_cat=False,
+                name="XCH",
+                wallet_id=1,
+                inventory=inventory,
+                tier_sizes_mojos=tier_sizes,
+                is_cat=False,
             )
 
         self.assertIn("0xuseful_1", gathered["ids"])
@@ -274,15 +309,25 @@ class OrphanReclaimTests(unittest.TestCase):
         m = self._make_manager()
         inventory = {
             "reserve": [],
-            "inner": [], "mid": [], "outer": [], "extreme": [],
+            "inner": [],
+            "mid": [],
+            "outer": [],
+            "extreme": [],
             "small": [_coin(f"0xorphan_{i}", 5_000_000) for i in range(10)],
         }
-        tier_sizes = {"inner": 20_000_000, "mid": 10_000_000,
-                      "outer": 5_000_000, "extreme": 2_000_000}
+        tier_sizes = {
+            "inner": 20_000_000,
+            "mid": 10_000_000,
+            "outer": 5_000_000,
+            "extreme": 2_000_000,
+        }
         with patch("wallet.get_wallet_type", return_value="sage"):
             result = m._absorb_misfits_to_reserve(
-                name="CAT", wallet_id=2, inventory=inventory,
-                tier_sizes_mojos=tier_sizes, is_cat=True,
+                name="CAT",
+                wallet_id=2,
+                inventory=inventory,
+                tier_sizes_mojos=tier_sizes,
+                is_cat=True,
             )
         self.assertFalse(result)
 

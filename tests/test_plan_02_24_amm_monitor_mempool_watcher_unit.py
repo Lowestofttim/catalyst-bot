@@ -15,6 +15,7 @@ from unittest.mock import patch
 try:
     from mempool_watcher import _encode_amount, compute_coin_id
     import mempool_watcher as _mempool_watcher
+
     _SKIP_MW = None
 except ModuleNotFoundError as exc:
     _SKIP_MW = str(exc)
@@ -22,6 +23,7 @@ except ModuleNotFoundError as exc:
 try:
     from amm_monitor import AMMMonitor
     import config as _config_module
+
     _SKIP_AMM = None
 except ModuleNotFoundError as exc:
     _SKIP_AMM = str(exc)
@@ -34,6 +36,7 @@ _PUZZLE = "b" * 64
 # ---------------------------------------------------------------------------
 # _encode_amount
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_MW is not None, f"mempool_watcher unavailable: {_SKIP_MW}")
 class TestEncodeAmount(unittest.TestCase):
@@ -75,6 +78,7 @@ class TestEncodeAmount(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # compute_coin_id
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_MW is not None, f"mempool_watcher unavailable: {_SKIP_MW}")
 class TestComputeCoinId(unittest.TestCase):
@@ -267,6 +271,7 @@ class TestInferPendingPoolMove(unittest.TestCase):
 # AMMMonitor helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_monitor() -> "AMMMonitor":
     """Return an AMMMonitor instance with no background thread started."""
     return AMMMonitor(price_engine=None)
@@ -290,6 +295,7 @@ def _fake_cfg(enable_buffer=False, buffer_bps="30"):
 # ---------------------------------------------------------------------------
 # AMMMonitor.get_drift_bps
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_AMM is not None, f"amm_monitor unavailable: {_SKIP_AMM}")
 class TestGetDriftBps(unittest.TestCase):
@@ -317,7 +323,7 @@ class TestGetDriftBps(unittest.TestCase):
         self.assertEqual(drift, Decimal("0"))
 
     def test_1pct_drift_is_100bps(self):
-        amm = Decimal("0.001010")   # 1% above quoted
+        amm = Decimal("0.001010")  # 1% above quoted
         quoted = Decimal("0.001000")
         _inject_state(self.mon, amm_price=amm)
         self.mon._last_quoted_buy = quoted
@@ -348,6 +354,7 @@ class TestGetDriftBps(unittest.TestCase):
 # AMMMonitor.get_arb_pressure_label
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_AMM is not None, f"amm_monitor unavailable: {_SKIP_AMM}")
 class TestGetArbPressureLabel(unittest.TestCase):
     def setUp(self):
@@ -377,6 +384,7 @@ class TestGetArbPressureLabel(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # AMMMonitor.check_amm_buffer
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_AMM is not None, f"amm_monitor unavailable: {_SKIP_AMM}")
 class TestCheckAmmBuffer(unittest.TestCase):

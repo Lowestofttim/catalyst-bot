@@ -5,13 +5,16 @@ from unittest.mock import patch
 
 try:
     import wallet_sage
+
     _IMPORT_ERROR = None
 except ModuleNotFoundError as exc:
     wallet_sage = None
     _IMPORT_ERROR = exc
 
 
-@unittest.skipIf(wallet_sage is None, f"wallet_sage import unavailable: {_IMPORT_ERROR}")
+@unittest.skipIf(
+    wallet_sage is None, f"wallet_sage import unavailable: {_IMPORT_ERROR}"
+)
 class TestWalletSageStartupReadiness(unittest.TestCase):
     def test_reload_connection_settings_picks_up_sage_cert_env(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -33,8 +36,10 @@ class TestWalletSageStartupReadiness(unittest.TestCase):
             old_host = wallet_sage._SAGE_HOST
             old_port = wallet_sage._SAGE_PORT
             try:
-                with patch.object(wallet_sage, "_env_file", return_value=env_path), \
-                     patch.dict(os.environ, {}, clear=False):
+                with (
+                    patch.object(wallet_sage, "_env_file", return_value=env_path),
+                    patch.dict(os.environ, {}, clear=False),
+                ):
                     os.environ.pop("SAGE_RPC_URL", None)
                     os.environ.pop("SAGE_CERT_PATH", None)
                     os.environ.pop("SAGE_KEY_PATH", None)
@@ -69,12 +74,18 @@ class TestWalletSageStartupReadiness(unittest.TestCase):
             old_host = wallet_sage._SAGE_HOST
             old_port = wallet_sage._SAGE_PORT
             try:
-                with patch.object(wallet_sage, "_env_file", return_value=env_path), \
-                     patch.dict(os.environ, {
-                         "SAGE_RPC_URL": "https://127.0.0.1:9257",
-                         "SAGE_CERT_PATH": env_cert,
-                         "SAGE_KEY_PATH": env_key,
-                     }, clear=False):
+                with (
+                    patch.object(wallet_sage, "_env_file", return_value=env_path),
+                    patch.dict(
+                        os.environ,
+                        {
+                            "SAGE_RPC_URL": "https://127.0.0.1:9257",
+                            "SAGE_CERT_PATH": env_cert,
+                            "SAGE_KEY_PATH": env_key,
+                        },
+                        clear=False,
+                    ),
+                ):
                     wallet_sage.reload_connection_settings()
                     self.assertEqual(wallet_sage.WALLET_URL, "https://127.0.0.1:9257")
                     self.assertEqual(wallet_sage.CERT_PATH, env_cert)
@@ -90,28 +101,50 @@ class TestWalletSageStartupReadiness(unittest.TestCase):
     def test_get_chia_health_reports_syncing_when_wallet_not_synced(self):
         # Mock get_peer_connections to avoid real network calls that may fail
         # when the Sage wallet is under load from earlier tests in the suite.
-        with patch.object(wallet_sage, "get_wallet_sync_status", return_value={
-            "reachable": True,
-            "synced": False,
-            "syncing": True,
-            "sync_state": "not_synced",
-        }), patch.object(wallet_sage, "get_peer_connections", return_value=[
-            {"peer_host": "127.0.0.1"},
-        ]):
+        with (
+            patch.object(
+                wallet_sage,
+                "get_wallet_sync_status",
+                return_value={
+                    "reachable": True,
+                    "synced": False,
+                    "syncing": True,
+                    "sync_state": "not_synced",
+                },
+            ),
+            patch.object(
+                wallet_sage,
+                "get_peer_connections",
+                return_value=[
+                    {"peer_host": "127.0.0.1"},
+                ],
+            ),
+        ):
             health = wallet_sage.get_chia_health()
 
         self.assertEqual(health["status"], "wallet_not_synced")
         self.assertFalse(health["healthy"])
 
     def test_get_chia_health_reports_unknown_when_sync_state_unknown(self):
-        with patch.object(wallet_sage, "get_wallet_sync_status", return_value={
-            "reachable": True,
-            "synced": False,
-            "syncing": False,
-            "sync_state": "unknown",
-        }), patch.object(wallet_sage, "get_peer_connections", return_value=[
-            {"peer_host": "127.0.0.1"},
-        ]):
+        with (
+            patch.object(
+                wallet_sage,
+                "get_wallet_sync_status",
+                return_value={
+                    "reachable": True,
+                    "synced": False,
+                    "syncing": False,
+                    "sync_state": "unknown",
+                },
+            ),
+            patch.object(
+                wallet_sage,
+                "get_peer_connections",
+                return_value=[
+                    {"peer_host": "127.0.0.1"},
+                ],
+            ),
+        ):
             health = wallet_sage.get_chia_health()
 
         self.assertEqual(health["status"], "wallet_sync_unknown")

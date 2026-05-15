@@ -26,8 +26,15 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
     def test_hidden_subprocess_breakaway_is_opt_in(self):
         with (
             patch.object(win_subprocess.os, "name", "nt"),
-            patch.object(win_subprocess.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True),
-            patch.object(win_subprocess.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True),
+            patch.object(
+                win_subprocess.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True
+            ),
+            patch.object(
+                win_subprocess.subprocess,
+                "CREATE_BREAKAWAY_FROM_JOB",
+                0x01000000,
+                create=True,
+            ),
         ):
             breakaway_flag = win_subprocess.subprocess.CREATE_BREAKAWAY_FROM_JOB
             default_flags = win_subprocess.hidden_subprocess_kwargs()["creationflags"]
@@ -51,11 +58,15 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
         with (
             patch.object(sys, "platform", "win32"),
             patch.object(sage_node.os.path, "isfile", return_value=True),
-            patch.object(sage_node, "hidden_subprocess_kwargs", side_effect=fake_hidden_kwargs),
+            patch.object(
+                sage_node, "hidden_subprocess_kwargs", side_effect=fake_hidden_kwargs
+            ),
             patch.object(sage_node.subprocess, "Popen", return_value=DummyProcess()),
             patch.object(sage_node, "log_event"),
         ):
-            launched = sage_node._launch_sage_exe(os.path.join("C:\\Sage", "sage-tauri.exe"))
+            launched = sage_node._launch_sage_exe(
+                os.path.join("C:\\Sage", "sage-tauri.exe")
+            )
 
         self.assertTrue(launched)
         self.assertEqual(
@@ -169,11 +180,13 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
 
     def test_coin_prep_worker_environment_skips_sage_detection_for_chia(self):
         with patch("sage_node.detect_sage_cert_path") as detect_cert:
-            env = coin_manager._coin_prep_worker_environment({
-                "WALLET_TYPE": "chia",
-                "SAGE_CERT_PATH": "",
-                "SAGE_KEY_PATH": "",
-            })
+            env = coin_manager._coin_prep_worker_environment(
+                {
+                    "WALLET_TYPE": "chia",
+                    "SAGE_CERT_PATH": "",
+                    "SAGE_KEY_PATH": "",
+                }
+            )
 
         detect_cert.assert_not_called()
         self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
@@ -200,13 +213,15 @@ class WindowsProcessLifetimeTests(unittest.TestCase):
         old_preserve = os.environ.pop("_CATALYST_PRESERVE_PROCESS_ENV", None)
         sys.modules["coin_prep_worker"] = fake_worker
         try:
-            result = desktop_app.main([
-                "--coin-prep-worker",
-                "--xch-target",
-                "3",
-                "--live-price",
-                "0.00012",
-            ])
+            result = desktop_app.main(
+                [
+                    "--coin-prep-worker",
+                    "--xch-target",
+                    "3",
+                    "--live-price",
+                    "0.00012",
+                ]
+            )
         finally:
             sys.argv = old_argv
             if old_worker is None:

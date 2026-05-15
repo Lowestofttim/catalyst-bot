@@ -34,6 +34,7 @@ from database import get_connection, log_event
 @dataclass(frozen=True, slots=True)
 class ReservationResult:
     """Outcome of a reservation attempt."""
+
     success: bool
     reservation_id: str
     error: str = ""
@@ -142,8 +143,14 @@ class ReservationManager:
                        (reservation_id, purpose, xch_mojos, cat_mojos,
                         status, created_at, expires_at)
                        VALUES (?, ?, ?, ?, 'active', ?, ?)""",
-                    (reservation_id, purpose, xch_mojos, cat_mojos,
-                     now_iso, expires_at.isoformat()),
+                    (
+                        reservation_id,
+                        purpose,
+                        xch_mojos,
+                        cat_mojos,
+                        now_iso,
+                        expires_at.isoformat(),
+                    ),
                 )
                 conn.commit()
 
@@ -189,8 +196,11 @@ class ReservationManager:
                 conn.commit()
             except Exception as e:
                 try:
-                    log_event("warning", "reservation_release_error",
-                              f"Failed to release {reservation_id}: {e}")
+                    log_event(
+                        "warning",
+                        "reservation_release_error",
+                        f"Failed to release {reservation_id}: {e}",
+                    )
                 except Exception:
                     pass
 
@@ -210,8 +220,11 @@ class ReservationManager:
                 conn.commit()
                 if count > 0:
                     try:
-                        log_event("info", "reservation_expired",
-                                  f"Expired {count} stale reservation(s)")
+                        log_event(
+                            "info",
+                            "reservation_expired",
+                            f"Expired {count} stale reservation(s)",
+                        )
                     except Exception:
                         pass
                 return count
@@ -265,7 +278,9 @@ class ReservationManager:
                     "count": row["cnt"],
                 }
             except Exception as e:
-                print(f"  [ReservationManager] get_reserved_totals error: {e}", flush=True)
+                print(
+                    f"  [ReservationManager] get_reserved_totals error: {e}", flush=True
+                )
                 return {"xch_mojos": 0, "cat_mojos": 0, "count": 0}
 
     def list_active(self) -> list:
@@ -292,7 +307,9 @@ class ReservationManager:
         with self._lock:
             try:
                 conn = get_connection()
-                cutoff = (datetime.now(timezone.utc) - timedelta(hours=retention_hours)).isoformat()
+                cutoff = (
+                    datetime.now(timezone.utc) - timedelta(hours=retention_hours)
+                ).isoformat()
                 conn.execute(
                     """DELETE FROM reservation_leases
                        WHERE status != 'active' AND created_at < ?""",
@@ -301,4 +318,3 @@ class ReservationManager:
                 conn.commit()
             except Exception as e:
                 print(f"  [ReservationManager] prune_old error: {e}", flush=True)
-

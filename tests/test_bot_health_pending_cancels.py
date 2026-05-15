@@ -2,6 +2,7 @@
 that detects zombie offers (DB cancelled, Dexie still active) and repairs
 by re-issuing cancels via the single-offer + priority-fee path.
 """
+
 import sys
 import types
 import unittest
@@ -17,17 +18,30 @@ def _ensure_stubs():
         sys.modules["dotenv"] = d
     if "requests" not in sys.modules:
         r = types.ModuleType("requests")
+
         class _Resp:
             status_code = 200
-            def json(self): return {}
-            def raise_for_status(self): pass
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
         class _Session:
             headers = {}
-            def get(self, *a, **kw): return _Resp()
-            def mount(self, *a, **kw): pass
+
+            def get(self, *a, **kw):
+                return _Resp()
+
+            def mount(self, *a, **kw):
+                pass
+
         r.get = lambda *a, **kw: _Resp()
         r.Session = _Session
-        r.exceptions = types.SimpleNamespace(Timeout=Exception, ConnectionError=Exception)
+        r.exceptions = types.SimpleNamespace(
+            Timeout=Exception, ConnectionError=Exception
+        )
         a = types.ModuleType("requests.adapters")
         a.HTTPAdapter = object
         r.adapters = a
@@ -40,13 +54,18 @@ def _ensure_stubs():
         u.disable_warnings = lambda *a, **kw: None
         sys.modules["urllib3"] = u
 
+
 _ensure_stubs()
 
 import bot_health  # noqa: E402
 
 
-def _offer(trade_id, dexie_id="abc123", lifecycle_state="cancel_sent",
-           cancel_last_attempt_at=None):
+def _offer(
+    trade_id,
+    dexie_id="abc123",
+    lifecycle_state="cancel_sent",
+    cancel_last_attempt_at=None,
+):
     """Build a fake DB offer dict matching get_open_offers() shape."""
     return {
         "trade_id": trade_id,
@@ -86,7 +105,6 @@ class _ModuleStubMixin:
 
 
 class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
-
     def _patch_db(self, pending_offers, **kwargs):
         """Patch database imports used inside check_pending_cancels."""
         fake_db = types.ModuleType("database")
@@ -116,8 +134,10 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
         offers = [_offer("tid1")]
         fake_db = self._patch_db(offers)
         # Dexie says status=3 (CANCELLED)
-        with patch("bot_health._dexie_get_offer",
-                   return_value={"status": bot_health.DEXIE_STATUS_CANCELLED}):
+        with patch(
+            "bot_health._dexie_get_offer",
+            return_value={"status": bot_health.DEXIE_STATUS_CANCELLED},
+        ):
             check = bot_health.check_pending_cancels(auto_repair=True)
         self.assertEqual(check.repaired_count, 1)
         fake_db.update_offer_status.assert_called_once_with("tid1", "cancelled")
@@ -126,8 +146,10 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
     def test_dexie_expired_marks_db_cancelled(self):
         offers = [_offer("tid1")]
         fake_db = self._patch_db(offers)
-        with patch("bot_health._dexie_get_offer",
-                   return_value={"status": bot_health.DEXIE_STATUS_EXPIRED}):
+        with patch(
+            "bot_health._dexie_get_offer",
+            return_value={"status": bot_health.DEXIE_STATUS_EXPIRED},
+        ):
             check = bot_health.check_pending_cancels(auto_repair=True)
         self.assertEqual(check.repaired_count, 1)
         fake_db.update_offer_status.assert_called_once_with("tid1", "cancelled")
@@ -137,6 +159,7 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
     def test_dexie_active_within_grace_does_not_retry(self):
         # Recent cancel attempt (just now) — should NOT retry yet
         from datetime import datetime, timezone
+
         recent = datetime.now(timezone.utc).isoformat()
         offers = [_offer("tid1", cancel_last_attempt_at=recent)]
         self._patch_db(offers)
@@ -146,8 +169,10 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
         fake_wallet.cancel_offer = cancel_offer_mock
         sys.modules["wallet"] = fake_wallet
 
-        with patch("bot_health._dexie_get_offer",
-                   return_value={"status": bot_health.DEXIE_STATUS_ACTIVE}):
+        with patch(
+            "bot_health._dexie_get_offer",
+            return_value={"status": bot_health.DEXIE_STATUS_ACTIVE},
+        ):
             check = bot_health.check_pending_cancels(auto_repair=True)
 
         cancel_offer_mock.assert_not_called()
@@ -159,13 +184,17 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
     def test_dexie_active_past_backoff_re_cancels_with_priority_fee(self):
         # Cancel attempt 10 minutes ago — past 5-min retry window
         from datetime import datetime, timezone, timedelta
+
         old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
         offers = [_offer("tid1", cancel_last_attempt_at=old)]
         self._patch_db(offers)
 
-        cancel_offer_mock = MagicMock(return_value={
-            "success": True, "method": "submitted_pending_confirm",
-        })
+        cancel_offer_mock = MagicMock(
+            return_value={
+                "success": True,
+                "method": "submitted_pending_confirm",
+            }
+        )
         fake_wallet = types.ModuleType("wallet")
         fake_wallet.cancel_offer = cancel_offer_mock
         sys.modules["wallet"] = fake_wallet
@@ -174,8 +203,10 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
         fake_sage.get_effective_transaction_fee_mojos = lambda: 13_079_100  # 1.3e-5 XCH
         sys.modules["wallet_sage"] = fake_sage
 
-        with patch("bot_health._dexie_get_offer",
-                   return_value={"status": bot_health.DEXIE_STATUS_ACTIVE}):
+        with patch(
+            "bot_health._dexie_get_offer",
+            return_value={"status": bot_health.DEXIE_STATUS_ACTIVE},
+        ):
             check = bot_health.check_pending_cancels(auto_repair=True)
 
         cancel_offer_mock.assert_called_once()
@@ -183,8 +214,9 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
         # Verify priority fee was passed (not zero)
         self.assertEqual(args[0], "tid1")
         self.assertEqual(kwargs.get("fee_mojos"), 13_079_100)
-        self.assertGreater(kwargs.get("fee_mojos"), 0,
-                           "Re-cancel must use a priority fee, not zero")
+        self.assertGreater(
+            kwargs.get("fee_mojos"), 0, "Re-cancel must use a priority fee, not zero"
+        )
         self.assertEqual(check.repaired_count, 1)
         self.assertIn("re_cancelled", check.repair_log[0])
 
@@ -193,8 +225,10 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
     def test_dexie_completed_flags_suspected_fill(self):
         offers = [_offer("tid1")]
         fake_db = self._patch_db(offers)
-        with patch("bot_health._dexie_get_offer",
-                   return_value={"status": bot_health.DEXIE_STATUS_COMPLETED}):
+        with patch(
+            "bot_health._dexie_get_offer",
+            return_value={"status": bot_health.DEXIE_STATUS_COMPLETED},
+        ):
             check = bot_health.check_pending_cancels(auto_repair=True)
         # Suspected fills are NEVER auto-repaired (would risk corrupting position)
         self.assertEqual(check.repaired_count, 0)
@@ -219,8 +253,10 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
     def test_auto_repair_false_does_not_mutate(self):
         offers = [_offer("tid1")]
         fake_db = self._patch_db(offers)
-        with patch("bot_health._dexie_get_offer",
-                   return_value={"status": bot_health.DEXIE_STATUS_CANCELLED}):
+        with patch(
+            "bot_health._dexie_get_offer",
+            return_value={"status": bot_health.DEXIE_STATUS_CANCELLED},
+        ):
             check = bot_health.check_pending_cancels(auto_repair=False)
         # Anomaly detected but no repair executed
         self.assertEqual(check.anomaly_count, 1)
@@ -231,12 +267,13 @@ class CheckPendingCancelsTests(_ModuleStubMixin, unittest.TestCase):
 
     def test_mixed_batch_handles_each_correctly(self):
         from datetime import datetime, timezone, timedelta
+
         old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
         offers = [
-            _offer("ok_cancelled"),                     # → confirmed cancelled
+            _offer("ok_cancelled"),  # → confirmed cancelled
             _offer("zombie", cancel_last_attempt_at=old),  # → re-cancel
-            _offer("filled"),                            # → suspected fill
-            _offer("dunno"),                             # → unreachable
+            _offer("filled"),  # → suspected fill
+            _offer("dunno"),  # → unreachable
         ]
         fake_db = self._patch_db(offers)
 
