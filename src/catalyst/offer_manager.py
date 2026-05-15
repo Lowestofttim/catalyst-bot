@@ -25,16 +25,25 @@ from typing import Optional, Dict, List, Tuple, Callable, Any
 
 from config import cfg
 from database import (
-    add_offer, update_offer_status,
-    transition_offer, mark_cancel_attempted,
-    get_open_offers, log_event, lock_coin,
+    add_offer,
+    update_offer_status,
+    transition_offer,
+    mark_cancel_attempted,
+    get_open_offers,
+    log_event,
+    lock_coin,
     update_offer_bech32,
 )
 from wallet import (
-    create_offer, cancel_offer, cancel_offers_batch,
-    get_all_offers, classify_offers_from_list,
-    get_offer_bech32, cleanup_expired_offers,
-    get_exact_spendable_coins_rpc, get_wallet_type,
+    create_offer,
+    cancel_offer,
+    cancel_offers_batch,
+    get_all_offers,
+    classify_offers_from_list,
+    get_offer_bech32,
+    cleanup_expired_offers,
+    get_exact_spendable_coins_rpc,
+    get_wallet_type,
     get_owned_coins_detailed,
 )
 
@@ -42,6 +51,7 @@ from wallet import (
 # ---------------------------------------------------------------------------
 # Amount conversion helpers (from V1 — critical to get right)
 # ---------------------------------------------------------------------------
+
 
 def xch_to_mojos(amount_xch: Decimal) -> int:
     """Convert XCH to mojos. 1 XCH = 1,000,000,000,000 mojos."""
@@ -70,18 +80,20 @@ def mojos_to_cat(mojos: int, decimals: int) -> Decimal:
 # and could still fill if the cancel TX fails in the mempool. DB status
 # MUST NOT be flipped to "cancelled" for these — a later cancel-confirm
 # poll or fill-detector is what authoritatively closes the offer.
-CANCEL_PENDING_METHODS = frozenset({
-    "submitted_pending_confirm",
-    "already_in_mempool",
-    "mempool_conflict_inflight",
-    # "already_gone_ambiguous" represents a Sage 404 on the cancel RPC:
-    # the offer is no longer in the wallet but Sage does NOT tell us
-    # whether it was cancelled, filled, or expired. DB status must stay
-    # open so fill_tracker (Spacescan) and bot_health (Dexie reconcile)
-    # can settle the real state — writing `cancelled` here would silently
-    # misclassify any fills that raced the cancel.
-    "already_gone_ambiguous",
-})
+CANCEL_PENDING_METHODS = frozenset(
+    {
+        "submitted_pending_confirm",
+        "already_in_mempool",
+        "mempool_conflict_inflight",
+        # "already_gone_ambiguous" represents a Sage 404 on the cancel RPC:
+        # the offer is no longer in the wallet but Sage does NOT tell us
+        # whether it was cancelled, filled, or expired. DB status must stay
+        # open so fill_tracker (Spacescan) and bot_health (Dexie reconcile)
+        # can settle the real state — writing `cancelled` here would silently
+        # misclassify any fills that raced the cancel.
+        "already_gone_ambiguous",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +133,9 @@ class OfferManager:
         # Dict of trade_id -> creation_time — offers created this cycle
         # that may not be visible in wallet sync yet
         self._recently_created: Dict[str, float] = {}
-        self._recently_created_ttl: int = 600  # 10 minutes — must outlast Sage sync delays
+        self._recently_created_ttl: int = (
+            600  # 10 minutes — must outlast Sage sync delays
+        )
 
         # ----- Stop signal -----
         # Set by bot_loop.stop() to interrupt long-running ladder creation.
@@ -280,7 +294,9 @@ class OfferManager:
                 return result
             hard_pos_xch = max_pos_xch * Decimal("1.1")
             net_pos_cat = Decimal(str(risk_manager._net_position_cat))
-            net_pos_xch = abs(net_pos_cat) * mid_price if mid_price > 0 else Decimal("0")
+            net_pos_xch = (
+                abs(net_pos_cat) * mid_price if mid_price > 0 else Decimal("0")
+            )
             total_slots = total_slots if total_slots is not None else num
             projected_increase_xch = self._estimate_ladder_worst_case_xch(
                 side=side,
@@ -313,21 +329,25 @@ class OfferManager:
                             f"{hard_pos_xch:.4f} XCH). Session hard limit "
                             f"auto-raised to {healed:.4f} XCH so the bot "
                             f"can operate. Re-run Smart Settings to persist "
-                            f"a consistent MAX_POSITION_XCH."
+                            f"a consistent MAX_POSITION_XCH.",
                         )
                         self._max_pos_warned = True
                     hard_pos_xch = healed
 
             same_side_open_xch = Decimal("0")
             try:
-                existing = get_open_offers(side=side, cat_asset_id=cat_asset_id or cfg.CAT_ASSET_ID)
+                existing = get_open_offers(
+                    side=side, cat_asset_id=cat_asset_id or cfg.CAT_ASSET_ID
+                )
                 for offer in existing or []:
                     size_raw = offer.get("size_xch") or offer.get("size_xch_mojos")
                     if size_raw is None:
                         continue
                     try:
                         if isinstance(size_raw, int) and size_raw > 1_000_000_000:
-                            same_side_open_xch += Decimal(size_raw) / Decimal("1000000000000")
+                            same_side_open_xch += Decimal(size_raw) / Decimal(
+                                "1000000000000"
+                            )
                         else:
                             same_side_open_xch += Decimal(str(size_raw))
                     except Exception:
@@ -339,9 +359,8 @@ class OfferManager:
             if net_new_exposure_xch < 0:
                 net_new_exposure_xch = Decimal("0")
 
-            add_long_dir = (
-                (side == "buy" and net_pos_cat >= 0)
-                or (side == "sell" and net_pos_cat <= 0)
+            add_long_dir = (side == "buy" and net_pos_cat >= 0) or (
+                side == "sell" and net_pos_cat <= 0
             )
             projected_position_xch = net_pos_xch + net_new_exposure_xch
             blocked = bool(add_long_dir and projected_position_xch > hard_pos_xch)
@@ -351,22 +370,24 @@ class OfferManager:
                 return result
 
             opposite_side = "buy" if side == "sell" else "sell"
-            result.update({
-                "blocked": True,
-                "side": side,
-                "opposite_side": opposite_side,
-                "num": int(num),
-                "default_size_xch": str(default_size or Decimal("0")),
-                "net_position_cat": str(net_pos_cat),
-                "current_position_xch": str(net_pos_xch),
-                "full_ladder_value_xch": str(projected_increase_xch),
-                "same_side_open_xch": str(same_side_open_xch),
-                "net_new_exposure_xch": str(net_new_exposure_xch),
-                "projected_position_xch": str(projected_position_xch),
-                "hard_limit_xch": str(hard_pos_xch),
-                "max_position_xch": str(max_pos_xch),
-                "expires_at": time.time() + self._position_guard_pause_secs,
-            })
+            result.update(
+                {
+                    "blocked": True,
+                    "side": side,
+                    "opposite_side": opposite_side,
+                    "num": int(num),
+                    "default_size_xch": str(default_size or Decimal("0")),
+                    "net_position_cat": str(net_pos_cat),
+                    "current_position_xch": str(net_pos_xch),
+                    "full_ladder_value_xch": str(projected_increase_xch),
+                    "same_side_open_xch": str(same_side_open_xch),
+                    "net_new_exposure_xch": str(net_new_exposure_xch),
+                    "projected_position_xch": str(projected_position_xch),
+                    "hard_limit_xch": str(hard_pos_xch),
+                    "max_position_xch": str(max_pos_xch),
+                    "expires_at": time.time() + self._position_guard_pause_secs,
+                }
+            )
             if record_pause:
                 self._position_guard_paused[side] = dict(result)
 
@@ -415,7 +436,7 @@ class OfferManager:
         self._slot_fail_counts[key] = count
         if count >= self._slot_suspend_threshold and key not in self._suspended_slots:
             self._suspended_slots.add(key)
-            self._slot_suspended_at = getattr(self, '_slot_suspended_at', {})
+            self._slot_suspended_at = getattr(self, "_slot_suspended_at", {})
             self._slot_suspended_at[key] = time.time()
             # Rate-limit the warning to once per cooldown window per slot.
             # During sustained coin exhaustion the suspend→auto-clear→suspend
@@ -425,9 +446,12 @@ class OfferManager:
             _last_warn = self._slot_warned_at.get(key, 0.0)
             if (_now - _last_warn) >= self._slot_warn_cooldown:
                 self._slot_warned_at[key] = _now
-                log_event("info", "slot_suspended",
-                          f"Slot {side} #{slot} is waiting for a matching tier coin "
-                          f"after {count} selection misses — will retry when coins are available")
+                log_event(
+                    "info",
+                    "slot_suspended",
+                    f"Slot {side} #{slot} is waiting for a matching tier coin "
+                    f"after {count} selection misses — will retry when coins are available",
+                )
         # F63: auto-clear after 20 cycles (~10 minutes at typical loop speed).
         # This prevents permanent ladder degradation if unsuspend_slots
         # never fires or coins are replenished via topup without triggering
@@ -435,9 +459,12 @@ class OfferManager:
         if count > self._slot_suspend_threshold + 20:
             self._slot_fail_counts[key] = 0
             self._suspended_slots.discard(key)
-            log_event("info", "slot_suspension_expired",
-                      f"Slot {side} #{slot} suspension expired after {count} "
-                      f"cycles — re-enabling for next attempt")
+            log_event(
+                "info",
+                "slot_suspension_expired",
+                f"Slot {side} #{slot} suspension expired after {count} "
+                f"cycles — re-enabling for next attempt",
+            )
 
     def clear_slot_failure(self, side: str, slot: int):
         """Clear the failure counter for a slot after successful creation."""
@@ -475,6 +502,7 @@ class OfferManager:
             # Count only tier-designated trading coins (excludes fee, sniper,
             # reserve, dust and unknown coins which cannot fill offer slots).
             from database import get_free_coins
+
             db_free = get_free_coins(wallet_type)
             _TRADING_DESIGS = {"tier_spare", "tier_active"}
             _SKIP_TIERS = {"none", "sniper", "reserve", "fee"}
@@ -497,19 +525,26 @@ class OfferManager:
                 total_slots = int(
                     getattr(
                         cfg,
-                        "MAX_ACTIVE_BUY_OFFERS" if side == "buy" else "MAX_ACTIVE_SELL_OFFERS",
+                        "MAX_ACTIVE_BUY_OFFERS"
+                        if side == "buy"
+                        else "MAX_ACTIVE_SELL_OFFERS",
                         0,
-                    ) or 0
+                    )
+                    or 0
                 )
                 if total_slots <= 0:
                     prefix_cfg = "BUY_" if side == "buy" else "SELL_"
                     total_slots = sum(
-                        int(getattr(cfg, f"{prefix_cfg}{tier.upper()}_TIER_COUNT", 0) or 0)
+                        int(
+                            getattr(cfg, f"{prefix_cfg}{tier.upper()}_TIER_COUNT", 0)
+                            or 0
+                        )
                         for tier in ("inner", "mid", "outer", "extreme")
                     )
                 try:
                     from coin_manager import coin_size_tier_for_slot_position
                 except Exception:
+
                     def coin_size_tier_for_slot_position(tier, side=None):
                         del side
                         return tier
@@ -541,12 +576,18 @@ class OfferManager:
                 for key in suspended_for_side:
                     self._suspended_slots.discard(key)
                     self._slot_fail_counts.pop(key, None)
-                log_event("info", "slots_unsuspended",
-                          f"Unsuspended {len(suspended_for_side)} {side} slots — "
-                          f"{spare_count} matching spare tier coin(s) now available")
+                log_event(
+                    "info",
+                    "slots_unsuspended",
+                    f"Unsuspended {len(suspended_for_side)} {side} slots — "
+                    f"{spare_count} matching spare tier coin(s) now available",
+                )
         except Exception as e:
-            log_event("debug", "slot_unsuspend_check_failed",
-                      f"Could not check coins for slot unsuspension: {e}")
+            log_event(
+                "debug",
+                "slot_unsuspend_check_failed",
+                f"Could not check coins for slot unsuspension: {e}",
+            )
 
     # -------------------------------------------------------------------
     # Coin ID Extraction (for before/after snapshot)
@@ -565,6 +606,7 @@ class OfferManager:
         Uses _coin_id_from_record from coin_manager.py which handles this correctly.
         """
         from coin_manager import _coin_id_from_record
+
         ids = set()
         if not rpc_result or not isinstance(rpc_result, dict):
             return ids
@@ -580,9 +622,9 @@ class OfferManager:
     # -------------------------------------------------------------------
 
     @staticmethod
-    def _coin_designation_priority(designation: str,
-                                   assigned_tier: str,
-                                   preferred_tier: str = None) -> int:
+    def _coin_designation_priority(
+        designation: str, assigned_tier: str, preferred_tier: str = None
+    ) -> int:
         """Sort priority for designated free coins."""
         desig = (designation or "unknown").lower()
         tier = (assigned_tier or "none").lower()
@@ -609,14 +651,18 @@ class OfferManager:
             return 2
         return 3
 
-    def _select_coin_for_offer(self, wallet_id: int, amount_mojos: int,
-                                used_coins: set = None,
-                                preferred_tier: str = None,
-                                strict_preferred_tier: bool = False,
-                                spendable_records: List[Dict] = None,
-                                exclude_coin_ids: set = None,
-                                max_amount_mojos: int = None,
-                                tier_sizes_mojos: Optional[Dict[str, int]] = None) -> Optional[str]:
+    def _select_coin_for_offer(
+        self,
+        wallet_id: int,
+        amount_mojos: int,
+        used_coins: set = None,
+        preferred_tier: str = None,
+        strict_preferred_tier: bool = False,
+        spendable_records: List[Dict] = None,
+        exclude_coin_ids: set = None,
+        max_amount_mojos: int = None,
+        tier_sizes_mojos: Optional[Dict[str, int]] = None,
+    ) -> Optional[str]:
         """Pre-select the best coin for an offer before creating it.
 
         Instead of letting the wallet auto-select (and then polling to
@@ -723,7 +769,11 @@ class OfferManager:
                 rpc_result = get_exact_spendable_coins_rpc(wallet_id)
                 if not rpc_result or not rpc_result.get("success"):
                     return None
-                records = rpc_result.get("confirmed_records") or rpc_result.get("records") or []
+                records = (
+                    rpc_result.get("confirmed_records")
+                    or rpc_result.get("records")
+                    or []
+                )
             else:
                 records = spendable_records
             wallet_type = "xch" if wallet_id == cfg.WALLET_ID_XCH else "cat"
@@ -761,7 +811,9 @@ class OfferManager:
                     if not _coin_fits_preferred_tier(coin_amount):
                         continue
 
-                fallback_candidates.append((coin_amount - amount_mojos, coin_id, coin_amount))
+                fallback_candidates.append(
+                    (coin_amount - amount_mojos, coin_id, coin_amount)
+                )
 
             pref = (preferred_tier or "").lower()
             strict_pref = bool(pref and strict_preferred_tier)
@@ -769,6 +821,7 @@ class OfferManager:
             reserve_ids = set()
             try:
                 from database import get_free_coins, get_reserve_coins
+
                 db_free_coins = get_free_coins(wallet_type)
                 reserve_ids = {
                     str(c.get("coin_id", "")).strip().lower()
@@ -776,17 +829,21 @@ class OfferManager:
                     if c.get("coin_id")
                 }
             except Exception as e:
-                log_event("debug", "coin_select_db_unavailable",
-                          f"DB coin inventory unavailable for {wallet_type}: {e}")
+                log_event(
+                    "debug",
+                    "coin_select_db_unavailable",
+                    f"DB coin inventory unavailable for {wallet_type}: {e}",
+                )
 
             if db_free_coins:
                 designated_candidates = []
                 oversize_designated_candidates = []
                 try:
-                    oversize_fallback_ratio = Decimal(str(
-                        getattr(cfg, "COIN_OVERSIZE_FALLBACK_RATIO", "2.0")
-                        or "2.0"
-                    ))
+                    oversize_fallback_ratio = Decimal(
+                        str(
+                            getattr(cfg, "COIN_OVERSIZE_FALLBACK_RATIO", "2.0") or "2.0"
+                        )
+                    )
                 except Exception:
                     oversize_fallback_ratio = Decimal("2.0")
                 for coin in db_free_coins:
@@ -818,16 +875,21 @@ class OfferManager:
                         if (
                             same_tier_designated
                             and oversize_fallback_ratio > 0
-                            and Decimal(coin_amount) <= (
-                                Decimal(amount_mojos) * oversize_fallback_ratio
-                            )
+                            and Decimal(coin_amount)
+                            <= (Decimal(amount_mojos) * oversize_fallback_ratio)
                         ):
                             priority = self._coin_designation_priority(
                                 designation, assigned_tier, preferred_tier
                             )
                             oversize_designated_candidates.append(
-                                (priority, coin_amount - amount_mojos, coin_id,
-                                 coin_amount, designation, assigned_tier)
+                                (
+                                    priority,
+                                    coin_amount - amount_mojos,
+                                    coin_id,
+                                    coin_amount,
+                                    designation,
+                                    assigned_tier,
+                                )
                             )
                         continue
                     # F70 SSOT misfit guard with DB-trust override (2026-04-26):
@@ -840,8 +902,7 @@ class OfferManager:
                     # a 4% price drop drained inner-prepped coins into mid-
                     # sell offers and tripped a needless topup on first ladder.
                     if _coin_fits_preferred_tier is not None:
-                        db_match = (designation == "tier_spare"
-                                    and assigned_tier == pref)
+                        db_match = designation == "tier_spare" and assigned_tier == pref
                         if not db_match:
                             if not _coin_fits_preferred_tier(coin_amount):
                                 continue
@@ -850,24 +911,45 @@ class OfferManager:
                         designation, assigned_tier, preferred_tier
                     )
                     designated_candidates.append(
-                        (priority, coin_amount - amount_mojos, coin_id, coin_amount,
-                         designation, assigned_tier)
+                        (
+                            priority,
+                            coin_amount - amount_mojos,
+                            coin_id,
+                            coin_amount,
+                            designation,
+                            assigned_tier,
+                        )
                     )
 
                 if designated_candidates:
                     designated_candidates.sort(key=lambda x: (x[0], x[1]))
-                    _, best_surplus, best_coin_id, best_amount, best_desig, best_tier = designated_candidates[0]
-                    log_event("debug", "coin_selected",
-                              f"Selected designated coin {best_coin_id[:16]}... "
-                              f"({best_amount} mojos, surplus={best_surplus}, "
-                              f"{best_desig}/{best_tier})")
+                    (
+                        _,
+                        best_surplus,
+                        best_coin_id,
+                        best_amount,
+                        best_desig,
+                        best_tier,
+                    ) = designated_candidates[0]
+                    log_event(
+                        "debug",
+                        "coin_selected",
+                        f"Selected designated coin {best_coin_id[:16]}... "
+                        f"({best_amount} mojos, surplus={best_surplus}, "
+                        f"{best_desig}/{best_tier})",
+                    )
                     return best_coin_id
 
                 if oversize_designated_candidates:
                     oversize_designated_candidates.sort(key=lambda x: (x[0], x[1]))
-                    _, best_surplus, best_coin_id, best_amount, best_desig, best_tier = (
-                        oversize_designated_candidates[0]
-                    )
+                    (
+                        _,
+                        best_surplus,
+                        best_coin_id,
+                        best_amount,
+                        best_desig,
+                        best_tier,
+                    ) = oversize_designated_candidates[0]
                     log_event(
                         "info",
                         "coin_select_oversize_tier_fallback",
@@ -878,40 +960,51 @@ class OfferManager:
                     )
                     return best_coin_id
 
-                log_event("debug", "coin_select_none",
-                          f"No eligible designated {wallet_type.upper()} coins for "
-                          f"{amount_mojos} mojos (preferred_tier={preferred_tier or 'any'}, "
-                          f"{len(db_free_coins)} DB free, {len(used_coins)} used) "
-                          f"— falling through to any available coin")
+                log_event(
+                    "debug",
+                    "coin_select_none",
+                    f"No eligible designated {wallet_type.upper()} coins for "
+                    f"{amount_mojos} mojos (preferred_tier={preferred_tier or 'any'}, "
+                    f"{len(db_free_coins)} DB free, {len(used_coins)} used) "
+                    f"— falling through to any available coin",
+                )
                 # Don't return None here — fall through to fallback candidates
                 # so that coins from other tiers can be used rather than failing
                 # the entire offer creation.
 
             if strict_pref:
-                log_event("debug", "coin_select_none",
-                          f"No strict {pref} coin available for {amount_mojos} mojos "
-                          f"(wallet {wallet_id}, {len(records)} spendable, "
-                          f"{len(used_coins)} used in batch)")
+                log_event(
+                    "debug",
+                    "coin_select_none",
+                    f"No strict {pref} coin available for {amount_mojos} mojos "
+                    f"(wallet {wallet_id}, {len(records)} spendable, "
+                    f"{len(used_coins)} used in batch)",
+                )
                 return None
 
             candidates = [
-                item for item in fallback_candidates
-                if item[1] not in reserve_ids
+                item for item in fallback_candidates if item[1] not in reserve_ids
             ]
 
             if candidates:
                 candidates.sort(key=lambda x: x[0])
                 best_surplus, best_coin_id, best_amount = candidates[0]
 
-                log_event("debug", "coin_selected",
-                          f"Selected fallback coin {best_coin_id[:16]}... "
-                          f"({best_amount} mojos, surplus={best_surplus}) "
-                          f"from {len(candidates)} candidates")
+                log_event(
+                    "debug",
+                    "coin_selected",
+                    f"Selected fallback coin {best_coin_id[:16]}... "
+                    f"({best_amount} mojos, surplus={best_surplus}) "
+                    f"from {len(candidates)} candidates",
+                )
                 return best_coin_id
 
         except Exception as e:
-            log_event("warning", "coin_select_error",
-                      f"Coin selection failed: {e} — will fall back to polling")
+            log_event(
+                "warning",
+                "coin_select_error",
+                f"Coin selection failed: {e} — will fall back to polling",
+            )
             return None
 
     @staticmethod
@@ -943,10 +1036,13 @@ class OfferManager:
         return Decimal(str(size_xch)).quantize(Decimal("0.00000001"))
 
     @staticmethod
-    def _requested_amount_from_open_offer(open_offer: Dict, side: str,
-                                          decimals: int) -> Optional[int]:
+    def _requested_amount_from_open_offer(
+        open_offer: Dict, side: str, decimals: int
+    ) -> Optional[int]:
         """Extract the requested-side amount from an open offer in raw mojos."""
-        raw_amount = open_offer.get("size_cat") if side == "buy" else open_offer.get("size_xch")
+        raw_amount = (
+            open_offer.get("size_cat") if side == "buy" else open_offer.get("size_xch")
+        )
         if raw_amount in (None, ""):
             return None
         amount_decimal = Decimal(str(raw_amount))
@@ -954,9 +1050,9 @@ class OfferManager:
             return cat_to_mojos(amount_decimal, decimals)
         return xch_to_mojos(amount_decimal)
 
-    def _allocate_unique_requested_mojos(self, base_requested_mojos: int,
-                                         slot: int,
-                                         used_requested_amounts: set) -> int:
+    def _allocate_unique_requested_mojos(
+        self, base_requested_mojos: int, slot: int, used_requested_amounts: set
+    ) -> int:
         """Return a requested amount that doesn't collide with live/batch offers."""
         candidate = int(base_requested_mojos)
         if candidate not in used_requested_amounts:
@@ -971,15 +1067,22 @@ class OfferManager:
                 return candidate
             probe_slot += 1
         # Exhausted uniqueness attempts — return last probe
-        log_event("warning", "uniqueness_exhausted",
-                  "Could not find unique requested_mojos after 1000 attempts")
+        log_event(
+            "warning",
+            "uniqueness_exhausted",
+            "Could not find unique requested_mojos after 1000 attempts",
+        )
         used_requested_amounts.add(candidate)
         return candidate
 
-    def _allocate_unique_size_xch(self, base_size: Decimal, slot: int,
-                                  tier_mode: bool,
-                                  used_size_keys: set,
-                                  expected_unique_count: int) -> Decimal:
+    def _allocate_unique_size_xch(
+        self,
+        base_size: Decimal,
+        slot: int,
+        tier_mode: bool,
+        used_size_keys: set,
+        expected_unique_count: int,
+    ) -> Decimal:
         """Pick a size variation that does not collide with existing live offers."""
         probe_slot = slot
         for _ in range(1000):
@@ -998,8 +1101,11 @@ class OfferManager:
                 return key
             probe_slot += 1
         # Exhausted uniqueness attempts — return last probe
-        log_event("warning", "uniqueness_exhausted",
-                  "Could not find unique size_xch after 1000 attempts")
+        log_event(
+            "warning",
+            "uniqueness_exhausted",
+            "Could not find unique size_xch after 1000 attempts",
+        )
         used_size_keys.add(key)
         return key
 
@@ -1017,6 +1123,7 @@ class OfferManager:
         # Chia wallet doesn't pass coin_ids to the RPC — force serial
         try:
             from wallet import get_wallet_type
+
             if get_wallet_type() != "sage":
                 return 1
         except Exception:
@@ -1027,9 +1134,13 @@ class OfferManager:
             configured = 5
         return max(1, configured)
 
-    def get_replenishment_slots(self, side: str, total_slots: int,
-                                cat_asset_id: str = None,
-                                live_offer_ids: set = None) -> List[int]:
+    def get_replenishment_slots(
+        self,
+        side: str,
+        total_slots: int,
+        cat_asset_id: str = None,
+        live_offer_ids: set = None,
+    ) -> List[int]:
         """Plan which canonical ladder slots should be replenished next.
 
         Uses the live open offer counts per tier to determine which tiers are
@@ -1078,10 +1189,7 @@ class OfferManager:
             slots = tier_slots.get(tier, [])
             if not slots:
                 continue
-            slots = [
-                slot for slot in slots
-                if not self.is_slot_suspended(side, slot)
-            ]
+            slots = [slot for slot in slots if not self.is_slot_suspended(side, slot)]
             if not slots:
                 continue
             live_count = live_counts.get(tier, 0)
@@ -1118,8 +1226,9 @@ class OfferManager:
             normalized = "0x" + normalized
         return normalized
 
-    def _sort_open_offers_for_requote(self, offers: List[Dict], side: str,
-                                      mid_price: Decimal = None) -> List[Dict]:
+    def _sort_open_offers_for_requote(
+        self, offers: List[Dict], side: str, mid_price: Decimal = None
+    ) -> List[Dict]:
         """Sort live ladder offers so the most at-risk are cancelled first.
 
         Fix D: During a requote triggered by AMM drift, the offers closest to
@@ -1165,8 +1274,9 @@ class OfferManager:
 
         return sorted(list(offers or []), key=_key)
 
-    def _select_requote_cancel_targets(self, offers: List[Dict], count: int,
-                                       mid_price: Decimal = None) -> List[Dict]:
+    def _select_requote_cancel_targets(
+        self, offers: List[Dict], count: int, mid_price: Decimal = None
+    ) -> List[Dict]:
         """Choose cancel targets for a partial requote.
 
         Closest-to-mid offers remain the priority. When a larger partial pass
@@ -1195,21 +1305,28 @@ class OfferManager:
                 price = Decimal(str(offer.get("price_xch") or "0"))
             except Exception:
                 price = Decimal("0")
-            distance = abs(price - mid_price) if mid_price and mid_price > 0 else Decimal("0")
+            distance = (
+                abs(price - mid_price) if mid_price and mid_price > 0 else Decimal("0")
+            )
             return (created_at, -distance, str(offer.get("trade_id") or ""))
 
         stale_targets = sorted(deferred, key=_stale_key)[:stale_slots]
         return risk_targets + stale_targets
 
-    def _get_sage_locked_coin_ids_for_trade(self, wallet_id: int, trade_id: str) -> Optional[List[str]]:
+    def _get_sage_locked_coin_ids_for_trade(
+        self, wallet_id: int, trade_id: str
+    ) -> Optional[List[str]]:
         """Ask Sage which owned coins are locked by a specific offer_id/trade_id."""
         if get_wallet_type() != "sage" or wallet_id is None or not trade_id:
             return None
         try:
             detailed_map = get_owned_coins_detailed(wallet_id)
         except Exception as e:
-            log_event("warning", "coin_ids_verify_failed",
-                      f"Could not inspect Sage locked coins for {trade_id[:12]}...: {e}")
+            log_event(
+                "warning",
+                "coin_ids_verify_failed",
+                f"Could not inspect Sage locked coins for {trade_id[:12]}...: {e}",
+            )
             return None
         if detailed_map is None:
             return None
@@ -1222,13 +1339,15 @@ class OfferManager:
                 locked_coin_ids.append(self._normalize_coin_ref(coin_id))
         return sorted(set(locked_coin_ids))
 
-    def _verify_sage_offer_locked_inputs(self, wallet_id: int, trade_id: str,
-                                         selected_coin_id: str,
-                                         max_polls: int = 6) -> Dict:
+    def _verify_sage_offer_locked_inputs(
+        self, wallet_id: int, trade_id: str, selected_coin_id: str, max_polls: int = 6
+    ) -> Dict:
         """Inspect which maker inputs Sage actually locked for a new offer."""
         normalized_selected = self._normalize_coin_ref(selected_coin_id)
         for poll in range(max_polls):
-            locked_coin_ids = self._get_sage_locked_coin_ids_for_trade(wallet_id, trade_id)
+            locked_coin_ids = self._get_sage_locked_coin_ids_for_trade(
+                wallet_id, trade_id
+            )
             if locked_coin_ids:
                 return {
                     "verified": True,
@@ -1247,14 +1366,18 @@ class OfferManager:
     # Offer Creation
     # -------------------------------------------------------------------
 
-    def create_offer_with_retry(self, offer_dict: dict, max_retries: int = 2,
-                                 expiry_offset: int = 0,
-                                 expiry_secs: int = None,
-                                 used_coins: set = None,
-                                 coin_ids_enabled: bool = False,
-                                 selected_coin_id: str = None,
-                                 preferred_tier: str = None,
-                                 strict_preferred_tier: bool = False) -> Optional[Dict]:
+    def create_offer_with_retry(
+        self,
+        offer_dict: dict,
+        max_retries: int = 2,
+        expiry_offset: int = 0,
+        expiry_secs: int = None,
+        used_coins: set = None,
+        coin_ids_enabled: bool = False,
+        selected_coin_id: str = None,
+        preferred_tier: str = None,
+        strict_preferred_tier: bool = False,
+    ) -> Optional[Dict]:
         """Create a Chia offer with automatic retry on transient errors.
 
         Thread-safe: acquires self._lock to prevent concurrent coin selection
@@ -1296,6 +1419,7 @@ class OfferManager:
         _reservation_id: Optional[str] = None
         try:
             from reservation_manager import ReservationManager as _RM
+
             _xch_spend = 0
             _cat_spend = 0
             _xch_wid = getattr(cfg, "WALLET_ID_XCH", 1)
@@ -1335,19 +1459,23 @@ class OfferManager:
             if _reservation_id:
                 try:
                     from reservation_manager import ReservationManager as _RM2
+
                     _RM2().release(_reservation_id, status="completed")
                 except Exception:
                     pass
 
     def _create_offer_with_retry_inner(
-            self, offer_dict: dict, max_retries: int = 2,
-            expiry_offset: int = 0,
-            expiry_secs: int = None,
-            used_coins: set = None,
-            coin_ids_enabled: bool = False,
-            selected_coin_id: str = None,
-            preferred_tier: str = None,
-            strict_preferred_tier: bool = False) -> Optional[Dict]:
+        self,
+        offer_dict: dict,
+        max_retries: int = 2,
+        expiry_offset: int = 0,
+        expiry_secs: int = None,
+        used_coins: set = None,
+        coin_ids_enabled: bool = False,
+        selected_coin_id: str = None,
+        preferred_tier: str = None,
+        strict_preferred_tier: bool = False,
+    ) -> Optional[Dict]:
         """Internal implementation — called by create_offer_with_retry after
         the reservation lease is acquired.  See create_offer_with_retry for
         full documentation."""
@@ -1393,21 +1521,33 @@ class OfferManager:
         use_coin_ids_mode = False
 
         with self._lock:
-            if caller_selected_coin_id and spend_wallet_id is not None and spend_amount > 0:
+            if (
+                caller_selected_coin_id
+                and spend_wallet_id is not None
+                and spend_amount > 0
+            ):
                 # Check inflight set to prevent sniper/main loop overlap
                 if caller_selected_coin_id in self._inflight_coin_ids:
-                    log_event("warning", "coin_ids_locked",
-                              f"Coin {caller_selected_coin_id[:16]}... already in-flight, skipping")
+                    log_event(
+                        "warning",
+                        "coin_ids_locked",
+                        f"Coin {caller_selected_coin_id[:16]}... already in-flight, skipping",
+                    )
                     return {"success": False, "error": "coin_inflight"}
                 selected_coin_id = caller_selected_coin_id
                 use_coin_ids_mode = True
                 self._inflight_coin_ids.add(selected_coin_id)
-                log_event("debug", "coin_ids_mode",
-                          f"Using caller-selected coin: {selected_coin_id[:16]}... "
-                          f"for {spend_amount} mojos")
+                log_event(
+                    "debug",
+                    "coin_ids_mode",
+                    f"Using caller-selected coin: {selected_coin_id[:16]}... "
+                    f"for {spend_amount} mojos",
+                )
             elif coin_ids_enabled and spend_wallet_id is not None and spend_amount > 0:
                 selected_coin_id = self._select_coin_for_offer(
-                    spend_wallet_id, spend_amount, used_coins,
+                    spend_wallet_id,
+                    spend_amount,
+                    used_coins,
                     preferred_tier=preferred_tier,
                     strict_preferred_tier=strict_preferred_tier,
                     exclude_coin_ids=self._inflight_coin_ids,
@@ -1415,20 +1555,29 @@ class OfferManager:
                 if selected_coin_id:
                     use_coin_ids_mode = True
                     self._inflight_coin_ids.add(selected_coin_id)
-                    log_event("debug", "coin_ids_mode",
-                              f"Using coin_ids mode: {selected_coin_id[:16]}... "
-                              f"for {spend_amount} mojos")
+                    log_event(
+                        "debug",
+                        "coin_ids_mode",
+                        f"Using coin_ids mode: {selected_coin_id[:16]}... "
+                        f"for {spend_amount} mojos",
+                    )
                 elif strict_preferred_tier and preferred_tier:
-                    log_event("info", "coin_ids_no_preferred_tier",
-                              f"No {preferred_tier} coin available for {spend_amount} mojos")
+                    log_event(
+                        "info",
+                        "coin_ids_no_preferred_tier",
+                        f"No {preferred_tier} coin available for {spend_amount} mojos",
+                    )
                     return {
                         "success": False,
                         "error": "no_preferred_tier_coin",
                         "preferred_tier": preferred_tier,
                     }
                 else:
-                    log_event("debug", "coin_ids_fallback",
-                              "Coin selection returned None — falling back to polling mode")
+                    log_event(
+                        "debug",
+                        "coin_ids_fallback",
+                        "Coin selection returned None — falling back to polling mode",
+                    )
 
         # Track which coin was claimed for inflight cleanup
         _inflight_claimed = selected_coin_id if use_coin_ids_mode else None
@@ -1444,8 +1593,11 @@ class OfferManager:
                 rpc_result = get_exact_spendable_coins_rpc(spend_wallet_id)
                 before_coin_ids = self._extract_coin_id_set(rpc_result)
             except Exception as e:
-                log_event("warning", "coin_snapshot_before_fail",
-                          f"Could not snapshot coins before offer: {e}")
+                log_event(
+                    "warning",
+                    "coin_snapshot_before_fail",
+                    f"Could not snapshot coins before offer: {e}",
+                )
 
         # Offers are created with fee=0 so no fee coin is needed.
         # Fee coins are reserved only for coin management transactions
@@ -1454,12 +1606,22 @@ class OfferManager:
             for attempt in range(max_retries + 1):
                 # Pass coin_ids to wallet if we pre-selected a coin
                 if use_coin_ids_mode and selected_coin_id:
-                    res = create_offer(offer_dict, validate_only=False, max_time=offer_max_time,
-                                       min_coin_amount=min_coin_hint, max_coin_amount=max_coin_hint,
-                                       coin_ids=[selected_coin_id])
+                    res = create_offer(
+                        offer_dict,
+                        validate_only=False,
+                        max_time=offer_max_time,
+                        min_coin_amount=min_coin_hint,
+                        max_coin_amount=max_coin_hint,
+                        coin_ids=[selected_coin_id],
+                    )
                 else:
-                    res = create_offer(offer_dict, validate_only=False, max_time=offer_max_time,
-                                       min_coin_amount=min_coin_hint, max_coin_amount=max_coin_hint)
+                    res = create_offer(
+                        offer_dict,
+                        validate_only=False,
+                        max_time=offer_max_time,
+                        min_coin_amount=min_coin_hint,
+                        max_coin_amount=max_coin_hint,
+                    )
 
                 if res and res.get("success"):
                     # Include expiry info so caller can record it in DB
@@ -1471,9 +1633,12 @@ class OfferManager:
                         # The ladder path will still verify the wallet's exact offer_id
                         # lock attribution before posting the offer live.
                         res["locked_coin_id"] = selected_coin_id
-                        log_event("debug", "coin_ids_locked",
-                                  f"coin_ids mode: selected coin {selected_coin_id[:16]}... "
-                                  f"recorded for post-create verification")
+                        log_event(
+                            "debug",
+                            "coin_ids_locked",
+                            f"coin_ids mode: selected coin {selected_coin_id[:16]}... "
+                            f"recorded for post-create verification",
+                        )
                     elif before_coin_ids and spend_wallet_id is not None:
                         # PATH 2: V2 polling mode — snapshot before/after to detect lock.
                         # Poll until the wallet confirms the coin is actually locked.
@@ -1485,7 +1650,9 @@ class OfferManager:
                         for poll in range(max_lock_polls):
                             time.sleep(1)
                             try:
-                                rpc_result = get_exact_spendable_coins_rpc(spend_wallet_id)
+                                rpc_result = get_exact_spendable_coins_rpc(
+                                    spend_wallet_id
+                                )
                                 after_coin_ids = self._extract_coin_id_set(rpc_result)
                                 missing = before_coin_ids - after_coin_ids
                                 if len(missing) >= 1:
@@ -1499,14 +1666,20 @@ class OfferManager:
                                         # offer-id lock attribution still verifies the exact
                                         # coin owned by this offer, so picking one arbitrarily
                                         # is safe. Keep at debug to avoid ladder-burst noise.
-                                        log_event("debug", "coin_snapshot_multi",
-                                                  f"Parallel offer creation: {len(missing)} coins "
-                                                  f"locked between snapshots; picking first")
+                                        log_event(
+                                            "debug",
+                                            "coin_snapshot_multi",
+                                            f"Parallel offer creation: {len(missing)} coins "
+                                            f"locked between snapshots; picking first",
+                                        )
                                         locked_coin = sorted(missing)[0]
                                     break  # Coin is confirmed locked
                             except Exception as e:
-                                log_event("warning", "coin_snapshot_poll_fail",
-                                          f"Poll {poll + 1}/{max_lock_polls} failed: {e}")
+                                log_event(
+                                    "warning",
+                                    "coin_snapshot_poll_fail",
+                                    f"Poll {poll + 1}/{max_lock_polls} failed: {e}",
+                                )
 
                         if locked_coin:
                             res["locked_coin_id"] = locked_coin
@@ -1517,42 +1690,65 @@ class OfferManager:
                             # duplicate offer and retry after a longer delay.
                             if used_coins and locked_coin in used_coins:
                                 trade_record = res.get("trade_record") or {}
-                                dup_trade_id = res.get("trade_id") or trade_record.get("trade_id") or ""
-                                log_event("warning", "coin_reuse_detected",
-                                          f"Coin {locked_coin[:16]}... reused! "
-                                          f"Cancelling duplicate offer {dup_trade_id[:12]}... "
-                                          f"(attempt {attempt + 1}/{max_retries + 1})")
+                                dup_trade_id = (
+                                    res.get("trade_id")
+                                    or trade_record.get("trade_id")
+                                    or ""
+                                )
+                                log_event(
+                                    "warning",
+                                    "coin_reuse_detected",
+                                    f"Coin {locked_coin[:16]}... reused! "
+                                    f"Cancelling duplicate offer {dup_trade_id[:12]}... "
+                                    f"(attempt {attempt + 1}/{max_retries + 1})",
+                                )
                                 # Cancel the duplicate
                                 if dup_trade_id:
                                     try:
                                         cancel_offer(dup_trade_id, secure=False)
                                         time.sleep(2)
                                     except Exception as e:
-                                        log_event("warning", "coin_reuse_cancel_failed",
-                                                  f"Could not cancel duplicate offer {dup_trade_id[:16]}...: {e}")
+                                        log_event(
+                                            "warning",
+                                            "coin_reuse_cancel_failed",
+                                            f"Could not cancel duplicate offer {dup_trade_id[:16]}...: {e}",
+                                        )
                                 # Only retry once for reuse — if wallet keeps picking
                                 # the same coin, further retries won't help.
                                 if attempt < 1:
                                     time.sleep(3)
                                     # Re-snapshot and retry
                                     try:
-                                        rpc_result = get_exact_spendable_coins_rpc(spend_wallet_id)
-                                        before_coin_ids = self._extract_coin_id_set(rpc_result)
+                                        rpc_result = get_exact_spendable_coins_rpc(
+                                            spend_wallet_id
+                                        )
+                                        before_coin_ids = self._extract_coin_id_set(
+                                            rpc_result
+                                        )
                                     except Exception as e:
-                                        log_event("warning", "coin_resnapshot_failed",
-                                                  f"Coin re-snapshot after reuse failed: {e}")
+                                        log_event(
+                                            "warning",
+                                            "coin_resnapshot_failed",
+                                            f"Coin re-snapshot after reuse failed: {e}",
+                                        )
                                     continue  # Retry this offer once
                                 else:
-                                    log_event("warning", "coin_reuse_giving_up",
-                                              f"Wallet keeps reusing coin {locked_coin[:16]}... "
-                                              f"— skipping this offer slot")
+                                    log_event(
+                                        "warning",
+                                        "coin_reuse_giving_up",
+                                        f"Wallet keeps reusing coin {locked_coin[:16]}... "
+                                        f"— skipping this offer slot",
+                                    )
                                     res["success"] = False
                                     res["error"] = "coin_reuse"
                                     return res
                         else:
-                            log_event("warning", "coin_lock_timeout",
-                                      f"No coin disappeared after {max_lock_polls}s — "
-                                      f"wallet may have reused a locked coin")
+                            log_event(
+                                "warning",
+                                "coin_lock_timeout",
+                                f"No coin disappeared after {max_lock_polls}s — "
+                                f"wallet may have reused a locked coin",
+                            )
                     return res
 
                 # Check for specific error types
@@ -1562,14 +1758,20 @@ class OfferManager:
                 # The pre-selected coin may have been spent by another transaction.
                 if use_coin_ids_mode and attempt < max_retries:
                     if caller_selected_coin_id:
-                        log_event("warning", "coin_ids_failed",
-                                  f"Caller-selected coin {caller_selected_coin_id[:16]}... "
-                                  f"failed ({error_msg}) — not falling back to polling "
-                                  f"mode to avoid overlapping offers")
+                        log_event(
+                            "warning",
+                            "coin_ids_failed",
+                            f"Caller-selected coin {caller_selected_coin_id[:16]}... "
+                            f"failed ({error_msg}) — not falling back to polling "
+                            f"mode to avoid overlapping offers",
+                        )
                         return res
-                    log_event("warning", "coin_ids_failed",
-                              f"coin_ids mode failed ({error_msg}), "
-                              f"falling back to polling mode for retry")
+                    log_event(
+                        "warning",
+                        "coin_ids_failed",
+                        f"coin_ids mode failed ({error_msg}), "
+                        f"falling back to polling mode for retry",
+                    )
                     use_coin_ids_mode = False
                     selected_coin_id = None
                     # Take a before-snapshot for polling mode
@@ -1578,49 +1780,73 @@ class OfferManager:
                             rpc_result = get_exact_spendable_coins_rpc(spend_wallet_id)
                             before_coin_ids = self._extract_coin_id_set(rpc_result)
                         except Exception as e:
-                            log_event("warning", "coin_ids_fallback_snapshot_failed",
-                                      f"Before-snapshot for polling-mode fallback failed: {e}")
+                            log_event(
+                                "warning",
+                                "coin_ids_fallback_snapshot_failed",
+                                f"Before-snapshot for polling-mode fallback failed: {e}",
+                            )
                     time.sleep(2)
                     continue  # Retry in polling mode
 
                 # MEMPOOL_CONFLICT — coin was spent by another transaction.
                 # Don't retry with same coins, re-snapshot and try once more.
                 if "MEMPOOL_CONFLICT" in error_msg:
-                    log_event("warning", "offer_mempool_conflict",
-                              "MEMPOOL_CONFLICT: another tx spent one of the coins we tried to use. "
-                              "Re-snapshotting coins...")
+                    log_event(
+                        "warning",
+                        "offer_mempool_conflict",
+                        "MEMPOOL_CONFLICT: another tx spent one of the coins we tried to use. "
+                        "Re-snapshotting coins...",
+                    )
                     if spend_wallet_id is not None and attempt < max_retries:
                         time.sleep(3)
                         try:
                             rpc_result = get_exact_spendable_coins_rpc(spend_wallet_id)
                             before_coin_ids = self._extract_coin_id_set(rpc_result)
                         except Exception as e:
-                            log_event("warning", "mempool_conflict_resnapshot_failed",
-                                      f"Coin re-snapshot after MEMPOOL_CONFLICT failed: {e}")
+                            log_event(
+                                "warning",
+                                "mempool_conflict_resnapshot_failed",
+                                f"Coin re-snapshot after MEMPOOL_CONFLICT failed: {e}",
+                            )
                         continue  # Retry with fresh coin snapshot
                     return res  # Out of retries
 
                 # Insufficient balance — no coins of the right size. Don't retry,
                 # the wallet simply doesn't have enough to create this offer.
                 if "insufficient balance" in error_msg.lower():
-                    log_event("warning", "offer_insufficient_balance",
-                              f"Insufficient coins for offer: {error_msg}")
+                    log_event(
+                        "warning",
+                        "offer_insufficient_balance",
+                        f"Insufficient coins for offer: {error_msg}",
+                    )
                     return res
 
                 if "fully synced" in error_msg and attempt < max_retries:
                     wait_secs = 3 * (attempt + 1)
-                    log_event("warning", "offer_retry",
-                              f"Wallet sync error, retrying in {wait_secs}s (attempt {attempt + 1}/{max_retries})")
+                    log_event(
+                        "warning",
+                        "offer_retry",
+                        f"Wallet sync error, retrying in {wait_secs}s (attempt {attempt + 1}/{max_retries})",
+                    )
                     time.sleep(wait_secs)
                     continue
 
                 # "spendable balance" error with coin hints → hints filtered out all coins.
                 # Retry once WITHOUT hints so the wallet can pick any coin it wants.
-                if ("spendable balance" in error_msg or "minimum coin amount" in error_msg.lower()) \
-                        and (min_coin_hint or max_coin_hint) and attempt < max_retries:
-                    log_event("warning", "offer_hint_retry",
-                              f"Coin hints may be too tight (min={min_coin_hint}, max={max_coin_hint}), "
-                              f"retrying without hints...")
+                if (
+                    (
+                        "spendable balance" in error_msg
+                        or "minimum coin amount" in error_msg.lower()
+                    )
+                    and (min_coin_hint or max_coin_hint)
+                    and attempt < max_retries
+                ):
+                    log_event(
+                        "warning",
+                        "offer_hint_retry",
+                        f"Coin hints may be too tight (min={min_coin_hint}, max={max_coin_hint}), "
+                        f"retrying without hints...",
+                    )
                     min_coin_hint = None
                     max_coin_hint = None
                     # Re-snapshot before retry since coins may have changed
@@ -1629,8 +1855,11 @@ class OfferManager:
                             rpc_result = get_exact_spendable_coins_rpc(spend_wallet_id)
                             before_coin_ids = self._extract_coin_id_set(rpc_result)
                         except Exception as e:
-                            log_event("warning", "hint_retry_snapshot_failed",
-                                      f"Coin re-snapshot after hint retry failed: {e}")
+                            log_event(
+                                "warning",
+                                "hint_retry_snapshot_failed",
+                                f"Coin re-snapshot after hint retry failed: {e}",
+                            )
                     time.sleep(2)
                     continue
 
@@ -1643,7 +1872,9 @@ class OfferManager:
                 # the structured events table for forensics, but don't count
                 # it twice in the visible error stream.
                 error_detail = error_msg or "Unknown error"
-                log_event("debug", "offer_failed", f"Offer creation failed: {error_detail}")
+                log_event(
+                    "debug", "offer_failed", f"Offer creation failed: {error_detail}"
+                )
                 return res
 
             return None
@@ -1655,19 +1886,25 @@ class OfferManager:
                 with self._lock:
                     self._inflight_coin_ids.discard(_inflight_claimed)
 
-    def create_ladder(self, mid_price: Decimal, side: str,
-                      num_offers: int = None, trade_size_xch: Decimal = None,
-                      spread_fraction: Decimal = None,
-                      cat_asset_id: str = None, cat_decimals: int = None,
-                      cat_wallet_id: int = None,
-                      risk_manager=None,
-                      slot_start: int = 0,
-                      total_slots: int = None,
-                      coin_ids_enabled: bool = False,
-                      slot_sequence: List[int] = None,
-                      price_cap: Decimal = None,
-                      price_floor: Decimal = None,
-                      interpolate_refill_prices: bool = True) -> List[Dict]:
+    def create_ladder(
+        self,
+        mid_price: Decimal,
+        side: str,
+        num_offers: int = None,
+        trade_size_xch: Decimal = None,
+        spread_fraction: Decimal = None,
+        cat_asset_id: str = None,
+        cat_decimals: int = None,
+        cat_wallet_id: int = None,
+        risk_manager=None,
+        slot_start: int = 0,
+        total_slots: int = None,
+        coin_ids_enabled: bool = False,
+        slot_sequence: List[int] = None,
+        price_cap: Decimal = None,
+        price_floor: Decimal = None,
+        interpolate_refill_prices: bool = True,
+    ) -> List[Dict]:
         """Create a ladder of offers on one side (buy or sell).
 
         Places offers at evenly spaced prices from mid_price outward.
@@ -1790,7 +2027,7 @@ class OfferManager:
                                 f"{hard_pos_xch:.4f} XCH). Session hard limit "
                                 f"auto-raised to {_healed:.4f} XCH so the bot "
                                 f"can operate. Re-run Smart Settings to persist "
-                                f"a consistent MAX_POSITION_XCH."
+                                f"a consistent MAX_POSITION_XCH.",
                             )
                             self._max_pos_warned = True
                         hard_pos_xch = _healed
@@ -1811,7 +2048,10 @@ class OfferManager:
                 same_side_open_xch = Decimal("0")
                 try:
                     from database import get_open_offers as _gopen
-                    _existing = _gopen(side=side, cat_asset_id=cat_asset_id or cfg.CAT_ASSET_ID)
+
+                    _existing = _gopen(
+                        side=side, cat_asset_id=cat_asset_id or cfg.CAT_ASSET_ID
+                    )
                     for _off in _existing or []:
                         _sz = _off.get("size_xch") or _off.get("size_xch_mojos")
                         if _sz is None:
@@ -1822,7 +2062,9 @@ class OfferManager:
                             # the canonical XCH-unit column in this schema.
                             if isinstance(_sz, (int,)) and _sz > 1_000_000_000:
                                 # mojos
-                                same_side_open_xch += Decimal(_sz) / Decimal("1000000000000")
+                                same_side_open_xch += Decimal(_sz) / Decimal(
+                                    "1000000000000"
+                                )
                             else:
                                 same_side_open_xch += Decimal(str(_sz))
                         except Exception:
@@ -1838,8 +2080,9 @@ class OfferManager:
                     net_new_exposure_xch = Decimal("0")
 
                 # Only block if we're adding to the position in the wrong direction
-                add_long_dir = (side == "buy" and net_pos_cat >= 0) or \
-                               (side == "sell" and net_pos_cat <= 0)
+                add_long_dir = (side == "buy" and net_pos_cat >= 0) or (
+                    side == "sell" and net_pos_cat <= 0
+                )
                 if (
                     add_long_dir
                     and net_pos_xch + net_new_exposure_xch > hard_pos_xch
@@ -1868,9 +2111,11 @@ class OfferManager:
                     return []
             except Exception as _pg_err:
                 # Fail-open: never block trading on a guard bug
-                log_event("debug", "position_hard_guard_failed",
-                          f"Position rebalance guard check failed (proceeding): "
-                          f"{_pg_err}")
+                log_event(
+                    "debug",
+                    "position_hard_guard_failed",
+                    f"Position rebalance guard check failed (proceeding): {_pg_err}",
+                )
 
         # total_slots = the full ladder size (for price spacing and tier classification)
         # When called normally: total_slots == num (full ladder in one call)
@@ -1909,7 +2154,9 @@ class OfferManager:
                 if raw_size is not None:
                     try:
                         size_key = self._size_key(Decimal(str(raw_size)))
-                        used_size_keys_by_tier.setdefault(tier_name, set()).add(size_key)
+                        used_size_keys_by_tier.setdefault(tier_name, set()).add(
+                            size_key
+                        )
                     except Exception:
                         pass
                 # Price capture — skip non-ladder tiers (sniper/fees/reserve
@@ -1930,8 +2177,11 @@ class OfferManager:
                 for tier_name, size_keys in used_size_keys_by_tier.items()
             }
         except Exception as e:
-            log_event("debug", "offer_size_snapshot_fail",
-                      f"Could not snapshot existing {side} offer sizes: {e}")
+            log_event(
+                "debug",
+                "offer_size_snapshot_fail",
+                f"Could not snapshot existing {side} offer sizes: {e}",
+            )
 
         if exact_tier_spend_mode:
             try:
@@ -1944,8 +2194,11 @@ class OfferManager:
                     if requested_mojos:
                         used_requested_amounts.add(int(requested_mojos))
             except Exception as e:
-                log_event("debug", "offer_requested_snapshot_fail",
-                          f"Could not snapshot existing {side} requested amounts: {e}")
+                log_event(
+                    "debug",
+                    "offer_requested_snapshot_fail",
+                    f"Could not snapshot existing {side} requested amounts: {e}",
+                )
 
         planned_counts_by_tier = {}
         for i in range(num):
@@ -1959,9 +2212,12 @@ class OfferManager:
         offer_specs = []
         for i in range(num):
             if self._stop_requested:
-                log_event("info", "ladder_interrupted",
-                          f"Ladder creation interrupted by stop signal after "
-                          f"{len(offer_specs)}/{num} {side} offers planned")
+                log_event(
+                    "info",
+                    "ladder_interrupted",
+                    f"Ladder creation interrupted by stop signal after "
+                    f"{len(offer_specs)}/{num} {side} offers planned",
+                )
                 break
 
             slot = slot_sequence[i] if slot_sequence is not None else (slot_start + i)
@@ -1979,10 +2235,18 @@ class OfferManager:
             #     mid has drifted. Falls back to the grid formula when
             #     the target tier is empty or the surrounding data is
             #     insufficient.
-            if interpolate_refill_prices and slot_sequence is not None and existing_prices_by_tier:
+            if (
+                interpolate_refill_prices
+                and slot_sequence is not None
+                and existing_prices_by_tier
+            ):
                 price = self._interpolate_refill_price(
-                    slot, side, total_slots,
-                    existing_prices_by_tier, mid_price, half_spread,
+                    slot,
+                    side,
+                    total_slots,
+                    existing_prices_by_tier,
+                    mid_price,
+                    half_spread,
                 )
                 if price is None:
                     price = self._get_ladder_price(
@@ -1995,7 +2259,9 @@ class OfferManager:
                         f"from surviving tier prices; using current grid price",
                     )
             else:
-                price = self._get_ladder_price(slot, side, mid_price, half_spread, total_slots)
+                price = self._get_ladder_price(
+                    slot, side, mid_price, half_spread, total_slots
+                )
             price = self._apply_price_bounds(
                 price,
                 side,
@@ -2014,8 +2280,11 @@ class OfferManager:
                     if buffer_ok is False:
                         continue  # Inside AMM arb band — skip slot
                 except Exception:
-                    log_event("warning", "amm_buffer_error",
-                              f"AMM buffer check failed for {side} — skipping slot")
+                    log_event(
+                        "warning",
+                        "amm_buffer_error",
+                        f"AMM buffer check failed for {side} — skipping slot",
+                    )
                     continue  # Fail closed on errors too
 
             tier = self._classify_tier(slot, total_slots, side=side)
@@ -2029,10 +2298,9 @@ class OfferManager:
             # a second helper coin to avoid awkward dust/change.
             if not exact_tier_spend_mode:
                 tier_used_sizes = used_size_keys_by_tier.setdefault(tier, set())
-                expected_unique_count = (
-                    existing_size_counts_by_tier.get(tier, 0)
-                    + planned_counts_by_tier.get(tier, 0)
-                )
+                expected_unique_count = existing_size_counts_by_tier.get(
+                    tier, 0
+                ) + planned_counts_by_tier.get(tier, 0)
                 size_xch = self._allocate_unique_size_xch(
                     size_xch,
                     slot,
@@ -2047,9 +2315,12 @@ class OfferManager:
             # result from near-zero prices slipping through bounds checks.
             max_cat_sanity = size_xch / Decimal("0.0000001")  # 1e-7 XCH floor
             if cat_amount > max_cat_sanity:
-                log_event("warning", "cat_amount_sanity",
-                          f"Skipping {side} slot {slot}: cat_amount {cat_amount:.2f} "
-                          f"exceeds sanity limit (price {price:.12f} too small)")
+                log_event(
+                    "warning",
+                    "cat_amount_sanity",
+                    f"Skipping {side} slot {slot}: cat_amount {cat_amount:.2f} "
+                    f"exceeds sanity limit (price {price:.12f} too small)",
+                )
                 continue
 
             cat_mojos = cat_to_mojos(cat_amount, decimals)
@@ -2059,23 +2330,34 @@ class OfferManager:
             if side == "buy":
                 offer_dict = {
                     str(cfg.WALLET_ID_XCH): -int(xch_mojos),
-                    str(wallet_cat): int(cat_mojos)
+                    str(wallet_cat): int(cat_mojos),
                 }
             else:
                 offer_dict = {
                     str(wallet_cat): -int(cat_mojos),
-                    str(cfg.WALLET_ID_XCH): int(xch_mojos)
+                    str(cfg.WALLET_ID_XCH): int(xch_mojos),
                 }
 
-            offer_specs.append({
-                "i": i, "slot": slot, "price": price, "tier": tier,
-                "size_xch": size_xch, "cat_amount": cat_amount,
-                "offer_dict": offer_dict, "stagger": i,
-            })
+            offer_specs.append(
+                {
+                    "i": i,
+                    "slot": slot,
+                    "price": price,
+                    "tier": tier,
+                    "size_xch": size_xch,
+                    "cat_amount": cat_amount,
+                    "offer_dict": offer_dict,
+                    "stagger": i,
+                }
+            )
 
         if cfg.DRY_RUN:
             for spec in offer_specs:
-                log_event("info", "dry_run", f"[DRY RUN] Would create {side} offer at {spec['price']}")
+                log_event(
+                    "info",
+                    "dry_run",
+                    f"[DRY RUN] Would create {side} offer at {spec['price']}",
+                )
             return created
 
         # ── Phase 2: Pre-select coins for all offers ──────────────────────
@@ -2094,23 +2376,31 @@ class OfferManager:
                         or []
                     )
                     for record in spendable_records:
-                        coin_id = self._extract_coin_id_set({
-                            "confirmed_records": [record]
-                        })
+                        coin_id = self._extract_coin_id_set(
+                            {"confirmed_records": [record]}
+                        )
                         if not coin_id:
                             continue
                         coin_data = record.get("coin", {})
                         try:
-                            spendable_amounts[next(iter(coin_id))] = int(coin_data.get("amount", 0))
+                            spendable_amounts[next(iter(coin_id))] = int(
+                                coin_data.get("amount", 0)
+                            )
                         except Exception:
                             continue
                 else:
-                    log_event("warning", "coin_select_snapshot_fail",
-                              f"Could not snapshot spendable coins for wallet {spend_wallet_id} "
-                              f"before {side} ladder selection")
+                    log_event(
+                        "warning",
+                        "coin_select_snapshot_fail",
+                        f"Could not snapshot spendable coins for wallet {spend_wallet_id} "
+                        f"before {side} ladder selection",
+                    )
             except Exception as e:
-                log_event("warning", "coin_select_snapshot_fail",
-                          f"Spendable snapshot failed for wallet {spend_wallet_id}: {e}")
+                log_event(
+                    "warning",
+                    "coin_select_snapshot_fail",
+                    f"Spendable snapshot failed for wallet {spend_wallet_id}: {e}",
+                )
 
             for spec in offer_specs:
                 # Find the spending side (negative amount)
@@ -2129,6 +2419,7 @@ class OfferManager:
                 # live BUY_*_TIER_COUNT + BUY_LADDER_REVERSED settings drive
                 # both prep and selection.
                 from coin_manager import coin_size_tier_for_slot_position as _coin_tier
+
                 coin_size_pref = _coin_tier(spec["tier"], side=side)
 
                 # In exact_tier_spend_mode, cap the coin size so we never use
@@ -2149,6 +2440,7 @@ class OfferManager:
                 _tier_sizes_mojos_for_select = None
                 try:
                     from coin_manager import get_tier_sizes_mojos_from_cfg as _gt_mojos
+
                     _tier_sizes_mojos_for_select = _gt_mojos(is_cat=(side == "sell"))
                 except Exception:
                     _tier_sizes_mojos_for_select = None
@@ -2173,16 +2465,24 @@ class OfferManager:
                             if side == "buy":
                                 exact_size_xch = mojos_to_xch(int(selected_amount))
                                 exact_cat_amount = exact_size_xch / spec["price"]
-                                exact_cat_mojos = cat_to_mojos(exact_cat_amount, decimals)
+                                exact_cat_mojos = cat_to_mojos(
+                                    exact_cat_amount, decimals
+                                )
                                 spec["size_xch"] = exact_size_xch
-                                spec["cat_amount"] = mojos_to_cat(exact_cat_mojos, decimals)
+                                spec["cat_amount"] = mojos_to_cat(
+                                    exact_cat_mojos, decimals
+                                )
                                 spec["offer_dict"] = {
                                     str(cfg.WALLET_ID_XCH): -int(selected_amount),
                                     str(wallet_cat): int(exact_cat_mojos),
                                 }
                             else:
-                                exact_cat_amount = mojos_to_cat(int(selected_amount), decimals)
-                                exact_xch_mojos = xch_to_mojos(exact_cat_amount * spec["price"])
+                                exact_cat_amount = mojos_to_cat(
+                                    int(selected_amount), decimals
+                                )
+                                exact_xch_mojos = xch_to_mojos(
+                                    exact_cat_amount * spec["price"]
+                                )
                                 spec["size_xch"] = mojos_to_xch(exact_xch_mojos)
                                 spec["cat_amount"] = exact_cat_amount
                                 spec["offer_dict"] = {
@@ -2198,7 +2498,9 @@ class OfferManager:
                 if not spec.get("coin_id"):
                     continue
                 if side == "buy":
-                    spend_xch_mojos = abs(int(spec["offer_dict"][str(cfg.WALLET_ID_XCH)]))
+                    spend_xch_mojos = abs(
+                        int(spec["offer_dict"][str(cfg.WALLET_ID_XCH)])
+                    )
                     requested_cat_mojos = int(spec["offer_dict"][str(wallet_cat)])
                     unique_requested_cat_mojos = self._allocate_unique_requested_mojos(
                         requested_cat_mojos,
@@ -2206,7 +2508,9 @@ class OfferManager:
                         used_requested_amounts,
                     )
                     spec["size_xch"] = mojos_to_xch(spend_xch_mojos)
-                    spec["cat_amount"] = mojos_to_cat(unique_requested_cat_mojos, decimals)
+                    spec["cat_amount"] = mojos_to_cat(
+                        unique_requested_cat_mojos, decimals
+                    )
                     if spec["cat_amount"] > 0:
                         spec["price"] = spec["size_xch"] / spec["cat_amount"]
                     spec["offer_dict"] = {
@@ -2215,7 +2519,9 @@ class OfferManager:
                     }
                 else:
                     spend_cat_mojos = abs(int(spec["offer_dict"][str(wallet_cat)]))
-                    requested_xch_mojos = int(spec["offer_dict"][str(cfg.WALLET_ID_XCH)])
+                    requested_xch_mojos = int(
+                        spec["offer_dict"][str(cfg.WALLET_ID_XCH)]
+                    )
                     unique_requested_xch_mojos = self._allocate_unique_requested_mojos(
                         requested_xch_mojos,
                         spec["slot"],
@@ -2238,7 +2544,7 @@ class OfferManager:
         # BAD_AGGREGATE_SIGNATURE when multiple concurrent make_offer RPCs
         # contend for the same fee coin.  Full ladder creates (startup/cold)
         # still benefit from parallelism since they run before any cancels.
-        _is_requote_batch = (num is not None and num < total_slots)
+        _is_requote_batch = num is not None and num < total_slots
         if _is_requote_batch:
             max_parallel = 1
         else:
@@ -2255,16 +2561,24 @@ class OfferManager:
                 # or wrong-sized tier coin and pin the topup pool behind a
                 # tiny offer. Skip the slot so topup/coin-prep can repair it.
                 if exact_tier_spend_mode or max_parallel != 1:
-                    msg = (f"No unique pre-selected coin available for {side} "
-                            f"slot {spec['slot']} — skipping to avoid overlap")
+                    msg = (
+                        f"No unique pre-selected coin available for {side} "
+                        f"slot {spec['slot']} — skipping to avoid overlap"
+                    )
                     log_event("debug", "coin_select_skip", msg)
                     # Fix F: track consecutive failures for this slot
                     self.record_slot_coin_failure(side, spec["slot"])
-                    return spec["i"], {"success": False, "error": "no_unique_coin_preselected"}
+                    return spec["i"], {
+                        "success": False,
+                        "error": "no_unique_coin_preselected",
+                    }
                 # Serial non-tier mode: proceed without pre-selection.
-                log_event("debug", "coin_select_skip_serial_fallback",
-                          f"No pre-selected coin for {side} slot {spec['slot']} "
-                          f"— serial mode, letting Sage pick from wallet")
+                log_event(
+                    "debug",
+                    "coin_select_skip_serial_fallback",
+                    f"No pre-selected coin for {side} slot {spec['slot']} "
+                    f"— serial mode, letting Sage pick from wallet",
+                )
 
             res = self.create_offer_with_retry(
                 spec["offer_dict"],
@@ -2272,7 +2586,7 @@ class OfferManager:
                 used_coins=used_coin_ids,
                 coin_ids_enabled=coin_ids_enabled,
                 selected_coin_id=spec.get("coin_id"),
-                preferred_tier=spec["tier"]
+                preferred_tier=spec["tier"],
             )
             if res and res.get("success"):
                 locked_coin_id = res.get("locked_coin_id")
@@ -2290,8 +2604,11 @@ class OfferManager:
                 time.sleep(delay_ms / 1000.0)
             return spec["i"], res
 
-        log_event("info", "ladder_parallel",
-                  f"Creating {len(offer_specs)} {side} offers with {max_parallel} parallel workers")
+        log_event(
+            "info",
+            "ladder_parallel",
+            f"Creating {len(offer_specs)} {side} offers with {max_parallel} parallel workers",
+        )
         _ladder_start = time.time()
 
         with ThreadPoolExecutor(max_workers=max_parallel) as executor:
@@ -2305,8 +2622,11 @@ class OfferManager:
                     log_event("warning", "parallel_offer_error", f"Thread error: {e}")
 
         _ladder_elapsed = time.time() - _ladder_start
-        log_event("info", "ladder_parallel_done",
-                  f"{len(offer_specs)} {side} offers fired in {_ladder_elapsed:.1f}s")
+        log_event(
+            "info",
+            "ladder_parallel_done",
+            f"{len(offer_specs)} {side} offers fired in {_ladder_elapsed:.1f}s",
+        )
 
         # ── Phase 4: Process results (sequential — DB writes) ─────────────
         for spec in offer_specs:
@@ -2320,13 +2640,12 @@ class OfferManager:
 
             if not res or not res.get("success"):
                 error_msg = str(res.get("error", "")) if res else ""
-                fail_msg = (f"Offer #{i+1}/{num} {side} FAILED: {error_msg[:100]}")
+                fail_msg = f"Offer #{i + 1}/{num} {side} FAILED: {error_msg[:100]}"
                 # Coin exhaustion is an expected operational state (not a code
                 # defect) — already tracked by record_slot_coin_failure /
                 # slot_suspended, so downgrade to debug to avoid log spam.
                 _fail_level = (
-                    "debug" if error_msg == "no_unique_coin_preselected"
-                    else "error"
+                    "debug" if error_msg == "no_unique_coin_preselected" else "error"
                 )
                 if _fail_level != "debug":
                     print(f"  ❌ {fail_msg}", flush=True)
@@ -2367,9 +2686,11 @@ class OfferManager:
                         )
 
             locked_preview = locked_coin_id[:16] if locked_coin_id else "none"
-            ok_msg = (f"Offer #{i+1}/{num} {side} @ {price:.8f} | "
-                      f"size={float(size_xch):.4f} XCH | "
-                      f"trade_id={trade_id[:16]}... | coin={locked_preview}")
+            ok_msg = (
+                f"Offer #{i + 1}/{num} {side} @ {price:.8f} | "
+                f"size={float(size_xch):.4f} XCH | "
+                f"trade_id={trade_id[:16]}... | coin={locked_preview}"
+            )
             print(f"  ✅ {ok_msg}", flush=True)
             log_event("success", "offer_created", ok_msg)
 
@@ -2377,7 +2698,10 @@ class OfferManager:
             _omt = res.get("offer_max_time", 0)
             if _omt and int(_omt) > 0:
                 from datetime import datetime, timezone
-                expires_at = datetime.fromtimestamp(int(_omt), tz=timezone.utc).isoformat()
+
+                expires_at = datetime.fromtimestamp(
+                    int(_omt), tz=timezone.utc
+                ).isoformat()
             else:
                 expires_at = None
 
@@ -2389,52 +2713,73 @@ class OfferManager:
             # being recorded as the offer's trade coin (bug: fee-coin backed offers).
             if verified_locked_coin_ids:
                 if locked_coin_id and locked_coin_id in verified_locked_coin_ids:
-                    db_coin_id = locked_coin_id   # pre-selected trade coin confirmed ✓
+                    db_coin_id = locked_coin_id  # pre-selected trade coin confirmed ✓
                 else:
                     # Pre-selected coin not verified (Sage used different coin).
                     # Use whatever Sage locked — and log a warning so we can track.
                     db_coin_id = verified_locked_coin_ids[0]
                     if locked_coin_id:
-                        log_event("warning", "trade_coin_not_verified",
-                                  f"Pre-selected coin {locked_coin_id[:16]}... was NOT found in "
-                                  f"Sage's locked inputs for {trade_id[:12]}... "
-                                  f"(Sage locked: {', '.join(c[:14]+'...' for c in verified_locked_coin_ids[:3])}). "
-                                  f"Offer may use an unexpected coin.")
+                        log_event(
+                            "warning",
+                            "trade_coin_not_verified",
+                            f"Pre-selected coin {locked_coin_id[:16]}... was NOT found in "
+                            f"Sage's locked inputs for {trade_id[:12]}... "
+                            f"(Sage locked: {', '.join(c[:14] + '...' for c in verified_locked_coin_ids[:3])}). "
+                            f"Offer may use an unexpected coin.",
+                        )
             else:
                 db_coin_id = locked_coin_id
             db_ok = add_offer(
-                trade_id=trade_id, side=side, price_xch=price,
-                size_xch=size_xch, size_cat=cat_amount,
-                cat_asset_id=asset_id, tier=tier,
-                expires_at=expires_at, coin_id=db_coin_id
+                trade_id=trade_id,
+                side=side,
+                price_xch=price,
+                size_xch=size_xch,
+                size_cat=cat_amount,
+                cat_asset_id=asset_id,
+                tier=tier,
+                expires_at=expires_at,
+                coin_id=db_coin_id,
             )
             if not db_ok:
                 # DB insert failed — cancel on-chain offer to prevent wallet/DB
                 # divergence (offer exists in wallet but isn't tracked).
-                log_event("error", "ladder_db_cancel",
-                          f"DB insert failed for {trade_id[:16]}..., cancelling on-chain offer")
+                log_event(
+                    "error",
+                    "ladder_db_cancel",
+                    f"DB insert failed for {trade_id[:16]}..., cancelling on-chain offer",
+                )
                 try:
                     self.cancel_offers([trade_id], reason="db_insert_failed")
                 except Exception:
                     pass
                 continue
 
-            lock_targets = verified_locked_coin_ids or ([locked_coin_id] if locked_coin_id else [])
+            lock_targets = verified_locked_coin_ids or (
+                [locked_coin_id] if locked_coin_id else []
+            )
             for coin_id in lock_targets:
                 used_coin_ids.add(coin_id)
                 self._cycle_used_coin_ids.add(coin_id)
                 try:
                     lock_coin(coin_id, trade_id)
                 except Exception as e:
-                    log_event("warning", "coin_lock_failed",
-                              f"DB coin lock failed for coin {coin_id[:16] if coin_id else 'unknown'}... "
-                              f"(offer {trade_id[:16] if trade_id else '?'}...): {e}")
+                    log_event(
+                        "warning",
+                        "coin_lock_failed",
+                        f"DB coin lock failed for coin {coin_id[:16] if coin_id else 'unknown'}... "
+                        f"(offer {trade_id[:16] if trade_id else '?'}...): {e}",
+                    )
 
             # Cache for fill tracking
             offer_detail = {
-                "trade_id": trade_id, "side": side, "price": price,
-                "size_xch": size_xch, "size_cat": cat_amount,
-                "tier": tier, "slot": slot, "coin_id": locked_coin_id,
+                "trade_id": trade_id,
+                "side": side,
+                "price": price,
+                "size_xch": size_xch,
+                "size_cat": cat_amount,
+                "tier": tier,
+                "slot": slot,
+                "coin_id": locked_coin_id,
             }
             if verified_locked_coin_ids:
                 offer_detail["locked_coin_ids"] = verified_locked_coin_ids
@@ -2498,8 +2843,14 @@ class OfferManager:
                 total += default_size or Decimal("0")
         return total if total > 0 else fallback
 
-    def _get_ladder_price(self, slot: int, side: str, mid_price: Decimal,
-                           half_spread: Decimal, max_offers: int) -> Optional[Decimal]:
+    def _get_ladder_price(
+        self,
+        slot: int,
+        side: str,
+        mid_price: Decimal,
+        half_spread: Decimal,
+        max_offers: int,
+    ) -> Optional[Decimal]:
         """Calculate the price for a specific ladder slot.
 
         Arithmetic ladder: steady increase from tight (near mid) to wide.
@@ -2594,7 +2945,9 @@ class OfferManager:
         tier_size = tier_sizes.get(target_tier, 0)
         if tier_size <= 0:
             # No tier structure configured → no sensible interpolation.
-            return self._get_ladder_price(slot, side, mid_price, half_spread, total_slots)
+            return self._get_ladder_price(
+                slot, side, mid_price, half_spread, total_slots
+            )
 
         # Rank-within-tier is slot minus the total slots in prior tiers.
         rank_within_tier = slot
@@ -2604,7 +2957,9 @@ class OfferManager:
             rank_within_tier -= tier_sizes.get(t, 0)
         if rank_within_tier < 0 or rank_within_tier >= tier_size:
             # Inconsistency — safer to fall back than extrapolate.
-            return self._get_ladder_price(slot, side, mid_price, half_spread, total_slots)
+            return self._get_ladder_price(
+                slot, side, mid_price, half_spread, total_slots
+            )
 
         # Sort prices by distance-from-mid. Buy side: closest-to-mid is
         # HIGHEST price (just below mid). Sell side: closest-to-mid is
@@ -2634,8 +2989,16 @@ class OfferManager:
             outer_anchor = sorted_tier[-1]
         elif len(sorted_tier) == 1:
             sole = sorted_tier[0]
-            prev_prices = sorted(existing_prices_by_tier.get(prev_tier, []), key=_dist_key) if prev_tier else []
-            next_prices = sorted(existing_prices_by_tier.get(next_tier, []), key=_dist_key) if next_tier else []
+            prev_prices = (
+                sorted(existing_prices_by_tier.get(prev_tier, []), key=_dist_key)
+                if prev_tier
+                else []
+            )
+            next_prices = (
+                sorted(existing_prices_by_tier.get(next_tier, []), key=_dist_key)
+                if next_tier
+                else []
+            )
             # Use the adjacent-tier boundary on whichever side the survivor
             # doesn't cover. If we have neighbour boundaries on both sides,
             # prefer those as anchors — the sole survivor is already in the
@@ -2651,13 +3014,19 @@ class OfferManager:
                 outer_anchor = sole
             if inner_anchor == outer_anchor:
                 # Both fell back to the sole survivor → can't interpolate.
-                return self._get_ladder_price(slot, side, mid_price, half_spread, total_slots)
+                return self._get_ladder_price(
+                    slot, side, mid_price, half_spread, total_slots
+                )
         else:
             # Empty tier → fresh grid price anchored on current mid.
-            return self._get_ladder_price(slot, side, mid_price, half_spread, total_slots)
+            return self._get_ladder_price(
+                slot, side, mid_price, half_spread, total_slots
+            )
 
         if inner_anchor is None or outer_anchor is None:
-            return self._get_ladder_price(slot, side, mid_price, half_spread, total_slots)
+            return self._get_ladder_price(
+                slot, side, mid_price, half_spread, total_slots
+            )
 
         # Linear interpolation by rank-within-tier. Formula is side-agnostic
         # because `sorted_tier` is always [closest, …, furthest] regardless
@@ -2690,9 +3059,13 @@ class OfferManager:
 
         return price
 
-    def _apply_price_bounds(self, price: Optional[Decimal], side: str,
-                            price_cap: Decimal = None,
-                            price_floor: Decimal = None) -> Optional[Decimal]:
+    def _apply_price_bounds(
+        self,
+        price: Optional[Decimal],
+        side: str,
+        price_cap: Decimal = None,
+        price_floor: Decimal = None,
+    ) -> Optional[Decimal]:
         """Clamp ladder prices so the main book never crosses a surviving probe."""
         if price is None:
             return None
@@ -2774,8 +3147,9 @@ class OfferManager:
     # Requoting (cancel + recreate when price moves)
     # -------------------------------------------------------------------
 
-    def should_requote(self, side: str, current_price: Decimal,
-                       last_quoted_price: Decimal) -> bool:
+    def should_requote(
+        self, side: str, current_price: Decimal, last_quoted_price: Decimal
+    ) -> bool:
         """Check if offers on this side need requoting.
 
         Requoting happens when the mid price has moved more than
@@ -2801,8 +3175,9 @@ class OfferManager:
 
         return move_fraction > requote_fraction
 
-    def should_requote_graduated(self, side: str, current_price: Decimal,
-                                 last_quoted_price: Decimal):
+    def should_requote_graduated(
+        self, side: str, current_price: Decimal, last_quoted_price: Decimal
+    ):
         """Like should_requote but returns a RequoteSeverity level.
 
         Determines HOW MUCH of the book needs adjusting based on
@@ -2832,18 +3207,25 @@ class OfferManager:
             inner_threshold=getattr(cfg, "REQUOTE_DRIFT_INNER", Decimal("0.003")),
             mid_threshold=getattr(cfg, "REQUOTE_DRIFT_MID", Decimal("0.008")),
             full_threshold=getattr(cfg, "REQUOTE_DRIFT_FULL", Decimal("0.02")),
-            emergency_threshold=getattr(cfg, "REQUOTE_DRIFT_EMERGENCY", Decimal("0.05")),
+            emergency_threshold=getattr(
+                cfg, "REQUOTE_DRIFT_EMERGENCY", Decimal("0.05")
+            ),
         )
 
-    def requote_side(self, side: str, current_price: Decimal,
-                     dexie_manager=None, risk_manager=None,
-                     spread_fraction: Decimal = None,
-                     price_cap: Decimal = None,
-                     price_floor: Decimal = None,
-                     live_offer_ids: set = None,
-                     max_offers: int = 0,
-                     allowed_tiers: set = None,
-                     force_cancel_storm: bool = False) -> List[Dict]:
+    def requote_side(
+        self,
+        side: str,
+        current_price: Decimal,
+        dexie_manager=None,
+        risk_manager=None,
+        spread_fraction: Decimal = None,
+        price_cap: Decimal = None,
+        price_floor: Decimal = None,
+        live_offer_ids: set = None,
+        max_offers: int = 0,
+        allowed_tiers: set = None,
+        force_cancel_storm: bool = False,
+    ) -> List[Dict]:
         """Single-pass requote: cancel old offers, then create replacements.
 
         One pass through:
@@ -2869,16 +3251,17 @@ class OfferManager:
 
         # ── Gather open offers to replace ──
         all_open = get_open_offers(side=side, cat_asset_id=cfg.CAT_ASSET_ID)
-        open_offers = [o for o in all_open
-                       if o.get("tier") not in ("boost", "sniper")]
+        open_offers = [o for o in all_open if o.get("tier") not in ("boost", "sniper")]
         # Filter against live wallet snapshot — avoid targeting offers that
         # already filled/expired this cycle (DB lags 1 cycle behind wallet).
         if live_offer_ids is not None:
-            open_offers = [o for o in open_offers
-                           if o.get("trade_id") in live_offer_ids]
+            open_offers = [
+                o for o in open_offers if o.get("trade_id") in live_offer_ids
+            ]
         # Sort most-at-risk first so cancels prioritise the stale-est offers.
         open_offers = self._sort_open_offers_for_requote(
-            open_offers, side, mid_price=current_price)
+            open_offers, side, mid_price=current_price
+        )
 
         # ── Graduated response: tier filter + budget cap ──
         # Track pre-filter count so the cold-start detection below can tell
@@ -2889,13 +3272,18 @@ class OfferManager:
         pre_filter_offer_count = len(open_offers)
         if allowed_tiers:
             _before = len(open_offers)
-            open_offers = [o for o in open_offers
-                           if str(o.get("tier") or "mid").lower()
-                           in allowed_tiers]
+            open_offers = [
+                o
+                for o in open_offers
+                if str(o.get("tier") or "mid").lower() in allowed_tiers
+            ]
             if len(open_offers) < _before:
-                log_event("info", "requote_tier_filter",
-                          f"Tier filter ({', '.join(sorted(allowed_tiers))}): "
-                          f"{_before} → {len(open_offers)} offers to process")
+                log_event(
+                    "info",
+                    "requote_tier_filter",
+                    f"Tier filter ({', '.join(sorted(allowed_tiers))}): "
+                    f"{_before} → {len(open_offers)} offers to process",
+                )
         # `original_target_count` captures how many offers the requote
         # SHOULD replace before the per-cycle budget cap trims the list.
         # It is returned alongside the truncated target_count so callers
@@ -2908,15 +3296,21 @@ class OfferManager:
         if max_offers > 0 and len(open_offers) > max_offers:
             _full = len(open_offers)
             open_offers = open_offers[:max_offers]
-            log_event("info", "requote_budget_cap",
-                      f"Budget cap: processing {max_offers} of {_full} offers "
-                      f"this cycle (rest deferred)")
+            log_event(
+                "info",
+                "requote_budget_cap",
+                f"Budget cap: processing {max_offers} of {_full} offers "
+                f"this cycle (rest deferred)",
+            )
 
         target_count = len(open_offers)
 
-        log_event("info", "requote_start",
-                  f"Requote {side}: {target_count} offers to replace, "
-                  f"new price {current_price:.8f}")
+        log_event(
+            "info",
+            "requote_start",
+            f"Requote {side}: {target_count} offers to replace, "
+            f"new price {current_price:.8f}",
+        )
 
         # ── Tier filter emptied the requote scope, but side is not cold ──
         # Happens after a defensive-cancel clears one tier in the wallet just
@@ -2928,10 +3322,13 @@ class OfferManager:
         # restore the cancelled tier on the next cycle with tier-matched
         # coins.
         if not open_offers and allowed_tiers and pre_filter_offer_count > 0:
-            log_event("info", "requote_tier_empty_skip",
-                      f"Tier filter drained requote scope for {side} "
-                      f"({pre_filter_offer_count} non-matching offers still "
-                      f"live) — deferring to ladder-fill on next cycle")
+            log_event(
+                "info",
+                "requote_tier_empty_skip",
+                f"Tier filter drained requote scope for {side} "
+                f"({pre_filter_offer_count} non-matching offers still "
+                f"live) — deferring to ladder-fill on next cycle",
+            )
             return {
                 "offers": [],
                 "fully_replaced": False,
@@ -2951,10 +3348,13 @@ class OfferManager:
         # wallet says offers are still live, defer; the regular
         # reconcile + ladder-fill paths will catch up on the next cycle.
         if not open_offers and live_offer_ids is not None and len(live_offer_ids) > 0:
-            log_event("info", "requote_skip_wallet_has_offers",
-                      f"DB shows {side} empty but wallet still holds "
-                      f"{len(live_offer_ids)} live offer(s) — deferring "
-                      f"cold-start rebuild to avoid zombie pile-up")
+            log_event(
+                "info",
+                "requote_skip_wallet_has_offers",
+                f"DB shows {side} empty but wallet still holds "
+                f"{len(live_offer_ids)} live offer(s) — deferring "
+                f"cold-start rebuild to avoid zombie pile-up",
+            )
             return {
                 "offers": [],
                 "fully_replaced": False,
@@ -2966,23 +3366,31 @@ class OfferManager:
 
         # ── Cold start: no existing offers → full ladder ──
         if not open_offers:
-            log_event("info", "requote_cold_start",
-                      f"No existing offers for {side} — creating full ladder")
+            log_event(
+                "info",
+                "requote_cold_start",
+                f"No existing offers for {side} — creating full ladder",
+            )
             fresh = self.create_ladder(
-                current_price, side,
+                current_price,
+                side,
                 risk_manager=risk_manager,
                 spread_fraction=spread_fraction,
                 coin_ids_enabled=cfg.COIN_IDS_ENABLED,
                 price_cap=price_cap,
-                price_floor=price_floor)
+                price_floor=price_floor,
+            )
             if dexie_manager and fresh:
                 for offer in fresh:
                     bech32 = offer.get("offer_bech32", "")
                     trade_id = offer.get("trade_id", "")
                     if bech32 and trade_id:
                         dexie_manager.queue_post(bech32, trade_id)
-                log_event("info", "requote_cold_start_queued",
-                          f"Queued {len(fresh)} fresh {side} offers to Dexie")
+                log_event(
+                    "info",
+                    "requote_cold_start_queued",
+                    f"Queued {len(fresh)} fresh {side} offers to Dexie",
+                )
             # Cold start did real work — stamp the cooldown timer
             with self._lock:
                 self._last_requote_time[side] = time.time()
@@ -3003,43 +3411,53 @@ class OfferManager:
         spare_count = 0
         try:
             from database import get_free_coins
+
             _db_free = get_free_coins(wallet_type_str)
             _TRADING_DESIGS = {"tier_spare", "tier_active"}
             _SKIP_TIERS = {"none", "sniper", "reserve", "fee"}
             spare_count = sum(
-                1 for c in _db_free
+                1
+                for c in _db_free
                 if c.get("designation", "") in _TRADING_DESIGS
                 and c.get("assigned_tier", "none") not in _SKIP_TIERS
             )
         except Exception:
             # Fallback to raw RPC count if DB query fails
             try:
-                wallet_id = (cfg.CAT_WALLET_ID if side == "sell"
-                             else cfg.WALLET_ID_XCH)
+                wallet_id = cfg.CAT_WALLET_ID if side == "sell" else cfg.WALLET_ID_XCH
                 _resp = get_exact_spendable_coins_rpc(wallet_id)
                 if _resp:
-                    _coins = (_resp.get("confirmed_records",
-                              _resp.get("coin_records",
-                              _resp.get("records", []))))
+                    _coins = _resp.get(
+                        "confirmed_records",
+                        _resp.get("coin_records", _resp.get("records", [])),
+                    )
                     spare_count = len(_coins) if _coins else 0
                     if get_wallet_type() != "sage":
                         try:
-                            _open = len(get_open_offers(
-                                side=side,
-                                cat_asset_id=cfg.CAT_ASSET_ID))
+                            _open = len(
+                                get_open_offers(
+                                    side=side, cat_asset_id=cfg.CAT_ASSET_ID
+                                )
+                            )
                             spare_count = max(0, spare_count - _open)
                         except Exception:
                             pass
             except Exception:
                 pass
 
-        log_event("info", "requote_spare_coins",
-                  f"Spare {side} coins: {spare_count} (tier-designated)")
+        log_event(
+            "info",
+            "requote_spare_coins",
+            f"Spare {side} coins: {spare_count} (tier-designated)",
+        )
 
         if spare_count == 0:
-            log_event("info", "requote_no_spares",
-                      f"Requote {side}: 0 spare coins — cannot create "
-                      f"replacements, trim pass will clean excess if needed")
+            log_event(
+                "info",
+                "requote_no_spares",
+                f"Requote {side}: 0 spare coins — cannot create "
+                f"replacements, trim pass will clean excess if needed",
+            )
             return {
                 "offers": [],
                 "fully_replaced": False,
@@ -3055,23 +3473,32 @@ class OfferManager:
         # over-stacks the side whenever Sage keeps cancelled offers
         # wallet-active for another cycle.
         create_count = min(target_count, spare_count)
-        log_event("info", "requote_cancel_first",
-                  f"Requote {side}: cancelling {create_count} old offers "
-                  f"({spare_count} spares, target {target_count})")
+        log_event(
+            "info",
+            "requote_cancel_first",
+            f"Requote {side}: cancelling {create_count} old offers "
+            f"({spare_count} spares, target {target_count})",
+        )
 
         cancel_targets = self._select_requote_cancel_targets(
-            open_offers, create_count, mid_price=current_price)
+            open_offers, create_count, mid_price=current_price
+        )
         if cancel_targets != open_offers[:create_count]:
-            log_event("info", "requote_stale_survivor_targets",
-                      f"Requote {side}: included "
-                      f"{len([o for o in cancel_targets if o not in open_offers[:create_count]])} "
-                      "old/far survivor offer(s) in this partial pass")
+            log_event(
+                "info",
+                "requote_stale_survivor_targets",
+                f"Requote {side}: included "
+                f"{len([o for o in cancel_targets if o not in open_offers[:create_count]])} "
+                "old/far survivor offer(s) in this partial pass",
+            )
 
-        cancel_ids = [o["trade_id"] for o in cancel_targets
-                      if o.get("trade_id")]
+        cancel_ids = [o["trade_id"] for o in cancel_targets if o.get("trade_id")]
         if not cancel_ids:
-            log_event("info", "requote_no_cancel_ids",
-                      f"Requote {side}: no cancellable trade IDs found")
+            log_event(
+                "info",
+                "requote_no_cancel_ids",
+                f"Requote {side}: no cancellable trade IDs found",
+            )
             return {
                 "offers": [],
                 "fully_replaced": False,
@@ -3104,10 +3531,13 @@ class OfferManager:
                 failed_cancel_ids.append(tid)
 
         if not confirmed_cancel_ids:
-            log_event("info", "requote_waiting_for_cancel_settle",
-                      f"Requote {side}: {len(pending_cancel_ids)} cancel(s) "
-                      f"still pending, {len(failed_cancel_ids)} failed; "
-                      "replacement creation held to avoid over-stacking")
+            log_event(
+                "info",
+                "requote_waiting_for_cancel_settle",
+                f"Requote {side}: {len(pending_cancel_ids)} cancel(s) "
+                f"still pending, {len(failed_cancel_ids)} failed; "
+                "replacement creation held to avoid over-stacking",
+            )
             with self._lock:
                 self._last_requote_time[side] = time.time()
             return {
@@ -3122,9 +3552,12 @@ class OfferManager:
             }
 
         create_count = len(confirmed_cancel_ids)
-        log_event("info", "requote_creating",
-                  f"Requote {side}: creating {create_count} replacement "
-                  f"offers after confirmed cancels")
+        log_event(
+            "info",
+            "requote_creating",
+            f"Requote {side}: creating {create_count} replacement "
+            f"offers after confirmed cancels",
+        )
 
         # Use the full ladder size for tier classification so that
         # each replacement offer lands in the correct tier (inner/mid/outer/
@@ -3133,11 +3566,15 @@ class OfferManager:
         # "inner" whenever target_count ≤ BUY_INNER_TIER_COUNT, which forced
         # an inner-sized coin cap on every offer regardless of its real
         # position — rejecting all available larger coins and returning 0.
-        _full_slots = (cfg.MAX_ACTIVE_BUY_OFFERS if side == "buy"
-                       else cfg.MAX_ACTIVE_SELL_OFFERS)
+        _full_slots = (
+            cfg.MAX_ACTIVE_BUY_OFFERS if side == "buy" else cfg.MAX_ACTIVE_SELL_OFFERS
+        )
         new_offers = self.create_ladder(
-            current_price, side, num_offers=create_count,
-            slot_start=0, total_slots=_full_slots,
+            current_price,
+            side,
+            num_offers=create_count,
+            slot_start=0,
+            total_slots=_full_slots,
             risk_manager=risk_manager,
             spread_fraction=spread_fraction,
             coin_ids_enabled=cfg.COIN_IDS_ENABLED,
@@ -3146,9 +3583,12 @@ class OfferManager:
         )
 
         if not new_offers:
-            log_event("info", "requote_create_failed",
-                      f"Requote {side}: create_ladder returned 0 offers "
-                      f"— keeping old offers in place")
+            log_event(
+                "info",
+                "requote_create_failed",
+                f"Requote {side}: create_ladder returned 0 offers "
+                f"— keeping old offers in place",
+            )
             return {
                 "offers": [],
                 "fully_replaced": False,
@@ -3168,11 +3608,14 @@ class OfferManager:
                 if bech32 and trade_id:
                     dexie_manager.queue_post(bech32, trade_id)
 
-        log_event("info", "requote_done",
-                  f"Requote {side} complete: created {len(new_offers)} new, "
-                  f"confirmed {len(confirmed_cancel_ids)} old cancel(s), "
-                  f"pending {len(pending_cancel_ids)}, "
-                  f"failed {len(failed_cancel_ids)}")
+        log_event(
+            "info",
+            "requote_done",
+            f"Requote {side} complete: created {len(new_offers)} new, "
+            f"confirmed {len(confirmed_cancel_ids)} old cancel(s), "
+            f"pending {len(pending_cancel_ids)}, "
+            f"failed {len(failed_cancel_ids)}",
+        )
         # Requote did real work — stamp the cooldown timer now (not at entry)
         with self._lock:
             self._last_requote_time[side] = time.time()
@@ -3200,9 +3643,13 @@ class OfferManager:
     # Cancellation
     # -------------------------------------------------------------------
 
-    def cancel_offers(self, trade_ids: List[str], reason: str = "manual",
-                      force_storm: bool = False,
-                      skip_confirmation: bool = False) -> Dict:
+    def cancel_offers(
+        self,
+        trade_ids: List[str],
+        reason: str = "manual",
+        force_storm: bool = False,
+        skip_confirmation: bool = False,
+    ) -> Dict:
         """Cancel a list of offers.
 
         Marks them as bot-cancelled so fill detection doesn't count them as fills.
@@ -3225,12 +3672,15 @@ class OfferManager:
             try:
                 # Count how many offers we currently have live (DB view)
                 from database import get_open_offers as _gso
+
                 live_count = len(_gso(cat_asset_id=cfg.CAT_ASSET_ID))
             except Exception:
                 live_count = 0
             if live_count > 0:
                 pct = (len(trade_ids) / live_count) * 100
-                threshold_pct = float(getattr(cfg, "CANCEL_STORM_THRESHOLD_PCT", 80) or 80)
+                threshold_pct = float(
+                    getattr(cfg, "CANCEL_STORM_THRESHOLD_PCT", 80) or 80
+                )
                 if pct >= threshold_pct and len(trade_ids) >= 5:
                     log_event(
                         "error",
@@ -3241,11 +3691,16 @@ class OfferManager:
                         f"force_storm=True if this is intentional (e.g. Cancel All, "
                         f"reserve floor breach, shutdown).",
                     )
-                    return {tid: {"success": False, "error": "cancel_storm_blocked"}
-                            for tid in trade_ids}
+                    return {
+                        tid: {"success": False, "error": "cancel_storm_blocked"}
+                        for tid in trade_ids
+                    }
 
-        log_event("info", "cancel_start",
-                  f"Cancelling {len(trade_ids)} offers (reason: {reason})")
+        log_event(
+            "info",
+            "cancel_start",
+            f"Cancelling {len(trade_ids)} offers (reason: {reason})",
+        )
 
         # Mark as bot-cancelled BEFORE cancelling (for fill detection)
         for tid in trade_ids:
@@ -3268,15 +3723,19 @@ class OfferManager:
         # is always auto-selected.  Bulk cancel (≥3 offers) uses a single
         # transaction so only 1 fee coin is consumed.  Creates DO get
         # dedicated fee coins via make_offer's coin_ids to prevent overlap.
-        results = cancel_offers_batch(trade_ids, secure=True,
-                                      skip_confirmation=skip_confirmation)
+        results = cancel_offers_batch(
+            trade_ids, secure=True, skip_confirmation=skip_confirmation
+        )
 
         # Log results summary
         successes = sum(1 for r in results.values() if r and r.get("success"))
         failures = len(results) - successes
-        log_event("info", "cancel_result",
-                  f"Cancel results: {successes} succeeded, {failures} failed "
-                  f"(reason: {reason})")
+        log_event(
+            "info",
+            "cancel_result",
+            f"Cancel results: {successes} succeeded, {failures} failed "
+            f"(reason: {reason})",
+        )
 
         # Update database status + coin tracking. Per-offer failures
         # accumulate into a single rolled-up warning at the end so we don't
@@ -3294,10 +3753,13 @@ class OfferManager:
                     # specific "already_gone_ambiguous" case (Sage 404)
                     # also drop the local bot-cancel flag so fill_tracker
                     # does not skip on-chain verification on the next pass.
-                    log_event("debug", "cancel_pending_mempool",
-                              f"Cancel for {tid[:16]}... submitted but not "
-                              f"yet confirmed (method={method}); leaving DB "
-                              f"status open")
+                    log_event(
+                        "debug",
+                        "cancel_pending_mempool",
+                        f"Cancel for {tid[:16]}... submitted but not "
+                        f"yet confirmed (method={method}); leaving DB "
+                        f"status open",
+                    )
                     if method == "already_gone_ambiguous":
                         self._bot_cancelled_ids.discard(tid)
                     continue
@@ -3317,8 +3779,11 @@ class OfferManager:
                         "first_failed": time.time(),
                     }
                     err = str((result or {}).get("error") or "unknown")
-                    log_event("debug", "cancel_failed_queued",
-                              f"Cancel failed for {tid[:16]}... ({err[:80]}) — queued for retry")
+                    log_event(
+                        "debug",
+                        "cancel_failed_queued",
+                        f"Cancel failed for {tid[:16]}... ({err[:80]}) — queued for retry",
+                    )
                     newly_queued_failures.append((tid, err))
 
         if newly_queued_failures:
@@ -3334,8 +3799,11 @@ class OfferManager:
             )
 
         if successes > 0:
-            log_event("info", "offers_cancelled",
-                      f"Cancelled {successes} offers (reason: {reason})")
+            log_event(
+                "info",
+                "offers_cancelled",
+                f"Cancelled {successes} offers (reason: {reason})",
+            )
             # F75: request a fast reconcile so the returned coins are
             # picked up into their tier pools before the next rebuild
             # attempt. Without this, the normal 2-cycle reconcile
@@ -3343,13 +3811,15 @@ class OfferManager:
             # ladder slots before seeing the newly-freed backing coins.
             try:
                 from coin_manager import request_fast_reconcile
+
                 request_fast_reconcile(reason=f"cancel:{reason}")
             except Exception:
                 pass  # best-effort; the normal cadence still runs
             # Purge successfully cancelled offers from public post queues so
             # they don't leak stale/invalid offers on the next flush.
-            cancelled_ids = [tid for tid, r in results.items()
-                             if r and r.get("success")]
+            cancelled_ids = [
+                tid for tid, r in results.items() if r and r.get("success")
+            ]
             if self.dexie_manager is not None:
                 try:
                     self.dexie_manager.purge_trade_ids(cancelled_ids)
@@ -3361,9 +3831,12 @@ class OfferManager:
                 except Exception:
                     pass  # non-critical - flush will retry/skip invalid offers
         if failures > 0:
-            log_event("warning", "offers_cancel_pending",
-                      f"{failures} offers failed to cancel and remain queued for retry "
-                      f"(reason: {reason})")
+            log_event(
+                "warning",
+                "offers_cancel_pending",
+                f"{failures} offers failed to cancel and remain queued for retry "
+                f"(reason: {reason})",
+            )
 
         return results
 
@@ -3390,14 +3863,18 @@ class OfferManager:
                          Used by the position circuit breaker to cancel only the
                          accumulating side while keeping the correcting side live.
         """
+
         def emit_progress(**payload):
             if not progress_callback:
                 return
             try:
                 progress_callback(payload)
             except Exception as e:
-                log_event("debug", "cancel_progress_callback_failed",
-                          f"Cancel progress callback raised: {e}")
+                log_event(
+                    "debug",
+                    "cancel_progress_callback_failed",
+                    f"Cancel progress callback raised: {e}",
+                )
 
         def apply_batch_results(batch_results: Dict[str, Dict]) -> None:
             for tid, result in batch_results.items():
@@ -3411,10 +3888,13 @@ class OfferManager:
                         # For Sage 404 ("already_gone_ambiguous") also drop
                         # the local bot-cancel marker so fill_tracker does
                         # not skip on-chain verification.
-                        log_event("debug", "cancel_pending_mempool",
-                                  f"Cancel for {tid[:16]}... submitted but "
-                                  f"not yet confirmed (method={method}); "
-                                  f"leaving DB status open")
+                        log_event(
+                            "debug",
+                            "cancel_pending_mempool",
+                            f"Cancel for {tid[:16]}... submitted but "
+                            f"not yet confirmed (method={method}); "
+                            f"leaving DB status open",
+                        )
                         if method == "already_gone_ambiguous":
                             self._bot_cancelled_ids.discard(tid)
                     else:
@@ -3435,20 +3915,26 @@ class OfferManager:
         _side = str(side_filter or "").strip().lower()
         if _side in ("buy", "sell"):
             open_offers = [o for o in open_offers if o.get("side", "") == _side]
-            log_event("info", "cancel_all",
-                      f"Side filter '{_side}' applied — cancelling {len(open_offers)} "
-                      f"{_side} offers only")
+            log_event(
+                "info",
+                "cancel_all",
+                f"Side filter '{_side}' applied — cancelling {len(open_offers)} "
+                f"{_side} offers only",
+            )
 
         trade_ids = [o["trade_id"] for o in open_offers]
 
         # Fallback: if DB has nothing, check the wallet directly
         if not trade_ids:
-            log_event("info", "cancel_all", "DB has 0 open offers — fetching from wallet RPC")
+            log_event(
+                "info", "cancel_all", "DB has 0 open offers — fetching from wallet RPC"
+            )
             try:
                 all_wallet = get_all_offers(include_completed=False, start=0, end=500)
                 if all_wallet:
                     open_buys, open_sells, _ = classify_offers_from_list(
-                        all_wallet, asset_id)
+                        all_wallet, asset_id
+                    )
                     if _side == "buy":
                         side_offers = open_buys
                     elif _side == "sell":
@@ -3460,8 +3946,11 @@ class OfferManager:
                         if tid and tid not in trade_ids:
                             trade_ids.append(tid)
                     if trade_ids:
-                        log_event("info", "cancel_all",
-                                  f"Found {len(trade_ids)} open offers from wallet RPC")
+                        log_event(
+                            "info",
+                            "cancel_all",
+                            f"Found {len(trade_ids)} open offers from wallet RPC",
+                        )
             except Exception as e:
                 log_event("error", "cancel_all", f"Wallet RPC fallback failed: {e}")
 
@@ -3506,8 +3995,11 @@ class OfferManager:
         total = len(trade_ids)
         all_results = {}
 
-        log_event("info", "cancel_all_bulk",
-                  f"Cancelling all {total} offers in one bulk request")
+        log_event(
+            "info",
+            "cancel_all_bulk",
+            f"Cancelling all {total} offers in one bulk request",
+        )
         emit_progress(
             running=True,
             complete=False,
@@ -3526,13 +4018,17 @@ class OfferManager:
             all_results.update(bulk_results)
             apply_batch_results(bulk_results)
         except Exception as e:
-            log_event("warning", "cancel_all_error",
-                      f"Bulk cancel error: {e}")
+            log_event("warning", "cancel_all_error", f"Bulk cancel error: {e}")
             for tid in trade_ids:
                 if tid not in all_results:
                     all_results[tid] = {"success": False, "error": str(e)}
-            apply_batch_results({tid: all_results[tid] for tid in trade_ids
-                                 if not (all_results.get(tid, {}).get("success"))})
+            apply_batch_results(
+                {
+                    tid: all_results[tid]
+                    for tid in trade_ids
+                    if not (all_results.get(tid, {}).get("success"))
+                }
+            )
 
         # F50 (2026-04-09): summarise by confirmed vs pending vs failed.
         # Previously we lumped confirmed + pending together as "succeeded"
@@ -3563,9 +4059,13 @@ class OfferManager:
                 return "pending"
             return "confirmed"
 
-        confirmed_count = sum(1 for r in all_results.values() if _classify(r) == "confirmed")
-        pending_count   = sum(1 for r in all_results.values() if _classify(r) == "pending")
-        failed_count    = sum(1 for r in all_results.values() if _classify(r) == "failed")
+        confirmed_count = sum(
+            1 for r in all_results.values() if _classify(r) == "confirmed"
+        )
+        pending_count = sum(
+            1 for r in all_results.values() if _classify(r) == "pending"
+        )
+        failed_count = sum(1 for r in all_results.values() if _classify(r) == "failed")
         # successes = anything accepted by Sage (confirmed + pending) for
         # backwards-compat with callers that don't know about pending.
         successes = confirmed_count + pending_count
@@ -3581,7 +4081,7 @@ class OfferManager:
                 f"{pending_count} PENDING in mempool (may still fail due to "
                 f"mempool conflict or fee rejection), {failed_count} failed. "
                 f"Re-check offers in 1-2 minutes to verify pending cancels "
-                f"actually confirmed."
+                f"actually confirmed.",
             )
             final_message = (
                 f"Cancel all finished: {confirmed_count} confirmed, "
@@ -3589,12 +4089,16 @@ class OfferManager:
                 f"Wait 1-2 minutes then re-check."
             )
         else:
-            log_event("info", "cancel_all_done",
-                      f"Cancel all complete: {confirmed_count} confirmed on-chain, "
-                      f"{failed_count} failed")
+            log_event(
+                "info",
+                "cancel_all_done",
+                f"Cancel all complete: {confirmed_count} confirmed on-chain, "
+                f"{failed_count} failed",
+            )
             final_message = (
                 f"Cancel all complete: {confirmed_count} confirmed"
-                + (f", {failed_count} failed" if failed_count else "") + "."
+                + (f", {failed_count} failed" if failed_count else "")
+                + "."
             )
 
         emit_progress(
@@ -3632,7 +4136,9 @@ class OfferManager:
         # disappearance as a real fill (phantom fill bug).
         if active_trade_ids is not None and len(self._bot_cancelled_ids) > 500:
             pending_retry_ids = set(self._pending_cancel_retries.keys())
-            safe_to_prune = self._bot_cancelled_ids - active_trade_ids - pending_retry_ids
+            safe_to_prune = (
+                self._bot_cancelled_ids - active_trade_ids - pending_retry_ids
+            )
             # Keep IDs that are still in active offers (cancel not confirmed yet)
             # or still queued for retry
             self._bot_cancelled_ids -= safe_to_prune
@@ -3645,8 +4151,11 @@ class OfferManager:
 
         # Prune _recently_created — remove expired entries
         now = time.time()
-        expired = [k for k, t in self._recently_created.items()
-                   if now - t > self._recently_created_ttl]
+        expired = [
+            k
+            for k, t in self._recently_created.items()
+            if now - t > self._recently_created_ttl
+        ]
         for k in expired:
             del self._recently_created[k]
 
@@ -3678,6 +4187,7 @@ class OfferManager:
             expires_at = offer.get("expires_at")
             if expires_at:
                 from datetime import datetime, timezone
+
                 try:
                     exp_time = datetime.fromisoformat(expires_at)
                     # Ensure timezone-aware comparison
@@ -3691,19 +4201,28 @@ class OfferManager:
                         if _expired_coin_id:
                             try:
                                 from database import free_coin as _free_coin
+
                                 _free_coin(_expired_coin_id)
-                                log_event("debug", "coin_freed_on_expire",
-                                          f"Coin {_expired_coin_id[:16]}... freed "
-                                          f"(offer {offer['trade_id'][:12]}... expired)")
+                                log_event(
+                                    "debug",
+                                    "coin_freed_on_expire",
+                                    f"Coin {_expired_coin_id[:16]}... freed "
+                                    f"(offer {offer['trade_id'][:12]}... expired)",
+                                )
                             except Exception as e:
-                                log_event("debug", "coin_free_on_expire_failed",
-                                          f"Could not free coin on offer expiry (non-critical): {e}")
+                                log_event(
+                                    "debug",
+                                    "coin_free_on_expire_failed",
+                                    f"Could not free coin on offer expiry (non-critical): {e}",
+                                )
                         expired_count += 1
                 except (ValueError, TypeError):
                     pass
 
         if expired_count > 0:
-            log_event("info", "offers_expired", f"Cleaned up {expired_count} expired offers")
+            log_event(
+                "info", "offers_expired", f"Cleaned up {expired_count} expired offers"
+            )
 
         return count + expired_count
 
@@ -3734,8 +4253,9 @@ class OfferManager:
     # Pre-emptive offer refresh (V1 parity: detect_expiring_offers)
     # -------------------------------------------------------------------
 
-    def detect_expiring_offers(self, open_offers: list,
-                                refresh_before_secs: int = None) -> List[str]:
+    def detect_expiring_offers(
+        self, open_offers: list, refresh_before_secs: int = None
+    ) -> List[str]:
         """Find offers approaching expiry so we can replace them BEFORE they die.
 
         V1 had this as detect_expiring_offers() — it's critical for continuous
@@ -3767,8 +4287,11 @@ class OfferManager:
                         expiring.append(tid)
 
         if expiring:
-            log_event("info", "expiring_soon",
-                      f"Found {len(expiring)} offers expiring within {refresh_before_secs}s")
+            log_event(
+                "info",
+                "expiring_soon",
+                f"Found {len(expiring)} offers expiring within {refresh_before_secs}s",
+            )
 
         return expiring
 
@@ -3776,9 +4299,9 @@ class OfferManager:
     # Trim excess offers (Fix 3: belt-and-braces overshoot guard)
     # -------------------------------------------------------------------
 
-    def trim_excess_offers(self, mid_price: Decimal,
-                           wallet_buys: list = None,
-                           wallet_sells: list = None) -> int:
+    def trim_excess_offers(
+        self, mid_price: Decimal, wallet_buys: list = None, wallet_sells: list = None
+    ) -> int:
         """Cancel any offers above the configured per-side cap.
 
         Belt-and-braces guard against the requote overshoot the bot got
@@ -3799,6 +4322,7 @@ class OfferManager:
 
         Returns: total number of offers asked to cancel (across both sides).
         """
+
         # SINGLE SOURCE OF TRUTH: cap comes from the sum of tier counts in
         # the live ladder settings, not a separate MAX_ACTIVE_* key. This
         # ensures trim never fights the ladder the user asked for.
@@ -3848,11 +4372,15 @@ class OfferManager:
                 open_offers_all = list(_w_offers)
             else:
                 try:
-                    open_offers_all = get_open_offers(side=side,
-                                                      cat_asset_id=cfg.CAT_ASSET_ID) or []
+                    open_offers_all = (
+                        get_open_offers(side=side, cat_asset_id=cfg.CAT_ASSET_ID) or []
+                    )
                 except Exception as e:
-                    log_event("warning", "trim_excess_query_failed",
-                              f"trim_excess_offers: could not query open {side} offers: {e}")
+                    log_event(
+                        "warning",
+                        "trim_excess_query_failed",
+                        f"trim_excess_offers: could not query open {side} offers: {e}",
+                    )
                     continue
 
             # Exclude sniper-tier and boost-tier offers from the ladder cap
@@ -3867,16 +4395,20 @@ class OfferManager:
             # `tier` field — that's a DB-only label. We have to look up the
             # boost/sniper trade_ids from the DB and exclude them by id.
             try:
-                _db_open = get_open_offers(side=side, cat_asset_id=cfg.CAT_ASSET_ID) or []
+                _db_open = (
+                    get_open_offers(side=side, cat_asset_id=cfg.CAT_ASSET_ID) or []
+                )
                 _excluded_ids = {
-                    o.get("trade_id") for o in _db_open
+                    o.get("trade_id")
+                    for o in _db_open
                     if (o.get("tier") or "").lower() in ("sniper", "boost")
                     and o.get("trade_id")
                 }
             except Exception:
                 _excluded_ids = set()
             open_offers = [
-                o for o in open_offers_all
+                o
+                for o in open_offers_all
                 if (o.get("tier") or "").lower() not in ("sniper", "boost")
                 and o.get("trade_id") not in _excluded_ids
             ]
@@ -3885,10 +4417,7 @@ class OfferManager:
             # requote).  Without this, trim re-cancels the same offers,
             # wasting RPCs and filling the retry queue with noise.
             _pending = self._bot_cancelled_ids
-            open_offers = [
-                o for o in open_offers
-                if o.get("trade_id") not in _pending
-            ]
+            open_offers = [o for o in open_offers if o.get("trade_id") not in _pending]
 
             excess = len(open_offers) - cap
             if excess <= 0:
@@ -3917,17 +4446,24 @@ class OfferManager:
             if not cancel_ids:
                 continue
 
-            log_event("info", "trim_excess_offers",
-                      f"Trim pass: {side} open={len(open_offers)} > cap={cap}, "
-                      f"cancelling {len(cancel_ids)} furthest-from-mid offer(s)")
+            log_event(
+                "info",
+                "trim_excess_offers",
+                f"Trim pass: {side} open={len(open_offers)} > cap={cap}, "
+                f"cancelling {len(cancel_ids)} furthest-from-mid offer(s)",
+            )
 
             try:
-                self.cancel_offers(cancel_ids, reason="trim_excess",
-                                   skip_confirmation=True)
+                self.cancel_offers(
+                    cancel_ids, reason="trim_excess", skip_confirmation=True
+                )
                 total_trimmed += len(cancel_ids)
             except Exception as e:
-                log_event("error", "trim_excess_cancel_failed",
-                          f"trim_excess_offers: cancel call failed for {side}: {e}")
+                log_event(
+                    "error",
+                    "trim_excess_cancel_failed",
+                    f"trim_excess_offers: cancel call failed for {side}: {e}",
+                )
 
         return total_trimmed
 
@@ -3956,11 +4492,14 @@ class OfferManager:
 
             try:
                 from database import get_offer
+
                 existing = get_offer(trade_id)
             except Exception:
                 existing = None
 
-            if existing and (existing.get("status") == "filled" or existing.get("filled_at")):
+            if existing and (
+                existing.get("status") == "filled" or existing.get("filled_at")
+            ):
                 log_event(
                     "info",
                     "cancel_retry_skipped_filled",
@@ -3972,10 +4511,13 @@ class OfferManager:
 
             if attempts >= self._max_cancel_retries:
                 # Give up after max attempts — mark as cancelled anyway
-                log_event("warning", "cancel_retry_exhausted",
-                          f"Giving up cancel retry for {trade_id[:16]}... "
-                          f"after {attempts} attempts; leaving status unchanged "
-                          f"until wallet sync proves the offer is gone")
+                log_event(
+                    "warning",
+                    "cancel_retry_exhausted",
+                    f"Giving up cancel retry for {trade_id[:16]}... "
+                    f"after {attempts} attempts; leaving status unchanged "
+                    f"until wallet sync proves the offer is gone",
+                )
                 self._bot_cancelled_ids.discard(trade_id)
                 to_remove.append(trade_id)
                 continue
@@ -3991,10 +4533,13 @@ class OfferManager:
                     # DB cancelled — a later bot_health cancel reconcile or
                     # fill_tracker sweep will settle the true state once
                     # the TX confirms (or the mempool entry times out).
-                    log_event("debug", "cancel_retry_pending_mempool",
-                              f"Cancel retry for {trade_id[:16]}... submitted but "
-                              f"not yet confirmed (method={method}); leaving DB "
-                              f"status open for bot_health to verify")
+                    log_event(
+                        "debug",
+                        "cancel_retry_pending_mempool",
+                        f"Cancel retry for {trade_id[:16]}... submitted but "
+                        f"not yet confirmed (method={method}); leaving DB "
+                        f"status open for bot_health to verify",
+                    )
                     try:
                         mark_cancel_attempted(trade_id)
                     except Exception:
@@ -4012,12 +4557,15 @@ class OfferManager:
                     # so fill_tracker (Spacescan golden gate) or bot_health
                     # (Dexie reconcile) can decide. Keep _bot_cancelled_ids
                     # cleared so fill_tracker doesn't short-circuit on it.
-                    log_event("warning", "cancel_retry_ambiguous",
-                              f"Cancel retry for {trade_id[:16]}... returned "
-                              f"ambiguous Sage response (already_gone={bool(res.get('already_gone'))}, "
-                              f"uncertain={bool(res.get('uncertain'))}); deferring "
-                              f"to fill/cancel reconcile",
-                              data={"trade_id": trade_id, "res_method": method})
+                    log_event(
+                        "warning",
+                        "cancel_retry_ambiguous",
+                        f"Cancel retry for {trade_id[:16]}... returned "
+                        f"ambiguous Sage response (already_gone={bool(res.get('already_gone'))}, "
+                        f"uncertain={bool(res.get('uncertain'))}); deferring "
+                        f"to fill/cancel reconcile",
+                        data={"trade_id": trade_id, "res_method": method},
+                    )
                     self._bot_cancelled_ids.discard(trade_id)
                     try:
                         mark_cancel_attempted(trade_id)
@@ -4025,31 +4573,42 @@ class OfferManager:
                         pass
                     to_remove.append(trade_id)
                     continue
-                success_details.append({
-                    "trade_id": trade_id,
-                    "attempt": info["attempts"],
-                    "method": method or "unspecified",
-                })
+                success_details.append(
+                    {
+                        "trade_id": trade_id,
+                        "attempt": info["attempts"],
+                        "method": method or "unspecified",
+                    }
+                )
                 update_offer_status(trade_id, "cancelled")
                 success_count += 1
                 to_remove.append(trade_id)
             else:
-                log_event("debug", "cancel_retry_failed",
-                          f"Cancel retry failed for {trade_id[:16]}... "
-                          f"(attempt {info['attempts']}/{self._max_cancel_retries})")
+                log_event(
+                    "debug",
+                    "cancel_retry_failed",
+                    f"Cancel retry failed for {trade_id[:16]}... "
+                    f"(attempt {info['attempts']}/{self._max_cancel_retries})",
+                )
 
         if len(success_details) == 1:
             detail = success_details[0]
-            log_event("info", "cancel_retry_success",
-                      f"Cancel retry succeeded for {detail['trade_id'][:16]}... "
-                      f"(attempt {detail['attempt']}, method={detail['method']})")
+            log_event(
+                "info",
+                "cancel_retry_success",
+                f"Cancel retry succeeded for {detail['trade_id'][:16]}... "
+                f"(attempt {detail['attempt']}, method={detail['method']})",
+            )
         elif len(success_details) > 1:
-            log_event("debug", "cancel_retry_success_batch",
-                      f"Cancel retry succeeded for {len(success_details)} offers",
-                      data={
-                          "count": len(success_details),
-                          "trade_ids": [detail["trade_id"] for detail in success_details],
-                      })
+            log_event(
+                "debug",
+                "cancel_retry_success_batch",
+                f"Cancel retry succeeded for {len(success_details)} offers",
+                data={
+                    "count": len(success_details),
+                    "trade_ids": [detail["trade_id"] for detail in success_details],
+                },
+            )
 
         # Clean up completed/exhausted retries
         for tid in to_remove:
@@ -4130,7 +4689,9 @@ class OfferManager:
         """Return lightweight metadata about the last wallet offer sync."""
         return dict(self._wallet_sync_meta)
 
-    def expect_empty_wallet_offer_book(self, reason: str, ttl_seconds: int = 180) -> None:
+    def expect_empty_wallet_offer_book(
+        self, reason: str, ttl_seconds: int = 180
+    ) -> None:
         """Allow the next empty wallet offer sync after an intentional cancel-all."""
         self._expected_empty_wallet_book = {
             "until": time.time() + max(1, int(ttl_seconds or 1)),
@@ -4153,6 +4714,7 @@ class OfferManager:
 
         try:
             from user_paths import worker_cancelled_ids_file
+
             cancelled_path = worker_cancelled_ids_file()
         except Exception:
             cancelled_path = os.path.join(
@@ -4171,9 +4733,7 @@ class OfferManager:
             else:
                 cancelled_ids = payload or []
             cancelled_set = {
-                str(tid).strip()
-                for tid in cancelled_ids
-                if str(tid).strip()
+                str(tid).strip() for tid in cancelled_ids if str(tid).strip()
             }
         except Exception as e:
             log_event(
@@ -4213,20 +4773,24 @@ class OfferManager:
         # Only fetch non-completed offers — avoids truncation by old cancelled offers
         all_offers = get_all_offers(include_completed=False, start=0, end=500)
         if all_offers is None:
-            err = str(getattr(get_all_offers, "_last_error", "") or "wallet get_offers unavailable")
+            err = str(
+                getattr(get_all_offers, "_last_error", "")
+                or "wallet get_offers unavailable"
+            )
             self._wallet_sync_meta["fresh"] = False
             self._wallet_sync_meta["using_cache"] = bool(
-                self._wallet_sync_cache["buy"] or
-                self._wallet_sync_cache["sell"] or
-                self._wallet_sync_cache["closed"]
+                self._wallet_sync_cache["buy"]
+                or self._wallet_sync_cache["sell"]
+                or self._wallet_sync_cache["closed"]
             )
-            self._wallet_sync_meta["consecutive_failures"] = int(self._wallet_sync_meta.get("consecutive_failures", 0) or 0) + 1
+            self._wallet_sync_meta["consecutive_failures"] = (
+                int(self._wallet_sync_meta.get("consecutive_failures", 0) or 0) + 1
+            )
             self._wallet_sync_meta["last_error"] = err
             self._wallet_sync_meta["last_failure_at"] = time.time()
-            self._wallet_sync_meta["cache_size"] = (
-                len(self._wallet_sync_cache["buy"]) +
-                len(self._wallet_sync_cache["sell"])
-            )
+            self._wallet_sync_meta["cache_size"] = len(
+                self._wallet_sync_cache["buy"]
+            ) + len(self._wallet_sync_cache["sell"])
 
             if self._wallet_sync_meta["consecutive_failures"] == 1:
                 if self._wallet_sync_meta["using_cache"]:
@@ -4248,7 +4812,9 @@ class OfferManager:
                 [dict(o) for o in self._wallet_sync_cache["closed"]],
             )
 
-        open_buy, open_sell, closed = classify_offers_from_list(all_offers, cfg.CAT_ASSET_ID)
+        open_buy, open_sell, closed = classify_offers_from_list(
+            all_offers, cfg.CAT_ASSET_ID
+        )
 
         # Suspicious-empty guard: Sage's get_offers occasionally returns a
         # valid-but-empty response during a sync hiccup — same RPC blip
@@ -4264,9 +4830,8 @@ class OfferManager:
         # cycle. Real bulk cancellations recover on the very next poll
         # (mass guard accepts after 3 strikes anyway), so the false-
         # positive cost is negligible compared to a paused bot.
-        prev_total = (
-            len(self._wallet_sync_cache["buy"])
-            + len(self._wallet_sync_cache["sell"])
+        prev_total = len(self._wallet_sync_cache["buy"]) + len(
+            self._wallet_sync_cache["sell"]
         )
         curr_total = len(open_buy) + len(open_sell)
         _now = time.time()
@@ -4285,14 +4850,19 @@ class OfferManager:
                     f"accepting empty book instead of cached {prev_total}-offer view",
                 )
             else:
-                self._wallet_sync_meta.update({
-                    "fresh": False,
-                    "using_cache": True,
-                    "consecutive_failures": int(self._wallet_sync_meta.get("consecutive_failures", 0) or 0) + 1,
-                    "last_error": f"suspicious_empty_offers (prev={prev_total})",
-                    "last_failure_at": _now,
-                    "cache_size": prev_total,
-                })
+                self._wallet_sync_meta.update(
+                    {
+                        "fresh": False,
+                        "using_cache": True,
+                        "consecutive_failures": int(
+                            self._wallet_sync_meta.get("consecutive_failures", 0) or 0
+                        )
+                        + 1,
+                        "last_error": f"suspicious_empty_offers (prev={prev_total})",
+                        "last_failure_at": _now,
+                        "cache_size": prev_total,
+                    }
+                )
                 log_event(
                     "warning",
                     "wallet_sync_suspicious_empty",
@@ -4305,18 +4875,22 @@ class OfferManager:
                     [dict(o) for o in self._wallet_sync_cache["closed"]],
                 )
 
-        previous_failures = int(self._wallet_sync_meta.get("consecutive_failures", 0) or 0)
+        previous_failures = int(
+            self._wallet_sync_meta.get("consecutive_failures", 0) or 0
+        )
         self._wallet_sync_cache["buy"] = [dict(o) for o in open_buy]
         self._wallet_sync_cache["sell"] = [dict(o) for o in open_sell]
         self._wallet_sync_cache["closed"] = [dict(o) for o in closed]
-        self._wallet_sync_meta.update({
-            "fresh": True,
-            "using_cache": False,
-            "consecutive_failures": 0,
-            "last_error": "",
-            "last_success_at": time.time(),
-            "cache_size": len(open_buy) + len(open_sell),
-        })
+        self._wallet_sync_meta.update(
+            {
+                "fresh": True,
+                "using_cache": False,
+                "consecutive_failures": 0,
+                "last_error": "",
+                "last_success_at": time.time(),
+                "cache_size": len(open_buy) + len(open_sell),
+            }
+        )
         if expected_empty_reason:
             self._wallet_sync_meta["expected_empty_reason"] = expected_empty_reason
         else:

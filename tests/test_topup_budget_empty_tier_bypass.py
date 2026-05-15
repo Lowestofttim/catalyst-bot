@@ -95,8 +95,9 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
             sys.modules.pop(name, None)
 
     def _make_manager(self):
-        with patch.object(coin_manager.CoinManager, "_resolve_fingerprint",
-                          return_value="123456789"):
+        with patch.object(
+            coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"
+        ):
             return coin_manager.CoinManager()
 
     # ------------------------------------------------------------------
@@ -107,12 +108,16 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
         """Empty CAT tier + exhausted budget + hard reserve OK → bypass with warning."""
         manager = self._make_manager()
         cfg = coin_manager.cfg
-        with patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("100")), \
-             patch.object(cfg, "CAT_DECIMALS", 3), \
-             patch("wallet.get_wallet_balance", _FakeWalletBalance(total_mojos=906_913_211)), \
-             patch("database.get_setting", return_value=str(138_940_000)), \
-             patch.object(coin_manager, "log_event") as log_spy:
+        with (
+            patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("100")),
+            patch.object(cfg, "CAT_DECIMALS", 3),
+            patch(
+                "wallet.get_wallet_balance", _FakeWalletBalance(total_mojos=906_913_211)
+            ),
+            patch("database.get_setting", return_value=str(138_940_000)),
+            patch.object(coin_manager, "log_event") as log_spy,
+        ):
             # Budget=100 CAT = 100,000 mojos, spent=138,940,000 mojos, request=50,000,000 mojos.
             # Standard check: 138,940,000 + 50,000,000 > 100,000 → blocked.
             # With tier_is_empty: should bypass and return True.
@@ -124,21 +129,27 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
                 tier_is_empty=True,
             )
         self.assertTrue(result)
-        bypass_calls = [c for c in log_spy.call_args_list
-                        if len(c.args) >= 2
-                        and "budget_bypass_empty_tier" in str(c.args[1])]
+        bypass_calls = [
+            c
+            for c in log_spy.call_args_list
+            if len(c.args) >= 2 and "budget_bypass_empty_tier" in str(c.args[1])
+        ]
         self.assertTrue(bypass_calls, "Expected a budget_bypass_empty_tier log event")
 
     def test_cat_non_empty_tier_still_blocked_by_budget(self):
         """Non-empty tier hitting same exhausted budget → still blocked."""
         manager = self._make_manager()
         cfg = coin_manager.cfg
-        with patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("100")), \
-             patch.object(cfg, "CAT_DECIMALS", 3), \
-             patch("wallet.get_wallet_balance", _FakeWalletBalance(total_mojos=906_913_211)), \
-             patch("database.get_setting", return_value=str(138_940_000)), \
-             patch.object(coin_manager, "log_event") as log_spy:
+        with (
+            patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("100")),
+            patch.object(cfg, "CAT_DECIMALS", 3),
+            patch(
+                "wallet.get_wallet_balance", _FakeWalletBalance(total_mojos=906_913_211)
+            ),
+            patch("database.get_setting", return_value=str(138_940_000)),
+            patch.object(coin_manager, "log_event") as log_spy,
+        ):
             result = manager._check_topup_reserve_guards(
                 name="CAT-inner",
                 wallet_id=2,
@@ -147,9 +158,11 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
                 tier_is_empty=False,
             )
         self.assertFalse(result)
-        blocked_calls = [c for c in log_spy.call_args_list
-                         if len(c.args) >= 2
-                         and "blocked_by_budget" in str(c.args[1])]
+        blocked_calls = [
+            c
+            for c in log_spy.call_args_list
+            if len(c.args) >= 2 and "blocked_by_budget" in str(c.args[1])
+        ]
         self.assertTrue(blocked_calls, "Expected a blocked_by_budget log event")
 
     # ------------------------------------------------------------------
@@ -160,11 +173,13 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
         """tier_is_empty=True must NOT bypass the hard reserve guard."""
         manager = self._make_manager()
         cfg = coin_manager.cfg
-        with patch.object(cfg, "CAT_RESERVE", Decimal("1000000")), \
-             patch.object(cfg, "CAT_DECIMALS", 3), \
-             patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")), \
-             patch("wallet.get_wallet_balance", _FakeWalletBalance(total_mojos=500)), \
-             patch.object(coin_manager, "log_event") as log_spy:
+        with (
+            patch.object(cfg, "CAT_RESERVE", Decimal("1000000")),
+            patch.object(cfg, "CAT_DECIMALS", 3),
+            patch.object(cfg, "TOPUP_POOL_CAT", Decimal("0")),
+            patch("wallet.get_wallet_balance", _FakeWalletBalance(total_mojos=500)),
+            patch.object(coin_manager, "log_event") as log_spy,
+        ):
             # balance=500 mojos, reserve=1,000,000,000 mojos after scaling.
             # Split drops balance below reserve → must REFUSE even when empty.
             result = manager._check_topup_reserve_guards(
@@ -175,10 +190,14 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
                 tier_is_empty=True,
             )
         self.assertFalse(result)
-        reserve_calls = [c for c in log_spy.call_args_list
-                         if len(c.args) >= 2
-                         and "blocked_by_reserve" in str(c.args[1])]
-        self.assertTrue(reserve_calls, "Expected hard reserve to refuse even for empty tier")
+        reserve_calls = [
+            c
+            for c in log_spy.call_args_list
+            if len(c.args) >= 2 and "blocked_by_reserve" in str(c.args[1])
+        ]
+        self.assertTrue(
+            reserve_calls, "Expected hard reserve to refuse even for empty tier"
+        )
 
     # ------------------------------------------------------------------
     # XCH bypass (symmetric)
@@ -187,13 +206,16 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
     def test_xch_empty_tier_bypasses_exhausted_budget(self):
         manager = self._make_manager()
         cfg = coin_manager.cfg
-        with patch.object(cfg, "XCH_RESERVE", Decimal("0")), \
-             patch.object(cfg, "TOPUP_POOL_XCH", Decimal("1")), \
-             patch("wallet.get_wallet_balance",
-                   _FakeWalletBalance(total_mojos=100_000_000_000_000)), \
-             patch("database.get_setting",
-                   return_value=str(900_000_000_000)), \
-             patch.object(coin_manager, "log_event") as log_spy:
+        with (
+            patch.object(cfg, "XCH_RESERVE", Decimal("0")),
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("1")),
+            patch(
+                "wallet.get_wallet_balance",
+                _FakeWalletBalance(total_mojos=100_000_000_000_000),
+            ),
+            patch("database.get_setting", return_value=str(900_000_000_000)),
+            patch.object(coin_manager, "log_event") as log_spy,
+        ):
             # Budget=1 XCH = 1e12 mojos, spent=0.9 XCH, request=0.5 XCH
             # 0.9 + 0.5 > 1.0 → would block. Empty tier → bypass.
             result = manager._check_topup_reserve_guards(
@@ -204,22 +226,27 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
                 tier_is_empty=True,
             )
         self.assertTrue(result)
-        bypass_calls = [c for c in log_spy.call_args_list
-                        if len(c.args) >= 2
-                        and "budget_bypass_empty_tier" in str(c.args[1])]
+        bypass_calls = [
+            c
+            for c in log_spy.call_args_list
+            if len(c.args) >= 2 and "budget_bypass_empty_tier" in str(c.args[1])
+        ]
         self.assertTrue(bypass_calls)
 
     def test_xch_floor_priority_bypasses_exhausted_budget_even_when_not_empty(self):
         """The floor-nearest tier must refill even when the soft budget is spent."""
         manager = self._make_manager()
         cfg = coin_manager.cfg
-        with patch.object(cfg, "XCH_RESERVE", Decimal("0")), \
-             patch.object(cfg, "TOPUP_POOL_XCH", Decimal("1")), \
-             patch("wallet.get_wallet_balance",
-                   _FakeWalletBalance(total_mojos=100_000_000_000_000)), \
-             patch("database.get_setting",
-                   return_value=str(900_000_000_000)), \
-             patch.object(coin_manager, "log_event") as log_spy:
+        with (
+            patch.object(cfg, "XCH_RESERVE", Decimal("0")),
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("1")),
+            patch(
+                "wallet.get_wallet_balance",
+                _FakeWalletBalance(total_mojos=100_000_000_000_000),
+            ),
+            patch("database.get_setting", return_value=str(900_000_000_000)),
+            patch.object(coin_manager, "log_event") as log_spy,
+        ):
             # Same exhausted-budget shape as above, but the tier is not empty.
             # Floor-priority bypass should still allow the split.
             result = manager._check_topup_reserve_guards(
@@ -231,20 +258,26 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
                 soft_budget_bypass_reason="floor-nearest buy slot",
             )
         self.assertTrue(result)
-        bypass_calls = [c for c in log_spy.call_args_list
-                        if len(c.args) >= 2
-                        and "budget_bypass_floor_priority" in str(c.args[1])]
+        bypass_calls = [
+            c
+            for c in log_spy.call_args_list
+            if len(c.args) >= 2 and "budget_bypass_floor_priority" in str(c.args[1])
+        ]
         self.assertTrue(bypass_calls)
 
     def test_floor_priority_does_not_bypass_hard_reserve(self):
         """Floor-priority bypass is soft-budget only; hard reserve still wins."""
         manager = self._make_manager()
         cfg = coin_manager.cfg
-        with patch.object(cfg, "XCH_RESERVE", Decimal("1000")), \
-             patch.object(cfg, "TOPUP_POOL_XCH", Decimal("1")), \
-             patch("wallet.get_wallet_balance",
-                   _FakeWalletBalance(total_mojos=500_000_000_000)), \
-             patch.object(coin_manager, "log_event") as log_spy:
+        with (
+            patch.object(cfg, "XCH_RESERVE", Decimal("1000")),
+            patch.object(cfg, "TOPUP_POOL_XCH", Decimal("1")),
+            patch(
+                "wallet.get_wallet_balance",
+                _FakeWalletBalance(total_mojos=500_000_000_000),
+            ),
+            patch.object(coin_manager, "log_event") as log_spy,
+        ):
             result = manager._check_topup_reserve_guards(
                 name="XCH-extreme",
                 wallet_id=1,
@@ -254,9 +287,11 @@ class EmptyTierBudgetBypassTests(unittest.TestCase):
                 soft_budget_bypass_reason="floor-nearest buy slot",
             )
         self.assertFalse(result)
-        reserve_calls = [c for c in log_spy.call_args_list
-                         if len(c.args) >= 2
-                         and "blocked_by_reserve" in str(c.args[1])]
+        reserve_calls = [
+            c
+            for c in log_spy.call_args_list
+            if len(c.args) >= 2 and "blocked_by_reserve" in str(c.args[1])
+        ]
         self.assertTrue(reserve_calls)
 
 

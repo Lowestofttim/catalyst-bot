@@ -16,7 +16,4 @@ def test_describe_commits_after_release_tag():
 
 
 def test_describe_dirty_source_checkout():
-    assert (
-        _describe_to_version("v1.2.16-1-gd514e75-dirty")
-        == "1.2.16+1.gd514e75.dirty"
-    )
+    assert _describe_to_version("v1.2.16-1-gd514e75-dirty") == "1.2.16+1.gd514e75.dirty"

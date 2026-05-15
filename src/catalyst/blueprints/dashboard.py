@@ -54,10 +54,16 @@ def _build_coin_recommendations(cfg, coins: dict, is_running: bool) -> list[dict
         return []
 
     targets = {
-        "inner": _get_cfg_int(cfg, "SELL_INNER_TIER_SPARE_COUNT", "INNER_TIER_SPARE_COUNT"),
+        "inner": _get_cfg_int(
+            cfg, "SELL_INNER_TIER_SPARE_COUNT", "INNER_TIER_SPARE_COUNT"
+        ),
         "mid": _get_cfg_int(cfg, "SELL_MID_TIER_SPARE_COUNT", "MID_TIER_SPARE_COUNT"),
-        "outer": _get_cfg_int(cfg, "SELL_OUTER_TIER_SPARE_COUNT", "OUTER_TIER_SPARE_COUNT"),
-        "extreme": _get_cfg_int(cfg, "SELL_EXTREME_TIER_SPARE_COUNT", "EXTREME_TIER_SPARE_COUNT"),
+        "outer": _get_cfg_int(
+            cfg, "SELL_OUTER_TIER_SPARE_COUNT", "OUTER_TIER_SPARE_COUNT"
+        ),
+        "extreme": _get_cfg_int(
+            cfg, "SELL_EXTREME_TIER_SPARE_COUNT", "EXTREME_TIER_SPARE_COUNT"
+        ),
     }
     try:
         sniper_enabled = (
@@ -88,21 +94,23 @@ def _build_coin_recommendations(cfg, coins: dict, is_running: bool) -> list[dict
     if not short:
         return []
 
-    return [{
-        "id": "cat_topup_pool_empty",
-        "severity": "warning",
-        "title": "CAT top-up pool empty",
-        "message": (
-            "CAT spare coins are below target ("
-            + ", ".join(short[:4])
-            + "). The bot has no CAT top-up pool to split from. "
-            "Add CAT funds or allocate an incoming CAT coin to the top-up pool "
-            "so sell-side spares can be rebuilt while the bot keeps running."
-        ),
-        "action": "reviewTopupPool",
-        "action_label": "Review top-up pool",
-        "action_value": "cat",
-    }]
+    return [
+        {
+            "id": "cat_topup_pool_empty",
+            "severity": "warning",
+            "title": "CAT top-up pool empty",
+            "message": (
+                "CAT spare coins are below target ("
+                + ", ".join(short[:4])
+                + "). The bot has no CAT top-up pool to split from. "
+                "Add CAT funds or allocate an incoming CAT coin to the top-up pool "
+                "so sell-side spares can be rebuilt while the bot keeps running."
+            ),
+            "action": "reviewTopupPool",
+            "action_label": "Review top-up pool",
+            "action_value": "cat",
+        }
+    ]
 
 
 def _positive_decimal_string(value) -> str:
@@ -120,6 +128,7 @@ def _build_fiat_price_summary(spacescan_context: dict) -> dict:
     xch_price = {}
     try:
         from market_data_collector import get_cached_xch_usd_price
+
         xch_price = get_cached_xch_usd_price() or {}
     except Exception:
         xch_price = {}
@@ -131,7 +140,9 @@ def _build_fiat_price_summary(spacescan_context: dict) -> dict:
     return {
         "xch_usd_price": xch_usd,
         "xch_usd_source": str(xch_price.get("source") or "") if xch_usd else "",
-        "xch_usd_last_updated_at": int(xch_price.get("last_updated_at") or 0) if xch_usd else 0,
+        "xch_usd_last_updated_at": int(xch_price.get("last_updated_at") or 0)
+        if xch_usd
+        else 0,
         "cat_usd_price": cat_usd,
         "cat_price_xch": cat_xch,
         "cat_usd_source": "spacescan" if cat_usd else "",
@@ -224,12 +235,25 @@ def api_dashboard():
             except Exception:
                 pass
 
-        active_asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
-        active_ticker_id = api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "")
-        active_decimals = int(api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3) or 3)
+        active_asset_id = api_server._active_cat.get("asset_id") or getattr(
+            cfg, "CAT_ASSET_ID", ""
+        )
+        active_ticker_id = api_server._active_cat.get("ticker_id") or getattr(
+            cfg, "CAT_TICKER_ID", ""
+        )
+        active_decimals = int(
+            api_server._active_cat.get("decimals")
+            or getattr(cfg, "CAT_DECIMALS", 3)
+            or 3
+        )
 
         # --- Market Health ---
-        market_health = {"status": "green", "message": "Waiting for first cycle", "conditions": [], "metrics": {}}
+        market_health = {
+            "status": "green",
+            "message": "Waiting for first cycle",
+            "conditions": [],
+            "metrics": {},
+        }
         if bot and bot.risk_manager:
             try:
                 _lc = getattr(bot, "_loop_count", 0) or 0
@@ -248,7 +272,9 @@ def api_dashboard():
                     summary = bot.market_intel.get_market_summary() or {}
                     refreshes = int(summary.get("orderbook_refreshes", 0) or 0)
                     metrics["market_intel_refreshes"] = refreshes
-                    metrics["market_intel_state"] = "ready" if refreshes > 0 else "searching"
+                    metrics["market_intel_state"] = (
+                        "ready" if refreshes > 0 else "searching"
+                    )
                     metrics["market_intel_age_secs"] = (
                         summary.get("orderbook_age_secs") if refreshes > 0 else None
                     )
@@ -265,9 +291,13 @@ def api_dashboard():
                     else:
                         metrics["competitor_sides"] = "none"
                     if summary.get("competitor_spread_bps") is not None:
-                        metrics["market_spread_bps"] = str(summary.get("competitor_spread_bps", "0"))
+                        metrics["market_spread_bps"] = str(
+                            summary.get("competitor_spread_bps", "0")
+                        )
                     if summary.get("overall_spread_bps") is not None:
-                        metrics["overall_spread_bps"] = str(summary.get("overall_spread_bps", "0"))
+                        metrics["overall_spread_bps"] = str(
+                            summary.get("overall_spread_bps", "0")
+                        )
             except Exception:
                 pass
             try:
@@ -285,7 +315,9 @@ def api_dashboard():
                 best_bid = _edge_decimal(live_edges, "our_best_bid")
                 best_ask = _edge_decimal(live_edges, "our_best_ask")
                 if active_asset_id and (best_bid <= 0 or best_ask <= 0):
-                    local_edges = api_server._get_live_local_offer_edges(active_asset_id) or {}
+                    local_edges = (
+                        api_server._get_live_local_offer_edges(active_asset_id) or {}
+                    )
                     live_edges.update(local_edges)
                     best_bid = _edge_decimal(live_edges, "our_best_bid")
                     best_ask = _edge_decimal(live_edges, "our_best_ask")
@@ -297,22 +329,28 @@ def api_dashboard():
                 if live_edges.get("our_open_buys") is not None:
                     metrics["our_open_buys"] = int(live_edges.get("our_open_buys") or 0)
                 if live_edges.get("our_open_sells") is not None:
-                    metrics["our_open_sells"] = int(live_edges.get("our_open_sells") or 0)
+                    metrics["our_open_sells"] = int(
+                        live_edges.get("our_open_sells") or 0
+                    )
 
                 live_state = getattr(bot, "_bot_state", {}) or {}
                 try:
-                    mid = Decimal(str(
-                        live_state.get("mid_price")
-                        or getattr(bot, "_current_mid_price", None)
-                        or api_server._get_live_mid_price_str()
-                        or 0
-                    ))
+                    mid = Decimal(
+                        str(
+                            live_state.get("mid_price")
+                            or getattr(bot, "_current_mid_price", None)
+                            or api_server._get_live_mid_price_str()
+                            or 0
+                        )
+                    )
                 except Exception:
                     mid = Decimal("0")
                 if mid <= 0 and best_bid > 0 and best_ask > best_bid:
                     mid = (best_bid + best_ask) / Decimal("2")
                 if best_bid > 0 and best_ask > best_bid and mid > 0:
-                    metrics["your_spread_bps"] = str((best_ask - best_bid) / mid * Decimal("10000"))
+                    metrics["your_spread_bps"] = str(
+                        (best_ask - best_bid) / mid * Decimal("10000")
+                    )
             except Exception:
                 pass
 
@@ -337,9 +375,15 @@ def api_dashboard():
             metrics["spacescan_tier"] = spacescan_context.get("tier", "free")
             metrics["spacescan_has_data"] = spacescan_context.get("has_data", False)
             metrics["spacescan_holder_count"] = spacescan_context.get("holder_count", 0)
-            metrics["spacescan_activity_level"] = spacescan_context.get("activity_level", "unknown")
-            metrics["spacescan_risk_level"] = spacescan_context.get("risk_level", "unknown")
-            metrics["spacescan_price_gap_bps"] = str(spacescan_context.get("price_gap_bps", 0))
+            metrics["spacescan_activity_level"] = spacescan_context.get(
+                "activity_level", "unknown"
+            )
+            metrics["spacescan_risk_level"] = spacescan_context.get(
+                "risk_level", "unknown"
+            )
+            metrics["spacescan_price_gap_bps"] = str(
+                spacescan_context.get("price_gap_bps", 0)
+            )
             # Partial-fetch flags so the GUI can show "rate-limited" rather
             # than rendering 0/unknown as if the data were genuinely absent.
             metrics["spacescan_activity_fetch_failed"] = bool(
@@ -390,7 +434,12 @@ def api_dashboard():
             pass
 
         # --- Wallet & Coins ---
-        wallet = {"xch_spendable": 0, "xch_total": 0, "cat_spendable": 0, "cat_total": 0}
+        wallet = {
+            "xch_spendable": 0,
+            "xch_total": 0,
+            "cat_spendable": 0,
+            "cat_total": 0,
+        }
         # tier_counts is intentionally OMITTED here. We only populate it
         # below when TIER_ENABLED is true AND we successfully read the
         # coin summary. Sending a placeholder {"enabled": False, ...}
@@ -399,26 +448,45 @@ def api_dashboard():
         # "hide", but the user's tier mode is actually still on. Leaving
         # the key absent lets the frontend keep its last known render.
         coins = {
-            "xch_free": 0, "xch_locked": 0, "xch_total": 0,
-            "cat_free": 0, "cat_locked": 0, "cat_total": 0,
+            "xch_free": 0,
+            "xch_locked": 0,
+            "xch_total": 0,
+            "cat_free": 0,
+            "cat_locked": 0,
+            "cat_total": 0,
         }
 
         # Fetch wallet balances directly from RPC (works whether bot is running or not)
         try:
             from wallet import get_wallet_balance, WALLET_ID_XCH
+
             xr = get_wallet_balance(WALLET_ID_XCH)
             if xr and xr.get("success"):
                 wb = xr.get("wallet_balance") or {}
-                wallet["xch_total"] = str(Decimal(str(wb.get("confirmed_wallet_balance", 0))) / Decimal("1000000000000"))
-                wallet["xch_spendable"] = str(Decimal(str(wb.get("spendable_balance", 0))) / Decimal("1000000000000"))
-            cat_wid = api_server._active_cat.get("wallet_id") or getattr(cfg, 'CAT_WALLET_ID', 2)
-            cat_dec = api_server._active_cat.get("decimals") or getattr(cfg, 'CAT_DECIMALS', 3)
+                wallet["xch_total"] = str(
+                    Decimal(str(wb.get("confirmed_wallet_balance", 0)))
+                    / Decimal("1000000000000")
+                )
+                wallet["xch_spendable"] = str(
+                    Decimal(str(wb.get("spendable_balance", 0)))
+                    / Decimal("1000000000000")
+                )
+            cat_wid = api_server._active_cat.get("wallet_id") or getattr(
+                cfg, "CAT_WALLET_ID", 2
+            )
+            cat_dec = api_server._active_cat.get("decimals") or getattr(
+                cfg, "CAT_DECIMALS", 3
+            )
             cr = get_wallet_balance(cat_wid)
             if cr and cr.get("success"):
                 wb = cr.get("wallet_balance") or {}
                 _cat_divisor = Decimal(10) ** int(cat_dec)
-                wallet["cat_total"] = str(Decimal(str(wb.get("confirmed_wallet_balance", 0))) / _cat_divisor)
-                wallet["cat_spendable"] = str(Decimal(str(wb.get("spendable_balance", 0))) / _cat_divisor)
+                wallet["cat_total"] = str(
+                    Decimal(str(wb.get("confirmed_wallet_balance", 0))) / _cat_divisor
+                )
+                wallet["cat_spendable"] = str(
+                    Decimal(str(wb.get("spendable_balance", 0))) / _cat_divisor
+                )
         except Exception as e:
             print(f"[DASHBOARD] Wallet balance fetch error: {e}", flush=True)
 
@@ -451,24 +519,40 @@ def api_dashboard():
         if coins["xch_free"] == 0 and coins["xch_total"] == 0:
             try:
                 from wallet import rpc as wallet_rpc
-                cat_asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+
+                cat_asset_id = api_server._active_cat.get("asset_id") or getattr(
+                    cfg, "CAT_ASSET_ID", ""
+                )
 
                 def _dash_count_coins(asset_id, filter_mode):
                     """Query Sage get_coins and return (count, total_mojos)."""
-                    result = wallet_rpc("get_coins", {
-                        "asset_id": asset_id,
-                        "offset": 0, "limit": 500,
-                        "filter_mode": filter_mode,
-                    }, timeout=10)
+                    result = wallet_rpc(
+                        "get_coins",
+                        {
+                            "asset_id": asset_id,
+                            "offset": 0,
+                            "limit": 500,
+                            "filter_mode": filter_mode,
+                        },
+                        timeout=10,
+                    )
                     if not result:
                         return 0, 0
-                    coin_list = (result.get("coins") or result.get("records")
-                                 or result.get("data") or [])
+                    coin_list = (
+                        result.get("coins")
+                        or result.get("records")
+                        or result.get("data")
+                        or []
+                    )
                     total_mojos = sum(int(c.get("amount", "0")) for c in coin_list)
                     return len(coin_list), total_mojos
 
                 xch_free, _ = _dash_count_coins(None, "selectable")
-                cat_free, _ = _dash_count_coins(cat_asset_id, "selectable") if cat_asset_id else (0, 0)
+                cat_free, _ = (
+                    _dash_count_coins(cat_asset_id, "selectable")
+                    if cat_asset_id
+                    else (0, 0)
+                )
 
                 coins["xch_free"] = xch_free
                 coins["xch_total"] = xch_free
@@ -480,23 +564,37 @@ def api_dashboard():
         # --- Performance Stats ---
         performance = {}
         try:
-            stats = get_stats(cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff())
+            stats = get_stats(
+                cfg.CAT_ASSET_ID, since=api_server._get_run_history_cutoff()
+            )
             performance = api_server._serialize_dict(stats)
-            performance["pending_verification_count"] = api_server._get_session_pending_verification_count()
+            performance["pending_verification_count"] = (
+                api_server._get_session_pending_verification_count()
+            )
         except Exception:
             pass
 
         # Add uptime from bot loop
         if bot:
             try:
-                active_cat_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
-                live_open_buys = len(get_open_offers(side="buy", cat_asset_id=active_cat_id))
-                live_open_sells = len(get_open_offers(side="sell", cat_asset_id=active_cat_id))
+                active_cat_id = api_server._active_cat.get("asset_id") or getattr(
+                    cfg, "CAT_ASSET_ID", ""
+                )
+                live_open_buys = len(
+                    get_open_offers(side="buy", cat_asset_id=active_cat_id)
+                )
+                live_open_sells = len(
+                    get_open_offers(side="sell", cat_asset_id=active_cat_id)
+                )
                 performance["open_buys"] = live_open_buys
                 performance["open_sells"] = live_open_sells
                 performance["open_offers"] = live_open_buys + live_open_sells
                 performance["loop_count"] = bot._loop_count
-                performance["uptime_secs"] = int(time.time() - bot._start_time) if getattr(bot, '_start_time', 0) else 0
+                performance["uptime_secs"] = (
+                    int(time.time() - bot._start_time)
+                    if getattr(bot, "_start_time", 0)
+                    else 0
+                )
             except Exception:
                 pass
 
@@ -512,46 +610,75 @@ def api_dashboard():
         boost_stats = {}
         if bot and getattr(bot, "boost_manager", None):
             try:
-                boost_stats = api_server._serialize_dict(bot.boost_manager.get_stats_summary())
+                boost_stats = api_server._serialize_dict(
+                    bot.boost_manager.get_stats_summary()
+                )
             except Exception:
                 boost_stats = {}
 
         # --- External Links ---
-        asset_id = (api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "") or "").strip()
-        ticker_id = (api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "") or "").strip().upper()
+        asset_id = (
+            api_server._active_cat.get("asset_id")
+            or getattr(cfg, "CAT_ASSET_ID", "")
+            or ""
+        ).strip()
+        ticker_id = (
+            (
+                api_server._active_cat.get("ticker_id")
+                or getattr(cfg, "CAT_TICKER_ID", "")
+                or ""
+            )
+            .strip()
+            .upper()
+        )
         if ticker_id and "_" not in ticker_id:
             ticker_id = f"{ticker_id}_XCH"
         dexie_orderbook = ""
         if ticker_id:
             parts = [p for p in ticker_id.split("_") if p]
             if len(parts) >= 2:
-                dexie_orderbook = f"https://dexie.space/offers/{quote(parts[0])}/{quote(parts[1])}"
+                dexie_orderbook = (
+                    f"https://dexie.space/offers/{quote(parts[0])}/{quote(parts[1])}"
+                )
         elif asset_id:
             dexie_orderbook = f"https://dexie.space/offers/{quote(asset_id)}/XCH"
 
         links = {
             "dexie_orderbook": dexie_orderbook,
-            "tibetswap_pool": f"https://v2.tibetswap.io/pair/{quote(getattr(cfg, 'TIBET_PAIR_ID', '') or '')}" if getattr(cfg, 'TIBET_PAIR_ID', '') else (f"https://v2.tibetswap.io/?asset_id={quote(asset_id)}" if asset_id else "https://v2.tibetswap.io"),
-            "spacescan_token": f"https://www.spacescan.io/cat2/{quote(asset_id)}" if asset_id else "",
+            "tibetswap_pool": f"https://v2.tibetswap.io/pair/{quote(getattr(cfg, 'TIBET_PAIR_ID', '') or '')}"
+            if getattr(cfg, "TIBET_PAIR_ID", "")
+            else (
+                f"https://v2.tibetswap.io/?asset_id={quote(asset_id)}"
+                if asset_id
+                else "https://v2.tibetswap.io"
+            ),
+            "spacescan_token": f"https://www.spacescan.io/cat2/{quote(asset_id)}"
+            if asset_id
+            else "",
         }
 
-        return jsonify(api_server._serialize_dict({
-            "settings": settings,
-            "market_health": market_health,
-            "wallet": wallet,
-            "coins": coins,
-            "performance": performance,
-            "sniper": sniper_stats,
-            "boost": boost_stats,
-            "spacescan_context": spacescan_context,
-            "fiat_prices": fiat_prices,
-            "links": links,
-            "cat_name": cfg.CAT_NAME if hasattr(cfg, 'CAT_NAME') else "CAT",
-            "current_cat": api_server._active_cat,
-            "wallet_type": "sage",
-        }))
+        return jsonify(
+            api_server._serialize_dict(
+                {
+                    "settings": settings,
+                    "market_health": market_health,
+                    "wallet": wallet,
+                    "coins": coins,
+                    "performance": performance,
+                    "sniper": sniper_stats,
+                    "boost": boost_stats,
+                    "spacescan_context": spacescan_context,
+                    "fiat_prices": fiat_prices,
+                    "links": links,
+                    "cat_name": cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else "CAT",
+                    "current_cat": api_server._active_cat,
+                    "wallet_type": "sage",
+                }
+            )
+        )
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/stats")
 def api_stats():
@@ -563,6 +690,7 @@ def api_stats():
     except Exception:
         return api_server._api_exception(request.path)
 
+
 @bp.route("/api/inventory")
 def api_inventory():
     """Get current inventory state."""
@@ -571,6 +699,7 @@ def api_inventory():
         return jsonify({"error": "Bot not initialised"}), 500
 
     return jsonify(bot.risk_manager.get_inventory_state())
+
 
 @bp.route("/api/risk/spreads")
 def api_risk_spreads():
@@ -583,11 +712,13 @@ def api_risk_spreads():
     buy_spread = bot.risk_manager.get_adjusted_spread("buy")
     sell_spread = bot.risk_manager.get_adjusted_spread("sell")
 
-    return jsonify({
-        "buy_spread_bps": str(buy_spread * Decimal("10000")),
-        "sell_spread_bps": str(sell_spread * Decimal("10000")),
-        "buy_spread_pct": str(buy_spread * Decimal("100")),
-        "sell_spread_pct": str(sell_spread * Decimal("100")),
-        "dynamic_enabled": cfg.DYNAMIC_SPREAD_ENABLED,
-        "inventory_enabled": cfg.INVENTORY_ENABLED,
-    })
+    return jsonify(
+        {
+            "buy_spread_bps": str(buy_spread * Decimal("10000")),
+            "sell_spread_bps": str(sell_spread * Decimal("10000")),
+            "buy_spread_pct": str(buy_spread * Decimal("100")),
+            "sell_spread_pct": str(sell_spread * Decimal("100")),
+            "dynamic_enabled": cfg.DYNAMIC_SPREAD_ENABLED,
+            "inventory_enabled": cfg.INVENTORY_ENABLED,
+        }
+    )

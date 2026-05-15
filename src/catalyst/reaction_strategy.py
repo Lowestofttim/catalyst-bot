@@ -28,18 +28,21 @@ from typing import Dict, List
 # RequoteSeverity — graduated response to price drift
 # ---------------------------------------------------------------------------
 
+
 class RequoteSeverity(Enum):
     """How urgently offers need adjusting based on price drift magnitude."""
-    NONE      = "none"         # No action needed
-    INNER     = "inner"        # Small drift — adjust inner offers only
-    INNER_MID = "inner_mid"    # Medium drift — adjust inner + mid
-    FULL      = "full"         # Large drift — adjust all tiers (budget-capped)
-    EMERGENCY = "emergency"    # Offers are arbable — cancel immediately
+
+    NONE = "none"  # No action needed
+    INNER = "inner"  # Small drift — adjust inner offers only
+    INNER_MID = "inner_mid"  # Medium drift — adjust inner + mid
+    FULL = "full"  # Large drift — adjust all tiers (budget-capped)
+    EMERGENCY = "emergency"  # Offers are arbable — cancel immediately
 
 
 # ---------------------------------------------------------------------------
 # CycleBudget — caps how many on-chain actions the bot can take per cycle
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CycleBudget:
@@ -49,6 +52,7 @@ class CycleBudget:
     Any action that doesn't fit in the budget carries over naturally to the
     next cycle (the offer stays stale until then — acceptable per strategy).
     """
+
     max_cancels: int = 6
     max_creates: int = 6
     cancels_used: int = 0
@@ -83,13 +87,16 @@ class CycleBudget:
         return self.remaining_cancels <= 0 and self.remaining_creates <= 0
 
     def __repr__(self):
-        return (f"CycleBudget(cancels={self.cancels_used}/{self.max_cancels}, "
-                f"creates={self.creates_used}/{self.max_creates})")
+        return (
+            f"CycleBudget(cancels={self.cancels_used}/{self.max_cancels}, "
+            f"creates={self.creates_used}/{self.max_creates})"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Staleness scoring — which offers are most out-of-position?
 # ---------------------------------------------------------------------------
+
 
 def compute_offer_staleness(offer: Dict, ideal_price: Decimal) -> Decimal:
     """How far an offer is from where it should be, as a fraction of ideal.
@@ -106,12 +113,13 @@ def compute_offer_staleness(offer: Dict, ideal_price: Decimal) -> Decimal:
     return abs(actual - ideal_price) / ideal_price
 
 
-def classify_drift(move_fraction: Decimal,
-                   inner_threshold: Decimal = Decimal("0.003"),
-                   mid_threshold: Decimal = Decimal("0.008"),
-                   full_threshold: Decimal = Decimal("0.02"),
-                   emergency_threshold: Decimal = Decimal("0.05"),
-                   ) -> RequoteSeverity:
+def classify_drift(
+    move_fraction: Decimal,
+    inner_threshold: Decimal = Decimal("0.003"),
+    mid_threshold: Decimal = Decimal("0.008"),
+    full_threshold: Decimal = Decimal("0.02"),
+    emergency_threshold: Decimal = Decimal("0.05"),
+) -> RequoteSeverity:
     """Map a price-move fraction to a graduated severity level.
 
     Thresholds (as fractions, not bps):
@@ -134,6 +142,7 @@ def classify_drift(move_fraction: Decimal,
 # Tier ordering for budget-priority filtering
 TIER_PRIORITY = {"inner": 0, "mid": 1, "outer": 2, "extreme": 3}
 
+
 def tiers_for_severity(severity: RequoteSeverity) -> set:
     """Which tiers should be processed for a given severity."""
     if severity == RequoteSeverity.EMERGENCY:
@@ -147,8 +156,6 @@ def tiers_for_severity(severity: RequoteSeverity) -> set:
     return set()
 
 
-def filter_offers_by_tiers(offers: List[Dict],
-                           allowed_tiers: set) -> List[Dict]:
+def filter_offers_by_tiers(offers: List[Dict], allowed_tiers: set) -> List[Dict]:
     """Keep only offers whose tier is in the allowed set."""
-    return [o for o in offers
-            if str(o.get("tier") or "mid").lower() in allowed_tiers]
+    return [o for o in offers if str(o.get("tier") or "mid").lower() in allowed_tiers]

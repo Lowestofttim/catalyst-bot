@@ -43,6 +43,7 @@ class FillClassifierTests(unittest.TestCase):
         _install_fakes()
         sys.modules.pop("fill_classifier", None)
         import fill_classifier
+
         self.fc = fill_classifier
 
     def tearDown(self):
@@ -81,8 +82,12 @@ class FillClassifierTests(unittest.TestCase):
         result = self.fc.classify_fill(
             trade_id="0xretail1",
             fill_detail={"side": "buy"},
-            dexie_detail={"spent_block_index": 123456,
-                          "output_coins": {"xch": [{"puzzle_hash": "somerandompuzzle", "amount": 100}]}},
+            dexie_detail={
+                "spent_block_index": 123456,
+                "output_coins": {
+                    "xch": [{"puzzle_hash": "somerandompuzzle", "amount": 100}]
+                },
+            },
         )
         self.assertEqual(result.classification, "retail")
         self.assertEqual(result.confidence, "medium")
@@ -93,7 +98,7 @@ class FillClassifierTests(unittest.TestCase):
         result = self.fc.classify_fill(
             trade_id="0xretail2",
             fill_detail={"side": "sell"},
-            dexie_detail={},   # present but empty — no usable data
+            dexie_detail={},  # present but empty — no usable data
         )
         self.assertEqual(result.classification, "unknown")
 
@@ -174,8 +179,7 @@ class FillClassifierTests(unittest.TestCase):
             fill_detail={"side": "sell"},
             dexie_detail=dexie_detail,
         )
-        self.assertNotIn(result.classification,
-                         ("arb_sweep_buy", "arb_sweep_sell"))
+        self.assertNotIn(result.classification, ("arb_sweep_buy", "arb_sweep_sell"))
 
     def test_arb_hash_with_0x_prefix_still_matches(self):
         """taker_puzzle_hash returned with 0x prefix should still match."""
@@ -235,17 +239,15 @@ class FillClassifierTests(unittest.TestCase):
 
     def test_is_arb_returns_true_for_arb_types(self):
         for cls_name in ("arb_sweep_buy", "arb_sweep_sell", "dexie_combined"):
-            fc = self.fc.FillClassification(
-                trade_id="x", classification=cls_name
-            )
+            fc = self.fc.FillClassification(trade_id="x", classification=cls_name)
             self.assertTrue(fc.is_arb(), msg=f"is_arb() should be True for {cls_name}")
 
     def test_is_arb_returns_false_for_retail_and_unknown(self):
         for cls_name in ("retail", "unknown"):
-            fc = self.fc.FillClassification(
-                trade_id="x", classification=cls_name
+            fc = self.fc.FillClassification(trade_id="x", classification=cls_name)
+            self.assertFalse(
+                fc.is_arb(), msg=f"is_arb() should be False for {cls_name}"
             )
-            self.assertFalse(fc.is_arb(), msg=f"is_arb() should be False for {cls_name}")
 
     # ------------------------------------------------------------------
     # _extract_taker_puzzle_hash
@@ -255,7 +257,7 @@ class FillClassifierTests(unittest.TestCase):
         detail = {
             "output_coins": {
                 "aabbccdd": [{"puzzle_hash": "takercat111", "amount": 500}],
-                "xch":       [{"puzzle_hash": "selfxch000", "amount": 1000}],
+                "xch": [{"puzzle_hash": "selfxch000", "amount": 1000}],
             }
         }
         ph = self.fc._extract_taker_puzzle_hash(detail, "sell")
@@ -264,7 +266,7 @@ class FillClassifierTests(unittest.TestCase):
     def test_extract_taker_hash_buy_side_uses_xch_key(self):
         detail = {
             "output_coins": {
-                "xch":    [{"puzzle_hash": "takerxch222", "amount": 2000}],
+                "xch": [{"puzzle_hash": "takerxch222", "amount": 2000}],
                 "aabbccdd": [{"puzzle_hash": "selfcat000", "amount": 100}],
             }
         }
@@ -313,6 +315,7 @@ class FillClassifierNoKnownHashesTests(unittest.TestCase):
         sys.modules["config"] = fake_config
         sys.modules.pop("fill_classifier", None)
         import fill_classifier
+
         self.fc = fill_classifier
 
     def tearDown(self):
@@ -324,8 +327,10 @@ class FillClassifierNoKnownHashesTests(unittest.TestCase):
         result = self.fc.classify_fill(
             trade_id="0xtest",
             fill_detail={"side": "sell"},
-            dexie_detail={"spent_block_index": 999,
-                          "output_coins": {"aabbccdd": [{"puzzle_hash": "abc", "amount": 1}]}},
+            dexie_detail={
+                "spent_block_index": 999,
+                "output_coins": {"aabbccdd": [{"puzzle_hash": "abc", "amount": 1}]},
+            },
         )
         self.assertEqual(result.classification, "retail")
         self.assertEqual(result.confidence, "medium")
@@ -347,6 +352,7 @@ class FillClassificationSideFieldTests(unittest.TestCase):
         _install_fakes()
         sys.modules.pop("fill_classifier", None)
         import fill_classifier
+
         self.fc = fill_classifier
 
     def tearDown(self):
@@ -375,10 +381,14 @@ class FillClassificationSideFieldTests(unittest.TestCase):
 
     def test_is_arb_unaffected_by_side_field(self):
         for cls_name in ("arb_sweep_buy", "arb_sweep_sell", "dexie_combined"):
-            fc = self.fc.FillClassification(trade_id="x", classification=cls_name, side="buy")
+            fc = self.fc.FillClassification(
+                trade_id="x", classification=cls_name, side="buy"
+            )
             self.assertTrue(fc.is_arb())
         for cls_name in ("retail", "unknown"):
-            fc = self.fc.FillClassification(trade_id="x", classification=cls_name, side="sell")
+            fc = self.fc.FillClassification(
+                trade_id="x", classification=cls_name, side="sell"
+            )
             self.assertFalse(fc.is_arb())
 
 

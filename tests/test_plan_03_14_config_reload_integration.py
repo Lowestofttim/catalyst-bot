@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import config as _cfg_mod
     from config import Config
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     Config = None
@@ -32,6 +33,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # Helper — write a minimal .env file
 # ---------------------------------------------------------------------------
 
+
 def _write_env(path: str, **kwargs):
     with open(path, "w", encoding="utf-8") as fh:
         for k, v in kwargs.items():
@@ -41,6 +43,7 @@ def _write_env(path: str, **kwargs):
 # ---------------------------------------------------------------------------
 # Temp-env base — creates a temp .env file and patches config._ENV_PATH
 # ---------------------------------------------------------------------------
+
 
 class _TempEnv(unittest.TestCase):
     # Settings to clear from os.environ during the test (restored in tearDown)
@@ -89,9 +92,9 @@ class _TempEnv(unittest.TestCase):
 # 1. Config.reload() picks up .env changes
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestConfigReload(_TempEnv):
-
     def test_initial_bool_field_true(self):
         cfg = self._make_config(DRY_RUN="True")
         self.assertTrue(cfg.DRY_RUN)
@@ -139,9 +142,9 @@ class TestConfigReload(_TempEnv):
 # 2. Config.update() — write to .env + reload
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestConfigUpdate(_TempEnv):
-
     def test_update_blocked_on_newline_injection(self):
         cfg = self._make_config(CAT_TICKER_ID="ORIGINAL")
         result = cfg.update("CAT_TICKER_ID", "abc\ndef")
@@ -167,9 +170,9 @@ class TestConfigUpdate(_TempEnv):
 # 3. Thread safety — concurrent reloads don't corrupt state
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestConfigReloadThreadSafety(_TempEnv):
-
     def test_concurrent_reloads_do_not_raise(self):
         cfg = self._make_config(DRY_RUN="False")
         errors = []
@@ -206,9 +209,9 @@ class TestConfigReloadThreadSafety(_TempEnv):
 # 4. Reload strips surrounding quotes
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestConfigReloadQuoteStripping(_TempEnv):
-
     def test_single_quoted_string_stripped(self):
         cfg = self._make_config(CAT_TICKER_ID="'QUOTED'")
         self.assertEqual(cfg.CAT_TICKER_ID, "QUOTED")

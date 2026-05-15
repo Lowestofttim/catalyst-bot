@@ -31,6 +31,7 @@ from typing import Optional, List, Dict
 # Coin ID normalization — Sage returns without 0x, DB stores with 0x
 # ---------------------------------------------------------------------------
 
+
 def norm_coin_id(cid: str) -> str:
     """Normalize a coin ID to consistent format: lowercase with 0x prefix.
 
@@ -53,11 +54,15 @@ def norm_coin_id(cid: str) -> str:
 # ---------------------------------------------------------------------------
 try:
     from user_paths import database_file as _db_file
+
     DB_PATH = _db_file()
 except Exception as _e:
     # Fallback for unusual dev setups.  In a packaged build this should
     # never execute because user_paths.py is bundled alongside database.py.
-    print(f"[database] user_paths unavailable ({_e}); falling back to install dir", flush=True)
+    print(
+        f"[database] user_paths unavailable ({_e}); falling back to install dir",
+        flush=True,
+    )
     DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.db")
 
 
@@ -97,12 +102,13 @@ def get_connection() -> sqlite3.Connection:
             # Restrict database file to owner-only access
             try:
                 import stat
+
                 os.chmod(DB_PATH, stat.S_IRUSR | stat.S_IWUSR)  # 0o600
             except OSError:
                 pass  # Windows may not support POSIX permissions fully
         _local.conn.row_factory = sqlite3.Row  # Return rows as dict-like objects
         _local.conn.execute("PRAGMA journal_mode=WAL")  # Safe concurrent reads
-        _local.conn.execute("PRAGMA foreign_keys=ON")    # Enforce relationships
+        _local.conn.execute("PRAGMA foreign_keys=ON")  # Enforce relationships
         _local.conn.execute("PRAGMA busy_timeout=5000")  # Wait up to 5s if locked
         # synchronous=NORMAL is the SQLite-recommended setting for WAL mode:
         # crash-safe (durable on commit at the next checkpoint) but ~2x faster
@@ -117,6 +123,7 @@ def get_connection() -> sqlite3.Connection:
         # Super log: trace all SQL on this connection
         try:
             from super_log import trace_connection
+
             trace_connection(_local.conn, threading.current_thread().name)
         except ImportError:
             pass
@@ -163,9 +170,7 @@ def checkpoint_wal(mode: str = "TRUNCATE") -> Dict[str, int]:
         conn = sqlite3.connect(DB_PATH, timeout=10)
         try:
             conn.execute("PRAGMA busy_timeout=5000")
-            row = conn.execute(
-                f"PRAGMA wal_checkpoint({mode_upper})"
-            ).fetchone()
+            row = conn.execute(f"PRAGMA wal_checkpoint({mode_upper})").fetchone()
         finally:
             conn.close()
     except Exception:
@@ -204,7 +209,7 @@ def check_db_integrity() -> Dict[str, object]:
         return {"ok": False, "result": f"check_failed: {e}", "errors": [str(e)]}
 
     messages = [str(r[0]) for r in rows if r and r[0] is not None]
-    healthy = (len(messages) == 1 and messages[0].strip().lower() == "ok")
+    healthy = len(messages) == 1 and messages[0].strip().lower() == "ok"
     return {
         "ok": healthy,
         "result": "ok" if healthy else "; ".join(messages),
@@ -260,12 +265,17 @@ def attempt_db_recovery() -> Dict[str, object]:
             side = db.with_suffix(db.suffix + suffix)
             if side.exists():
                 try:
-                    _sh.copy2(side, corrupt_backup.with_suffix(corrupt_backup.suffix + suffix))
+                    _sh.copy2(
+                        side, corrupt_backup.with_suffix(corrupt_backup.suffix + suffix)
+                    )
                 except Exception:
                     pass
     except Exception as e:
-        return {"action": "failed", "result": str(check.get("result")),
-                "error": f"backup_failed: {e}"}
+        return {
+            "action": "failed",
+            "result": str(check.get("result")),
+            "error": f"backup_failed: {e}",
+        }
 
     # Step 2: dump readable rows into a fresh DB. Try iterdump() first —
     # it preserves data when corruption is mild. If iterdump itself
@@ -314,8 +324,11 @@ def attempt_db_recovery() -> Dict[str, object]:
                     except Exception:
                         pass
         except Exception as e:
-            return {"action": "failed", "result": str(check.get("result")),
-                    "error": f"fresh_start_unlink_failed: {e}"}
+            return {
+                "action": "failed",
+                "result": str(check.get("result")),
+                "error": f"fresh_start_unlink_failed: {e}",
+            }
         return {
             "action": "recovered",
             "result": str(check.get("result")),
@@ -336,16 +349,22 @@ def attempt_db_recovery() -> Dict[str, object]:
             recovered.unlink()
         except Exception:
             pass
-        return {"action": "failed", "result": str(check.get("result")),
-                "error": f"verify_failed: {e}"}
+        return {
+            "action": "failed",
+            "result": str(check.get("result")),
+            "error": f"verify_failed: {e}",
+        }
     msgs = [str(r[0]) for r in rows if r and r[0] is not None]
     if not (len(msgs) == 1 and msgs[0].strip().lower() == "ok"):
         try:
             recovered.unlink()
         except Exception:
             pass
-        return {"action": "failed", "result": str(check.get("result")),
-                "error": f"recovered_db_still_fails: {'; '.join(msgs[:3])}"}
+        return {
+            "action": "failed",
+            "result": str(check.get("result")),
+            "error": f"recovered_db_still_fails: {'; '.join(msgs[:3])}",
+        }
 
     # Step 4: atomically swap. Remove the WAL/SHM that belong to the old
     # main DB so the recovered file owns its own WAL on first open.
@@ -360,8 +379,11 @@ def attempt_db_recovery() -> Dict[str, object]:
                     pass
         recovered.rename(db)
     except Exception as e:
-        return {"action": "failed", "result": str(check.get("result")),
-                "error": f"swap_failed: {e}"}
+        return {
+            "action": "failed",
+            "result": str(check.get("result")),
+            "error": f"swap_failed: {e}",
+        }
 
     return {
         "action": "recovered",
@@ -579,7 +601,9 @@ def init_database():
         # Column doesn't exist — add it
         conn.execute("ALTER TABLE offers ADD COLUMN coin_id TEXT")
         conn.commit()
-        log_event("info", "db_migration", "Migrated offers table: added 'coin_id' column")
+        log_event(
+            "info", "db_migration", "Migrated offers table: added 'coin_id' column"
+        )
 
     # Migration: ensure coins table exists (for databases created before coin tracking)
     try:
@@ -604,7 +628,11 @@ def init_database():
             CREATE INDEX IF NOT EXISTS idx_coins_trade ON coins(trade_id);
         """)
         conn.commit()
-        log_event("info", "db_migration", "Created coins table for comprehensive coin tracking")
+        log_event(
+            "info",
+            "db_migration",
+            "Created coins table for comprehensive coin tracking",
+        )
 
     # Migration: add designation and assigned_tier columns to coins table
     # These replace amount-based classification with explicit role tracking
@@ -652,21 +680,32 @@ def init_database():
                 ) WHERE tier = 'unknown' OR tier IS NULL
             """)
             conn.commit()
-            log_event("info", "db_migration",
-                      "Migrated fills table: added 'tier' column and backfilled from offers")
+            log_event(
+                "info",
+                "db_migration",
+                "Migrated fills table: added 'tier' column and backfilled from offers",
+            )
         except Exception as backfill_e:
-            log_event("warning", "db_migration",
-                      "Added 'tier' column to fills but backfill failed: %s" % backfill_e)
+            log_event(
+                "warning",
+                "db_migration",
+                "Added 'tier' column to fills but backfill failed: %s" % backfill_e,
+            )
 
     # Migration: mark pre-verification-era fills as legacy so GUI/PnL can
     # exclude them by default. New fills are inserted as verification_status='verified'.
     try:
         conn.execute("SELECT verification_status FROM fills LIMIT 1")
     except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE fills ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'legacy'")
+        conn.execute(
+            "ALTER TABLE fills ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'legacy'"
+        )
         conn.commit()
-        log_event("info", "db_migration",
-                  "Added 'verification_status' column to fills table (existing rows marked legacy)")
+        log_event(
+            "info",
+            "db_migration",
+            "Added 'verification_status' column to fills table (existing rows marked legacy)",
+        )
 
     # Migration: clear bad round-trip matches where sizes don't match.
     # FIFO matching was pairing 0.2 XCH sniper buys with 0.9+ XCH tiered sells.
@@ -682,17 +721,24 @@ def init_database():
         """).fetchall()
         if bad_matches:
             # Clear the bad matches so they can be re-matched correctly
-            rt_ids = set(r['round_trip_id'] for r in bad_matches)
+            rt_ids = set(r["round_trip_id"] for r in bad_matches)
             for rt_id in rt_ids:
                 conn.execute(
                     "UPDATE fills SET round_trip_id = NULL, pnl_xch = NULL WHERE round_trip_id = ?",
-                    (rt_id,))
+                    (rt_id,),
+                )
             conn.commit()
-            log_event("info", "db_migration",
-                      "Cleared %d bad round-trip matches (size mismatch)" % len(rt_ids))
+            log_event(
+                "info",
+                "db_migration",
+                "Cleared %d bad round-trip matches (size mismatch)" % len(rt_ids),
+            )
     except Exception as fix_e:
-        log_event("warning", "db_migration",
-                  "Failed to check/fix bad round-trip matches: %s" % fix_e)
+        log_event(
+            "warning",
+            "db_migration",
+            "Failed to check/fix bad round-trip matches: %s" % fix_e,
+        )
 
     # Migration: add offer_bech32 column to offers table.
     # Stores the bech32 offer string so we can repost to Dexie on startup
@@ -702,8 +748,11 @@ def init_database():
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE offers ADD COLUMN offer_bech32 TEXT")
         conn.commit()
-        log_event("info", "db_migration",
-                  "Migrated offers table: added 'offer_bech32' column for fast Dexie repost")
+        log_event(
+            "info",
+            "db_migration",
+            "Migrated offers table: added 'offer_bech32' column for fast Dexie repost",
+        )
 
     conn.commit()
 
@@ -713,12 +762,19 @@ def init_database():
     try:
         conn.execute("SELECT lifecycle_state FROM offers LIMIT 1")
     except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE offers ADD COLUMN lifecycle_state TEXT DEFAULT 'open'")
+        conn.execute(
+            "ALTER TABLE offers ADD COLUMN lifecycle_state TEXT DEFAULT 'open'"
+        )
         # Backfill: set lifecycle_state from status for existing offers
-        conn.execute("UPDATE offers SET lifecycle_state = status WHERE lifecycle_state IS NULL OR lifecycle_state = 'open'")
+        conn.execute(
+            "UPDATE offers SET lifecycle_state = status WHERE lifecycle_state IS NULL OR lifecycle_state = 'open'"
+        )
         conn.commit()
-        log_event("info", "db_migration",
-                  "Migrated offers table: added 'lifecycle_state' column for extended offer lifecycle")
+        log_event(
+            "info",
+            "db_migration",
+            "Migrated offers table: added 'lifecycle_state' column for extended offer lifecycle",
+        )
 
     # Migration: add cancel_last_attempt_at column to offers table.
     # Used by bot_health.check_pending_cancels() to throttle retries when
@@ -730,27 +786,39 @@ def init_database():
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE offers ADD COLUMN cancel_last_attempt_at TEXT")
         conn.commit()
-        log_event("info", "db_migration",
-                  "Migrated offers table: added 'cancel_last_attempt_at' column for cancel-retry throttling")
+        log_event(
+            "info",
+            "db_migration",
+            "Migrated offers table: added 'cancel_last_attempt_at' column for cancel-retry throttling",
+        )
 
     # Migration: add event_category column to events table.
     # Canonical event categories for filtering and routing.
     try:
         conn.execute("SELECT event_category FROM events LIMIT 1")
     except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE events ADD COLUMN event_category TEXT DEFAULT 'system'")
+        conn.execute(
+            "ALTER TABLE events ADD COLUMN event_category TEXT DEFAULT 'system'"
+        )
         conn.commit()
-        log_event("info", "db_migration",
-                  "Migrated events table: added 'event_category' column for event taxonomy")
+        log_event(
+            "info",
+            "db_migration",
+            "Migrated events table: added 'event_category' column for event taxonomy",
+        )
 
     # Migration: create reservation_leases table for capacity reservations.
     try:
         from reservation_manager import init_reservation_table
+
         init_reservation_table()
     except Exception as res_e:
         try:
-            log_event("warning", "db_migration",
-                      "Failed to create reservation_leases table: %s" % res_e)
+            log_event(
+                "warning",
+                "db_migration",
+                "Failed to create reservation_leases table: %s" % res_e,
+            )
         except Exception:
             pass
 
@@ -762,17 +830,20 @@ def init_database():
     # sweep_group_id: groups fills from the same atomic sweep transaction
     for _col, _defn in [
         ("fill_classification", "TEXT DEFAULT 'unknown'"),
-        ("taker_puzzle_hash",   "TEXT"),
-        ("spent_block_index",   "INTEGER"),
-        ("sweep_group_id",      "TEXT"),
+        ("taker_puzzle_hash", "TEXT"),
+        ("spent_block_index", "INTEGER"),
+        ("sweep_group_id", "TEXT"),
     ]:
         try:
             conn.execute(f"SELECT {_col} FROM fills LIMIT 1")
         except sqlite3.OperationalError:
             conn.execute(f"ALTER TABLE fills ADD COLUMN {_col} {_defn}")
             conn.commit()
-            log_event("info", "db_migration",
-                      f"Migrated fills table: added '{_col}' column for fill classification")
+            log_event(
+                "info",
+                "db_migration",
+                f"Migrated fills table: added '{_col}' column for fill classification",
+            )
 
     # Migration: add fee_mojos_xch column to fills table.
     # Records the transaction fee paid when the offer was created.
@@ -784,8 +855,11 @@ def init_database():
             "ALTER TABLE fills ADD COLUMN fee_mojos_xch INTEGER NOT NULL DEFAULT 0"
         )
         conn.commit()
-        log_event("info", "db_migration",
-                  "Migrated fills table: added 'fee_mojos_xch' column for fee-aware PnL")
+        log_event(
+            "info",
+            "db_migration",
+            "Migrated fills table: added 'fee_mojos_xch' column for fee-aware PnL",
+        )
 
     # F43 (2026-04-08): persist post-fill enrichment data to the fills
     # table. Previously the F41/F42 enrichment was logged-only — now it
@@ -793,8 +867,8 @@ def init_database():
     # All four columns are nullable so historical fills are unaffected.
     _enrichment_cols = [
         ("spent_block_height", "INTEGER"),
-        ("header_hash",        "TEXT"),
-        ("receive_coin_id",    "TEXT"),
+        ("header_hash", "TEXT"),
+        ("receive_coin_id", "TEXT"),
         ("receive_amount_mojos", "INTEGER"),
     ]
     for _col, _defn in _enrichment_cols:
@@ -804,12 +878,16 @@ def init_database():
             try:
                 conn.execute(f"ALTER TABLE fills ADD COLUMN {_col} {_defn}")
                 conn.commit()
-                log_event("info", "db_migration",
-                          f"Migrated fills table: added '{_col}' column for "
-                          f"post-fill block enrichment (F43)")
+                log_event(
+                    "info",
+                    "db_migration",
+                    f"Migrated fills table: added '{_col}' column for "
+                    f"post-fill block enrichment (F43)",
+                )
             except Exception as _mig_err:
-                log_event("warning", "db_migration",
-                          f"Could not add fills.{_col}: {_mig_err}")
+                log_event(
+                    "warning", "db_migration", f"Could not add fills.{_col}: {_mig_err}"
+                )
 
     # Migration: add fee_mojos_xch column to offers table.
     # Persists the exact fee attached to the offer at creation time.
@@ -822,8 +900,11 @@ def init_database():
             "ALTER TABLE offers ADD COLUMN fee_mojos_xch INTEGER NOT NULL DEFAULT 0"
         )
         conn.commit()
-        log_event("info", "db_migration",
-                  "Migrated offers table: added 'fee_mojos_xch' column for per-offer fee tracking")
+        log_event(
+            "info",
+            "db_migration",
+            "Migrated offers table: added 'fee_mojos_xch' column for per-offer fee tracking",
+        )
 
     # F5 fix (2026-04-08): add UNIQUE index on fills.trade_id to prevent
     # double-counting fills if detect_fills() ever fires twice for the same
@@ -848,24 +929,32 @@ def init_database():
                 dupe_summary = ", ".join(
                     f"{row['trade_id'][:16]}...×{row['n']}" for row in dupes
                 )
-                log_event("warning", "db_migration",
-                          f"Cannot add UNIQUE index uniq_fills_trade_id — "
-                          f"duplicate trade_ids already exist in fills "
-                          f"({len(dupes)}+ groups: {dupe_summary}). "
-                          f"Manual cleanup required. New fills are NOT "
-                          f"protected from double-counting until resolved.")
+                log_event(
+                    "warning",
+                    "db_migration",
+                    f"Cannot add UNIQUE index uniq_fills_trade_id — "
+                    f"duplicate trade_ids already exist in fills "
+                    f"({len(dupes)}+ groups: {dupe_summary}). "
+                    f"Manual cleanup required. New fills are NOT "
+                    f"protected from double-counting until resolved.",
+                )
             else:
                 conn.execute(
-                    "CREATE UNIQUE INDEX uniq_fills_trade_id "
-                    "ON fills(trade_id)"
+                    "CREATE UNIQUE INDEX uniq_fills_trade_id ON fills(trade_id)"
                 )
                 conn.commit()
-                log_event("info", "db_migration",
-                          "Added UNIQUE index uniq_fills_trade_id on fills "
-                          "to prevent double-counted fills")
+                log_event(
+                    "info",
+                    "db_migration",
+                    "Added UNIQUE index uniq_fills_trade_id on fills "
+                    "to prevent double-counted fills",
+                )
     except Exception as uniq_err:
-        log_event("warning", "db_migration",
-                  f"Failed to add UNIQUE index on fills.trade_id: {uniq_err}")
+        log_event(
+            "warning",
+            "db_migration",
+            f"Failed to add UNIQUE index on fills.trade_id: {uniq_err}",
+        )
 
     # F26 (2026-04-08): config_history audit table — add source/note columns
     # if upgrading from a pre-F26 schema. Both default to NULL.
@@ -875,8 +964,9 @@ def init_database():
         try:
             conn.execute("ALTER TABLE config_history ADD COLUMN source TEXT")
             conn.commit()
-            log_event("info", "db_migration",
-                      "Migrated config_history: added 'source' column")
+            log_event(
+                "info", "db_migration", "Migrated config_history: added 'source' column"
+            )
         except Exception:
             pass
     try:
@@ -885,8 +975,9 @@ def init_database():
         try:
             conn.execute("ALTER TABLE config_history ADD COLUMN note TEXT")
             conn.commit()
-            log_event("info", "db_migration",
-                      "Migrated config_history: added 'note' column")
+            log_event(
+                "info", "db_migration", "Migrated config_history: added 'note' column"
+            )
         except Exception:
             pass
 
@@ -904,6 +995,7 @@ def init_database():
         ).fetchone()
         if row and row[0] and "'boost'" not in row[0] and '"boost"' not in row[0]:
             import re as _re
+
             existing_sql = row[0]
             # Replace the tier CHECK constraint while leaving every other
             # column definition intact. The regex is anchored on `tier IN`
@@ -911,7 +1003,9 @@ def init_database():
             new_sql, n_subs = _re.subn(
                 r"CHECK\s*\(\s*tier\s+IN\s*\([^\)]+\)\s*\)",
                 "CHECK(tier IN ('inner', 'mid', 'outer', 'extreme', 'sniper', 'boost'))",
-                existing_sql, count=1, flags=_re.IGNORECASE,
+                existing_sql,
+                count=1,
+                flags=_re.IGNORECASE,
             )
             if n_subs == 0:
                 # Old schema with no tier CHECK at all; nothing to fix.
@@ -922,11 +1016,15 @@ def init_database():
                 new_sql = _re.sub(
                     r'CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["`\[]?offers["`\]]?',
                     "CREATE TABLE offers_new",
-                    new_sql, count=1, flags=_re.IGNORECASE,
+                    new_sql,
+                    count=1,
+                    flags=_re.IGNORECASE,
                 )
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute(new_sql)
-                cols = [r[1] for r in conn.execute("PRAGMA table_info(offers)").fetchall()]
+                cols = [
+                    r[1] for r in conn.execute("PRAGMA table_info(offers)").fetchall()
+                ]
                 col_list = ", ".join(f'"{c}"' for c in cols)
                 conn.execute(
                     f"INSERT INTO offers_new ({col_list}) SELECT {col_list} FROM offers"
@@ -934,19 +1032,31 @@ def init_database():
                 conn.execute("DROP TABLE offers")
                 conn.execute("ALTER TABLE offers_new RENAME TO offers")
                 # Indexes were dropped with the old table.
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_offers_side ON offers(side)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_offers_cat ON offers(cat_asset_id)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_offers_status ON offers(status)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_offers_side ON offers(side)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_offers_cat ON offers(cat_asset_id)"
+                )
                 conn.commit()
-                log_event("info", "db_migration",
-                          "Migrated offers table: added 'boost' tier (preserved all columns)")
+                log_event(
+                    "info",
+                    "db_migration",
+                    "Migrated offers table: added 'boost' tier (preserved all columns)",
+                )
     except Exception as boost_mig_err:
         try:
             conn.rollback()
         except Exception:
             pass
-        log_event("error", "db_migration_failed",
-                  f"Boost-tier migration failed: {boost_mig_err}")
+        log_event(
+            "error",
+            "db_migration_failed",
+            f"Boost-tier migration failed: {boost_mig_err}",
+        )
         raise
 
     # Repair pass: reconcile lifecycle_state with terminal status values.
@@ -970,12 +1080,18 @@ def init_database():
         repaired = cur.rowcount or 0
         if repaired > 0:
             conn.commit()
-            log_event("info", "db_lifecycle_repair",
-                      f"Reconciled {repaired} offer rows where status was "
-                      f"terminal but lifecycle_state was still open/refresh_due")
+            log_event(
+                "info",
+                "db_lifecycle_repair",
+                f"Reconciled {repaired} offer rows where status was "
+                f"terminal but lifecycle_state was still open/refresh_due",
+            )
     except Exception as _repair_err:
-        log_event("warning", "db_lifecycle_repair_failed",
-                  f"Lifecycle_state repair pass failed (non-fatal): {_repair_err}")
+        log_event(
+            "warning",
+            "db_lifecycle_repair_failed",
+            f"Lifecycle_state repair pass failed (non-fatal): {_repair_err}",
+        )
 
     conn.commit()
     log_event("info", "database_init", "Database initialized successfully")
@@ -991,7 +1107,8 @@ def init_database():
         result = check_db_integrity()
         if not result.get("ok"):
             log_event(
-                "warning", "database_integrity_failed",
+                "warning",
+                "database_integrity_failed",
                 f"PRAGMA integrity_check failed: "
                 f"{result.get('result', 'unknown')}. Database is corrupted — "
                 f"recover with `sqlite3 bot.db .recover` or restore from "
@@ -1000,12 +1117,14 @@ def init_database():
             )
         else:
             log_event(
-                "info", "database_integrity_ok",
+                "info",
+                "database_integrity_ok",
                 "Database integrity check passed at startup",
             )
     except Exception as _integrity_err:
         log_event(
-            "warning", "database_integrity_check_failed",
+            "warning",
+            "database_integrity_check_failed",
             f"Database integrity check raised (non-fatal): {_integrity_err}",
         )
 
@@ -1016,7 +1135,8 @@ def init_database():
         ckpt = checkpoint_wal("TRUNCATE")
         if ckpt:
             log_event(
-                "info", "database_wal_startup_checkpoint",
+                "info",
+                "database_wal_startup_checkpoint",
                 f"Startup WAL checkpoint: mode={ckpt.get('mode')}, "
                 f"busy={ckpt.get('busy')}, "
                 f"log_pages={ckpt.get('log_pages')}, "
@@ -1035,13 +1155,14 @@ def init_database():
     try:
         import glob as _glob
         import time as _time
+
         db_dir = os.path.dirname(os.path.abspath(DB_PATH)) or "."
         backups = _glob.glob(os.path.join(db_dir, "bot.db.corrupt_*"))
         # Filter to canonical files (skip -wal / -shm sidecars).
         primaries = [
-            p for p in backups
-            if not p.endswith(("-wal", "-shm"))
-            and "_" in os.path.basename(p)
+            p
+            for p in backups
+            if not p.endswith(("-wal", "-shm")) and "_" in os.path.basename(p)
         ]
         now = _time.time()
         recent = []
@@ -1054,7 +1175,8 @@ def init_database():
                 continue
         if recent:
             log_event(
-                "warning", "database_recent_corruption_detected",
+                "warning",
+                "database_recent_corruption_detected",
                 f"Found {len(recent)} corrupt DB backup(s) in the last 24h "
                 f"({len(primaries)} total). Likely cause: two desktop_app "
                 f"processes wrote to the same bot.db (singleton lock race "
@@ -1108,6 +1230,7 @@ def _get_reconcile_tier_sizes_mojos(wallet_type: str) -> Dict[str, int]:
     """
     try:
         from config import cfg as _cfg, get_buy_tier_size_xch, get_sell_tier_size_xch
+
         if not bool(getattr(_cfg, "TIER_ENABLED", False)):
             return {}
 
@@ -1135,13 +1258,19 @@ def _get_reconcile_tier_sizes_mojos(wallet_type: str) -> Dict[str, int]:
             tier_sizes_xch = {}
             for coin_tier in ("inner", "mid", "outer", "extreme"):
                 position_tier = buy_reversed_coin_size_to_position[coin_tier]
-                tier_sizes_xch[coin_tier] = Decimal(str(get_buy_tier_size_xch(position_tier) or 0))
+                tier_sizes_xch[coin_tier] = Decimal(
+                    str(get_buy_tier_size_xch(position_tier) or 0)
+                )
         else:
-            _get = get_sell_tier_size_xch if wallet_type == "cat" else get_buy_tier_size_xch
+            _get = (
+                get_sell_tier_size_xch
+                if wallet_type == "cat"
+                else get_buy_tier_size_xch
+            )
             tier_sizes_xch = {
-                "inner":   Decimal(str(_get("inner") or 0)),
-                "mid":     Decimal(str(_get("mid") or 0)),
-                "outer":   Decimal(str(_get("outer") or 0)),
+                "inner": Decimal(str(_get("inner") or 0)),
+                "mid": Decimal(str(_get("mid") or 0)),
+                "outer": Decimal(str(_get("outer") or 0)),
                 "extreme": Decimal(str(_get("extreme") or 0)),
             }
 
@@ -1166,6 +1295,7 @@ def _get_reconcile_tier_sizes_mojos(wallet_type: str) -> Dict[str, int]:
             }
             try:
                 from tx_fees import fee_pool_enabled, get_fee_coin_size_mojos
+
                 if fee_pool_enabled():
                     fee_mojos = int(get_fee_coin_size_mojos() or 0)
                     if fee_mojos > 0:
@@ -1203,7 +1333,9 @@ def _get_reconcile_tier_sizes_mojos(wallet_type: str) -> Dict[str, int]:
         return {}
 
 
-def _infer_reconcile_designation_by_size(amt: int, tier_sizes_mojos: Dict[str, int]) -> tuple[str, str]:
+def _infer_reconcile_designation_by_size(
+    amt: int, tier_sizes_mojos: Dict[str, int]
+) -> tuple[str, str]:
     """Infer designation for a newly-seen coin during reconciliation.
 
     Routes through the single-source-of-truth classifier in
@@ -1214,6 +1346,7 @@ def _infer_reconcile_designation_by_size(amt: int, tier_sizes_mojos: Dict[str, i
     would have rejected.
     """
     from coin_classifier import infer_designation_by_size as _cc_infer
+
     return _cc_infer(amt, tier_sizes_mojos)
 
 
@@ -1221,10 +1354,19 @@ def _infer_reconcile_designation_by_size(amt: int, tier_sizes_mojos: Dict[str, i
 # Offers — create, update status, query
 # ---------------------------------------------------------------------------
 
-def add_offer(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
-              size_cat: Decimal, cat_asset_id: str, tier: str = "mid",
-              expires_at: str = None, coin_id: str = None,
-              fee_mojos_xch: int = 0) -> bool:
+
+def add_offer(
+    trade_id: str,
+    side: str,
+    price_xch: Decimal,
+    size_xch: Decimal,
+    size_cat: Decimal,
+    cat_asset_id: str,
+    tier: str = "mid",
+    expires_at: str = None,
+    coin_id: str = None,
+    fee_mojos_xch: int = 0,
+) -> bool:
     """Record a new offer in the database.
 
     Args:
@@ -1248,8 +1390,19 @@ def add_offer(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
             """INSERT INTO offers (trade_id, side, price_xch, size_xch, size_cat,
                tier, status, cat_asset_id, created_at, expires_at, coin_id, fee_mojos_xch)
                VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)""",
-            (trade_id, side, str(price_xch), str(size_xch), str(size_cat),
-             tier, cat_asset_id, _now(), expires_at, coin_id, int(fee_mojos_xch))
+            (
+                trade_id,
+                side,
+                str(price_xch),
+                str(size_xch),
+                str(size_cat),
+                tier,
+                cat_asset_id,
+                _now(),
+                expires_at,
+                coin_id,
+                int(fee_mojos_xch),
+            ),
         )
         conn.commit()
         return True
@@ -1257,12 +1410,26 @@ def add_offer(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
         err = str(e)
         if "UNIQUE constraint failed" in err:
             # trade_id already exists — this is fine on restart/resume
-            print(f"  ⚠️ [DB] add_offer SKIPPED — trade_id {trade_id[:16]}... already exists", flush=True)
-            log_event("warning", "offer_duplicate", f"Offer {trade_id[:16]}... already in DB — skipped")
+            print(
+                f"  ⚠️ [DB] add_offer SKIPPED — trade_id {trade_id[:16]}... already exists",
+                flush=True,
+            )
+            log_event(
+                "warning",
+                "offer_duplicate",
+                f"Offer {trade_id[:16]}... already in DB — skipped",
+            )
             return False
         # Any other constraint failure (e.g. CHECK on tier/side/status) is a real error
-        print(f"  ❌ [DB] add_offer CONSTRAINT ERROR for {trade_id[:16]}...: {err}", flush=True)
-        log_event("error", "db_constraint_error", f"Failed to add offer {trade_id[:16]}...: {err}")
+        print(
+            f"  ❌ [DB] add_offer CONSTRAINT ERROR for {trade_id[:16]}...: {err}",
+            flush=True,
+        )
+        log_event(
+            "error",
+            "db_constraint_error",
+            f"Failed to add offer {trade_id[:16]}...: {err}",
+        )
         return False
     except Exception as e:
         print(f"  ❌ [DB] add_offer FAILED for {trade_id[:16]}...: {e}", flush=True)
@@ -1303,6 +1470,7 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
     # Super log trace
     try:
         from super_log import trace_connection
+
         trace_connection(conn, "recover-offers")
     except ImportError:
         pass
@@ -1312,24 +1480,28 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
     try:
         rows = conn.execute("SELECT trade_id FROM offers").fetchall()
         for r in rows:
-            db_trade_ids.add(r['trade_id'])
+            db_trade_ids.add(r["trade_id"])
     except sqlite3.OperationalError as e:
         print(f"  ⚠️ [DB] Failed to read offers for recovery: {e}", flush=True)
 
     # Tier size thresholds for assignment (XCH amounts)
     # Match offer size to nearest tier
     tier_sizes = [
-        (cfg.INNER_SIZE_XCH, 'inner'),
-        (cfg.MID_SIZE_XCH, 'mid'),
-        (cfg.OUTER_SIZE_XCH, 'outer'),
-        (cfg.EXTREME_SIZE_XCH, 'extreme'),
+        (cfg.INNER_SIZE_XCH, "inner"),
+        (cfg.MID_SIZE_XCH, "mid"),
+        (cfg.OUTER_SIZE_XCH, "outer"),
+        (cfg.EXTREME_SIZE_XCH, "extreme"),
     ]
     sniper_size = getattr(cfg, "SNIPER_SIZE_XCH", None)
-    if getattr(cfg, "SNIPER_ENABLED", False) and sniper_size and Decimal(str(sniper_size)) > 0:
-        tier_sizes.append((Decimal(str(sniper_size)), 'sniper'))
+    if (
+        getattr(cfg, "SNIPER_ENABLED", False)
+        and sniper_size
+        and Decimal(str(sniper_size)) > 0
+    ):
+        tier_sizes.append((Decimal(str(sniper_size)), "sniper"))
 
     for offer in wallet_offers:
-        tid = offer.get('trade_id', '')
+        tid = offer.get("trade_id", "")
         if not tid:
             continue
 
@@ -1338,39 +1510,39 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
             continue
 
         try:
-            summary = offer.get('summary', {})
-            offered = summary.get('offered', {})
-            requested = summary.get('requested', {})
+            summary = offer.get("summary", {})
+            offered = summary.get("offered", {})
+            requested = summary.get("requested", {})
 
             # Determine side
-            is_buy = 'xch' in offered and cat_asset_id in requested
-            is_sell = cat_asset_id in offered and 'xch' in requested
+            is_buy = "xch" in offered and cat_asset_id in requested
+            is_sell = cat_asset_id in offered and "xch" in requested
             if not is_buy and not is_sell:
                 stats["skipped"] += 1
                 continue
 
-            side = 'buy' if is_buy else 'sell'
+            side = "buy" if is_buy else "sell"
 
             # Extract amounts
             if is_buy:
-                xch_mojos = int(offered.get('xch', 0))
+                xch_mojos = int(offered.get("xch", 0))
                 cat_mojos = int(requested.get(cat_asset_id, 0))
             else:
                 cat_mojos = int(offered.get(cat_asset_id, 0))
-                xch_mojos = int(requested.get('xch', 0))
+                xch_mojos = int(requested.get("xch", 0))
 
-            size_xch = Decimal(str(xch_mojos)) / Decimal('1000000000000')
-            cat_decimals = getattr(cfg, 'CAT_DECIMALS', 3)
-            size_cat = Decimal(str(cat_mojos)) / Decimal(str(10 ** cat_decimals))
+            size_xch = Decimal(str(xch_mojos)) / Decimal("1000000000000")
+            cat_decimals = getattr(cfg, "CAT_DECIMALS", 3)
+            size_cat = Decimal(str(cat_mojos)) / Decimal(str(10**cat_decimals))
 
             # Calculate price (XCH per CAT)
             if size_cat > 0:
                 price_xch = size_xch / size_cat
             else:
-                price_xch = Decimal('0')
+                price_xch = Decimal("0")
 
             # Assign tier by matching offer size to configured tier sizes
-            tier = 'mid'  # default fallback
+            tier = "mid"  # default fallback
             best_match = None
             best_diff = None
             for tier_size, tier_name in tier_sizes:
@@ -1382,14 +1554,15 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
                 tier = best_match
 
             # Get expiry if available
-            valid_times = offer.get('valid_times', {})
-            max_time = valid_times.get('max_time')
+            valid_times = offer.get("valid_times", {})
+            max_time = valid_times.get("max_time")
             expires_at = None
             if max_time and int(max_time) > 0:
                 from datetime import datetime, timezone
-                expires_at = _sqlite_ts(datetime.fromtimestamp(
-                    int(max_time), tz=timezone.utc
-                ))
+
+                expires_at = _sqlite_ts(
+                    datetime.fromtimestamp(int(max_time), tz=timezone.utc)
+                )
 
             # Insert into DB (retry on lock) — explicit transaction per offer
             # since we're using isolation_level=None (autocommit mode)
@@ -1401,8 +1574,17 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
                            (trade_id, side, price_xch, size_xch, size_cat,
                             tier, status, cat_asset_id, created_at, expires_at)
                            VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)""",
-                        (tid, side, str(price_xch), str(size_xch), str(size_cat),
-                         tier, cat_asset_id, _now(), expires_at)
+                        (
+                            tid,
+                            side,
+                            str(price_xch),
+                            str(size_xch),
+                            str(size_cat),
+                            tier,
+                            cat_asset_id,
+                            _now(),
+                            expires_at,
+                        ),
                     )
                     conn.execute("COMMIT")
                     if cur.rowcount:
@@ -1418,6 +1600,7 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
                     except Exception:
                         pass
                     import time
+
                     time.sleep(0.5)
             else:
                 stats["errors"] += 1
@@ -1433,9 +1616,12 @@ def recover_unknown_offers(wallet_offers: list, cat_asset_id: str) -> dict:
     conn.close()
 
     if stats["recovered"] > 0:
-        log_event("info", "offers_recovered",
-                  f"Recovered {stats['recovered']} unknown wallet offers into DB "
-                  f"(skipped {stats['skipped']}, errors {stats['errors']})")
+        log_event(
+            "info",
+            "offers_recovered",
+            f"Recovered {stats['recovered']} unknown wallet offers into DB "
+            f"(skipped {stats['skipped']}, errors {stats['errors']})",
+        )
 
     return stats
 
@@ -1448,8 +1634,7 @@ def update_offer_coin_id(trade_id: str, coin_id: str) -> bool:
     try:
         conn = get_connection()
         conn.execute(
-            "UPDATE offers SET coin_id=? WHERE trade_id=?",
-            (coin_id, trade_id)
+            "UPDATE offers SET coin_id=? WHERE trade_id=?", (coin_id, trade_id)
         )
         conn.commit()
         return True
@@ -1472,6 +1657,7 @@ def update_offer_status(trade_id: str, status: str) -> bool:
       - expired → coin unlocked (no on-chain tx) → free_coin()
     """
     import time as _time
+
     lifecycle_state = status
     coarse_status = "expired" if status == "not_submitted" else status
     for _attempt in range(3):
@@ -1486,8 +1672,11 @@ def update_offer_status(trade_id: str, status: str) -> bool:
             # A real fill must win over any later cancel/expiry bookkeeping.
             # This avoids sniper-cleanup or cancel-retry races downgrading a
             # verified fill into a cancelled row.
-            if (row and coarse_status in ("cancelled", "expired")
-                    and (row["status"] == "filled" or row["filled_at"])):
+            if (
+                row
+                and coarse_status in ("cancelled", "expired")
+                and (row["status"] == "filled" or row["filled_at"])
+            ):
                 return True
 
             # Derive lifecycle_state from coarse status.
@@ -1499,17 +1688,17 @@ def update_offer_status(trade_id: str, status: str) -> bool:
             if coarse_status == "filled":
                 conn.execute(
                     "UPDATE offers SET status=?, lifecycle_state=?, filled_at=?, cancelled_at=NULL WHERE trade_id=?",
-                    (coarse_status, lifecycle_state, now, trade_id)
+                    (coarse_status, lifecycle_state, now, trade_id),
                 )
             elif coarse_status in ("cancelled", "expired"):
                 conn.execute(
                     "UPDATE offers SET status=?, lifecycle_state=?, cancelled_at=?, filled_at=NULL WHERE trade_id=?",
-                    (coarse_status, lifecycle_state, now, trade_id)
+                    (coarse_status, lifecycle_state, now, trade_id),
                 )
             else:
                 conn.execute(
                     "UPDATE offers SET status=?, lifecycle_state=? WHERE trade_id=?",
-                    (coarse_status, lifecycle_state, trade_id)
+                    (coarse_status, lifecycle_state, trade_id),
                 )
 
             conn.commit()
@@ -1569,6 +1758,7 @@ def mark_cancel_attempted(trade_id: str) -> bool:
     pending offer every cycle — wait the configured backoff period).
     """
     from datetime import datetime, timezone
+
     try:
         conn = get_connection()
         conn.execute(
@@ -1582,8 +1772,11 @@ def mark_cancel_attempted(trade_id: str) -> bool:
             conn.rollback()
         except Exception:
             pass
-        log_event("warning", "mark_cancel_attempted_failed",
-                  f"Failed to stamp cancel_last_attempt_at for {trade_id[:16]}...: {e}")
+        log_event(
+            "warning",
+            "mark_cancel_attempted_failed",
+            f"Failed to stamp cancel_last_attempt_at for {trade_id[:16]}...: {e}",
+        )
         return False
 
 
@@ -1595,9 +1788,14 @@ def update_offer_lifecycle_state(trade_id: str, lifecycle_state: str) -> bool:
     """
     try:
         from offer_lifecycle import coarse_status
+
         coarse = coarse_status(lifecycle_state)
     except Exception:
-        coarse = lifecycle_state if lifecycle_state in ("open", "filled", "cancelled", "expired") else "open"
+        coarse = (
+            lifecycle_state
+            if lifecycle_state in ("open", "filled", "cancelled", "expired")
+            else "open"
+        )
 
     try:
         conn = get_connection()
@@ -1664,6 +1862,7 @@ def transition_offer(trade_id: str, signal: str):
     """
     try:
         from offer_lifecycle import OfferSignal, OfferState, apply_signal
+
         conn = get_connection()
         row = conn.execute(
             "SELECT lifecycle_state FROM offers WHERE trade_id=?",
@@ -1711,7 +1910,7 @@ def get_locked_coin_ids_for_trade(trade_id: str) -> List[str]:
         conn = get_connection()
         rows = conn.execute(
             "SELECT coin_id FROM coins WHERE trade_id=? AND status='locked' ORDER BY coin_id",
-            (trade_id,)
+            (trade_id,),
         ).fetchall()
         return [row["coin_id"] for row in rows if row["coin_id"]]
     except Exception:
@@ -1738,6 +1937,7 @@ def batch_cancel_stale_offers(stale_trade_ids: list) -> int:
 
     try:
         from super_log import slog
+
         slog("DB_WRITE", f"batch_cancel_stale_offers: {len(stale_trade_ids)} offers")
     except ImportError:
         pass
@@ -1752,6 +1952,7 @@ def batch_cancel_stale_offers(stale_trade_ids: list) -> int:
     conn.execute("PRAGMA busy_timeout=30000")  # 30s — startup can afford to wait
     try:
         from super_log import trace_connection
+
         trace_connection(conn, "batch-cancel")
     except ImportError:
         pass
@@ -1766,13 +1967,13 @@ def batch_cancel_stale_offers(stale_trade_ids: list) -> int:
         conn.execute(
             f"UPDATE offers SET status='cancelled', lifecycle_state='cancelled', cancelled_at=? "
             f"WHERE trade_id IN ({placeholders})",
-            [now] + list(stale_trade_ids)
+            [now] + list(stale_trade_ids),
         )
         # Free/spend coins that were locked by these offers
         conn.execute(
             f"UPDATE coins SET status='spent', last_seen=? "
             f"WHERE trade_id IN ({placeholders}) AND status='locked'",
-            [now] + list(stale_trade_ids)
+            [now] + list(stale_trade_ids),
         )
         conn.execute("COMMIT")
         return len(stale_trade_ids)
@@ -1781,8 +1982,7 @@ def batch_cancel_stale_offers(stale_trade_ids: list) -> int:
             conn.execute("ROLLBACK")
         except Exception:
             pass
-        log_event("error", "db_error",
-                  f"Batch cancel failed: {e}")
+        log_event("error", "db_error", f"Batch cancel failed: {e}")
         return 0
     except Exception as e:
         try:
@@ -1801,7 +2001,7 @@ def update_offer_dexie(trade_id: str, dexie_id: str) -> bool:
         conn = get_connection()
         conn.execute(
             "UPDATE offers SET dexie_id=?, dexie_posted=1 WHERE trade_id=?",
-            (dexie_id, trade_id)
+            (dexie_id, trade_id),
         )
         conn.commit()
         return True
@@ -1810,7 +2010,9 @@ def update_offer_dexie(trade_id: str, dexie_id: str) -> bool:
             conn.rollback()
         except Exception:
             pass
-        log_event("error", "db_error", f"Failed to update Dexie link for {trade_id}: {e}")
+        log_event(
+            "error", "db_error", f"Failed to update Dexie link for {trade_id}: {e}"
+        )
         return False
 
 
@@ -1824,7 +2026,7 @@ def update_offer_bech32(trade_id: str, offer_bech32: str) -> bool:
         conn = get_connection()
         conn.execute(
             "UPDATE offers SET offer_bech32=? WHERE trade_id=?",
-            (offer_bech32, trade_id)
+            (offer_bech32, trade_id),
         )
         conn.commit()
         return True
@@ -1834,6 +2036,7 @@ def update_offer_bech32(trade_id: str, offer_bech32: str) -> bool:
         except Exception:
             pass
         return False
+
 
 _NON_ACTIONABLE_OPEN_LIFECYCLE_STATES = (
     "cancel_requested",
@@ -1867,9 +2070,12 @@ def get_offers_for_repost(cat_asset_id: str = None) -> List[Dict]:
     return [dict(r) for r in rows]
 
 
-def get_open_offers(side: str = None, cat_asset_id: str = None,
-                    include_pending_cancel: bool = False,
-                    include_mempool_observed: bool = False) -> List[Dict]:
+def get_open_offers(
+    side: str = None,
+    cat_asset_id: str = None,
+    include_pending_cancel: bool = False,
+    include_mempool_observed: bool = False,
+) -> List[Dict]:
     """Get all open offers, optionally filtered by side and/or CAT pair.
 
     By default, excludes offers whose lifecycle_state is 'cancel_requested'
@@ -1899,8 +2105,7 @@ def get_open_offers(side: str = None, cat_asset_id: str = None,
     if excluded_lifecycle_states:
         placeholders = ", ".join("?" for _ in excluded_lifecycle_states)
         query += (
-            " AND (lifecycle_state IS NULL "
-            f"OR lifecycle_state NOT IN ({placeholders}))"
+            f" AND (lifecycle_state IS NULL OR lifecycle_state NOT IN ({placeholders}))"
         )
         params.extend(excluded_lifecycle_states)
 
@@ -1985,13 +2190,13 @@ def get_offers_by_trade_ids(trade_ids: list) -> list:
         conn = get_connection()
         placeholders = ",".join("?" * len(trade_ids))
         rows = conn.execute(
-            f"SELECT * FROM offers WHERE trade_id IN ({placeholders})",
-            trade_ids
+            f"SELECT * FROM offers WHERE trade_id IN ({placeholders})", trade_ids
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
-        log_event("warning", "get_offers_batch_failed",
-                  f"Batch offer fetch failed: {e}")
+        log_event(
+            "warning", "get_offers_batch_failed", f"Batch offer fetch failed: {e}"
+        )
         return []
 
 
@@ -2016,9 +2221,16 @@ def get_trade_dexie_map(cat_asset_id: str = None) -> Dict[str, str]:
 # Coins — comprehensive coin tracking (free, locked, spent, gone)
 # ---------------------------------------------------------------------------
 
-def upsert_coin(coin_id: str, wallet_type: str, amount_mojos: int,
-                tier: str = None, designation: str = None,
-                assigned_tier: str = None, **kwargs) -> bool:
+
+def upsert_coin(
+    coin_id: str,
+    wallet_type: str,
+    amount_mojos: int,
+    tier: str = None,
+    designation: str = None,
+    assigned_tier: str = None,
+    **kwargs,
+) -> bool:
     """Insert a new coin or update last_seen if it already exists.
 
     Called from update_coin_counts() after each snapshot. If the coin
@@ -2041,8 +2253,8 @@ def upsert_coin(coin_id: str, wallet_type: str, amount_mojos: int,
         conn = get_connection()
         now = _now()
         # Default designation for new coins
-        desig = designation or 'unknown'
-        atier = assigned_tier or 'none'
+        desig = designation or "unknown"
+        atier = assigned_tier or "none"
         # Normalize coin_id before any DB operation — ensures consistency
         # with reconcile_coins_with_wallet() which also normalizes.
         coin_id = norm_coin_id(coin_id)
@@ -2050,7 +2262,7 @@ def upsert_coin(coin_id: str, wallet_type: str, amount_mojos: int,
         # Check if coin already exists and its current status (for logging)
         existing = conn.execute(
             "SELECT status, amount_mojos, designation FROM coins WHERE coin_id=?",
-            (coin_id,)
+            (coin_id,),
         ).fetchone()
         # Try INSERT first, on conflict update last_seen and potentially status
         # Key behavior:
@@ -2077,35 +2289,60 @@ def upsert_coin(coin_id: str, wallet_type: str, amount_mojos: int,
                        WHEN coins.status = 'gone' THEN 'none'
                        ELSE COALESCE(coins.assigned_tier, 'none')
                    END""",
-            (coin_id, wallet_type, amount_mojos, tier, now, now, desig, atier,
-             now, tier, amount_mojos)
+            (
+                coin_id,
+                wallet_type,
+                amount_mojos,
+                tier,
+                now,
+                now,
+                desig,
+                atier,
+                now,
+                tier,
+                amount_mojos,
+            ),
         )
         if not kwargs.get("_skip_commit"):
             conn.commit()
         # Log the coin lifecycle event with structured data
         if existing is None:
             # Brand new coin
-            if wallet_type == 'xch':
+            if wallet_type == "xch":
                 amt_str = f"{amount_mojos / 1_000_000_000_000:.4f} XCH"
             else:
                 amt_str = f"{amount_mojos} mojos"
-            log_event("debug", "coin_upserted",
-                      f"New {wallet_type.upper()} coin {coin_id[:16]}... ({amt_str})",
-                      data={"coin_id": coin_id, "amount_mojos": amount_mojos,
-                            "wallet_type": wallet_type, "is_new": True,
-                            "reappearing": False})
-        elif existing['status'] == 'gone':
+            log_event(
+                "debug",
+                "coin_upserted",
+                f"New {wallet_type.upper()} coin {coin_id[:16]}... ({amt_str})",
+                data={
+                    "coin_id": coin_id,
+                    "amount_mojos": amount_mojos,
+                    "wallet_type": wallet_type,
+                    "is_new": True,
+                    "reappearing": False,
+                },
+            )
+        elif existing["status"] == "gone":
             # Reappearing coin
-            if wallet_type == 'xch':
+            if wallet_type == "xch":
                 amt_str = f"{amount_mojos / 1_000_000_000_000:.4f} XCH"
             else:
                 amt_str = f"{amount_mojos} mojos"
-            log_event("debug", "coin_upserted",
-                      f"{wallet_type.upper()} coin {coin_id[:16]}... reappeared ({amt_str})"
-                      f" — was gone, now free",
-                      data={"coin_id": coin_id, "amount_mojos": amount_mojos,
-                            "wallet_type": wallet_type, "is_new": False,
-                            "reappearing": True})
+            log_event(
+                "debug",
+                "coin_upserted",
+                f"{wallet_type.upper()} coin {coin_id[:16]}... reappeared ({amt_str})"
+                f" — was gone, now free",
+                data={
+                    "coin_id": coin_id,
+                    "amount_mojos": amount_mojos,
+                    "wallet_type": wallet_type,
+                    "is_new": False,
+                    "reappearing": True,
+                },
+            )
         return True
     except Exception as e:
         log_event("error", "db_error", f"Failed to upsert coin {coin_id[:16]}...: {e}")
@@ -2128,7 +2365,9 @@ def batch_upsert_coins(coins: list, wallet_type: str = "xch") -> int:
     for c in coins:
         try:
             upsert_coin(
-                c["coin_id"], wallet_type, c["amount_mojos"],
+                c["coin_id"],
+                wallet_type,
+                c["amount_mojos"],
                 tier=c.get("tier", "unknown"),
                 _skip_commit=True,
             )
@@ -2143,17 +2382,23 @@ def batch_upsert_coins(coins: list, wallet_type: str = "xch") -> int:
         # Commit failure is worse than any individual upsert failure —
         # the whole batch is lost. Log it so it's visible.
         try:
-            log_event("error", "batch_upsert_commit_failed",
-                      f"batch_upsert_coins commit failed "
-                      f"({wallet_type}, {count} staged): {type(e).__name__}: {e}")
+            log_event(
+                "error",
+                "batch_upsert_commit_failed",
+                f"batch_upsert_coins commit failed "
+                f"({wallet_type}, {count} staged): {type(e).__name__}: {e}",
+            )
         except Exception:
             pass
         return 0
     if failures > 0:
         try:
-            log_event("warning", "batch_upsert_partial_failure",
-                      f"batch_upsert_coins ({wallet_type}): {failures}/{len(coins)} "
-                      f"failed, first error: {first_error}")
+            log_event(
+                "warning",
+                "batch_upsert_partial_failure",
+                f"batch_upsert_coins ({wallet_type}): {failures}/{len(coins)} "
+                f"failed, first error: {first_error}",
+            )
         except Exception:
             pass
     return count
@@ -2174,28 +2419,34 @@ def lock_coin(coin_id: str, trade_id: str) -> bool:
         # Get coin details before locking (for logging)
         row = conn.execute(
             "SELECT wallet_type, amount_mojos, designation, assigned_tier FROM coins WHERE coin_id=?",
-            (coin_id,)
+            (coin_id,),
         ).fetchone()
         conn.execute(
             "UPDATE coins SET status='locked', trade_id=?, last_seen=? WHERE coin_id=?",
-            (trade_id, _now(), coin_id)
+            (trade_id, _now(), coin_id),
         )
         conn.commit()
         # Log the lock event with full details + structured data
         if row:
-            wt = row['wallet_type'].upper()
-            if row['wallet_type'] == 'xch':
+            wt = row["wallet_type"].upper()
+            if row["wallet_type"] == "xch":
                 amt_str = f"{row['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
             else:
                 amt_str = f"{row['amount_mojos']} mojos"
-            log_event("debug", "coin_locked",
-                      f"{wt} coin {coin_id[:16]}... LOCKED by offer {trade_id[:12]}..."
-                      f" ({amt_str} | {row['designation']}/{row['assigned_tier']})",
-                      data={"coin_id": coin_id, "trade_id": trade_id,
-                            "amount_mojos": row['amount_mojos'],
-                            "wallet_type": row['wallet_type'],
-                            "designation": row['designation'],
-                            "assigned_tier": row['assigned_tier']})
+            log_event(
+                "debug",
+                "coin_locked",
+                f"{wt} coin {coin_id[:16]}... LOCKED by offer {trade_id[:12]}..."
+                f" ({amt_str} | {row['designation']}/{row['assigned_tier']})",
+                data={
+                    "coin_id": coin_id,
+                    "trade_id": trade_id,
+                    "amount_mojos": row["amount_mojos"],
+                    "wallet_type": row["wallet_type"],
+                    "designation": row["designation"],
+                    "assigned_tier": row["assigned_tier"],
+                },
+            )
         return True
     except Exception as e:
         try:
@@ -2220,30 +2471,36 @@ def free_coin(coin_id: str) -> bool:
         # Get coin details before freeing (for logging)
         row = conn.execute(
             "SELECT wallet_type, amount_mojos, trade_id, designation, assigned_tier FROM coins WHERE coin_id=?",
-            (coin_id,)
+            (coin_id,),
         ).fetchone()
         conn.execute(
             "UPDATE coins SET status='free', trade_id=NULL, last_seen=? WHERE coin_id=?",
-            (_now(), coin_id)
+            (_now(), coin_id),
         )
         conn.commit()
         # Log the free event with full details + structured data
         if row:
-            wt = row['wallet_type'].upper()
-            if row['wallet_type'] == 'xch':
+            wt = row["wallet_type"].upper()
+            if row["wallet_type"] == "xch":
                 amt_str = f"{row['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
             else:
                 amt_str = f"{row['amount_mojos']} mojos"
-            old_tid = row['trade_id'] or 'none'
-            log_event("debug", "coin_freed",
-                      f"{wt} coin {coin_id[:16]}... FREED ({amt_str})"
-                      f" — was locked by {old_tid[:12] if old_tid != 'none' else 'none'}..."
-                      f" | {row['designation']}/{row['assigned_tier']}",
-                      data={"coin_id": coin_id, "amount_mojos": row['amount_mojos'],
-                            "wallet_type": row['wallet_type'],
-                            "old_trade_id": row['trade_id'],
-                            "designation": row['designation'],
-                            "assigned_tier": row['assigned_tier']})
+            old_tid = row["trade_id"] or "none"
+            log_event(
+                "debug",
+                "coin_freed",
+                f"{wt} coin {coin_id[:16]}... FREED ({amt_str})"
+                f" — was locked by {old_tid[:12] if old_tid != 'none' else 'none'}..."
+                f" | {row['designation']}/{row['assigned_tier']}",
+                data={
+                    "coin_id": coin_id,
+                    "amount_mojos": row["amount_mojos"],
+                    "wallet_type": row["wallet_type"],
+                    "old_trade_id": row["trade_id"],
+                    "designation": row["designation"],
+                    "assigned_tier": row["assigned_tier"],
+                },
+            )
         return True
     except Exception as e:
         try:
@@ -2271,39 +2528,47 @@ def mark_coin_spent(coin_id: str) -> bool:
         # Get coin details before marking spent (for logging)
         row = conn.execute(
             "SELECT wallet_type, amount_mojos, trade_id, designation, assigned_tier FROM coins WHERE coin_id=?",
-            (coin_id,)
+            (coin_id,),
         ).fetchone()
         conn.execute(
             """UPDATE coins SET status='spent', last_seen=?,
                designation='unknown', assigned_tier='none'
                WHERE coin_id=?""",
-            (_now(), coin_id)
+            (_now(), coin_id),
         )
         conn.commit()
         # Log the spent event with full details + structured data
         if row:
-            wt = row['wallet_type'].upper()
-            if row['wallet_type'] == 'xch':
+            wt = row["wallet_type"].upper()
+            if row["wallet_type"] == "xch":
                 amt_str = f"{row['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
             else:
                 amt_str = f"{row['amount_mojos']} mojos"
-            tid = row['trade_id'] or 'none'
-            log_event("debug", "coin_spent",
-                      f"{wt} coin {coin_id[:16]}... SPENT/DESTROYED ({amt_str})"
-                      f" — was {row['designation']}/{row['assigned_tier']}"
-                      f" | offer {tid[:12] if tid != 'none' else 'none'}...",
-                      data={"coin_id": coin_id, "amount_mojos": row['amount_mojos'],
-                            "wallet_type": row['wallet_type'],
-                            "trade_id": row['trade_id'],
-                            "designation": row['designation'],
-                            "assigned_tier": row['assigned_tier']})
+            tid = row["trade_id"] or "none"
+            log_event(
+                "debug",
+                "coin_spent",
+                f"{wt} coin {coin_id[:16]}... SPENT/DESTROYED ({amt_str})"
+                f" — was {row['designation']}/{row['assigned_tier']}"
+                f" | offer {tid[:12] if tid != 'none' else 'none'}...",
+                data={
+                    "coin_id": coin_id,
+                    "amount_mojos": row["amount_mojos"],
+                    "wallet_type": row["wallet_type"],
+                    "trade_id": row["trade_id"],
+                    "designation": row["designation"],
+                    "assigned_tier": row["assigned_tier"],
+                },
+            )
         return True
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
-        log_event("error", "db_error", f"Failed to mark coin spent {coin_id[:16]}...: {e}")
+        log_event(
+            "error", "db_error", f"Failed to mark coin spent {coin_id[:16]}...: {e}"
+        )
         return False
 
 
@@ -2333,7 +2598,7 @@ def mark_coins_gone(coin_ids: List[str]) -> int:
         rows = conn.execute(
             f"SELECT coin_id, wallet_type, amount_mojos, designation, assigned_tier "
             f"FROM coins WHERE coin_id IN ({placeholders}) AND status='free'",
-            coin_list
+            coin_list,
         ).fetchall()
         for row in rows:
             gone_details.append((row["coin_id"], dict(row)))
@@ -2343,28 +2608,37 @@ def mark_coins_gone(coin_ids: List[str]) -> int:
             f"""UPDATE coins SET status='gone', last_seen=?,
                 designation='unknown', assigned_tier='none'
                 WHERE coin_id IN ({placeholders}) AND status='free'""",
-            [now] + coin_list
+            [now] + coin_list,
         )
         count = cursor.rowcount
         conn.commit()
         # Log each individual coin that disappeared with structured data
         for cid, details in gone_details:
-            wt = details['wallet_type'].upper()
-            if details['wallet_type'] == 'xch':
+            wt = details["wallet_type"].upper()
+            if details["wallet_type"] == "xch":
                 amt_str = f"{details['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
             else:
                 amt_str = f"{details['amount_mojos']} mojos"
-            log_event("debug", "coin_gone",
-                      f"{wt} coin {cid[:16]}... GONE from wallet ({amt_str})"
-                      f" — was {details['designation']}/{details['assigned_tier']}",
-                      data={"coin_id": cid, "amount_mojos": details['amount_mojos'],
-                            "wallet_type": details['wallet_type'],
-                            "designation": details['designation'],
-                            "assigned_tier": details['assigned_tier']})
+            log_event(
+                "debug",
+                "coin_gone",
+                f"{wt} coin {cid[:16]}... GONE from wallet ({amt_str})"
+                f" — was {details['designation']}/{details['assigned_tier']}",
+                data={
+                    "coin_id": cid,
+                    "amount_mojos": details["amount_mojos"],
+                    "wallet_type": details["wallet_type"],
+                    "designation": details["designation"],
+                    "assigned_tier": details["assigned_tier"],
+                },
+            )
         if count > 0:
-            log_event("info", "coins_gone_summary",
-                      f"Marked {count} coins as gone (no longer in wallet)",
-                      data={"count": count})
+            log_event(
+                "info",
+                "coins_gone_summary",
+                f"Marked {count} coins as gone (no longer in wallet)",
+                data={"count": count},
+            )
         return count
     except Exception as e:
         try:
@@ -2416,7 +2690,6 @@ def get_smallest_free_tier_spare(wallet_type: str) -> Optional[Dict]:
         "assigned_tier": row["assigned_tier"],
     }
 
-
     # NOTE: get_all_coins_state() is defined once, further below (after get_coin_summary).
     # A duplicate first definition was removed here.
 
@@ -2443,8 +2716,9 @@ def get_locked_coins(wallet_type: str = None) -> List[Dict]:
     return [dict(row) for row in rows]
 
 
-def get_oversized_locked_offers(max_ratio: float = 1.5,
-                                cat_decimals: int = 3) -> List[Dict]:
+def get_oversized_locked_offers(
+    max_ratio: float = 1.5, cat_decimals: int = 3
+) -> List[Dict]:
     """Find open offers whose locked trade coin is too large for the offer.
 
     This is a recovery guard for tiered coin mode. Normal offers should spend
@@ -2523,12 +2797,16 @@ def get_coin_summary() -> Dict:
     """
     conn = get_connection()
     summary = {
-        'xch_free_count': 0, 'xch_free_mojos': 0,
-        'xch_locked_count': 0, 'xch_locked_mojos': 0,
-        'xch_total': 0,
-        'cat_free_count': 0, 'cat_free_mojos': 0,
-        'cat_locked_count': 0, 'cat_locked_mojos': 0,
-        'cat_total': 0,
+        "xch_free_count": 0,
+        "xch_free_mojos": 0,
+        "xch_locked_count": 0,
+        "xch_locked_mojos": 0,
+        "xch_total": 0,
+        "cat_free_count": 0,
+        "cat_free_mojos": 0,
+        "cat_locked_count": 0,
+        "cat_locked_mojos": 0,
+        "cat_total": 0,
     }
 
     rows = conn.execute(
@@ -2540,17 +2818,17 @@ def get_coin_summary() -> Dict:
     ).fetchall()
 
     for row in rows:
-        wt = row['wallet_type']
-        st = row['status']
+        wt = row["wallet_type"]
+        st = row["status"]
         key_count = f"{wt}_{st}_count"
         key_mojos = f"{wt}_{st}_mojos"
         if key_count in summary:
-            summary[key_count] = row['cnt']
+            summary[key_count] = row["cnt"]
         if key_mojos in summary:
-            summary[key_mojos] = row['total_mojos']
+            summary[key_mojos] = row["total_mojos"]
 
-    summary['xch_total'] = summary['xch_free_count'] + summary['xch_locked_count']
-    summary['cat_total'] = summary['cat_free_count'] + summary['cat_locked_count']
+    summary["xch_total"] = summary["xch_free_count"] + summary["xch_locked_count"]
+    summary["cat_total"] = summary["cat_free_count"] + summary["cat_locked_count"]
 
     return summary
 
@@ -2571,13 +2849,14 @@ def get_all_coins_state() -> Dict[str, Dict]:
                       designation, assigned_tier, trade_id
                FROM coins WHERE status IN ('free', 'locked')"""
         ).fetchall()
-        return {row['coin_id']: dict(row) for row in rows}
+        return {row["coin_id"]: dict(row) for row in rows}
     except Exception:
         return {}
 
 
-def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
-                                wallet_type: str) -> dict:
+def reconcile_coins_with_wallet(
+    wallet_selectable: dict, wallet_owned: dict, wallet_type: str
+) -> dict:
     """Full reconciliation: sync DB coin state with wallet reality.
 
     Compares the DB's view of coins with what the wallet actually has,
@@ -2595,8 +2874,14 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
     Returns:
         dict with counts: {added, marked_gone, freed, locked, already_ok, reappeared}
     """
-    stats = {"added": 0, "marked_gone": 0, "freed": 0, "locked": 0,
-             "already_ok": 0, "reappeared": 0}
+    stats = {
+        "added": 0,
+        "marked_gone": 0,
+        "freed": 0,
+        "locked": 0,
+        "already_ok": 0,
+        "reappeared": 0,
+    }
 
     # CRITICAL FIX: Collect log messages and emit AFTER commit.
     # log_event() uses the same thread-local connection. If its commit()
@@ -2628,18 +2913,18 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
         rows = conn.execute(
             "SELECT coin_id, status, amount_mojos, trade_id FROM coins "
             "WHERE wallet_type=?",
-            (wallet_type,)
+            (wallet_type,),
         ).fetchall()
 
         db_coins = {}
         for r in rows:
             # Normalize DB coin IDs for comparison
-            nid = norm_coin_id(r['coin_id'])
+            nid = norm_coin_id(r["coin_id"])
             db_coins[nid] = {
-                "raw_id": r['coin_id'],  # Keep original for DB updates
-                "status": r['status'],
-                "amount": r['amount_mojos'],
-                "trade_id": r['trade_id'],
+                "raw_id": r["coin_id"],  # Keep original for DB updates
+                "status": r["status"],
+                "amount": r["amount_mojos"],
+                "trade_id": r["trade_id"],
             }
 
         db_ids = set(db_coins.keys())
@@ -2655,13 +2940,18 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
             raw_id = db_coins[nid]["raw_id"]
             conn.execute(
                 "UPDATE coins SET status='gone', last_seen=? WHERE coin_id=?",
-                (now, raw_id)
+                (now, raw_id),
             )
             stats["marked_gone"] += 1
             amt = db_coins[nid]["amount"]
-            deferred_logs.append(("debug", "reconcile_gone",
-                      f"{wallet_type.upper()} coin {raw_id[:16]}... "
-                      f"marked GONE (was {db_status}, {amt} mojos)"))
+            deferred_logs.append(
+                (
+                    "debug",
+                    "reconcile_gone",
+                    f"{wallet_type.upper()} coin {raw_id[:16]}... "
+                    f"marked GONE (was {db_status}, {amt} mojos)",
+                )
+            )
 
         # 2. Coins in wallet — either truly new or reappearing from gone/spent
         for nid in wallet_all_ids:
@@ -2675,12 +2965,14 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
                 # Auto-classify by amount so it immediately gets a useful
                 # tier designation instead of staying 'unknown' until next
                 # classification pass.
-                new_desig = 'unknown'
-                new_atier = 'none'
+                new_desig = "unknown"
+                new_atier = "none"
                 try:
                     tier_sizes = _get_reconcile_tier_sizes_mojos(wallet_type)
                     if tier_sizes:
-                        new_desig, new_atier = _infer_reconcile_designation_by_size(amt, tier_sizes)
+                        new_desig, new_atier = _infer_reconcile_designation_by_size(
+                            amt, tier_sizes
+                        )
                 except Exception:
                     pass
 
@@ -2694,15 +2986,31 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
                            amount_mojos = ?,
                            last_seen = ?,
                            wallet_type = ?""",
-                    (store_id, wallet_type, amt, target_status, now, now,
-                     new_desig, new_atier,
-                     target_status, amt, now, wallet_type)
+                    (
+                        store_id,
+                        wallet_type,
+                        amt,
+                        target_status,
+                        now,
+                        now,
+                        new_desig,
+                        new_atier,
+                        target_status,
+                        amt,
+                        now,
+                        wallet_type,
+                    ),
                 )
                 stats["added"] += 1
-                deferred_logs.append(("debug", "reconcile_add",
-                          f"{wallet_type.upper()} coin {store_id[:16]}... "
-                          f"ADDED ({amt} mojos, {target_status}, "
-                          f"{new_desig}/{new_atier})"))
+                deferred_logs.append(
+                    (
+                        "debug",
+                        "reconcile_add",
+                        f"{wallet_type.upper()} coin {store_id[:16]}... "
+                        f"ADDED ({amt} mojos, {target_status}, "
+                        f"{new_desig}/{new_atier})",
+                    )
+                )
 
             else:
                 # Coin exists in DB — check if it needs updating
@@ -2716,19 +3024,24 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
                            last_seen=?, designation='unknown',
                            assigned_tier='none', trade_id=NULL
                            WHERE coin_id=?""",
-                        (target_status, amt, now, raw_id)
+                        (target_status, amt, now, raw_id),
                     )
                     stats["reappeared"] += 1
-                    deferred_logs.append(("debug", "reconcile_reappear",
-                              f"{wallet_type.upper()} coin {raw_id[:16]}... "
-                              f"REAPPEARED (was {db_status}, now {target_status}, "
-                              f"{amt} mojos)"))
+                    deferred_logs.append(
+                        (
+                            "debug",
+                            "reconcile_reappear",
+                            f"{wallet_type.upper()} coin {raw_id[:16]}... "
+                            f"REAPPEARED (was {db_status}, now {target_status}, "
+                            f"{amt} mojos)",
+                        )
+                    )
 
                 elif is_locked and db_status == "free":
                     # Wallet says locked, DB says free → lock it
                     conn.execute(
                         "UPDATE coins SET status='locked', last_seen=? WHERE coin_id=?",
-                        (now, raw_id)
+                        (now, raw_id),
                     )
                     stats["locked"] += 1
 
@@ -2739,7 +3052,7 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
                     cur = conn.execute(
                         """UPDATE coins SET status='free', trade_id=NULL,
                            last_seen=? WHERE coin_id=? AND trade_id IS NULL""",
-                        (now, raw_id)
+                        (now, raw_id),
                     )
                     if cur.rowcount > 0:
                         stats["freed"] += 1
@@ -2753,19 +3066,34 @@ def reconcile_coins_with_wallet(wallet_selectable: dict, wallet_owned: dict,
 
         conn.commit()
 
-        total_changes = (stats["added"] + stats["marked_gone"] + stats["freed"]
-                         + stats["locked"] + stats["reappeared"])
+        total_changes = (
+            stats["added"]
+            + stats["marked_gone"]
+            + stats["freed"]
+            + stats["locked"]
+            + stats["reappeared"]
+        )
         if total_changes > 0:
-            deferred_logs.append(("info", "reconcile_complete",
-                      f"{wallet_type.upper()} reconciliation: "
-                      f"+{stats['added']} new, {stats['reappeared']} reappeared, "
-                      f"-{stats['marked_gone']} gone, "
-                      f"{stats['locked']} locked, {stats['freed']} freed, "
-                      f"{stats['already_ok']} ok"))
+            deferred_logs.append(
+                (
+                    "info",
+                    "reconcile_complete",
+                    f"{wallet_type.upper()} reconciliation: "
+                    f"+{stats['added']} new, {stats['reappeared']} reappeared, "
+                    f"-{stats['marked_gone']} gone, "
+                    f"{stats['locked']} locked, {stats['freed']} freed, "
+                    f"{stats['already_ok']} ok",
+                )
+            )
 
     except Exception as e:
-        deferred_logs.append(("error", "reconcile_error",
-                  f"{wallet_type.upper()} reconciliation failed: {e}"))
+        deferred_logs.append(
+            (
+                "error",
+                "reconcile_error",
+                f"{wallet_type.upper()} reconciliation failed: {e}",
+            )
+        )
 
     # NOW emit all log events — after the reconciliation transaction is done.
     # This way, if any log_event commit/rollback happens, it can't affect
@@ -2800,8 +3128,12 @@ def link_offers_to_locked_coins(active_offers: list, cat_asset_id: str) -> dict:
     Returns:
         dict with counts: {linked, already_linked, unmatched_offers, unmatched_coins}
     """
-    stats = {"linked": 0, "already_linked": 0,
-             "unmatched_offers": 0, "unmatched_coins": 0}
+    stats = {
+        "linked": 0,
+        "already_linked": 0,
+        "unmatched_offers": 0,
+        "unmatched_coins": 0,
+    }
 
     try:
         conn = get_connection()
@@ -2819,13 +3151,13 @@ def link_offers_to_locked_coins(active_offers: list, cat_asset_id: str) -> dict:
         already_linked_count = 0
 
         for r in rows:
-            if r['trade_id']:
+            if r["trade_id"]:
                 already_linked_count += 1
                 continue
-            if r['wallet_type'] == 'xch':
-                xch_unlinked[r['coin_id']] = r['amount_mojos']
-            elif r['wallet_type'] == 'cat':
-                cat_unlinked[r['coin_id']] = r['amount_mojos']
+            if r["wallet_type"] == "xch":
+                xch_unlinked[r["coin_id"]] = r["amount_mojos"]
+            elif r["wallet_type"] == "cat":
+                cat_unlinked[r["coin_id"]] = r["amount_mojos"]
 
         stats["already_linked"] = already_linked_count
 
@@ -2839,12 +3171,12 @@ def link_offers_to_locked_coins(active_offers: list, cat_asset_id: str) -> dict:
             "GROUP BY trade_id"
         ).fetchall()
         for lr in link_rows:
-            _link_counts[lr['trade_id']] = lr['cnt']
+            _link_counts[lr["trade_id"]] = lr["cnt"]
 
         def _find_and_link(pool: dict, trade_id: str, target_amount: int) -> bool:
             """Find closest coin in pool, link it to trade_id. Returns True if linked."""
             best_cid = None
-            best_diff = float('inf')
+            best_diff = float("inf")
             for cid, amt in pool.items():
                 diff = abs(amt - target_amount)
                 if diff < best_diff:
@@ -2855,13 +3187,13 @@ def link_offers_to_locked_coins(active_offers: list, cat_asset_id: str) -> dict:
             if best_cid:
                 conn.execute(
                     "UPDATE coins SET trade_id=?, last_seen=? WHERE coin_id=?",
-                    (trade_id, now, best_cid)
+                    (trade_id, now, best_cid),
                 )
                 # Backfill offers.coin_id so fill verification can find the coin
                 # even when add_offer() was called before the coin was linked.
                 conn.execute(
                     "UPDATE offers SET coin_id=? WHERE trade_id=? AND (coin_id IS NULL OR coin_id='')",
-                    (best_cid, trade_id)
+                    (best_cid, trade_id),
                 )
                 del pool[best_cid]
                 # Update in-memory count for duplicate detection
@@ -2920,15 +3252,19 @@ def link_offers_to_locked_coins(active_offers: list, cat_asset_id: str) -> dict:
         conn.commit()
 
         if stats["linked"] > 0:
-            log_event("info", "offer_coin_link",
-                      f"Linked {stats['linked']} offer↔coin pairs "
-                      f"({stats['already_linked']} already linked, "
-                      f"{stats['unmatched_offers']} unmatched offers, "
-                      f"{stats['unmatched_coins']} unmatched coins)")
+            log_event(
+                "info",
+                "offer_coin_link",
+                f"Linked {stats['linked']} offer↔coin pairs "
+                f"({stats['already_linked']} already linked, "
+                f"{stats['unmatched_offers']} unmatched offers, "
+                f"{stats['unmatched_coins']} unmatched coins)",
+            )
 
     except Exception as e:
-        log_event("error", "offer_coin_link_error",
-                  f"Offer-to-coin linking failed: {e}")
+        log_event(
+            "error", "offer_coin_link_error", f"Offer-to-coin linking failed: {e}"
+        )
 
     return stats
 
@@ -2937,8 +3273,10 @@ def link_offers_to_locked_coins(active_offers: list, cat_asset_id: str) -> dict:
 # Coin Designations — role-based coin management (V3 adaptive system)
 # ---------------------------------------------------------------------------
 
-def set_coin_designation(coin_id: str, designation: str,
-                         assigned_tier: str = "none") -> bool:
+
+def set_coin_designation(
+    coin_id: str, designation: str, assigned_tier: str = "none"
+) -> bool:
     """Mark a coin's role (reserve, tier_spare, tier_active, dust, unknown).
 
     This is the core of the designation-based system. Coins are what we
@@ -2955,12 +3293,12 @@ def set_coin_designation(coin_id: str, designation: str,
         # Get current state before updating (for logging changes)
         row = conn.execute(
             "SELECT wallet_type, amount_mojos, designation AS old_desig, assigned_tier AS old_tier FROM coins WHERE coin_id=?",
-            (coin_id,)
+            (coin_id,),
         ).fetchone()
         cursor = conn.execute(
             """UPDATE coins SET designation=?, assigned_tier=?, last_seen=?
                WHERE coin_id=?""",
-            (designation, assigned_tier, _now(), coin_id)
+            (designation, assigned_tier, _now(), coin_id),
         )
         conn.commit()
         if cursor.rowcount == 0:
@@ -2968,34 +3306,44 @@ def set_coin_designation(coin_id: str, designation: str,
             return False
         # Log designation change (skip if unchanged) with structured data
         if row:
-            old_d = row['old_desig'] or 'unknown'
-            old_t = row['old_tier'] or 'none'
+            old_d = row["old_desig"] or "unknown"
+            old_t = row["old_tier"] or "none"
             if old_d != designation or old_t != assigned_tier:
-                wt = row['wallet_type'].upper()
-                if row['wallet_type'] == 'xch':
+                wt = row["wallet_type"].upper()
+                if row["wallet_type"] == "xch":
                     amt_str = f"{row['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
                 else:
                     amt_str = f"{row['amount_mojos']} mojos"
-                log_event("debug", "coin_designated",
-                          f"{wt} coin {coin_id[:16]}... ({amt_str})"
-                          f" {old_d}/{old_t} → {designation}/{assigned_tier}",
-                          data={"coin_id": coin_id, "amount_mojos": row['amount_mojos'],
-                                "wallet_type": row['wallet_type'],
-                                "designation": designation, "assigned_tier": assigned_tier,
-                                "old_designation": old_d, "old_assigned_tier": old_t})
+                log_event(
+                    "debug",
+                    "coin_designated",
+                    f"{wt} coin {coin_id[:16]}... ({amt_str})"
+                    f" {old_d}/{old_t} → {designation}/{assigned_tier}",
+                    data={
+                        "coin_id": coin_id,
+                        "amount_mojos": row["amount_mojos"],
+                        "wallet_type": row["wallet_type"],
+                        "designation": designation,
+                        "assigned_tier": assigned_tier,
+                        "old_designation": old_d,
+                        "old_assigned_tier": old_t,
+                    },
+                )
         return True
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
-        log_event("error", "db_error",
-                  f"Failed to set designation for {coin_id[:16]}...: {e}")
+        log_event(
+            "error", "db_error", f"Failed to set designation for {coin_id[:16]}...: {e}"
+        )
         return False
 
 
-def get_coins_by_designation(wallet_type: str, designation: str,
-                             assigned_tier: str = None) -> List[Dict]:
+def get_coins_by_designation(
+    wallet_type: str, designation: str, assigned_tier: str = None
+) -> List[Dict]:
     """Get all coins with a specific designation, optionally filtered by tier.
 
     Args:
@@ -3007,8 +3355,10 @@ def get_coins_by_designation(wallet_type: str, designation: str,
         List of coin dicts sorted by amount descending.
     """
     conn = get_connection()
-    query = ("SELECT * FROM coins WHERE wallet_type=? AND designation=? "
-             "AND status IN ('free', 'locked')")
+    query = (
+        "SELECT * FROM coins WHERE wallet_type=? AND designation=? "
+        "AND status IN ('free', 'locked')"
+    )
     params: list = [wallet_type, designation]
 
     if assigned_tier:
@@ -3029,11 +3379,10 @@ def get_reserve_coins(wallet_type: str) -> List[Dict]:
     Returns:
         List of reserve coin dicts (free or locked), largest first.
     """
-    return get_coins_by_designation(wallet_type, 'reserve')
+    return get_coins_by_designation(wallet_type, "reserve")
 
 
-def designate_reserve(coin_id: str, wallet_type: str,
-                      amount_mojos: int) -> bool:
+def designate_reserve(coin_id: str, wallet_type: str, amount_mojos: int) -> bool:
     """Shorthand to mark a coin as reserve.
 
     Also logs the designation for visibility.
@@ -3043,20 +3392,27 @@ def designate_reserve(coin_id: str, wallet_type: str,
         wallet_type: 'xch' or 'cat'
         amount_mojos: Size (for logging only)
     """
-    result = set_coin_designation(coin_id, 'reserve', 'none')
+    result = set_coin_designation(coin_id, "reserve", "none")
     if result:
-        if wallet_type == 'xch':
+        if wallet_type == "xch":
             xch_val = amount_mojos / 1_000_000_000_000
-            log_event("debug", "coin_designated",
-                      f"Designated coin {coin_id[:16]}... ({xch_val:.4f} XCH) as reserve")
+            log_event(
+                "debug",
+                "coin_designated",
+                f"Designated coin {coin_id[:16]}... ({xch_val:.4f} XCH) as reserve",
+            )
         else:
-            log_event("debug", "coin_designated",
-                      f"Designated coin {coin_id[:16]}... ({amount_mojos} mojos) as reserve")
+            log_event(
+                "debug",
+                "coin_designated",
+                f"Designated coin {coin_id[:16]}... ({amount_mojos} mojos) as reserve",
+            )
     return result
 
 
-def cleanup_orphaned_locked_coins(open_trade_ids: set,
-                                   wallet_confirmed_locked: set = None) -> dict:
+def cleanup_orphaned_locked_coins(
+    open_trade_ids: set, wallet_confirmed_locked: set = None
+) -> dict:
     """Free locked coins whose offers no longer exist.
 
     After a restart, DB may have coins marked 'locked' with trade_ids
@@ -3082,8 +3438,12 @@ def cleanup_orphaned_locked_coins(open_trade_ids: set,
     Returns:
         dict with counts: {freed_no_trade, freed_stale_trade, skipped_wallet_locked, total_freed}
     """
-    stats = {"freed_no_trade": 0, "freed_stale_trade": 0,
-             "skipped_wallet_locked": 0, "total_freed": 0}
+    stats = {
+        "freed_no_trade": 0,
+        "freed_stale_trade": 0,
+        "skipped_wallet_locked": 0,
+        "total_freed": 0,
+    }
     if wallet_confirmed_locked is None:
         wallet_confirmed_locked = set()
 
@@ -3103,9 +3463,9 @@ def cleanup_orphaned_locked_coins(open_trade_ids: set,
         ).fetchall()
 
         for row in rows:
-            cid = row['coin_id']
-            tid = row['trade_id']
-            wt = row['wallet_type'].upper()
+            cid = row["coin_id"]
+            tid = row["trade_id"]
+            wt = row["wallet_type"].upper()
             nid = norm_coin_id(cid)
 
             # V5 FIX: If wallet confirms this coin is offer-locked, skip it.
@@ -3118,49 +3478,61 @@ def cleanup_orphaned_locked_coins(open_trade_ids: set,
                 # No trade_id → orphaned locked coin (offer creation failed)
                 conn.execute(
                     "UPDATE coins SET status='free', trade_id=NULL, last_seen=? "
-                    "WHERE coin_id=?", (now, cid)
+                    "WHERE coin_id=?",
+                    (now, cid),
                 )
                 stats["freed_no_trade"] += 1
-                if row['wallet_type'] == 'xch':
+                if row["wallet_type"] == "xch":
                     amt_str = f"{row['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
                 else:
                     amt_str = f"{row['amount_mojos']} mojos"
-                log_event("info", "orphan_freed",
-                          f"{wt} coin {cid[:16]}... FREED — no trade_id (orphaned) "
-                          f"({amt_str} | {row['designation']}/{row['assigned_tier']})")
+                log_event(
+                    "info",
+                    "orphan_freed",
+                    f"{wt} coin {cid[:16]}... FREED — no trade_id (orphaned) "
+                    f"({amt_str} | {row['designation']}/{row['assigned_tier']})",
+                )
 
             elif tid not in open_trade_ids:
                 # Has trade_id but offer no longer exists → stale lock
                 conn.execute(
                     "UPDATE coins SET status='free', trade_id=NULL, last_seen=? "
-                    "WHERE coin_id=?", (now, cid)
+                    "WHERE coin_id=?",
+                    (now, cid),
                 )
                 stats["freed_stale_trade"] += 1
-                if row['wallet_type'] == 'xch':
+                if row["wallet_type"] == "xch":
                     amt_str = f"{row['amount_mojos'] / 1_000_000_000_000:.4f} XCH"
                 else:
                     amt_str = f"{row['amount_mojos']} mojos"
-                log_event("info", "orphan_freed",
-                          f"{wt} coin {cid[:16]}... FREED — offer {tid[:12]}... "
-                          f"no longer open ({amt_str})")
+                log_event(
+                    "info",
+                    "orphan_freed",
+                    f"{wt} coin {cid[:16]}... FREED — offer {tid[:12]}... "
+                    f"no longer open ({amt_str})",
+                )
 
         conn.commit()
         stats["total_freed"] = stats["freed_no_trade"] + stats["freed_stale_trade"]
 
         if stats["total_freed"] > 0 or stats["skipped_wallet_locked"] > 0:
-            log_event("info", "orphan_cleanup",
-                      f"Freed {stats['total_freed']} orphaned locked coins "
-                      f"({stats['freed_no_trade']} no trade_id, "
-                      f"{stats['freed_stale_trade']} stale trade_id, "
-                      f"{stats['skipped_wallet_locked']} protected by wallet)")
+            log_event(
+                "info",
+                "orphan_cleanup",
+                f"Freed {stats['total_freed']} orphaned locked coins "
+                f"({stats['freed_no_trade']} no trade_id, "
+                f"{stats['freed_stale_trade']} stale trade_id, "
+                f"{stats['skipped_wallet_locked']} protected by wallet)",
+            )
 
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
-        log_event("error", "orphan_cleanup_error",
-                  f"Orphaned locked coin cleanup failed: {e}")
+        log_event(
+            "error", "orphan_cleanup_error", f"Orphaned locked coin cleanup failed: {e}"
+        )
 
     return stats
 
@@ -3183,8 +3555,13 @@ def coin_sanity_check(open_offer_count: int) -> dict:
         dict with: {locked_count, offer_count, divergence, stale_locked, warnings}
     """
     warnings = []
-    stats = {"locked_count": 0, "offer_count": open_offer_count,
-             "divergence": 0, "stale_locked": 0, "warnings": warnings}
+    stats = {
+        "locked_count": 0,
+        "offer_count": open_offer_count,
+        "divergence": 0,
+        "stale_locked": 0,
+        "warnings": warnings,
+    }
 
     try:
         conn = get_connection()
@@ -3194,7 +3571,7 @@ def coin_sanity_check(open_offer_count: int) -> dict:
         row = conn.execute(
             "SELECT COUNT(*) as cnt FROM coins WHERE status='locked'"
         ).fetchone()
-        locked_count = row['cnt'] if row else 0
+        locked_count = row["cnt"] if row else 0
         stats["locked_count"] = locked_count
 
         # Check divergence
@@ -3208,40 +3585,43 @@ def coin_sanity_check(open_offer_count: int) -> dict:
         if locked_count > open_offer_count * 3:
             warnings.append(
                 f"Too many locked coins: {locked_count} locked vs "
-                f"{open_offer_count} open offers (expected ~{open_offer_count * 2})")
+                f"{open_offer_count} open offers (expected ~{open_offer_count * 2})"
+            )
 
         # Check for stale locked coins with no trade_id (older than 1 hour)
         stale_rows = conn.execute(
             "SELECT COUNT(*) as cnt FROM coins "
             "WHERE status='locked' AND (trade_id IS NULL OR trade_id='') "
             "AND last_seen < datetime(?, '-1 hour')",
-            (now,)
+            (now,),
         ).fetchone()
-        stale_count = stale_rows['cnt'] if stale_rows else 0
+        stale_count = stale_rows["cnt"] if stale_rows else 0
         stats["stale_locked"] = stale_count
 
         if stale_count > 0:
             warnings.append(
-                f"{stale_count} locked coins have no trade_id and are >1hr old")
+                f"{stale_count} locked coins have no trade_id and are >1hr old"
+            )
 
         # Log results
         if warnings:
             for w in warnings:
                 log_event("warning", "coin_sanity_warning", w)
         else:
-            log_event("debug", "coin_sanity_ok",
-                      f"Sanity check passed: {locked_count} locked, "
-                      f"{open_offer_count} offers, no issues")
+            log_event(
+                "debug",
+                "coin_sanity_ok",
+                f"Sanity check passed: {locked_count} locked, "
+                f"{open_offer_count} offers, no issues",
+            )
 
     except Exception as e:
-        log_event("error", "coin_sanity_error",
-                  f"Coin sanity check failed: {e}")
+        log_event("error", "coin_sanity_error", f"Coin sanity check failed: {e}")
 
     return stats
 
 
-def record_trading_pace(fills_hour: int, pace_level: str,
-                        active_offers: int) -> bool:
+def record_trading_pace(fills_hour: int, pace_level: str, active_offers: int) -> bool:
     """Log a trading pace snapshot for adaptive replenishment.
 
     Called after fill detection to track how busy the market is.
@@ -3258,7 +3638,7 @@ def record_trading_pace(fills_hour: int, pace_level: str,
             """INSERT INTO trading_pace (timestamp, fills_last_hour,
                pace_level, active_offers)
                VALUES (?, ?, ?, ?)""",
-            (_now(), fills_hour, pace_level, active_offers)
+            (_now(), fills_hour, pace_level, active_offers),
         )
         conn.commit()
         return True
@@ -3277,7 +3657,7 @@ def get_current_pace() -> str:
     row = conn.execute(
         "SELECT pace_level FROM trading_pace ORDER BY timestamp DESC LIMIT 1"
     ).fetchone()
-    return row['pace_level'] if row else 'normal'
+    return row["pace_level"] if row else "normal"
 
 
 def count_recent_fills(hours: int = 1) -> int:
@@ -3293,14 +3673,15 @@ def count_recent_fills(hours: int = 1) -> int:
     """
     conn = get_connection()
     from datetime import datetime, timezone, timedelta
+
     cutoff = _sqlite_ts(datetime.now(timezone.utc) - timedelta(hours=hours))
     row = conn.execute(
         """SELECT COUNT(*) as cnt FROM fills
            WHERE filled_at > ?
              AND COALESCE(verification_status, 'legacy') = 'verified'""",
-        (cutoff,)
+        (cutoff,),
     ).fetchone()
-    return row['cnt'] if row else 0
+    return row["cnt"] if row else 0
 
 
 def get_designation_summary(wallet_type: str) -> Dict:
@@ -3323,20 +3704,17 @@ def get_designation_summary(wallet_type: str) -> Dict:
            FROM coins
            WHERE wallet_type=? AND status IN ('free', 'locked')
            GROUP BY designation""",
-        (wallet_type,)
+        (wallet_type,),
     ).fetchall()
 
     result = {}
-    for d in ('reserve', 'tier_spare', 'tier_active', 'dust', 'unknown'):
-        result[d] = {'count': 0, 'total_mojos': 0}
+    for d in ("reserve", "tier_spare", "tier_active", "dust", "unknown"):
+        result[d] = {"count": 0, "total_mojos": 0}
 
     for row in rows:
-        desig = row['designation'] or 'unknown'
+        desig = row["designation"] or "unknown"
         if desig in result:
-            result[desig] = {
-                'count': row['cnt'],
-                'total_mojos': row['total_mojos']
-            }
+            result[desig] = {"count": row["cnt"], "total_mojos": row["total_mojos"]}
 
     return result
 
@@ -3353,14 +3731,14 @@ def get_tier_spare_counts(wallet_type: str) -> Dict[str, int]:
            WHERE wallet_type=? AND designation='tier_spare'
                  AND status='free'
            GROUP BY assigned_tier""",
-        (wallet_type,)
+        (wallet_type,),
     ).fetchall()
 
-    result = {'inner': 0, 'mid': 0, 'outer': 0, 'extreme': 0, 'sniper': 0, 'fees': 0}
+    result = {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0}
     for row in rows:
-        tier = row['assigned_tier']
+        tier = row["assigned_tier"]
         if tier in result:
-            result[tier] = row['cnt']
+            result[tier] = row["cnt"]
     return result
 
 
@@ -3381,8 +3759,26 @@ def get_live_tier_group_counts() -> Dict[str, Dict[str, int]]:
     conn = get_connection()
     result = {
         "enabled": True,
-        "xch": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0, "reserve": 0, "dust": 0},
-        "cat": {"inner": 0, "mid": 0, "outer": 0, "extreme": 0, "sniper": 0, "fees": 0, "reserve": 0, "dust": 0},
+        "xch": {
+            "inner": 0,
+            "mid": 0,
+            "outer": 0,
+            "extreme": 0,
+            "sniper": 0,
+            "fees": 0,
+            "reserve": 0,
+            "dust": 0,
+        },
+        "cat": {
+            "inner": 0,
+            "mid": 0,
+            "outer": 0,
+            "extreme": 0,
+            "sniper": 0,
+            "fees": 0,
+            "reserve": 0,
+            "dust": 0,
+        },
         "meta": {"xch_order": "size_tier", "cat_order": "sell_position"},
     }
 
@@ -3416,6 +3812,7 @@ def get_live_tier_group_counts() -> Dict[str, Dict[str, int]]:
     # the order in metadata for the UI tooltip.
     try:
         from config import cfg as _cfg_tc
+
         if getattr(_cfg_tc, "BUY_LADDER_REVERSED", False):
             xch = result["xch"]
             xch["inner"], xch["extreme"] = xch["extreme"], xch["inner"]
@@ -3431,10 +3828,19 @@ def get_live_tier_group_counts() -> Dict[str, Dict[str, int]]:
 # Fills — record fills, match round-trips
 # ---------------------------------------------------------------------------
 
-def record_fill(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
-                size_cat: Decimal, cat_asset_id: str, tier: str = "unknown",
-                verification_status: str = "verified",
-                filled_at: str = None, fee_mojos_xch: int = 0) -> int:
+
+def record_fill(
+    trade_id: str,
+    side: str,
+    price_xch: Decimal,
+    size_xch: Decimal,
+    size_cat: Decimal,
+    cat_asset_id: str,
+    tier: str = "unknown",
+    verification_status: str = "verified",
+    filled_at: str = None,
+    fee_mojos_xch: int = 0,
+) -> int:
     """Record a detected fill.
 
     Returns the fill_id of the new record, or -1 on error.
@@ -3454,7 +3860,7 @@ def record_fill(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
                 conn.execute(
                     "UPDATE offers SET status='filled', lifecycle_state='filled', "
                     "filled_at=? WHERE trade_id=? AND status='open'",
-                    (_now(), trade_id)
+                    (_now(), trade_id),
                 )
                 conn.commit()
             except Exception:
@@ -3463,11 +3869,16 @@ def record_fill(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
             try:
                 existing_side = existing["side"]
                 existing_price = Decimal(str(existing["price_xch"] or 0))
-                if existing_side != side or abs(existing_price - price_xch) > Decimal("0.00000001"):
-                    log_event("warning", "record_fill_mismatch",
-                              f"Fill {trade_id[:16]}... already recorded but parameters differ: "
-                              f"stored side={existing_side} price={existing_price} "
-                              f"vs incoming side={side} price={price_xch}")
+                if existing_side != side or abs(existing_price - price_xch) > Decimal(
+                    "0.00000001"
+                ):
+                    log_event(
+                        "warning",
+                        "record_fill_mismatch",
+                        f"Fill {trade_id[:16]}... already recorded but parameters differ: "
+                        f"stored side={existing_side} price={existing_price} "
+                        f"vs incoming side={side} price={price_xch}",
+                    )
             except Exception:
                 pass
             return int(existing["fill_id"])
@@ -3477,14 +3888,24 @@ def record_fill(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
             """INSERT INTO fills (trade_id, side, price_xch, size_xch, size_cat,
                filled_at, cat_asset_id, tier, verification_status, fee_mojos_xch)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (trade_id, side, str(price_xch), str(size_xch), str(size_cat),
-             now, cat_asset_id, tier, verification_status, int(fee_mojos_xch))
+            (
+                trade_id,
+                side,
+                str(price_xch),
+                str(size_xch),
+                str(size_cat),
+                now,
+                cat_asset_id,
+                tier,
+                verification_status,
+                int(fee_mojos_xch),
+            ),
         )
         # Atomically mark offer as filled in the same transaction
         conn.execute(
             "UPDATE offers SET status='filled', lifecycle_state='filled', "
             "filled_at=?, cancelled_at=NULL WHERE trade_id=?",
-            (now, trade_id)
+            (now, trade_id),
         )
         conn.commit()
 
@@ -3533,42 +3954,61 @@ def record_fill(trade_id: str, side: str, price_xch: Decimal, size_xch: Decimal,
                 row = conn.execute(
                     "SELECT fill_id FROM fills WHERE trade_id=? "
                     "ORDER BY fill_id DESC LIMIT 1",
-                    (trade_id,)
+                    (trade_id,),
                 ).fetchone()
                 if row:
-                    log_event("info", "record_fill_race",
-                              f"UNIQUE constraint caught race for {trade_id[:16]}... "
-                              f"— returning existing fill_id {row['fill_id']}"
-                              + (f" (after {attempt} retries)" if attempt else ""))
+                    log_event(
+                        "info",
+                        "record_fill_race",
+                        f"UNIQUE constraint caught race for {trade_id[:16]}... "
+                        f"— returning existing fill_id {row['fill_id']}"
+                        + (f" (after {attempt} retries)" if attempt else ""),
+                    )
                     return int(row["fill_id"])
             except Exception:
                 pass
         # All retries failed — this is a SILENT FILL LOSS condition.
         # Escalate via the per-hour rate alert in addition to the error log.
-        log_event("error", "fill_record_failed_critical",
-                  f"CRITICAL: failed to record fill for {trade_id} after "
-                  f"IntegrityError + 4 SELECT retries. Fill is silently lost "
-                  f"from PnL math. Original error: {ie}",
-                  data={"trade_id": trade_id, "side": side,
-                        "price_xch": str(price_xch), "size_xch": str(size_xch)})
+        log_event(
+            "error",
+            "fill_record_failed_critical",
+            f"CRITICAL: failed to record fill for {trade_id} after "
+            f"IntegrityError + 4 SELECT retries. Fill is silently lost "
+            f"from PnL math. Original error: {ie}",
+            data={
+                "trade_id": trade_id,
+                "side": side,
+                "price_xch": str(price_xch),
+                "size_xch": str(size_xch),
+            },
+        )
         return -1
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
-        log_event("error", "fill_record_failed_critical",
-                  f"CRITICAL: failed to record fill for {trade_id}: {e}",
-                  data={"trade_id": trade_id, "side": side,
-                        "price_xch": str(price_xch), "size_xch": str(size_xch)})
+        log_event(
+            "error",
+            "fill_record_failed_critical",
+            f"CRITICAL: failed to record fill for {trade_id}: {e}",
+            data={
+                "trade_id": trade_id,
+                "side": side,
+                "price_xch": str(price_xch),
+                "size_xch": str(size_xch),
+            },
+        )
         return -1
 
 
-def update_fill_enrichment(fill_id: int,
-                           spent_block_height: Optional[int] = None,
-                           header_hash: Optional[str] = None,
-                           receive_coin_id: Optional[str] = None,
-                           receive_amount_mojos: Optional[int] = None) -> bool:
+def update_fill_enrichment(
+    fill_id: int,
+    spent_block_height: Optional[int] = None,
+    header_hash: Optional[str] = None,
+    receive_coin_id: Optional[str] = None,
+    receive_amount_mojos: Optional[int] = None,
+) -> bool:
     """Persist post-fill enrichment data to the fills table (F43, 2026-04-08).
 
     Called by FillTracker._post_fill_enrichment after walking the
@@ -3606,13 +4046,17 @@ def update_fill_enrichment(fill_id: int,
         conn.commit()
         return True
     except Exception as e:
-        log_event("warning", "fill_enrichment_persist_failed",
-                  f"Could not write enrichment for fill_id={fill_id}: {e}")
+        log_event(
+            "warning",
+            "fill_enrichment_persist_failed",
+            f"Could not write enrichment for fill_id={fill_id}: {e}",
+        )
         return False
 
 
-def backfill_verified_fills_from_offers(limit: int = 50,
-                                        since: str = None) -> List[Dict]:
+def backfill_verified_fills_from_offers(
+    limit: int = 50, since: str = None
+) -> List[Dict]:
     """Create verified fill rows for offers already marked filled.
 
     This repairs gaps where an offer was later confirmed filled by wallet/Sage
@@ -3658,20 +4102,22 @@ def backfill_verified_fills_from_offers(limit: int = 50,
                     int(row["fee_mojos_xch"] or 0),
                 ),
             )
-            repaired.append({
-                "fill_id": int(cursor.lastrowid),
-                "trade_id": row["trade_id"],
-                "side": row["side"],
-                "price_xch": row["price_xch"],
-                "size_xch": row["size_xch"],
-                "size_cat": row["size_cat"],
-                "filled_at": row["effective_filled_at"],
-                "cat_asset_id": row["cat_asset_id"],
-                "tier": row["tier"] or "unknown",
-                "verification_status": "verified",
-                "created": True,
-                "upgraded": False,
-            })
+            repaired.append(
+                {
+                    "fill_id": int(cursor.lastrowid),
+                    "trade_id": row["trade_id"],
+                    "side": row["side"],
+                    "price_xch": row["price_xch"],
+                    "size_xch": row["size_xch"],
+                    "size_cat": row["size_cat"],
+                    "filled_at": row["effective_filled_at"],
+                    "cat_asset_id": row["cat_asset_id"],
+                    "tier": row["tier"] or "unknown",
+                    "verification_status": "verified",
+                    "created": True,
+                    "upgraded": False,
+                }
+            )
 
         remaining = max(int(limit) - len(repaired), 0)
         if remaining > 0:
@@ -3701,20 +4147,22 @@ def backfill_verified_fills_from_offers(limit: int = 50,
                        WHERE fill_id=?""",
                     (row["effective_filled_at"], row["fill_id"]),
                 )
-                repaired.append({
-                    "fill_id": int(row["fill_id"]),
-                    "trade_id": row["trade_id"],
-                    "side": row["side"],
-                    "price_xch": row["price_xch"],
-                    "size_xch": row["size_xch"],
-                    "size_cat": row["size_cat"],
-                    "filled_at": row["effective_filled_at"],
-                    "cat_asset_id": row["cat_asset_id"],
-                    "tier": row["tier"] or "unknown",
-                    "verification_status": "verified",
-                    "created": False,
-                    "upgraded": True,
-                })
+                repaired.append(
+                    {
+                        "fill_id": int(row["fill_id"]),
+                        "trade_id": row["trade_id"],
+                        "side": row["side"],
+                        "price_xch": row["price_xch"],
+                        "size_xch": row["size_xch"],
+                        "size_cat": row["size_cat"],
+                        "filled_at": row["effective_filled_at"],
+                        "cat_asset_id": row["cat_asset_id"],
+                        "tier": row["tier"] or "unknown",
+                        "verification_status": "verified",
+                        "created": False,
+                        "upgraded": True,
+                    }
+                )
 
         if repaired:
             conn.commit()
@@ -3729,9 +4177,13 @@ def backfill_verified_fills_from_offers(limit: int = 50,
         return []
 
 
-def get_fills(cat_asset_id: str = None, side: str = None,
-              since: str = None, limit: int = 100,
-              include_legacy: bool = False) -> List[Dict]:
+def get_fills(
+    cat_asset_id: str = None,
+    side: str = None,
+    since: str = None,
+    limit: int = 100,
+    include_legacy: bool = False,
+) -> List[Dict]:
     """Get fills, optionally filtered.
 
     Args:
@@ -3766,8 +4218,7 @@ def get_fills(cat_asset_id: str = None, side: str = None,
     return [dict(row) for row in rows]
 
 
-def get_unmatched_fills(cat_asset_id: str, side: str,
-                        since: str = None) -> List[Dict]:
+def get_unmatched_fills(cat_asset_id: str, side: str, since: str = None) -> List[Dict]:
     """Get fills that haven't been matched into round-trips yet.
 
     Used by the PnL engine to pair buys with sells (FIFO matching).
@@ -3785,8 +4236,7 @@ def get_unmatched_fills(cat_asset_id: str, side: str,
     return [dict(row) for row in rows]
 
 
-def match_round_trip(buy_fill_id: int, sell_fill_id: int,
-                     pnl_xch: Decimal) -> int:
+def match_round_trip(buy_fill_id: int, sell_fill_id: int, pnl_xch: Decimal) -> int:
     """Link a buy fill and sell fill as a completed round-trip.
 
     Args:
@@ -3801,11 +4251,11 @@ def match_round_trip(buy_fill_id: int, sell_fill_id: int,
         conn = get_connection()
         conn.execute(
             "UPDATE fills SET round_trip_id=?, pnl_xch=? WHERE fill_id=?",
-            (round_trip_id, str(pnl_xch), buy_fill_id)
+            (round_trip_id, str(pnl_xch), buy_fill_id),
         )
         conn.execute(
             "UPDATE fills SET round_trip_id=?, pnl_xch=? WHERE fill_id=?",
-            (round_trip_id, str(pnl_xch), sell_fill_id)
+            (round_trip_id, str(pnl_xch), sell_fill_id),
         )
         conn.commit()
         return round_trip_id
@@ -3822,11 +4272,15 @@ def match_round_trip(buy_fill_id: int, sell_fill_id: int,
 # Inventory — track net position over time
 # ---------------------------------------------------------------------------
 
-def record_inventory_snapshot(cat_asset_id: str, net_position: Decimal,
-                               xch_balance: Decimal = None,
-                               cat_balance: Decimal = None,
-                               mid_price: Decimal = None,
-                               unrealised_pnl: Decimal = None) -> bool:
+
+def record_inventory_snapshot(
+    cat_asset_id: str,
+    net_position: Decimal,
+    xch_balance: Decimal = None,
+    cat_balance: Decimal = None,
+    mid_price: Decimal = None,
+    unrealised_pnl: Decimal = None,
+) -> bool:
     """Save a snapshot of current inventory position.
 
     Called after each fill to track how position changes over time.
@@ -3837,10 +4291,14 @@ def record_inventory_snapshot(cat_asset_id: str, net_position: Decimal,
             """INSERT INTO inventory (timestamp, cat_asset_id, net_position,
                xch_balance, cat_balance, mid_price)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (_now(), cat_asset_id, str(net_position),
-             str(xch_balance) if xch_balance is not None else None,
-             str(cat_balance) if cat_balance is not None else None,
-             str(mid_price) if mid_price is not None else None)
+            (
+                _now(),
+                cat_asset_id,
+                str(net_position),
+                str(xch_balance) if xch_balance is not None else None,
+                str(cat_balance) if cat_balance is not None else None,
+                str(mid_price) if mid_price is not None else None,
+            ),
         )
         conn.commit()
         return True
@@ -3877,7 +4335,8 @@ def get_net_position(cat_asset_id: str, since: str = None) -> Decimal:
         params,
     ).fetchall()
     net = sum(
-        Decimal(str(r["size_cat"])) * (Decimal("1") if r["side"] == "buy" else Decimal("-1"))
+        Decimal(str(r["size_cat"]))
+        * (Decimal("1") if r["side"] == "buy" else Decimal("-1"))
         for r in rows
     )
     return net
@@ -3887,9 +4346,14 @@ def get_net_position(cat_asset_id: str, since: str = None) -> Decimal:
 # Price History — for volatility calculation
 # ---------------------------------------------------------------------------
 
-def record_price(cat_asset_id: str, combined_price: Decimal,
-                 dexie_price: Decimal = None, tibet_price: Decimal = None,
-                 strategy_used: str = None) -> bool:
+
+def record_price(
+    cat_asset_id: str,
+    combined_price: Decimal,
+    dexie_price: Decimal = None,
+    tibet_price: Decimal = None,
+    strategy_used: str = None,
+) -> bool:
     """Save a price data point for volatility tracking."""
     try:
         conn = get_connection()
@@ -3897,10 +4361,14 @@ def record_price(cat_asset_id: str, combined_price: Decimal,
             """INSERT INTO price_history (timestamp, cat_asset_id, dexie_price,
                tibet_price, combined_price, strategy_used)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (_now(), cat_asset_id,
-             str(dexie_price) if dexie_price is not None else None,
-             str(tibet_price) if tibet_price is not None else None,
-             str(combined_price), strategy_used)
+            (
+                _now(),
+                cat_asset_id,
+                str(dexie_price) if dexie_price is not None else None,
+                str(tibet_price) if tibet_price is not None else None,
+                str(combined_price),
+                strategy_used,
+            ),
         )
         conn.commit()
         return True
@@ -3916,8 +4384,9 @@ def record_price(cat_asset_id: str, combined_price: Decimal,
         return False
 
 
-def get_recent_prices(cat_asset_id: str, hours: float = 4.0,
-                      limit: int = 500) -> List[Dict]:
+def get_recent_prices(
+    cat_asset_id: str, hours: float = 4.0, limit: int = 500
+) -> List[Dict]:
     """Get recent price history for volatility calculation.
 
     Args:
@@ -3927,13 +4396,14 @@ def get_recent_prices(cat_asset_id: str, hours: float = 4.0,
     conn = get_connection()
     # Calculate cutoff time
     from datetime import timedelta
+
     cutoff = _sqlite_ts(datetime.now(timezone.utc) - timedelta(hours=hours))
 
     rows = conn.execute(
         """SELECT * FROM price_history
            WHERE cat_asset_id=? AND timestamp>=?
            ORDER BY timestamp ASC LIMIT ?""",
-        (cat_asset_id, cutoff, limit)
+        (cat_asset_id, cutoff, limit),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -3957,8 +4427,7 @@ def set_log_sse_callback(callback):
     _sse_callback = callback
 
 
-def log_event(severity: str, event_type: str, message: str,
-              data: Dict = None) -> bool:
+def log_event(severity: str, event_type: str, message: str, data: Dict = None) -> bool:
     """Log an event to the database AND push to the live console via SSE.
 
     This replaces the V1 add_log() function. The GUI log panel
@@ -3998,6 +4467,7 @@ def log_event(severity: str, event_type: str, message: str,
         event_category = None
         try:
             from event_taxonomy import categorize_event
+
             event_category = categorize_event(event_type)
         except Exception:
             pass
@@ -4031,19 +4501,33 @@ def log_event(severity: str, event_type: str, message: str,
                 conn.execute(
                     """INSERT INTO events (timestamp, event_type, severity, message, data, event_category)
                        VALUES (?, ?, ?, ?, ?, ?)""",
-                    (now, event_type, db_severity, message,
-                     json.dumps(data) if data else None, event_category)
+                    (
+                        now,
+                        event_type,
+                        db_severity,
+                        message,
+                        json.dumps(data) if data else None,
+                        event_category,
+                    ),
                 )
             else:
                 conn.execute(
                     """INSERT INTO events (timestamp, event_type, severity, message, data)
                        VALUES (?, ?, ?, ?, ?)""",
-                    (now, event_type, db_severity, message,
-                     json.dumps(data) if data else None)
+                    (
+                        now,
+                        event_type,
+                        db_severity,
+                        message,
+                        json.dumps(data) if data else None,
+                    ),
                 )
             conn.commit()
         except sqlite3.OperationalError as _lock_err:
-            if "locked" in str(_lock_err).lower() and db_severity in ("error", "warning"):
+            if "locked" in str(_lock_err).lower() and db_severity in (
+                "error",
+                "warning",
+            ):
                 # High-severity event: don't drop silently. Retry once at the
                 # full connection timeout before giving up.
                 try:
@@ -4052,15 +4536,26 @@ def log_event(severity: str, event_type: str, message: str,
                         conn.execute(
                             """INSERT INTO events (timestamp, event_type, severity, message, data, event_category)
                                VALUES (?, ?, ?, ?, ?, ?)""",
-                            (now, event_type, db_severity, message,
-                             json.dumps(data) if data else None, event_category)
+                            (
+                                now,
+                                event_type,
+                                db_severity,
+                                message,
+                                json.dumps(data) if data else None,
+                                event_category,
+                            ),
                         )
                     else:
                         conn.execute(
                             """INSERT INTO events (timestamp, event_type, severity, message, data)
                                VALUES (?, ?, ?, ?, ?)""",
-                            (now, event_type, db_severity, message,
-                             json.dumps(data) if data else None)
+                            (
+                                now,
+                                event_type,
+                                db_severity,
+                                message,
+                                json.dumps(data) if data else None,
+                            ),
                         )
                     conn.commit()
                 except Exception:
@@ -4099,9 +4594,9 @@ def log_event(severity: str, event_type: str, message: str,
         return False
 
 
-def get_recent_events(limit: int = 50, severity: str = None,
-                      event_type: str = None,
-                      category: str = None) -> List[Dict]:
+def get_recent_events(
+    limit: int = 50, severity: str = None, event_type: str = None, category: str = None
+) -> List[Dict]:
     """Get recent events for the GUI log panel.
 
     Args:
@@ -4132,8 +4627,7 @@ def get_recent_events(limit: int = 50, severity: str = None,
     return [dict(row) for row in rows]
 
 
-def get_events_since(since: str, limit: int = 100,
-                     category: str = None) -> List[Dict]:
+def get_events_since(since: str, limit: int = 100, category: str = None) -> List[Dict]:
     """Get events newer than a given timestamp (for GUI clear support).
 
     Args:
@@ -4151,12 +4645,12 @@ def get_events_since(since: str, limit: int = 100,
         rows = conn.execute(
             "SELECT * FROM events WHERE timestamp > ? AND event_category=?"
             " ORDER BY timestamp DESC LIMIT ?",
-            (since_normalized, category, limit)
+            (since_normalized, category, limit),
         ).fetchall()
     else:
         rows = conn.execute(
             "SELECT * FROM events WHERE timestamp > ? ORDER BY timestamp DESC LIMIT ?",
-            (since_normalized, limit)
+            (since_normalized, limit),
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -4168,6 +4662,7 @@ def get_events_since(since: str, limit: int = 100,
 # ---------------------------------------------------------------------------
 # Utility — stats, cleanup, backup
 # ---------------------------------------------------------------------------
+
 
 def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     """Get summary statistics for the dashboard.
@@ -4183,7 +4678,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         row = conn.execute(
             "SELECT COUNT(*) as cnt FROM offers "
             f"WHERE status='open' AND {open_lifecycle_clause} AND cat_asset_id=?",
-            (cat_asset_id,)
+            (cat_asset_id,),
         ).fetchone()
     else:
         row = conn.execute(
@@ -4236,7 +4731,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
         query_base += " AND filled_at>=?"
         params.append(_sqlite_ts(since))
     rows = conn.execute(query_base, params).fetchall()
-    stats["realised_pnl_xch"] = str(sum((Decimal(str(r["pnl_xch"])) for r in rows), Decimal("0")))
+    stats["realised_pnl_xch"] = str(
+        sum((Decimal(str(r["pnl_xch"])) for r in rows), Decimal("0"))
+    )
 
     # Round-trip stats
     query_base = """SELECT COUNT(*) as cnt FROM fills
@@ -4286,6 +4783,7 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
 
     # Verified fill rate (last hour)
     from datetime import datetime, timezone, timedelta as _timedelta
+
     _cutoff_1h = _sqlite_ts(datetime.now(timezone.utc) - _timedelta(hours=1))
     query_base = """SELECT COUNT(*) as cnt FROM fills
                     WHERE filled_at > ?
@@ -4361,10 +4859,10 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     stats["volume_xch"] = str(_buy_xch + _sell_xch)
     stats["volume_cat"] = str(_buy_cat + _sell_cat)
     # Per-side gross volumes — what the user actually traded on each side.
-    stats["buy_volume_xch"] = str(_buy_xch)   # XCH spent acquiring CAT
-    stats["buy_volume_cat"] = str(_buy_cat)   # CAT received from buys
-    stats["sell_volume_xch"] = str(_sell_xch) # XCH received from sells
-    stats["sell_volume_cat"] = str(_sell_cat) # CAT delivered from sells
+    stats["buy_volume_xch"] = str(_buy_xch)  # XCH spent acquiring CAT
+    stats["buy_volume_cat"] = str(_buy_cat)  # CAT received from buys
+    stats["sell_volume_xch"] = str(_sell_xch)  # XCH received from sells
+    stats["sell_volume_cat"] = str(_sell_cat)  # CAT delivered from sells
     # Net cashflow — the simple "did I end up with more XCH or less?" number.
     # This is GROSS (doesn't match round-trip PnL; it's the raw XCH delta
     # from all fills, positive = we took in more XCH than we paid out).
@@ -4431,8 +4929,9 @@ def get_stats(cat_asset_id: str = None, since: str = None) -> Dict:
     return stats
 
 
-def record_config_change(key: str, old_value, new_value,
-                         source: str = "unknown", note: str = "") -> bool:
+def record_config_change(
+    key: str, old_value, new_value, source: str = "unknown", note: str = ""
+) -> bool:
     """F26 (2026-04-08): write+read audit trail for live config changes.
 
     Records the who/what/when of every config change so post-mortem
@@ -4453,8 +4952,14 @@ def record_config_change(key: str, old_value, new_value,
             """INSERT INTO config_history
                (timestamp, key, old_value, new_value, source, note)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (_now(), str(key), str(old_value or ""), str(new_value or ""),
-             str(source or "unknown"), str(note or ""))
+            (
+                _now(),
+                str(key),
+                str(old_value or ""),
+                str(new_value or ""),
+                str(source or "unknown"),
+                str(note or ""),
+            ),
         )
         conn.commit()
         return True
@@ -4465,13 +4970,17 @@ def record_config_change(key: str, old_value, new_value,
             pass
         # Audit logging is best-effort — never block a config change on
         # an audit failure. The change still happens, just unaudited.
-        log_event("debug", "config_audit_failed",
-                  f"Failed to write config_history row for {key}: {e}")
+        log_event(
+            "debug",
+            "config_audit_failed",
+            f"Failed to write config_history row for {key}: {e}",
+        )
         return False
 
 
-def get_config_history(limit: int = 100, key: str = None,
-                       since_hours: int = None) -> List[Dict]:
+def get_config_history(
+    limit: int = 100, key: str = None, since_hours: int = None
+) -> List[Dict]:
     """Read recent config change audit rows.
 
     F26 (2026-04-08). Used by the API endpoint that surfaces the audit
@@ -4535,14 +5044,16 @@ def force_wal_checkpoint() -> bool:
         result = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
         # Result is (busy_count, log_pages, checkpointed_pages)
         if result is not None:
-            log_event("debug", "wal_checkpoint",
-                      f"WAL checkpoint: busy={result[0]}, log_pages={result[1]}, "
-                      f"checkpointed={result[2]}")
+            log_event(
+                "debug",
+                "wal_checkpoint",
+                f"WAL checkpoint: busy={result[0]}, log_pages={result[1]}, "
+                f"checkpointed={result[2]}",
+            )
             return result[0] == 0  # 0 = no busy readers blocked us
         return True
     except Exception as e:
-        log_event("warning", "wal_checkpoint_failed",
-                  f"WAL checkpoint failed: {e}")
+        log_event("warning", "wal_checkpoint_failed", f"WAL checkpoint failed: {e}")
         return False
 
 
@@ -4554,8 +5065,12 @@ def cleanup_old_pool_snapshots(days: int = 30) -> int:
     """
     try:
         conn = get_connection()
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-        cursor = conn.execute("DELETE FROM pool_snapshots WHERE timestamp < ?", (cutoff,))
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        cursor = conn.execute(
+            "DELETE FROM pool_snapshots WHERE timestamp < ?", (cutoff,)
+        )
         conn.commit()
         return cursor.rowcount
     except Exception:
@@ -4574,7 +5089,9 @@ def cleanup_old_trading_pace(days: int = 7) -> int:
     """
     try:
         conn = get_connection()
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         cursor = conn.execute("DELETE FROM trading_pace WHERE timestamp < ?", (cutoff,))
         conn.commit()
         return cursor.rowcount
@@ -4601,7 +5118,9 @@ def cleanup_old_events(days: int = 30, severity_keep_days: int = 90) -> int:
         conn = get_connection()
         now = datetime.now(timezone.utc)
         info_cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-        severity_cutoff = (now - timedelta(days=severity_keep_days)).strftime("%Y-%m-%d %H:%M:%S")
+        severity_cutoff = (now - timedelta(days=severity_keep_days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         # Delete older info/debug/success events first.
         cur_info = conn.execute(
             "DELETE FROM events "
@@ -4639,6 +5158,7 @@ def backup_database(backup_path: str = None) -> str:
         date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         try:
             from user_paths import backups_dir
+
             backup_dir = backups_dir()
         except Exception:
             backup_dir = os.path.dirname(DB_PATH)
@@ -4669,6 +5189,7 @@ def _prune_old_backups(backup_dir: str, keep: int = 10) -> int:
     Returns the number of files deleted.
     """
     import glob
+
     try:
         files = glob.glob(os.path.join(backup_dir, "bot_backup_*.db"))
         if len(files) <= keep:
@@ -4691,6 +5212,7 @@ def _prune_old_backups(backup_dir: str, keep: int = 10) -> int:
 # ---------------------------------------------------------------------------
 # Bot Settings — simple key-value store (persists across restarts)
 # ---------------------------------------------------------------------------
+
 
 def get_setting(key: str, default: str = None) -> str:
     """Get a setting value by key. Returns default if not found."""
@@ -4729,7 +5251,7 @@ def set_setting(key: str, value: str) -> bool:
             """INSERT INTO bot_settings (key, value, updated_at)
                VALUES (?, ?, ?)
                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
-            (key, value, _sqlite_ts(datetime.now(timezone.utc)))
+            (key, value, _sqlite_ts(datetime.now(timezone.utc))),
         )
         conn.commit()
         return True
@@ -4758,8 +5280,10 @@ def set_setting(key: str, value: str) -> bool:
 # V3: Splash Incoming Offers — received from the P2P network
 # ---------------------------------------------------------------------------
 
-def record_splash_incoming(offer_bech32: str, fingerprint: str,
-                           pair_hint: str = None, source_ip: str = None) -> bool:
+
+def record_splash_incoming(
+    offer_bech32: str, fingerprint: str, pair_hint: str = None, source_ip: str = None
+) -> bool:
     """Record an offer received from the Splash P2P network.
 
     Args:
@@ -4775,7 +5299,7 @@ def record_splash_incoming(offer_bech32: str, fingerprint: str,
         # Skip if we already have this fingerprint (dedup)
         existing = conn.execute(
             "SELECT id FROM splash_incoming_offers WHERE fingerprint = ?",
-            (fingerprint,)
+            (fingerprint,),
         ).fetchone()
         if existing:
             return False
@@ -4784,7 +5308,7 @@ def record_splash_incoming(offer_bech32: str, fingerprint: str,
             """INSERT INTO splash_incoming_offers
                (offer_bech32, fingerprint, received_at, status, pair_hint, source_ip)
                VALUES (?, ?, ?, 'new', ?, ?)""",
-            (offer_bech32, fingerprint, _now(), pair_hint, source_ip)
+            (offer_bech32, fingerprint, _now(), pair_hint, source_ip),
         )
         conn.commit()
         return True
@@ -4812,12 +5336,12 @@ def get_splash_incoming_offers(status: str = None, limit: int = 50) -> List[Dict
             rows = conn.execute(
                 "SELECT * FROM splash_incoming_offers WHERE status = ? "
                 "ORDER BY received_at DESC LIMIT ?",
-                (status, limit)
+                (status, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT * FROM splash_incoming_offers ORDER BY received_at DESC LIMIT ?",
-                (limit,)
+                (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
@@ -4826,8 +5350,9 @@ def get_splash_incoming_offers(status: str = None, limit: int = 50) -> List[Dict
         raise
 
 
-def update_splash_incoming_status(offer_id: int, status: str,
-                                  pair_hint: str = None) -> bool:
+def update_splash_incoming_status(
+    offer_id: int, status: str, pair_hint: str = None
+) -> bool:
     """Update the status of a Splash incoming offer.
 
     Args:
@@ -4839,12 +5364,12 @@ def update_splash_incoming_status(offer_id: int, status: str,
         if pair_hint is None:
             conn.execute(
                 "UPDATE splash_incoming_offers SET status = ? WHERE id = ?",
-                (status, offer_id)
+                (status, offer_id),
             )
         else:
             conn.execute(
                 "UPDATE splash_incoming_offers SET status = ?, pair_hint = ? WHERE id = ?",
-                (status, pair_hint, offer_id)
+                (status, pair_hint, offer_id),
             )
         conn.commit()
         return True
@@ -4853,7 +5378,9 @@ def update_splash_incoming_status(offer_id: int, status: str,
             conn.rollback()
         except Exception:
             pass
-        log_event("warning", "splash_db_error", f"Failed to update offer {offer_id}: {e}")
+        log_event(
+            "warning", "splash_db_error", f"Failed to update offer {offer_id}: {e}"
+        )
         return False
 
 
@@ -4886,7 +5413,7 @@ def get_splash_incoming_stats(asset_id: str = None) -> Dict:
                 FROM splash_incoming_offers
                 WHERE status = 'processed' AND lower(coalesce(pair_hint, '')) = ?
                 """,
-                (normalized_asset,)
+                (normalized_asset,),
             ).fetchone()
     except Exception as e:
         if not _missing_splash_table(e):
@@ -4919,8 +5446,11 @@ def clear_splash_incoming() -> int:
         conn.commit()
         deleted = int(cursor.rowcount or 0)
         if deleted > 0:
-            log_event("info", "splash_reset",
-                      f"Cleared {deleted} stored Splash incoming offers for a new run")
+            log_event(
+                "info",
+                "splash_reset",
+                f"Cleared {deleted} stored Splash incoming offers for a new run",
+            )
         return deleted
     except Exception as e:
         try:
@@ -4945,13 +5475,16 @@ def prune_splash_incoming(max_age_hours: int = 24) -> int:
     try:
         cursor = conn.execute(
             "DELETE FROM splash_incoming_offers WHERE received_at < datetime('now', ?)",
-            (f"-{max_age_hours} hours",)
+            (f"-{max_age_hours} hours",),
         )
         conn.commit()
         deleted = cursor.rowcount
         if deleted > 0:
-            log_event("debug", "splash_pruned",
-                      f"Pruned {deleted} old Splash incoming offers (>{max_age_hours}h)")
+            log_event(
+                "debug",
+                "splash_pruned",
+                f"Pruned {deleted} old Splash incoming offers (>{max_age_hours}h)",
+            )
         return deleted
     except Exception as e:
         try:
@@ -4968,8 +5501,10 @@ def prune_splash_incoming(max_age_hours: int = 24) -> int:
 # Smart Defaults v2: Pool snapshots + market analysis cache
 # ---------------------------------------------------------------------------
 
-def record_pool_snapshot(asset_id: str, xch_reserve: float,
-                         cat_reserve: float, price: float) -> bool:
+
+def record_pool_snapshot(
+    asset_id: str, xch_reserve: float, cat_reserve: float, price: float
+) -> bool:
     """Store a TibetSwap pool snapshot for historical tracking.
 
     Called every bot loop cycle to build up pool depth history over time.
@@ -4980,7 +5515,7 @@ def record_pool_snapshot(asset_id: str, xch_reserve: float,
         conn.execute(
             "INSERT INTO pool_snapshots (asset_id, xch_reserve, cat_reserve, price) "
             "VALUES (?, ?, ?, ?)",
-            (asset_id, xch_reserve, cat_reserve, price)
+            (asset_id, xch_reserve, cat_reserve, price),
         )
         conn.commit()
         return True
@@ -5003,7 +5538,7 @@ def get_pool_snapshots(asset_id: str, hours: float = 720) -> List[Dict]:
             "SELECT * FROM pool_snapshots "
             "WHERE asset_id = ? AND timestamp >= datetime('now', ?) "
             "ORDER BY timestamp DESC",
-            (asset_id, f"-{int(hours)} hours")
+            (asset_id, f"-{int(hours)} hours"),
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -5022,7 +5557,7 @@ def get_market_analysis_cache(asset_id: str, analysis_type: str) -> Optional[Dic
             "WHERE asset_id = ? AND analysis_type = ? "
             "AND expires_at > datetime('now') "
             "ORDER BY created_at DESC LIMIT 1",
-            (asset_id, analysis_type)
+            (asset_id, analysis_type),
         ).fetchone()
         if row:
             return json.loads(row["data_json"])
@@ -5031,7 +5566,9 @@ def get_market_analysis_cache(asset_id: str, analysis_type: str) -> Optional[Dic
         return None
 
 
-def get_market_analysis_cache_age_secs(asset_id: str, analysis_type: str) -> Optional[int]:
+def get_market_analysis_cache_age_secs(
+    asset_id: str, analysis_type: str
+) -> Optional[int]:
     """Age in seconds of the latest non-expired cache entry for this pair.
 
     Returns None on cache miss or expiry. Used by the advisor layer so tips
@@ -5047,7 +5584,7 @@ def get_market_analysis_cache_age_secs(asset_id: str, analysis_type: str) -> Opt
             "WHERE asset_id = ? AND analysis_type = ? "
             "  AND expires_at > datetime('now') "
             "ORDER BY created_at DESC LIMIT 1",
-            (asset_id, analysis_type)
+            (asset_id, analysis_type),
         ).fetchone()
         if row and row["age_secs"] is not None:
             return max(0, int(row["age_secs"]))
@@ -5056,8 +5593,9 @@ def get_market_analysis_cache_age_secs(asset_id: str, analysis_type: str) -> Opt
         return None
 
 
-def set_market_analysis_cache(asset_id: str, analysis_type: str,
-                               data: dict, ttl_minutes: int = 60) -> bool:
+def set_market_analysis_cache(
+    asset_id: str, analysis_type: str, data: dict, ttl_minutes: int = 60
+) -> bool:
     """Store a market analysis result with an expiry time.
 
     Args:
@@ -5071,12 +5609,12 @@ def set_market_analysis_cache(asset_id: str, analysis_type: str,
         # Clear old entries for this asset/type
         conn.execute(
             "DELETE FROM market_analysis_cache WHERE asset_id = ? AND analysis_type = ?",
-            (asset_id, analysis_type)
+            (asset_id, analysis_type),
         )
         conn.execute(
             "INSERT INTO market_analysis_cache (asset_id, analysis_type, data_json, expires_at) "
             "VALUES (?, ?, ?, datetime('now', ?))",
-            (asset_id, analysis_type, json.dumps(data), f"+{ttl_minutes} minutes")
+            (asset_id, analysis_type, json.dumps(data), f"+{ttl_minutes} minutes"),
         )
         conn.commit()
         return True
@@ -5088,8 +5626,9 @@ def set_market_analysis_cache(asset_id: str, analysis_type: str,
         return False
 
 
-def clear_market_analysis_cache(asset_id: str,
-                                keep_analysis_types: tuple[str, ...] = ()) -> int:
+def clear_market_analysis_cache(
+    asset_id: str, keep_analysis_types: tuple[str, ...] = ()
+) -> int:
     """Clear cached market analysis entries for an asset.
 
     Args:
@@ -5104,12 +5643,11 @@ def clear_market_analysis_cache(asset_id: str,
             cursor = conn.execute(
                 f"DELETE FROM market_analysis_cache "
                 f"WHERE asset_id = ? AND analysis_type NOT IN ({placeholders})",
-                (asset_id, *keep_analysis_types)
+                (asset_id, *keep_analysis_types),
             )
         else:
             cursor = conn.execute(
-                "DELETE FROM market_analysis_cache WHERE asset_id = ?",
-                (asset_id,)
+                "DELETE FROM market_analysis_cache WHERE asset_id = ?", (asset_id,)
             )
         conn.commit()
         return cursor.rowcount

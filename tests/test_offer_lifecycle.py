@@ -3,13 +3,16 @@
 import unittest
 
 from offer_lifecycle import (
-    OfferState, OfferSignal, apply_signal, apply_fill_verification,
-    coarse_status, is_terminal,
+    OfferState,
+    OfferSignal,
+    apply_signal,
+    apply_fill_verification,
+    coarse_status,
+    is_terminal,
 )
 
 
 class TestOfferLifecycle(unittest.TestCase):
-
     # ---- OPEN state transitions ----
 
     def test_open_expiry_near(self):

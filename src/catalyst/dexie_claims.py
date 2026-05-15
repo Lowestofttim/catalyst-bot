@@ -86,6 +86,7 @@ def _network_prefix() -> str:
     """Return the bech32m prefix matching the active wallet network."""
     try:
         from wallet import get_next_address
+
         info = get_next_address(new_address=False)
         if info and info.get("success"):
             addr = str(info.get("address", "")).strip()
@@ -117,7 +118,11 @@ def _post(path: str, payload: Dict[str, Any], timeout: int = 20) -> Dict[str, An
     try:
         resp = requests.post(url, json=payload, timeout=timeout)
         if resp.status_code != 200:
-            return {"success": False, "error": f"HTTP {resp.status_code}", "body": resp.text[:200]}
+            return {
+                "success": False,
+                "error": f"HTTP {resp.status_code}",
+                "body": resp.text[:200],
+            }
         return resp.json() or {}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -133,8 +138,9 @@ def check_rewards(offer_ids: List[str]) -> Dict[str, Any]:
     return _post("/rewards/check", {"ids": offer_ids})
 
 
-def submit_claims(claims: List[Dict[str, Any]],
-                  target_puzzle_hash_hex: Optional[str] = None) -> Dict[str, Any]:
+def submit_claims(
+    claims: List[Dict[str, Any]], target_puzzle_hash_hex: Optional[str] = None
+) -> Dict[str, Any]:
     """POST signed claims to ``/v1/rewards/claim``."""
     if not claims:
         return {"success": False, "error": "no_claims"}
@@ -204,8 +210,12 @@ def list_pending_rewards() -> Dict[str, Any]:
     # Reverse-lookup so we can match an offer back to its bech32 if needed.
     response = check_rewards(ids)
     if not response.get("success"):
-        return {"success": False, "error": response.get("error", "rewards_check_failed"),
-                "offers": [], "totals": {}}
+        return {
+            "success": False,
+            "error": response.get("error", "rewards_check_failed"),
+            "offers": [],
+            "totals": {},
+        }
 
     offers_out: List[Dict[str, Any]] = []
     totals: Dict[str, float] = {}
@@ -217,16 +227,24 @@ def list_pending_rewards() -> Dict[str, Any]:
             except (TypeError, ValueError):
                 amt = 0.0
             code = str(r.get("code") or "DBX")
-            rewards.append({"amount": round(amt, 4), "code": code,
-                            "id": r.get("id", ""), "name": r.get("name", "")})
+            rewards.append(
+                {
+                    "amount": round(amt, 4),
+                    "code": code,
+                    "id": r.get("id", ""),
+                    "name": r.get("name", ""),
+                }
+            )
             totals[code] = totals.get(code, 0.0) + amt
-        offers_out.append({
-            "offer_id": entry.get("id", ""),
-            "maker_puzzle_hash": entry.get("maker_puzzle_hash", ""),
-            "rewards": rewards,
-            "is_active": entry.get("status", 0) == 0,
-            "date_found": entry.get("date_found", ""),
-        })
+        offers_out.append(
+            {
+                "offer_id": entry.get("id", ""),
+                "maker_puzzle_hash": entry.get("maker_puzzle_hash", ""),
+                "rewards": rewards,
+                "is_active": entry.get("status", 0) == 0,
+                "date_found": entry.get("date_found", ""),
+            }
+        )
     totals = {k: round(v, 4) for k, v in totals.items()}
     return {"success": True, "offers": offers_out, "totals": totals}
 
@@ -243,7 +261,11 @@ def claim_all(target_address: Optional[str] = None) -> Dict[str, Any]:
         return pending
     offers = pending.get("offers", [])
     if not offers:
-        return {"success": True, "claims_submitted": 0, "message": "no rewards to claim"}
+        return {
+            "success": True,
+            "claims_submitted": 0,
+            "message": "no rewards to claim",
+        }
 
     try:
         from wallet import sign_message_by_address
@@ -256,6 +278,7 @@ def claim_all(target_address: Optional[str] = None) -> Dict[str, Any]:
         target_address_clean = target_address.strip()
         try:
             from chia.util.bech32m import decode_puzzle_hash
+
             target_puzzle_hash_hex = decode_puzzle_hash(target_address_clean).hex()
         except Exception:
             return {"success": False, "error": "invalid_target_address"}
@@ -270,24 +293,36 @@ def claim_all(target_address: Optional[str] = None) -> Dict[str, Any]:
             continue
         maker_address = puzzle_hash_to_address(maker_hex)
         if not maker_address:
-            sign_failures.append({"offer_id": offer_id, "error": "address_encode_failed"})
+            sign_failures.append(
+                {"offer_id": offer_id, "error": "address_encode_failed"}
+            )
             continue
         if target_puzzle_hash_hex:
-            message = (f"Claim dexie liquidity rewards for offer {offer_id} "
-                       f"to {target_puzzle_hash_hex} ({timestamp})")
+            message = (
+                f"Claim dexie liquidity rewards for offer {offer_id} "
+                f"to {target_puzzle_hash_hex} ({timestamp})"
+            )
         else:
-            message = f"Claim dexie liquidity rewards for offer {offer_id} ({timestamp})"
+            message = (
+                f"Claim dexie liquidity rewards for offer {offer_id} ({timestamp})"
+            )
         sig_result = sign_message_by_address(maker_address, message)
         if not sig_result or not sig_result.get("success"):
-            sign_failures.append({"offer_id": offer_id,
-                                   "error": (sig_result or {}).get("error", "sign_failed")})
+            sign_failures.append(
+                {
+                    "offer_id": offer_id,
+                    "error": (sig_result or {}).get("error", "sign_failed"),
+                }
+            )
             continue
-        claims.append({
-            "offer_id": offer_id,
-            "signature": sig_result.get("signature", ""),
-            "public_key": sig_result.get("public_key", ""),
-            "timestamp": timestamp,
-        })
+        claims.append(
+            {
+                "offer_id": offer_id,
+                "signature": sig_result.get("signature", ""),
+                "public_key": sig_result.get("public_key", ""),
+                "timestamp": timestamp,
+            }
+        )
 
     if not claims:
         # If every offer hit the same root cause (Sage's RPC doesn't expose
@@ -305,8 +340,11 @@ def claim_all(target_address: Optional[str] = None) -> Dict[str, Any]:
                 ),
                 "sign_failures": sign_failures,
             }
-        return {"success": False, "error": "no_signed_claims",
-                "sign_failures": sign_failures}
+        return {
+            "success": False,
+            "error": "no_signed_claims",
+            "sign_failures": sign_failures,
+        }
 
     result = submit_claims(claims, target_puzzle_hash_hex=target_puzzle_hash_hex)
     return {

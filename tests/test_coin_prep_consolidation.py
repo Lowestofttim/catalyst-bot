@@ -102,18 +102,26 @@ class CoinPrepConsolidationTests(unittest.TestCase):
             "success": True,
             "confirmed_records": [
                 {"coin_id": "0x" + "11" * 32, "spent_block_index": 0, "amount": 400},
-                {"coin_id": "0x" + "22" * 32, "spent_block_index": 0, "coin": {"amount": 600}},
+                {
+                    "coin_id": "0x" + "22" * 32,
+                    "spent_block_index": 0,
+                    "coin": {"amount": 600},
+                },
             ],
         }
 
-        def send_transaction(wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None):
-            calls["send"].append({
-                "wallet_id": wallet_id,
-                "amount_mojos": amount_mojos,
-                "address": address,
-                "fee_mojos": fee_mojos,
-                "source_coin_ids": source_coin_ids,
-            })
+        def send_transaction(
+            wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None
+        ):
+            calls["send"].append(
+                {
+                    "wallet_id": wallet_id,
+                    "amount_mojos": amount_mojos,
+                    "address": address,
+                    "fee_mojos": fee_mojos,
+                    "source_coin_ids": source_coin_ids,
+                }
+            )
             return {"success": True, "submitted": True}
 
         fake_wallet_sage.send_transaction = send_transaction
@@ -126,13 +134,18 @@ class CoinPrepConsolidationTests(unittest.TestCase):
         with patch.object(self.coin_prep_worker.time, "sleep", return_value=None):
             self.assertTrue(worker._consolidate_wallet_sage(1, "XCH"))
 
-        self.assertEqual(calls["send"], [{
-            "wallet_id": 1,
-            "amount_mojos": 990,
-            "address": "xch1self",
-            "fee_mojos": 10,
-            "source_coin_ids": ["11" * 32, "22" * 32],
-        }])
+        self.assertEqual(
+            calls["send"],
+            [
+                {
+                    "wallet_id": 1,
+                    "amount_mojos": 990,
+                    "address": "xch1self",
+                    "fee_mojos": 10,
+                    "source_coin_ids": ["11" * 32, "22" * 32],
+                }
+            ],
+        )
 
     def test_sage_cat_consolidation_sends_full_cat_balance_to_self(self):
         calls = {"send": []}
@@ -148,32 +161,54 @@ class CoinPrepConsolidationTests(unittest.TestCase):
             "success": True,
             "wallet_balance": {"spendable_balance": 1000},
         }
+
         def get_spendable_coins_rpc(wallet_id):
             if wallet_id == 1:
                 return {
                     "success": True,
                     "confirmed_records": [
-                        {"coin_id": "0x" + "aa" * 32, "spent_block_index": 0, "amount": 25},
-                        {"coin_id": "0x" + "bb" * 32, "spent_block_index": 0, "amount": 100},
+                        {
+                            "coin_id": "0x" + "aa" * 32,
+                            "spent_block_index": 0,
+                            "amount": 25,
+                        },
+                        {
+                            "coin_id": "0x" + "bb" * 32,
+                            "spent_block_index": 0,
+                            "amount": 100,
+                        },
                     ],
                 }
             return {
                 "success": True,
                 "confirmed_records": [
-                    {"coin_id": "0x" + "11" * 32, "spent_block_index": 0, "amount": 400},
-                    {"coin_id": "0x" + "22" * 32, "spent_block_index": 0, "coin": {"amount": 600}},
+                    {
+                        "coin_id": "0x" + "11" * 32,
+                        "spent_block_index": 0,
+                        "amount": 400,
+                    },
+                    {
+                        "coin_id": "0x" + "22" * 32,
+                        "spent_block_index": 0,
+                        "coin": {"amount": 600},
+                    },
                 ],
             }
+
         fake_wallet_sage.get_spendable_coins_rpc = get_spendable_coins_rpc
 
-        def send_transaction(wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None):
-            calls["send"].append({
-                "wallet_id": wallet_id,
-                "amount_mojos": amount_mojos,
-                "address": address,
-                "fee_mojos": fee_mojos,
-                "source_coin_ids": source_coin_ids,
-            })
+        def send_transaction(
+            wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None
+        ):
+            calls["send"].append(
+                {
+                    "wallet_id": wallet_id,
+                    "amount_mojos": amount_mojos,
+                    "address": address,
+                    "fee_mojos": fee_mojos,
+                    "source_coin_ids": source_coin_ids,
+                }
+            )
             return {"success": True, "submitted": True}
 
         fake_wallet_sage.send_transaction = send_transaction
@@ -188,13 +223,18 @@ class CoinPrepConsolidationTests(unittest.TestCase):
         with patch.object(self.coin_prep_worker.time, "sleep", return_value=None):
             self.assertTrue(worker._consolidate_wallet_sage(2, "CAT"))
 
-        self.assertEqual(calls["send"], [{
-            "wallet_id": 2,
-            "amount_mojos": 1000,
-            "address": "xch1self",
-            "fee_mojos": 10,
-            "source_coin_ids": ["11" * 32, "22" * 32],
-        }])
+        self.assertEqual(
+            calls["send"],
+            [
+                {
+                    "wallet_id": 2,
+                    "amount_mojos": 1000,
+                    "address": "xch1self",
+                    "fee_mojos": 10,
+                    "source_coin_ids": ["11" * 32, "22" * 32],
+                }
+            ],
+        )
 
     def test_sage_large_xch_consolidation_uses_priority_fee(self):
         calls = {"send": []}
@@ -214,14 +254,18 @@ class CoinPrepConsolidationTests(unittest.TestCase):
             ],
         }
 
-        def send_transaction(wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None):
-            calls["send"].append({
-                "wallet_id": wallet_id,
-                "amount_mojos": amount_mojos,
-                "address": address,
-                "fee_mojos": fee_mojos,
-                "source_coin_ids": source_coin_ids,
-            })
+        def send_transaction(
+            wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None
+        ):
+            calls["send"].append(
+                {
+                    "wallet_id": wallet_id,
+                    "amount_mojos": amount_mojos,
+                    "address": address,
+                    "fee_mojos": fee_mojos,
+                    "source_coin_ids": source_coin_ids,
+                }
+            )
             return {"success": True, "submitted": True}
 
         fake_wallet_sage.send_transaction = send_transaction
@@ -255,14 +299,18 @@ class CoinPrepConsolidationTests(unittest.TestCase):
             "confirmed_records": list(records),
         }
 
-        def send_transaction(wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None):
-            calls.append({
-                "wallet_id": wallet_id,
-                "amount_mojos": amount_mojos,
-                "address": address,
-                "fee_mojos": fee_mojos,
-                "source_coin_ids": list(source_coin_ids or []),
-            })
+        def send_transaction(
+            wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None
+        ):
+            calls.append(
+                {
+                    "wallet_id": wallet_id,
+                    "amount_mojos": amount_mojos,
+                    "address": address,
+                    "fee_mojos": fee_mojos,
+                    "source_coin_ids": list(source_coin_ids or []),
+                }
+            )
             return {"success": True, "submitted": True}
 
         fake_wallet_sage.send_transaction = send_transaction
@@ -280,7 +328,9 @@ class CoinPrepConsolidationTests(unittest.TestCase):
         self.assertEqual(calls[0]["fee_mojos"], 20)
         self.assertEqual(len(calls[0]["source_coin_ids"]), 45)
 
-    def test_sage_consolidation_rejects_transient_pending_lock_that_restores_old_count(self):
+    def test_sage_consolidation_rejects_transient_pending_lock_that_restores_old_count(
+        self,
+    ):
         calls = []
         counts = iter([3, 0, 3, 3, 3])
 
@@ -297,7 +347,9 @@ class CoinPrepConsolidationTests(unittest.TestCase):
             ],
         }
 
-        def send_transaction(wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None):
+        def send_transaction(
+            wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None
+        ):
             calls.append(source_coin_ids)
             return {"success": True, "submitted": True}
 
@@ -330,7 +382,9 @@ class CoinPrepConsolidationTests(unittest.TestCase):
             ],
         }
 
-        def send_transaction(wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None):
+        def send_transaction(
+            wallet_id, amount_mojos, address, fee_mojos=0, source_coin_ids=None
+        ):
             calls["send"] += 1
             return {"success": True, "submitted": True}
 
@@ -354,10 +408,17 @@ class CoinPrepConsolidationTests(unittest.TestCase):
         self.assertEqual(calls, {"send": 1, "resync": 1})
 
     def test_worker_aborts_when_consolidation_never_verifies(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("Consolidation did not complete", source)
-        self.assertNotIn("Continuing anyway - transactions may still be pending", source)
+        self.assertNotIn(
+            "Continuing anyway - transactions may still be pending", source
+        )
 
     def test_sage_combine_zero_spendable_coins_is_not_success(self):
         fake_wallet_sage = types.ModuleType("wallet_sage")

@@ -55,26 +55,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ─── CONFIG ─────────────────────────────────────────────────────
 # XCH Pools
-XCH_POOL_A_MOJOS = 20_000_000_000   # 0.02 XCH
-XCH_POOL_A_SPLIT = 2                 # Split into 2 × 0.01 XCH
-XCH_POOL_B_MOJOS = 30_000_000_000   # 0.03 XCH
-XCH_POOL_B_SPLIT = 3                 # Split into 3 × 0.01 XCH
+XCH_POOL_A_MOJOS = 20_000_000_000  # 0.02 XCH
+XCH_POOL_A_SPLIT = 2  # Split into 2 × 0.01 XCH
+XCH_POOL_B_MOJOS = 30_000_000_000  # 0.03 XCH
+XCH_POOL_B_SPLIT = 3  # Split into 3 × 0.01 XCH
 XCH_TOTAL_MOJOS = XCH_POOL_A_MOJOS + XCH_POOL_B_MOJOS
 
 # CAT Pools — use small amounts (CAT mojos, NOT XCH mojos)
 # CAT decimals = 3, so 1000 mojos = 1 token. We use 20+30 = 50 mojos (tiny).
-CAT_POOL_A_MOJOS = 20    # 0.02 CAT tokens
-CAT_POOL_A_SPLIT = 2     # Split into 2 × 10 mojos
-CAT_POOL_B_MOJOS = 30    # 0.03 CAT tokens
-CAT_POOL_B_SPLIT = 3     # Split into 3 × 10 mojos
+CAT_POOL_A_MOJOS = 20  # 0.02 CAT tokens
+CAT_POOL_A_SPLIT = 2  # Split into 2 × 10 mojos
+CAT_POOL_B_MOJOS = 30  # 0.03 CAT tokens
+CAT_POOL_B_SPLIT = 3  # Split into 3 × 10 mojos
 CAT_TOTAL_MOJOS = CAT_POOL_A_MOJOS + CAT_POOL_B_MOJOS
 
 XCH_WALLET_ID = 1
+
 
 # CAT wallet ID — read from .env, fallback to 5
 def _get_cat_wallet_id():
     """Read CAT_WALLET_ID from .env (same logic as config.py)."""
     from dotenv import load_dotenv
+
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     load_dotenv(env_path)
     for key in ["CAT_WALLET_ID", "CHIA_WALLET_ID_MZ", "CHIA_WALLET_ID_CAT"]:
@@ -86,10 +88,11 @@ def _get_cat_wallet_id():
                 continue
     return 5  # default
 
+
 CAT_WALLET_ID = _get_cat_wallet_id()
 
 MIN_XCH_BALANCE_MOJOS = 100_000_000_000  # Need at least 0.1 XCH
-MIN_CAT_BALANCE_MOJOS = 100               # Need at least 100 CAT mojos (0.1 token)
+MIN_CAT_BALANCE_MOJOS = 100  # Need at least 100 CAT mojos (0.1 token)
 
 DRY_RUN = "--dry-run" in sys.argv
 SKIP_CLEANUP = "--skip-cleanup" in sys.argv
@@ -131,10 +134,12 @@ class TestRunner:
         total = len(self.tests)
         elapsed = time.time() - self.start_time
 
-        self.log(f"\n{'='*60}")
-        self.log(f"TEST RESULTS: {passed}/{total} passed, {failed} failed, {skipped} skipped")
+        self.log(f"\n{'=' * 60}")
+        self.log(
+            f"TEST RESULTS: {passed}/{total} passed, {failed} failed, {skipped} skipped"
+        )
         self.log(f"Total time: {elapsed:.1f}s")
-        self.log(f"{'='*60}")
+        self.log(f"{'=' * 60}")
 
         for status, num, name in self.tests:
             icon = "✅" if status == "PASS" else ("❌" if status == "FAIL" else "⏭️")
@@ -159,6 +164,7 @@ def get_coins(wallet_id, label=""):
     We flatten these into simple dicts: {"coin_id": "...", "amount": 12345}
     """
     from wallet_sage import get_spendable_coins_rpc
+
     result = get_spendable_coins_rpc(wallet_id)
     if result is None:
         return []
@@ -180,12 +186,14 @@ def get_coins(wallet_id, label=""):
             coin_id = coin_data.get("coin_id", "") or coin_data.get("name", "")
 
         if amount > 0:
-            coins.append({
-                "coin_id": coin_id,
-                "amount": amount,
-                "parent": coin_data.get("parent_coin_info", ""),
-                "puzzle_hash": coin_data.get("puzzle_hash", ""),
-            })
+            coins.append(
+                {
+                    "coin_id": coin_id,
+                    "amount": amount,
+                    "parent": coin_data.get("parent_coin_info", ""),
+                    "puzzle_hash": coin_data.get("puzzle_hash", ""),
+                }
+            )
 
     return coins
 
@@ -209,7 +217,9 @@ def poll_for_pools(runner, wallet_id, pool_specs, label, timeout_s=180):
     """
     from wallet_sage import are_coins_spendable
 
-    runner.log(f"\n   🔍 Polling for {label} pool coins to appear and become spendable (up to {timeout_s}s)...")
+    runner.log(
+        f"\n   🔍 Polling for {label} pool coins to appear and become spendable (up to {timeout_s}s)..."
+    )
     result_ids = {}
 
     for poll in range(timeout_s // 5):
@@ -222,7 +232,9 @@ def poll_for_pools(runner, wallet_id, pool_specs, label, timeout_s=180):
             if not matching:
                 all_found = False
                 break
-            candidate_ids.append((pool_name, matching[0].get("coin_id", ""), pool_amount))
+            candidate_ids.append(
+                (pool_name, matching[0].get("coin_id", ""), pool_amount)
+            )
 
         if all_found and candidate_ids:
             # Check all are spendable
@@ -237,20 +249,30 @@ def poll_for_pools(runner, wallet_id, pool_specs, label, timeout_s=180):
             if all_spendable:
                 for pool_name, coin_id, _ in candidate_ids:
                     result_ids[pool_name] = coin_id
-                runner.log(f"      ✅ All {label} pool coins spendable after {poll * 5}s")
+                runner.log(
+                    f"      ✅ All {label} pool coins spendable after {poll * 5}s"
+                )
                 return result_ids
             elif poll > 0 and poll % 4 == 0:
-                runner.log(f"      ⏳ {poll * 5}s — {label} coins visible but not yet spendable")
+                runner.log(
+                    f"      ⏳ {poll * 5}s — {label} coins visible but not yet spendable"
+                )
         elif poll > 0 and poll % 4 == 0:
-            found_count = sum(1 for pn, pa in pool_specs if find_coins_by_amount(coins, pa))
-            runner.log(f"      ⏳ {poll * 5}s — {label} pool coins: {found_count}/{len(pool_specs)} visible")
+            found_count = sum(
+                1 for pn, pa in pool_specs if find_coins_by_amount(coins, pa)
+            )
+            runner.log(
+                f"      ⏳ {poll * 5}s — {label} pool coins: {found_count}/{len(pool_specs)} visible"
+            )
         time.sleep(5)
 
     runner.log(f"      ❌ {label} pool coins not all spendable after {timeout_s}s!")
     return None
 
 
-def poll_for_split(runner, wallet_id, pool_coin_id, num_pieces, piece_size, label, timeout_s=180):
+def poll_for_split(
+    runner, wallet_id, pool_coin_id, num_pieces, piece_size, label, timeout_s=180
+):
     """Poll until a pool coin is consumed and split coins appear + are spendable.
 
     Returns:
@@ -258,24 +280,28 @@ def poll_for_split(runner, wallet_id, pool_coin_id, num_pieces, piece_size, labe
     """
     from wallet_sage import are_coins_spendable
 
-    runner.log(f"      🔍 Polling: {label} — pool gone + {num_pieces} × {piece_size:,} mojos spendable...")
+    runner.log(
+        f"      🔍 Polling: {label} — pool gone + {num_pieces} × {piece_size:,} mojos spendable..."
+    )
 
     for poll in range(timeout_s // 5):
         coins = get_coins(wallet_id, f"split-{label}")
 
         # Check pool coin consumed
-        pool_still_exists = any(
-            c.get("coin_id", "") == pool_coin_id for c in coins
-        )
+        pool_still_exists = any(c.get("coin_id", "") == pool_coin_id for c in coins)
 
         # Check split coins appeared
         split_coins = find_coins_by_amount(coins, piece_size)
 
         if not pool_still_exists and len(split_coins) >= num_pieces:
             # Verify spendable
-            split_ids = [c.get("coin_id", "").replace("0x", "") for c in split_coins[:num_pieces]]
+            split_ids = [
+                c.get("coin_id", "").replace("0x", "") for c in split_coins[:num_pieces]
+            ]
             try:
-                all_spendable = all(are_coins_spendable([sid]) for sid in split_ids if sid)
+                all_spendable = all(
+                    are_coins_spendable([sid]) for sid in split_ids if sid
+                )
             except Exception:
                 all_spendable = False
 
@@ -283,10 +309,14 @@ def poll_for_split(runner, wallet_id, pool_coin_id, num_pieces, piece_size, labe
                 runner.log(f"      ✅ {label} complete after {poll * 5}s")
                 return [c.get("coin_id", "") for c in split_coins[:num_pieces]]
             elif poll > 0 and poll % 4 == 0:
-                runner.log(f"      ⏳ {poll * 5}s — {label} split coins visible but not yet spendable")
+                runner.log(
+                    f"      ⏳ {poll * 5}s — {label} split coins visible but not yet spendable"
+                )
         elif poll > 0 and poll % 4 == 0:
-            runner.log(f"      ⏳ {poll * 5}s — {label} pool exists: {pool_still_exists}, "
-                      f"split coins: {len(split_coins)}/{num_pieces}")
+            runner.log(
+                f"      ⏳ {poll * 5}s — {label} pool exists: {pool_still_exists}, "
+                f"split coins: {len(split_coins)}/{num_pieces}"
+            )
         time.sleep(5)
 
     runner.log(f"      ❌ {label} not confirmed after {timeout_s}s!")
@@ -296,21 +326,26 @@ def poll_for_split(runner, wallet_id, pool_coin_id, num_pieces, piece_size, labe
 # ─── PHASE 1: PREREQUISITES ───────────────────────────────────
 def phase1_prerequisites(runner):
     """Test 1-3: Sage connectivity, XCH + CAT coin queries, balance checks."""
-    runner.log(f"\n{'='*60}")
+    runner.log(f"\n{'=' * 60}")
     runner.log("PHASE 1: Prerequisites")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
 
     # Test 1: Sage wallet connectivity
     try:
         from wallet_sage import get_wallet_sync_status
+
         sync = get_wallet_sync_status()
         sync_state = (sync or {}).get("sync_state", "unknown")
         if sync and sync.get("synced"):
-            runner.pass_test(1, "Sage wallet connected and synced",
-                           f"height={sync.get('height', '?')}")
+            runner.pass_test(
+                1,
+                "Sage wallet connected and synced",
+                f"height={sync.get('height', '?')}",
+            )
         elif sync and sync_state == "unknown" and sync.get("reachable"):
-            runner.pass_test(1, "Sage wallet connected (sync state unknown)",
-                           f"status={sync}")
+            runner.pass_test(
+                1, "Sage wallet connected (sync state unknown)", f"status={sync}"
+            )
         elif sync:
             runner.fail_test(1, "Sage wallet NOT synced", f"status={sync}")
             return False
@@ -327,11 +362,15 @@ def phase1_prerequisites(runner):
         xch_total = sum(c.get("amount", 0) for c in xch_coins)
         xch_display = Decimal(xch_total) / Decimal("1000000000000")
         if xch_total >= MIN_XCH_BALANCE_MOJOS:
-            runner.pass_test(2, "XCH balance sufficient",
-                           f"{len(xch_coins)} coins, {xch_display:.4f} XCH")
+            runner.pass_test(
+                2,
+                "XCH balance sufficient",
+                f"{len(xch_coins)} coins, {xch_display:.4f} XCH",
+            )
         else:
-            runner.fail_test(2, "XCH balance too low",
-                           f"{xch_display:.4f} XCH (need 0.1+)")
+            runner.fail_test(
+                2, "XCH balance too low", f"{xch_display:.4f} XCH (need 0.1+)"
+            )
             return False
     except Exception as e:
         runner.fail_test(2, "XCH coin query", str(e))
@@ -342,11 +381,17 @@ def phase1_prerequisites(runner):
         cat_coins = get_coins(CAT_WALLET_ID, "cat-check")
         cat_total = sum(c.get("amount", 0) for c in cat_coins)
         if cat_total >= MIN_CAT_BALANCE_MOJOS:
-            runner.pass_test(3, "CAT balance sufficient",
-                           f"{len(cat_coins)} coins, {cat_total:,} CAT mojos (wallet {CAT_WALLET_ID})")
+            runner.pass_test(
+                3,
+                "CAT balance sufficient",
+                f"{len(cat_coins)} coins, {cat_total:,} CAT mojos (wallet {CAT_WALLET_ID})",
+            )
         else:
-            runner.fail_test(3, "CAT balance too low",
-                           f"{cat_total} CAT mojos (need {MIN_CAT_BALANCE_MOJOS}+), wallet {CAT_WALLET_ID}")
+            runner.fail_test(
+                3,
+                "CAT balance too low",
+                f"{cat_total} CAT mojos (need {MIN_CAT_BALANCE_MOJOS}+), wallet {CAT_WALLET_ID}",
+            )
             return False
     except Exception as e:
         runner.fail_test(3, "CAT coin query", str(e))
@@ -358,17 +403,21 @@ def phase1_prerequisites(runner):
 # ─── PHASE 2: MULTI-SEND (XCH + CAT) ────────────────────────
 def phase2_multi_send(runner):
     """Test 4-7: Multi-send creates pool coins for BOTH XCH and CAT."""
-    runner.log(f"\n{'='*60}")
+    runner.log(f"\n{'=' * 60}")
     runner.log("PHASE 2: Multi-Send (XCH + CAT pool coins in two transactions)")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
 
     if DRY_RUN:
         for t in range(4, 8):
             runner.skip_test(t, f"(dry run) multi_send test #{t}")
         return True
 
-    from wallet_sage import (get_next_address, send_transaction_multi,
-                             send_cat_multi, are_coins_spendable)
+    from wallet_sage import (
+        get_next_address,
+        send_transaction_multi,
+        send_cat_multi,
+        are_coins_spendable,
+    )
 
     # Get receive address (same for both XCH and CAT)
     addr_result = get_next_address(XCH_WALLET_ID, new_address=False)
@@ -385,7 +434,9 @@ def phase2_multi_send(runner):
     runner.log(f"   CAT before: {len(cat_before)} coins")
 
     # ── Test 4: XCH multi_send ──
-    runner.log(f"\n   📤 XCH multi_send: {XCH_POOL_A_MOJOS:,} + {XCH_POOL_B_MOJOS:,} = {XCH_TOTAL_MOJOS:,} mojos")
+    runner.log(
+        f"\n   📤 XCH multi_send: {XCH_POOL_A_MOJOS:,} + {XCH_POOL_B_MOJOS:,} = {XCH_TOTAL_MOJOS:,} mojos"
+    )
     try:
         xch_payments = [
             {"address": address, "amount": XCH_POOL_A_MOJOS},
@@ -393,7 +444,11 @@ def phase2_multi_send(runner):
         ]
         result = send_transaction_multi(xch_payments, fee_mojos=0)
         if result is None or (isinstance(result, dict) and result.get("error")):
-            err = result.get("error", "None returned") if isinstance(result, dict) else "None returned"
+            err = (
+                result.get("error", "None returned")
+                if isinstance(result, dict)
+                else "None returned"
+            )
             runner.fail_test(4, "XCH multi_send failed", err[:200])
             return False
         runner.pass_test(4, "XCH multi_send submitted")
@@ -402,7 +457,9 @@ def phase2_multi_send(runner):
         return False
 
     # ── Test 5: CAT multi_send ──
-    runner.log(f"   📤 CAT multi_send: {CAT_POOL_A_MOJOS:,} + {CAT_POOL_B_MOJOS:,} = {CAT_TOTAL_MOJOS:,} CAT mojos")
+    runner.log(
+        f"   📤 CAT multi_send: {CAT_POOL_A_MOJOS:,} + {CAT_POOL_B_MOJOS:,} = {CAT_TOTAL_MOJOS:,} CAT mojos"
+    )
     try:
         cat_payments = [
             {"address": address, "amount": CAT_POOL_A_MOJOS},
@@ -410,7 +467,11 @@ def phase2_multi_send(runner):
         ]
         result = send_cat_multi(cat_payments, fee_mojos=0)
         if result is None or (isinstance(result, dict) and result.get("error")):
-            err = result.get("error", "None returned") if isinstance(result, dict) else "None returned"
+            err = (
+                result.get("error", "None returned")
+                if isinstance(result, dict)
+                else "None returned"
+            )
             runner.fail_test(5, "CAT multi_send failed", err[:200])
             return False
         runner.pass_test(5, "CAT multi_send submitted")
@@ -419,7 +480,9 @@ def phase2_multi_send(runner):
         return False
 
     # ── Test 6+7: Poll for BOTH XCH and CAT pool coins simultaneously ──
-    runner.log("\n   🔍 Polling for XCH + CAT pool coins simultaneously (up to 180s)...")
+    runner.log(
+        "\n   🔍 Polling for XCH + CAT pool coins simultaneously (up to 180s)..."
+    )
     xch_confirmed = False
     cat_confirmed = False
     timeout_s = 180
@@ -445,9 +508,12 @@ def phase2_multi_send(runner):
                     runner.xch_pool_b_id = xch_b_matches[0].get("coin_id", "")
                     xch_confirmed = True
                     runner.log(f"      ✅ XCH pools spendable after {poll * 5}s")
-                    runner.pass_test(6, "XCH pool coins spendable",
-                                    f"A ({XCH_POOL_A_MOJOS:,}): {runner.xch_pool_a_id[:16]}..., "
-                                    f"B ({XCH_POOL_B_MOJOS:,}): {runner.xch_pool_b_id[:16]}...")
+                    runner.pass_test(
+                        6,
+                        "XCH pool coins spendable",
+                        f"A ({XCH_POOL_A_MOJOS:,}): {runner.xch_pool_a_id[:16]}..., "
+                        f"B ({XCH_POOL_B_MOJOS:,}): {runner.xch_pool_b_id[:16]}...",
+                    )
 
         # ── Check CAT if not yet confirmed ──
         if not cat_confirmed:
@@ -469,9 +535,12 @@ def phase2_multi_send(runner):
                     runner.cat_pool_b_id = cat_b_matches[0].get("coin_id", "")
                     cat_confirmed = True
                     runner.log(f"      ✅ CAT pools spendable after {poll * 5}s")
-                    runner.pass_test(7, "CAT pool coins spendable",
-                                    f"A ({CAT_POOL_A_MOJOS:,}): {runner.cat_pool_a_id[:16]}..., "
-                                    f"B ({CAT_POOL_B_MOJOS:,}): {runner.cat_pool_b_id[:16]}...")
+                    runner.pass_test(
+                        7,
+                        "CAT pool coins spendable",
+                        f"A ({CAT_POOL_A_MOJOS:,}): {runner.cat_pool_a_id[:16]}..., "
+                        f"B ({CAT_POOL_B_MOJOS:,}): {runner.cat_pool_b_id[:16]}...",
+                    )
 
         # Both done?
         if xch_confirmed and cat_confirmed:
@@ -498,9 +567,9 @@ def phase2_multi_send(runner):
 # ─── PHASE 3: SPLIT ALL POOLS (PARALLEL) ─────────────────────
 def phase3_split_all(runner):
     """Test 8-11: Submit ALL 4 splits at once, then poll for all to confirm."""
-    runner.log(f"\n{'='*60}")
+    runner.log(f"\n{'=' * 60}")
     runner.log("PHASE 3: Split All Pool Coins — PARALLEL (2 XCH + 2 CAT)")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
 
     if DRY_RUN:
         for t in range(8, 12):
@@ -511,10 +580,38 @@ def phase3_split_all(runner):
 
     # ── Split definitions ──
     splits = [
-        (8,  XCH_WALLET_ID, runner.xch_pool_a_id, XCH_POOL_A_SPLIT, XCH_POOL_A_MOJOS, "XCH Pool A"),
-        (9,  XCH_WALLET_ID, runner.xch_pool_b_id, XCH_POOL_B_SPLIT, XCH_POOL_B_MOJOS, "XCH Pool B"),
-        (10, CAT_WALLET_ID, runner.cat_pool_a_id, CAT_POOL_A_SPLIT, CAT_POOL_A_MOJOS, "CAT Pool A"),
-        (11, CAT_WALLET_ID, runner.cat_pool_b_id, CAT_POOL_B_SPLIT, CAT_POOL_B_MOJOS, "CAT Pool B"),
+        (
+            8,
+            XCH_WALLET_ID,
+            runner.xch_pool_a_id,
+            XCH_POOL_A_SPLIT,
+            XCH_POOL_A_MOJOS,
+            "XCH Pool A",
+        ),
+        (
+            9,
+            XCH_WALLET_ID,
+            runner.xch_pool_b_id,
+            XCH_POOL_B_SPLIT,
+            XCH_POOL_B_MOJOS,
+            "XCH Pool B",
+        ),
+        (
+            10,
+            CAT_WALLET_ID,
+            runner.cat_pool_a_id,
+            CAT_POOL_A_SPLIT,
+            CAT_POOL_A_MOJOS,
+            "CAT Pool A",
+        ),
+        (
+            11,
+            CAT_WALLET_ID,
+            runner.cat_pool_b_id,
+            CAT_POOL_B_SPLIT,
+            CAT_POOL_B_MOJOS,
+            "CAT Pool B",
+        ),
     ]
 
     # ── Step 1: Submit ALL splits first ──
@@ -528,7 +625,9 @@ def phase3_split_all(runner):
 
         piece_size = pool_mojos // num_pieces
         coin_id_clean = pool_coin_id.replace("0x", "")
-        runner.log(f"   ✂️ {label}: {pool_coin_id[:16]}... → {num_pieces} × {piece_size:,} mojos")
+        runner.log(
+            f"   ✂️ {label}: {pool_coin_id[:16]}... → {num_pieces} × {piece_size:,} mojos"
+        )
 
         try:
             result = split_coins_rpc(
@@ -539,10 +638,16 @@ def phase3_split_all(runner):
                 fee_mojos=0,
             )
             if result is None or (isinstance(result, dict) and result.get("error")):
-                err = result.get("error", "None returned") if isinstance(result, dict) else "None returned"
+                err = (
+                    result.get("error", "None returned")
+                    if isinstance(result, dict)
+                    else "None returned"
+                )
                 runner.fail_test(test_num, f"{label} split submit failed", err[:200])
                 continue
-            pending_splits.append((test_num, wallet_id, pool_coin_id, num_pieces, piece_size, label))
+            pending_splits.append(
+                (test_num, wallet_id, pool_coin_id, num_pieces, piece_size, label)
+            )
         except Exception as e:
             runner.fail_test(test_num, f"{label} split submit exception", str(e))
             continue
@@ -551,7 +656,9 @@ def phase3_split_all(runner):
         runner.log("   ❌ No splits were submitted successfully")
         return False
 
-    runner.log(f"\n   ✅ {len(pending_splits)} splits submitted — now polling for ALL to confirm...")
+    runner.log(
+        f"\n   ✅ {len(pending_splits)} splits submitted — now polling for ALL to confirm..."
+    )
 
     # ── Step 2: Poll for ALL splits in one loop ──
     confirmed = set()  # test_nums that are confirmed
@@ -559,32 +666,45 @@ def phase3_split_all(runner):
 
     for poll in range(timeout_s // 5):
         # Check each pending split that hasn't confirmed yet
-        for test_num, wallet_id, pool_coin_id, num_pieces, piece_size, label in pending_splits:
+        for (
+            test_num,
+            wallet_id,
+            pool_coin_id,
+            num_pieces,
+            piece_size,
+            label,
+        ) in pending_splits:
             if test_num in confirmed:
                 continue
 
             coins = get_coins(wallet_id, f"split-{label}")
 
             # Pool coin gone?
-            pool_still_exists = any(
-                c.get("coin_id", "") == pool_coin_id for c in coins
-            )
+            pool_still_exists = any(c.get("coin_id", "") == pool_coin_id for c in coins)
 
             # Split coins appeared?
             split_coins = find_coins_by_amount(coins, piece_size)
 
             if not pool_still_exists and len(split_coins) >= num_pieces:
                 # Verify spendable
-                split_ids = [c.get("coin_id", "").replace("0x", "") for c in split_coins[:num_pieces]]
+                split_ids = [
+                    c.get("coin_id", "").replace("0x", "")
+                    for c in split_coins[:num_pieces]
+                ]
                 try:
-                    all_spendable = all(are_coins_spendable([sid]) for sid in split_ids if sid)
+                    all_spendable = all(
+                        are_coins_spendable([sid]) for sid in split_ids if sid
+                    )
                 except Exception:
                     all_spendable = False
 
                 if all_spendable:
                     runner.log(f"      ✅ {label} confirmed after {poll * 5}s")
-                    runner.pass_test(test_num, f"{label} split confirmed",
-                                   f"{num_pieces} × {piece_size:,} mojos, all spendable")
+                    runner.pass_test(
+                        test_num,
+                        f"{label} split confirmed",
+                        f"{num_pieces} × {piece_size:,} mojos, all spendable",
+                    )
                     confirmed.add(test_num)
 
         # All done?
@@ -594,16 +714,29 @@ def phase3_split_all(runner):
 
         # Progress update
         if poll > 0 and poll % 4 == 0:
-            remaining = [label for tn, _, _, _, _, label in pending_splits if tn not in confirmed]
-            runner.log(f"      ⏳ {poll * 5}s — {len(confirmed)}/{len(pending_splits)} confirmed, "
-                      f"waiting on: {', '.join(remaining)}")
+            remaining = [
+                label for tn, _, _, _, _, label in pending_splits if tn not in confirmed
+            ]
+            runner.log(
+                f"      ⏳ {poll * 5}s — {len(confirmed)}/{len(pending_splits)} confirmed, "
+                f"waiting on: {', '.join(remaining)}"
+            )
 
         time.sleep(5)
 
     # Mark any unconfirmed as failed
-    for test_num, wallet_id, pool_coin_id, num_pieces, piece_size, label in pending_splits:
+    for (
+        test_num,
+        wallet_id,
+        pool_coin_id,
+        num_pieces,
+        piece_size,
+        label,
+    ) in pending_splits:
         if test_num not in confirmed:
-            runner.fail_test(test_num, f"{label} split not confirmed after {timeout_s}s")
+            runner.fail_test(
+                test_num, f"{label} split not confirmed after {timeout_s}s"
+            )
 
     return True
 
@@ -611,9 +744,9 @@ def phase3_split_all(runner):
 # ─── PHASE 4: FINAL VERIFICATION ─────────────────────────────
 def phase4_verify(runner):
     """Test 12-13: Verify all expected split coins are present."""
-    runner.log(f"\n{'='*60}")
+    runner.log(f"\n{'=' * 60}")
     runner.log("PHASE 4: Final Verification")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
 
     if DRY_RUN:
         for t in range(12, 14):
@@ -623,26 +756,38 @@ def phase4_verify(runner):
     from wallet_sage import are_coins_spendable
 
     # Test 12: XCH split coins
-    xch_piece_size = XCH_POOL_A_MOJOS // XCH_POOL_A_SPLIT  # Should be same for both pools
+    xch_piece_size = (
+        XCH_POOL_A_MOJOS // XCH_POOL_A_SPLIT
+    )  # Should be same for both pools
     expected_xch_pieces = XCH_POOL_A_SPLIT + XCH_POOL_B_SPLIT
     xch_coins = get_coins(XCH_WALLET_ID, "final-xch")
     xch_pieces = find_coins_by_amount(xch_coins, xch_piece_size)
 
     if len(xch_pieces) >= expected_xch_pieces:
         # Verify all spendable
-        piece_ids = [c.get("coin_id", "").replace("0x", "") for c in xch_pieces[:expected_xch_pieces]]
+        piece_ids = [
+            c.get("coin_id", "").replace("0x", "")
+            for c in xch_pieces[:expected_xch_pieces]
+        ]
         try:
             all_ok = all(are_coins_spendable([pid]) for pid in piece_ids if pid)
         except Exception:
             all_ok = False
 
         if all_ok:
-            runner.pass_test(12, f"XCH: {len(xch_pieces)} × {xch_piece_size:,} mojos — all spendable",
-                           f"(expected {expected_xch_pieces})")
+            runner.pass_test(
+                12,
+                f"XCH: {len(xch_pieces)} × {xch_piece_size:,} mojos — all spendable",
+                f"(expected {expected_xch_pieces})",
+            )
         else:
-            runner.fail_test(12, f"XCH: {len(xch_pieces)} pieces found but not all spendable")
+            runner.fail_test(
+                12, f"XCH: {len(xch_pieces)} pieces found but not all spendable"
+            )
     else:
-        runner.fail_test(12, f"XCH: expected {expected_xch_pieces} pieces, found {len(xch_pieces)}")
+        runner.fail_test(
+            12, f"XCH: expected {expected_xch_pieces} pieces, found {len(xch_pieces)}"
+        )
 
     # Test 13: CAT split coins
     cat_piece_size = CAT_POOL_A_MOJOS // CAT_POOL_A_SPLIT
@@ -651,19 +796,29 @@ def phase4_verify(runner):
     cat_pieces = find_coins_by_amount(cat_coins, cat_piece_size)
 
     if len(cat_pieces) >= expected_cat_pieces:
-        piece_ids = [c.get("coin_id", "").replace("0x", "") for c in cat_pieces[:expected_cat_pieces]]
+        piece_ids = [
+            c.get("coin_id", "").replace("0x", "")
+            for c in cat_pieces[:expected_cat_pieces]
+        ]
         try:
             all_ok = all(are_coins_spendable([pid]) for pid in piece_ids if pid)
         except Exception:
             all_ok = False
 
         if all_ok:
-            runner.pass_test(13, f"CAT: {len(cat_pieces)} × {cat_piece_size:,} mojos — all spendable",
-                           f"(expected {expected_cat_pieces})")
+            runner.pass_test(
+                13,
+                f"CAT: {len(cat_pieces)} × {cat_piece_size:,} mojos — all spendable",
+                f"(expected {expected_cat_pieces})",
+            )
         else:
-            runner.fail_test(13, f"CAT: {len(cat_pieces)} pieces found but not all spendable")
+            runner.fail_test(
+                13, f"CAT: {len(cat_pieces)} pieces found but not all spendable"
+            )
     else:
-        runner.fail_test(13, f"CAT: expected {expected_cat_pieces} pieces, found {len(cat_pieces)}")
+        runner.fail_test(
+            13, f"CAT: expected {expected_cat_pieces} pieces, found {len(cat_pieces)}"
+        )
 
     return True
 
@@ -671,15 +826,17 @@ def phase4_verify(runner):
 # ─── PHASE 5: CLEANUP ─────────────────────────────────────────
 def phase5_cleanup(runner):
     """Test 14: Reconsolidate test coins."""
-    runner.log(f"\n{'='*60}")
+    runner.log(f"\n{'=' * 60}")
     runner.log("PHASE 5: Cleanup")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
 
     if DRY_RUN or SKIP_CLEANUP:
         runner.skip_test(14, "Cleanup", "dry-run or --skip-cleanup flag")
         return True
 
-    runner.log("   ℹ️ Test coins left in wallet (XCH: 5 × 0.01 pieces, CAT: 5 × 10 mojos)")
+    runner.log(
+        "   ℹ️ Test coins left in wallet (XCH: 5 × 0.01 pieces, CAT: 5 × 10 mojos)"
+    )
     runner.log("   ℹ️ Use --skip-cleanup to inspect, or run coin prep to consolidate")
     runner.pass_test(14, "Cleanup noted — small test coins left for inspection")
     return True
@@ -689,9 +846,9 @@ def phase5_cleanup(runner):
 def main():
     runner = TestRunner()
 
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
     runner.log("🧪 COIN PREP V2 TEST — XCH + CAT Multi-Send Approach")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
     runner.log(f"   XCH Pool A: {XCH_POOL_A_MOJOS:,} mojos → {XCH_POOL_A_SPLIT} pieces")
     runner.log(f"   XCH Pool B: {XCH_POOL_B_MOJOS:,} mojos → {XCH_POOL_B_SPLIT} pieces")
     runner.log(f"   CAT Pool A: {CAT_POOL_A_MOJOS:,} mojos → {CAT_POOL_A_SPLIT} pieces")
@@ -699,7 +856,7 @@ def main():
     runner.log(f"   CAT wallet ID: {CAT_WALLET_ID}")
     if DRY_RUN:
         runner.log("   MODE: DRY RUN (no transactions)")
-    runner.log(f"{'='*60}")
+    runner.log(f"{'=' * 60}")
 
     try:
         if not phase1_prerequisites(runner):

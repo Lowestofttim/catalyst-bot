@@ -3,6 +3,7 @@
 Verifies that confirmed-dead parameters and variables have been removed
 and that the live callers still work correctly.
 """
+
 import inspect
 import ast
 
@@ -14,6 +15,7 @@ class TestSmartTopupWalletDeadParam:
     def test_cat_token_amount_not_in_signature(self):
         """cat_token_amount was never read in the method body — removed."""
         import coin_manager
+
         sig = inspect.signature(coin_manager.CoinManager._smart_topup_wallet)
         assert "cat_token_amount" not in sig.parameters, (
             "cat_token_amount still present in _smart_topup_wallet signature"
@@ -44,18 +46,21 @@ class TestCreateOffersIfNeededDeadParams:
     def test_zombie_buy_count_not_in_signature(self):
         """zombie_buy_count was never read in the method — removed."""
         import bot_loop
+
         sig = inspect.signature(bot_loop.BotLoop._create_offers_if_needed)
         assert "zombie_buy_count" not in sig.parameters
 
     def test_zombie_sell_count_not_in_signature(self):
         """zombie_sell_count was never read in the method — removed."""
         import bot_loop
+
         sig = inspect.signature(bot_loop.BotLoop._create_offers_if_needed)
         assert "zombie_sell_count" not in sig.parameters
 
     def test_caller_does_not_pass_zombie_counts(self):
         """The call site in run_cycle no longer passes zombie_*= kwargs."""
         import bot_loop
+
         src = inspect.getsource(bot_loop.BotLoop)
         assert "zombie_buy_count=" not in src
         assert "zombie_sell_count=" not in src
@@ -67,20 +72,23 @@ class TestCreateOffersIfNeededDeadParams:
 class TestF841DeadVariablesRemoved:
     def test_activities_removed_from_api_server(self):
         import api_server
+
         src = inspect.getsource(api_server)
         # 'activities = context["activity_count"]' was dead — 'activity' (line 512) was used
         assert 'activities = context["activity_count"]' not in src
 
     def test_risk_data_removed_from_api_server(self):
         import api_server
+
         src = inspect.getsource(api_server)
         assert 'risk_data = raw.get("risk") or {}' not in src
 
     def test_max_buy_max_sell_removed_from_smart_defaults(self):
         import api_server
+
         src = inspect.getsource(api_server)
-        assert 'max_buy = int(_safe_float' not in src
-        assert 'max_sell = int(_safe_float' not in src
+        assert "max_buy = int(_safe_float" not in src
+        assert "max_sell = int(_safe_float" not in src
 
     def test_reappeared_count_removed(self):
         src = inspect.getsource(coin_manager.CoinManager)
@@ -92,17 +100,20 @@ class TestF841DeadVariablesRemoved:
 
     def test_skips_removed_from_doctor(self):
         import doctor
+
         src = inspect.getsource(doctor.DoctorReport)
-        assert 'skips = sum' not in src
+        assert "skips = sum" not in src
 
     def test_requested_block_removed_from_database(self):
         import database
+
         src = inspect.getsource(database)
         assert "requested_xch = int(requested.get" not in src
         assert "requested_cat = 0" not in src
 
     def test_existing_size_xch_removed_from_database(self):
         import database
+
         src = inspect.getsource(database)
         assert "existing_size_xch = Decimal" not in src
 

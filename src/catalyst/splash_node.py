@@ -112,6 +112,7 @@ class SplashNode:
 
         # 4. System PATH
         import shutil
+
         found = shutil.which(_BINARY_NAME)
         if found:
             self._binary_path = found
@@ -135,46 +136,61 @@ class SplashNode:
         binary = self.find_binary()
         if not binary:
             # Try auto-downloading if enabled
-            log_event("info", "splash_node_not_found",
-                      "Splash binary not found — attempting auto-download...")
+            log_event(
+                "info",
+                "splash_node_not_found",
+                "Splash binary not found — attempting auto-download...",
+            )
             try:
                 from splash_setup import download_splash
+
                 result = download_splash()
                 if result.get("success"):
                     binary = self.find_binary()
-                    log_event("info", "splash_node_auto_download",
-                              f"Auto-downloaded Splash: {result.get('message', '')}")
+                    log_event(
+                        "info",
+                        "splash_node_auto_download",
+                        f"Auto-downloaded Splash: {result.get('message', '')}",
+                    )
                 else:
-                    log_event("warning", "splash_node_download_failed",
-                              f"Auto-download failed: {result.get('message', '')}. "
-                              f"Use the 'Install Splash Node' button in the GUI, or "
-                              f"download manually from "
-                              f"https://github.com/dexie-space/splash/releases")
+                    log_event(
+                        "warning",
+                        "splash_node_download_failed",
+                        f"Auto-download failed: {result.get('message', '')}. "
+                        f"Use the 'Install Splash Node' button in the GUI, or "
+                        f"download manually from "
+                        f"https://github.com/dexie-space/splash/releases",
+                    )
             except Exception as e:
-                log_event("warning", "splash_node_download_error",
-                          f"Auto-download error: {e}")
+                log_event(
+                    "warning", "splash_node_download_error", f"Auto-download error: {e}"
+                )
 
         if not binary:
-            log_event("warning", "splash_node_not_found",
-                      f"Splash binary not found! Use the 'Install Splash Node' "
-                      f"button in the Market Intelligence tab, or download "
-                      f"'{_BINARY_NAME}' from "
-                      f"https://github.com/dexie-space/splash/releases "
-                      f"and place it in the V3 folder.")
+            log_event(
+                "warning",
+                "splash_node_not_found",
+                f"Splash binary not found! Use the 'Install Splash Node' "
+                f"button in the Market Intelligence tab, or download "
+                f"'{_BINARY_NAME}' from "
+                f"https://github.com/dexie-space/splash/releases "
+                f"and place it in the V3 folder.",
+            )
             return False
 
         self._running = True
         self._restart_count = 0
 
         self._thread = threading.Thread(
-            target=self._run_loop,
-            daemon=True,
-            name="splash-node"
+            target=self._run_loop, daemon=True, name="splash-node"
         )
         self._thread.start()
 
-        log_event("info", "splash_node_started",
-                  f"Splash node manager started (binary: {binary})")
+        log_event(
+            "info",
+            "splash_node_started",
+            f"Splash node manager started (binary: {binary})",
+        )
         return True
 
     def stop(self):
@@ -193,8 +209,9 @@ class SplashNode:
             except subprocess.TimeoutExpired:
                 self._process.kill()
             except Exception as e:
-                log_event("debug", "splash_node_stop_error",
-                          f"Error stopping Splash: {e}")
+                log_event(
+                    "debug", "splash_node_stop_error", f"Error stopping Splash: {e}"
+                )
             finally:
                 self._process = None
                 self._pid = None
@@ -209,9 +226,12 @@ class SplashNode:
         """Background thread that launches and monitors the Splash process."""
         while self._running:
             if self._restart_count >= self._max_restarts:
-                log_event("error", "splash_node_max_restarts",
-                          f"Splash node crashed {self._max_restarts} times — "
-                          f"giving up. Check the binary and try restarting the bot.")
+                log_event(
+                    "error",
+                    "splash_node_max_restarts",
+                    f"Splash node crashed {self._max_restarts} times — "
+                    f"giving up. Check the binary and try restarting the bot.",
+                )
                 self._running = False
                 break
 
@@ -224,8 +244,9 @@ class SplashNode:
             try:
                 self._launch_process()
             except Exception as e:
-                log_event("error", "splash_node_launch_error",
-                          f"Failed to launch Splash: {e}")
+                log_event(
+                    "error", "splash_node_launch_error", f"Failed to launch Splash: {e}"
+                )
                 self._restart_count += 1
                 continue
 
@@ -236,13 +257,19 @@ class SplashNode:
                 if self._running:
                     # Unexpected exit — will restart
                     self._restart_count += 1
-                    log_event("warning", "splash_node_crashed",
-                              f"Splash exited with code {returncode} "
-                              f"(restart {self._restart_count}/{self._max_restarts})")
+                    log_event(
+                        "warning",
+                        "splash_node_crashed",
+                        f"Splash exited with code {returncode} "
+                        f"(restart {self._restart_count}/{self._max_restarts})",
+                    )
                 else:
                     # Clean shutdown
-                    log_event("info", "splash_node_exited",
-                              f"Splash exited cleanly (code {returncode})")
+                    log_event(
+                        "info",
+                        "splash_node_exited",
+                        f"Splash exited cleanly (code {returncode})",
+                    )
 
     def _is_port_in_use(self, port: int) -> bool:
         """Check if a TCP port is already bound."""
@@ -264,15 +291,20 @@ class SplashNode:
         if not self._is_port_in_use(port):
             return  # Port is free, nothing to do
 
-        log_event("warning", "splash_node_stale",
-                  f"Port {port} already in use — killing stale process")
+        log_event(
+            "warning",
+            "splash_node_stale",
+            f"Port {port} already in use — killing stale process",
+        )
 
         if sys.platform == "win32":
             try:
                 # Find PID using the port via netstat
                 result = subprocess.run(
                     ["netstat", "-ano"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                     **hidden_subprocess_kwargs(),
                 )
                 stale_pid = None
@@ -289,9 +321,17 @@ class SplashNode:
                     is_splash = False
                     try:
                         name_result = subprocess.run(
-                            ["wmic", "process", "where",
-                             f"ProcessId={stale_pid}", "get", "Name"],
-                            capture_output=True, text=True, timeout=5,
+                            [
+                                "wmic",
+                                "process",
+                                "where",
+                                f"ProcessId={stale_pid}",
+                                "get",
+                                "Name",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
                             **hidden_subprocess_kwargs(),
                         )
                         proc_name = name_result.stdout.lower()
@@ -299,30 +339,43 @@ class SplashNode:
                     except Exception:
                         pass  # If we can't verify, don't kill
                     if not is_splash:
-                        log_event("warning", "splash_node_stale",
-                                  f"PID {stale_pid} on port {port} is not a Splash process — skipping kill")
+                        log_event(
+                            "warning",
+                            "splash_node_stale",
+                            f"PID {stale_pid} on port {port} is not a Splash process — skipping kill",
+                        )
                     else:
-                        log_event("info", "splash_node_stale",
-                                  f"Found stale Splash PID {stale_pid} on port {port} — killing")
+                        log_event(
+                            "info",
+                            "splash_node_stale",
+                            f"Found stale Splash PID {stale_pid} on port {port} — killing",
+                        )
                         subprocess.run(
                             ["taskkill", "/F", "/PID", stale_pid],
-                            capture_output=True, timeout=5,
+                            capture_output=True,
+                            timeout=5,
                             **hidden_subprocess_kwargs(),
                         )
                     # Give the OS a moment to release the port
                     time.sleep(1.5)
                 else:
-                    log_event("warning", "splash_node_stale",
-                              f"Port {port} in use but could not identify PID")
+                    log_event(
+                        "warning",
+                        "splash_node_stale",
+                        f"Port {port} in use but could not identify PID",
+                    )
             except Exception as e:
-                log_event("warning", "splash_node_stale",
-                          f"Failed to kill stale process: {e}")
+                log_event(
+                    "warning", "splash_node_stale", f"Failed to kill stale process: {e}"
+                )
         else:
             # Unix: use lsof + kill, but verify process name before killing
             try:
                 result = subprocess.run(
                     ["lsof", "-ti", f":{port}"],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 pids = result.stdout.strip().split()
                 killed_any = False
@@ -341,27 +394,36 @@ class SplashNode:
                         else:
                             ps_res = subprocess.run(
                                 ["ps", "-p", pid, "-o", "comm="],
-                                capture_output=True, text=True, timeout=3
+                                capture_output=True,
+                                text=True,
+                                timeout=3,
                             )
                             is_splash = "splash" in (ps_res.stdout or "").lower()
                     except Exception:
                         is_splash = False
 
                     if not is_splash:
-                        log_event("warning", "splash_node_stale",
-                                  f"Refusing to kill PID {pid} on port {port} — "
-                                  f"not a splash process")
+                        log_event(
+                            "warning",
+                            "splash_node_stale",
+                            f"Refusing to kill PID {pid} on port {port} — "
+                            f"not a splash process",
+                        )
                         continue
 
-                    log_event("info", "splash_node_stale",
-                              f"Killing stale PID {pid} on port {port}")
+                    log_event(
+                        "info",
+                        "splash_node_stale",
+                        f"Killing stale PID {pid} on port {port}",
+                    )
                     os.kill(int(pid), signal.SIGTERM)
                     killed_any = True
                 if killed_any:
                     time.sleep(1.5)
             except Exception as e:
-                log_event("warning", "splash_node_stale",
-                          f"Failed to kill stale process: {e}")
+                log_event(
+                    "warning", "splash_node_stale", f"Failed to kill stale process: {e}"
+                )
 
     def _launch_process(self):
         """Launch the Splash binary with the correct flags."""
@@ -399,9 +461,12 @@ class SplashNode:
 
         cmd = [
             binary,
-            "--listen-offer-submission", submit_bind,
-            "--listen-address", f"/ip4/0.0.0.0/tcp/{p2p_port}",
-            "--listen-metrics", self._metrics_bind,
+            "--listen-offer-submission",
+            submit_bind,
+            "--listen-address",
+            f"/ip4/0.0.0.0/tcp/{p2p_port}",
+            "--listen-metrics",
+            self._metrics_bind,
         ]
 
         # Only add --offer-hook if SPLASH_RECEIVE_ENABLED is True.
@@ -416,12 +481,18 @@ class SplashNode:
             # 127.0.0.1; on Windows, localhost may resolve to ::1 first.
             display_hook = offer_hook
             cmd.extend(["--offer-hook", offer_hook])
-            log_event("info", "splash_node_webhook",
-                      f"Offer webhook enabled -> {display_hook}")
+            log_event(
+                "info",
+                "splash_node_webhook",
+                f"Offer webhook enabled -> {display_hook}",
+            )
         else:
-            log_event("info", "splash_node_no_webhook",
-                      "Offer webhook disabled (SPLASH_RECEIVE_ENABLED=false) — "
-                      "outbound posting only")
+            log_event(
+                "info",
+                "splash_node_no_webhook",
+                "Offer webhook disabled (SPLASH_RECEIVE_ENABLED=false) — "
+                "outbound posting only",
+            )
 
         # Add testnet flag if configured
         if getattr(cfg, "SPLASH_TESTNET", False):
@@ -437,8 +508,7 @@ class SplashNode:
             else part
             for part in cmd
         )
-        log_event("info", "splash_node_launching",
-                  f"Launching: {launch_cmd}")
+        log_event("info", "splash_node_launching", f"Launching: {launch_cmd}")
 
         # Launch with output capture
         # On Windows, use DETACHED_PROCESS instead of CREATE_NO_WINDOW.
@@ -456,14 +526,15 @@ class SplashNode:
             encoding="utf-8",
             errors="replace",
             bufsize=1,  # Line buffered
-            **kwargs
+            **kwargs,
         )
 
         self._pid = self._process.pid
         self._last_start_time = time.time()
 
-        log_event("info", "splash_node_running",
-                  f"Splash node running (PID: {self._pid})")
+        log_event(
+            "info", "splash_node_running", f"Splash node running (PID: {self._pid})"
+        )
 
         # Start metrics poller thread. Pulls the JSON `/metrics` endpoint
         # every few seconds so the GUI + bot_health can reason about peer
@@ -479,9 +550,7 @@ class SplashNode:
 
         # Start output reader thread
         reader = threading.Thread(
-            target=self._read_output,
-            daemon=True,
-            name="splash-output"
+            target=self._read_output, daemon=True, name="splash-output"
         )
         reader.start()
 
@@ -497,7 +566,9 @@ class SplashNode:
                     self._last_output_lines.append(line)
                     # Trim to max
                     if len(self._last_output_lines) > self._max_output_lines:
-                        self._last_output_lines = self._last_output_lines[-self._max_output_lines:]
+                        self._last_output_lines = self._last_output_lines[
+                            -self._max_output_lines :
+                        ]
 
                     # Log interesting lines
                     lower = line.lower()
@@ -517,11 +588,14 @@ class SplashNode:
                     if "duplicate" in lower:
                         log_event("debug", "splash_node_output", f"Splash: {line}")
                     elif _is_startup_burst:
-                        log_event("debug", "splash_node_output",
-                                  f"Splash (startup): {line}")
+                        log_event(
+                            "debug", "splash_node_output", f"Splash (startup): {line}"
+                        )
                     elif "error" in lower or "failed" in lower:
                         log_event("warning", "splash_node_output", f"Splash: {line}")
-                    elif "listening" in lower or "connected" in lower or "peer" in lower:
+                    elif (
+                        "listening" in lower or "connected" in lower or "peer" in lower
+                    ):
                         log_event("debug", "splash_node_output", f"Splash: {line}")
         except Exception:
             pass  # Process ended
@@ -579,7 +653,9 @@ class SplashNode:
     def get_status(self) -> Dict:
         """Full status for the GUI."""
         health = self.check_health()
-        health["last_output"] = self._last_output_lines[-10:] if self._last_output_lines else []
+        health["last_output"] = (
+            self._last_output_lines[-10:] if self._last_output_lines else []
+        )
         health["manager_running"] = self._running
         health["metrics"] = self.get_metrics()
         return health
@@ -634,11 +710,14 @@ class SplashNode:
                 if isinstance(parsed, dict):
                     snapshot["peers"] = int(parsed.get("peers", 0) or 0)
                     snapshot["offers_broadcasted"] = int(
-                        parsed.get("offers_broadcasted", 0) or 0)
+                        parsed.get("offers_broadcasted", 0) or 0
+                    )
                     snapshot["offers_received"] = int(
-                        parsed.get("offers_received", 0) or 0)
+                        parsed.get("offers_received", 0) or 0
+                    )
                     snapshot["total_connections"] = int(
-                        parsed.get("total_connections", 0) or 0)
+                        parsed.get("total_connections", 0) or 0
+                    )
                     snapshot["reachable"] = True
             except Exception as e:
                 snapshot["last_error"] = str(e)[:120]
@@ -647,8 +726,7 @@ class SplashNode:
                 # Preserve previously-observed cumulative highs in case the
                 # endpoint hiccuped and returned zeros on a single poll.
                 prev = self._metrics
-                for k in ("offers_broadcasted", "offers_received",
-                          "total_connections"):
+                for k in ("offers_broadcasted", "offers_received", "total_connections"):
                     if not snapshot["reachable"]:
                         snapshot[k] = int(prev.get(k, 0) or 0)
                 self._metrics = snapshot

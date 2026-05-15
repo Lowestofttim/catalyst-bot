@@ -23,7 +23,12 @@ from decimal import Decimal
 from typing import Optional, Dict, List
 
 from config import cfg
-from database import log_event, add_offer, lock_coin, get_open_offers as db_get_open_offers
+from database import (
+    log_event,
+    add_offer,
+    lock_coin,
+    get_open_offers as db_get_open_offers,
+)
 from offer_manager import xch_to_mojos, cat_to_mojos, mojos_to_cat
 
 
@@ -46,8 +51,7 @@ class BoostManager:
     from normal offers (tier="boost" in database).
     """
 
-    def __init__(self, offer_manager=None, dexie_manager=None,
-                 risk_manager=None):
+    def __init__(self, offer_manager=None, dexie_manager=None, risk_manager=None):
         self._offer_manager = offer_manager
         self._dexie_manager = dexie_manager
         self._risk_manager = risk_manager
@@ -65,20 +69,20 @@ class BoostManager:
         self._boost_mid_price: Decimal = Decimal("0")  # Price of current offers
 
         # ---- Adaptive gap-closer spread (changes over time!) ----
-        self._gap_spread_bps: int = 0        # Current gap-closer spread
-        self._start_spread_bps: int = 0      # What we started at (ceiling)
-        self._arb_floor_bps: int = 0         # arb gap + buffer (floor)
-        self._steps_taken: int = 0           # How many tightening steps done
+        self._gap_spread_bps: int = 0  # Current gap-closer spread
+        self._start_spread_bps: int = 0  # What we started at (ceiling)
+        self._arb_floor_bps: int = 0  # arb gap + buffer (floor)
+        self._steps_taken: int = 0  # How many tightening steps done
         self._custom_size_xch: Optional[Decimal] = None  # User override
 
         # Stats
         self._total_refreshes: int = 0
         self._total_arb_warnings: int = 0
-        self._arb_count: int = 0             # Times arbed since activation
+        self._arb_count: int = 0  # Times arbed since activation
 
         # ---- Stability tracking ----
-        self._stable_since: float = 0        # When offers last became stable
-        self._last_step_time: float = 0      # When last step was taken
+        self._stable_since: float = 0  # When offers last became stable
+        self._last_step_time: float = 0  # When last step was taken
 
         # ---- Expiry tracking ----
         # Maps trade_id → expected expiry timestamp (unix seconds).
@@ -90,12 +94,12 @@ class BoostManager:
         # behind it. We track which spread level was already cascaded
         # to avoid re-triggering on the same level.
         self._cascade_done_at_spread: int = -1  # Spread BPS last cascaded at
-        self._cascade_count: int = 0            # Total cascades this session
+        self._cascade_count: int = 0  # Total cascades this session
 
         # ---- Main book convergence ----
         # As gap-closer proves safe levels, the main book's spread converges
         self._convergence_factor: Decimal = Decimal("1.0")  # 1.0 = no change
-        self._convergence_min: Decimal = Decimal("0.15")     # Floor: 15% of original
+        self._convergence_min: Decimal = Decimal("0.15")  # Floor: 15% of original
         self._last_convergence_time: float = 0
 
         # ---- Vulnerability flag ----
@@ -160,10 +164,14 @@ class BoostManager:
     # Activate / Deactivate
     # -------------------------------------------------------------------
 
-    def activate(self, mid_price: Decimal, arb_gap_bps: Decimal = Decimal("0"),
-                 main_spread_bps: int = 0,
-                 size_xch_override: Optional[Decimal] = None,
-                 start_pct_override: Optional[int] = None) -> Dict:
+    def activate(
+        self,
+        mid_price: Decimal,
+        arb_gap_bps: Decimal = Decimal("0"),
+        main_spread_bps: int = 0,
+        size_xch_override: Optional[Decimal] = None,
+        start_pct_override: Optional[int] = None,
+    ) -> Dict:
         """Turn gap-closer ON — creates initial offers and begins probing.
 
         Args:
@@ -235,22 +243,34 @@ class BoostManager:
             self._subprobe_attempted = False  # legacy field, unused in inverted mode
             self._convergence_factor = Decimal("1.0")
 
-            log_event("info", "gap_closer_activated",
-                      f"📈 Close the Gap ON (inverted-probe mode) — "
-                      f"{len(created)} offers at BUY+{_bps_to_pct(self._buy_offset_bps)}, "
-                      f"SELL-{_bps_to_pct(self._sell_offset_bps)} past mid. "
-                      f"Will push deeper until arbed, then back off to find each side's floor.",
-                      data={"buy_offset_bps": self._buy_offset_bps,
-                            "sell_offset_bps": self._sell_offset_bps,
-                            "tibet_fee_bps": tibet_fee,
-                            "arb_gap_bps": int(arb_gap_bps),
-                            "steps_taken": 0})
-            print(f"📈 Close the Gap ON (inverted): BUY +{_bps_to_pct(self._buy_offset_bps)}, "
-                  f"SELL -{_bps_to_pct(self._sell_offset_bps)} past mid", flush=True)
+            log_event(
+                "info",
+                "gap_closer_activated",
+                f"📈 Close the Gap ON (inverted-probe mode) — "
+                f"{len(created)} offers at BUY+{_bps_to_pct(self._buy_offset_bps)}, "
+                f"SELL-{_bps_to_pct(self._sell_offset_bps)} past mid. "
+                f"Will push deeper until arbed, then back off to find each side's floor.",
+                data={
+                    "buy_offset_bps": self._buy_offset_bps,
+                    "sell_offset_bps": self._sell_offset_bps,
+                    "tibet_fee_bps": tibet_fee,
+                    "arb_gap_bps": int(arb_gap_bps),
+                    "steps_taken": 0,
+                },
+            )
+            print(
+                f"📈 Close the Gap ON (inverted): BUY +{_bps_to_pct(self._buy_offset_bps)}, "
+                f"SELL -{_bps_to_pct(self._sell_offset_bps)} past mid",
+                flush=True,
+            )
 
         size_xch = self._effective_size_xch()
-        buy_price  = mid_price * (Decimal("1") + Decimal(self._buy_offset_bps)  / Decimal("10000"))
-        sell_price = mid_price * (Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000"))
+        buy_price = mid_price * (
+            Decimal("1") + Decimal(self._buy_offset_bps) / Decimal("10000")
+        )
+        sell_price = mid_price * (
+            Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000")
+        )
 
         return {
             "success": len(created) > 0,
@@ -262,7 +282,8 @@ class BoostManager:
             "sell_offset_bps": self._sell_offset_bps,
             "tibet_fee_bps": tibet_fee,
             "arb_gap_bps": int(arb_gap_bps),
-            "spread_bps": self._buy_offset_bps + self._sell_offset_bps,  # total inverted span
+            "spread_bps": self._buy_offset_bps
+            + self._sell_offset_bps,  # total inverted span
             "main_spread_bps": main_spread_bps,
             "size_xch": str(size_xch),
             "warnings": warnings,
@@ -276,8 +297,12 @@ class BoostManager:
         so prune_active_boosts can identify which side was arbed.
         """
         size_xch = self._effective_size_xch()
-        buy_price  = mid_price * (Decimal("1") + Decimal(self._buy_offset_bps)  / Decimal("10000"))
-        sell_price = mid_price * (Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000"))
+        buy_price = mid_price * (
+            Decimal("1") + Decimal(self._buy_offset_bps) / Decimal("10000")
+        )
+        sell_price = mid_price * (
+            Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000")
+        )
 
         created = []
 
@@ -373,7 +398,8 @@ class BoostManager:
             for tid in to_cancel:
                 offer_mgr._bot_cancelled_ids.add(tid)
             result = offer_mgr.cancel_offers(
-                to_cancel, reason="gap_closer_deactivate",
+                to_cancel,
+                reason="gap_closer_deactivate",
                 skip_confirmation=True,
             )
             # cancel_offers returns {trade_id: {"success": bool, ...}, ...}
@@ -396,9 +422,12 @@ class BoostManager:
             if preserve_convergence:
                 # Keep convergence factor — ladder will catch up via
                 # incremental reaction strategy over the next cycles.
-                log_event("info", "gap_closer_convergence_preserved",
-                          f"📈 Convergence factor preserved at "
-                          f"{self._convergence_factor:.2f} after floor handoff")
+                log_event(
+                    "info",
+                    "gap_closer_convergence_preserved",
+                    f"📈 Convergence factor preserved at "
+                    f"{self._convergence_factor:.2f} after floor handoff",
+                )
             else:
                 # Manual stop — reset to original spread immediately
                 self._convergence_factor = Decimal("1.0")
@@ -407,13 +436,22 @@ class BoostManager:
             steps_taken = self._steps_taken
             arb_count = self._arb_count
 
-        mode = "floor handoff — convergence preserved" if preserve_convergence \
-               else "spread reset to normal"
-        log_event("info", "gap_closer_deactivated",
-                  f"📈 Close the Gap OFF — cancelled {cancelled} offers, {mode}")
-        print(f"📈 Close the Gap OFF: cancelled {cancelled} offers "
-              f"({steps_taken} steps taken, "
-              f"{arb_count} times arbed) — {mode}", flush=True)
+        mode = (
+            "floor handoff — convergence preserved"
+            if preserve_convergence
+            else "spread reset to normal"
+        )
+        log_event(
+            "info",
+            "gap_closer_deactivated",
+            f"📈 Close the Gap OFF — cancelled {cancelled} offers, {mode}",
+        )
+        print(
+            f"📈 Close the Gap OFF: cancelled {cancelled} offers "
+            f"({steps_taken} steps taken, "
+            f"{arb_count} times arbed) — {mode}",
+            flush=True,
+        )
 
         return {
             "success": True,
@@ -435,8 +473,11 @@ class BoostManager:
         """
         om = self._offer_manager
         if not om or not self._risk_manager:
-            log_event("warning", "gap_closer_handoff_skip",
-                      "📈 Handoff skipped — missing offer_manager or risk_manager")
+            log_event(
+                "warning",
+                "gap_closer_handoff_skip",
+                "📈 Handoff skipped — missing offer_manager or risk_manager",
+            )
             return
 
         mid_price = self._boost_mid_price
@@ -448,8 +489,11 @@ class BoostManager:
         # no widening having pushed us back up), use that — it's a stronger
         # safety proof than the calculated floor. Otherwise fall back to the
         # calculated floor, which is what we held stably.
-        proven_spread_bps = min(self._gap_spread_bps, self._arb_floor_bps) \
-            if self._gap_spread_bps > 0 else self._arb_floor_bps
+        proven_spread_bps = (
+            min(self._gap_spread_bps, self._arb_floor_bps)
+            if self._gap_spread_bps > 0
+            else self._arb_floor_bps
+        )
         handoff_count = 0
 
         for side in ("buy", "sell"):
@@ -460,15 +504,18 @@ class BoostManager:
 
             # --- Step 1: Find the furthest inner-tier offer to swap out ---
             try:
-                open_offers = db_get_open_offers(side=side, cat_asset_id=cfg.CAT_ASSET_ID)
+                open_offers = db_get_open_offers(
+                    side=side, cat_asset_id=cfg.CAT_ASSET_ID
+                )
             except Exception:
                 open_offers = []
 
             # Filter to main-book inner-tier offers only (exclude boost/sniper)
             inner_offers = [
-                o for o in open_offers
+                o
+                for o in open_offers
                 if str(o.get("tier", "mid")).lower() == "inner"
-                   and o.get("trade_id") not in set(self._active_boost_ids)
+                and o.get("trade_id") not in set(self._active_boost_ids)
             ]
 
             if not inner_offers:
@@ -495,22 +542,29 @@ class BoostManager:
             try:
                 # Use normal ladder create for a single inner-tier offer
                 new_offers = om.create_ladder(
-                    mid_price, side,
+                    mid_price,
+                    side,
                     num_offers=1,
                     spread_fraction=Decimal(str(proven_spread_bps)) / Decimal("10000"),
                     risk_manager=self._risk_manager,
-                    coin_ids_enabled=cfg.COIN_IDS_ENABLED
+                    coin_ids_enabled=cfg.COIN_IDS_ENABLED,
                 )
                 created = len(new_offers) if new_offers else 0
             except Exception as e:
-                log_event("warning", "gap_closer_handoff_create_fail",
-                          f"📈 Handoff {side} create failed: {e}")
+                log_event(
+                    "warning",
+                    "gap_closer_handoff_create_fail",
+                    f"📈 Handoff {side} create failed: {e}",
+                )
                 created = 0
 
             if created == 0:
-                log_event("info", "gap_closer_handoff_no_coins",
-                          f"📈 Handoff {side}: no spare coins — "
-                          f"ladder will catch up via reaction strategy")
+                log_event(
+                    "info",
+                    "gap_closer_handoff_no_coins",
+                    f"📈 Handoff {side}: no spare coins — "
+                    f"ladder will catch up via reaction strategy",
+                )
                 continue
 
             # Post new offer to Dexie
@@ -529,29 +583,48 @@ class BoostManager:
                 cancel_tid = furthest.get("trade_id")
                 if cancel_tid:
                     om._bot_cancelled_ids.add(cancel_tid)
-                    om.cancel_offers([cancel_tid], reason="gap_closer_handoff_swap",
-                                     skip_confirmation=True)
-                    log_event("info", "gap_closer_handoff_swap",
-                              f"📈 Handoff {side}: planted inner offer at "
-                              f"{_bps_to_pct(proven_spread_bps)}, "
-                              f"cancelled furthest inner {cancel_tid[:16]}…")
-                    print(f"📈 Handoff {side}: swapped furthest inner for "
-                          f"new offer at {_bps_to_pct(proven_spread_bps)}",
-                          flush=True)
+                    om.cancel_offers(
+                        [cancel_tid],
+                        reason="gap_closer_handoff_swap",
+                        skip_confirmation=True,
+                    )
+                    log_event(
+                        "info",
+                        "gap_closer_handoff_swap",
+                        f"📈 Handoff {side}: planted inner offer at "
+                        f"{_bps_to_pct(proven_spread_bps)}, "
+                        f"cancelled furthest inner {cancel_tid[:16]}…",
+                    )
+                    print(
+                        f"📈 Handoff {side}: swapped furthest inner for "
+                        f"new offer at {_bps_to_pct(proven_spread_bps)}",
+                        flush=True,
+                    )
             else:
-                log_event("info", "gap_closer_handoff_new",
-                          f"📈 Handoff {side}: planted new inner offer at "
-                          f"{_bps_to_pct(proven_spread_bps)} (no existing inner to swap)")
-                print(f"📈 Handoff {side}: new inner offer at "
-                      f"{_bps_to_pct(proven_spread_bps)}", flush=True)
+                log_event(
+                    "info",
+                    "gap_closer_handoff_new",
+                    f"📈 Handoff {side}: planted new inner offer at "
+                    f"{_bps_to_pct(proven_spread_bps)} (no existing inner to swap)",
+                )
+                print(
+                    f"📈 Handoff {side}: new inner offer at "
+                    f"{_bps_to_pct(proven_spread_bps)}",
+                    flush=True,
+                )
 
         if handoff_count > 0:
-            log_event("info", "gap_closer_handoff_complete",
-                      f"📈 Floor handoff complete: {handoff_count} inner-tier "
-                      f"offer(s) planted at {_bps_to_pct(proven_spread_bps)}. "
-                      f"Ladder will adjust via incremental reaction strategy.",
-                      data={"proven_spread_bps": proven_spread_bps,
-                            "handoff_count": handoff_count})
+            log_event(
+                "info",
+                "gap_closer_handoff_complete",
+                f"📈 Floor handoff complete: {handoff_count} inner-tier "
+                f"offer(s) planted at {_bps_to_pct(proven_spread_bps)}. "
+                f"Ladder will adjust via incremental reaction strategy.",
+                data={
+                    "proven_spread_bps": proven_spread_bps,
+                    "handoff_count": handoff_count,
+                },
+            )
 
     # -------------------------------------------------------------------
     # Adaptive step — gradually probe tighter
@@ -607,10 +680,14 @@ class BoostManager:
         if push_buy_first and self._buy_settled:
             push_buy_first = False  # buy done, try sell
         elif not push_buy_first and self._sell_settled:
-            push_buy_first = True   # sell done, try buy
+            push_buy_first = True  # sell done, try buy
 
         # --- BUY side: if probe survived, push deeper ---
-        if push_buy_first and not self._buy_settled and self._buy_probe_tid in self._active_boost_ids:
+        if (
+            push_buy_first
+            and not self._buy_settled
+            and self._buy_probe_tid in self._active_boost_ids
+        ):
             # Survived the cooldown — record this depth as last safe, push deeper
             self._buy_last_safe_offset_bps = self._buy_offset_bps
             new_buy_offset = min(self._buy_offset_bps + step_bps, ceiling)
@@ -621,7 +698,8 @@ class BoostManager:
                 if self._buy_probe_tid and self._offer_manager:
                     self._offer_manager._bot_cancelled_ids.add(self._buy_probe_tid)
                     self._offer_manager.cancel_offers(
-                        [self._buy_probe_tid], reason="gap_closer_buy_step",
+                        [self._buy_probe_tid],
+                        reason="gap_closer_buy_step",
                         skip_confirmation=True,
                     )
                     if self._buy_probe_tid in self._active_boost_ids:
@@ -632,7 +710,9 @@ class BoostManager:
                 # when Sage picks an overlapping fee coin).
                 time.sleep(2.0)
                 # Create new BUY at deeper depth
-                buy_price = self._boost_mid_price * (Decimal("1") + Decimal(self._buy_offset_bps) / Decimal("10000"))
+                buy_price = self._boost_mid_price * (
+                    Decimal("1") + Decimal(self._buy_offset_bps) / Decimal("10000")
+                )
                 size_xch = self._effective_size_xch()
                 buy_result = self._create_single_offer("buy", buy_price, size_xch)
                 if buy_result and buy_result.get("trade_id"):
@@ -644,22 +724,36 @@ class BoostManager:
                     if self._dexie_manager and cfg.DEXIE_AUTO_POST:
                         bech32 = buy_result.get("offer_bech32", "")
                         if bech32:
-                            self._dexie_manager._post_single(bech32, new_tid, force=True)
-                log_event("info", "gap_closer_buy_step",
-                          f"📈 BUY probe push deeper: +{_bps_to_pct(old_off)} → +{_bps_to_pct(self._buy_offset_bps)} past mid (survived → testing deeper)",
-                          data={"buy_offset_bps": self._buy_offset_bps,
-                                "buy_last_safe": self._buy_last_safe_offset_bps})
+                            self._dexie_manager._post_single(
+                                bech32, new_tid, force=True
+                            )
+                log_event(
+                    "info",
+                    "gap_closer_buy_step",
+                    f"📈 BUY probe push deeper: +{_bps_to_pct(old_off)} → +{_bps_to_pct(self._buy_offset_bps)} past mid (survived → testing deeper)",
+                    data={
+                        "buy_offset_bps": self._buy_offset_bps,
+                        "buy_last_safe": self._buy_last_safe_offset_bps,
+                    },
+                )
                 side_action = True
             else:
                 # Hit ceiling without arb — settle as "no watchers detected"
                 self._buy_settled = True
                 self._buy_floor_bps = self._buy_offset_bps  # ceiling is the floor
-                log_event("info", "gap_closer_buy_settled_ceiling",
-                          f"📈 BUY side settled at ceiling +{_bps_to_pct(self._buy_offset_bps)} — no arbs detected at max depth",
-                          data={"buy_floor_bps": self._buy_floor_bps})
+                log_event(
+                    "info",
+                    "gap_closer_buy_settled_ceiling",
+                    f"📈 BUY side settled at ceiling +{_bps_to_pct(self._buy_offset_bps)} — no arbs detected at max depth",
+                    data={"buy_floor_bps": self._buy_floor_bps},
+                )
 
         # --- SELL side: only when it's SELL's turn (alternation) ---
-        if (not push_buy_first) and not self._sell_settled and self._sell_probe_tid in self._active_boost_ids:
+        if (
+            (not push_buy_first)
+            and not self._sell_settled
+            and self._sell_probe_tid in self._active_boost_ids
+        ):
             self._sell_last_safe_offset_bps = self._sell_offset_bps
             new_sell_offset = min(self._sell_offset_bps + step_bps, ceiling)
             if new_sell_offset > self._sell_offset_bps:
@@ -668,7 +762,8 @@ class BoostManager:
                 if self._sell_probe_tid and self._offer_manager:
                     self._offer_manager._bot_cancelled_ids.add(self._sell_probe_tid)
                     self._offer_manager.cancel_offers(
-                        [self._sell_probe_tid], reason="gap_closer_sell_step",
+                        [self._sell_probe_tid],
+                        reason="gap_closer_sell_step",
                         skip_confirmation=True,
                     )
                     if self._sell_probe_tid in self._active_boost_ids:
@@ -676,7 +771,9 @@ class BoostManager:
                     self._sell_probe_tid = ""
                 # Same mempool-propagation pause as the BUY path
                 time.sleep(2.0)
-                sell_price = self._boost_mid_price * (Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000"))
+                sell_price = self._boost_mid_price * (
+                    Decimal("1") - Decimal(self._sell_offset_bps) / Decimal("10000")
+                )
                 size_xch = self._effective_size_xch()
                 sell_result = self._create_single_offer("sell", sell_price, size_xch)
                 if sell_result and sell_result.get("trade_id"):
@@ -688,18 +785,28 @@ class BoostManager:
                     if self._dexie_manager and cfg.DEXIE_AUTO_POST:
                         bech32 = sell_result.get("offer_bech32", "")
                         if bech32:
-                            self._dexie_manager._post_single(bech32, new_tid, force=True)
-                log_event("info", "gap_closer_sell_step",
-                          f"📈 SELL probe push deeper: -{_bps_to_pct(old_off)} → -{_bps_to_pct(self._sell_offset_bps)} past mid (survived → testing deeper)",
-                          data={"sell_offset_bps": self._sell_offset_bps,
-                                "sell_last_safe": self._sell_last_safe_offset_bps})
+                            self._dexie_manager._post_single(
+                                bech32, new_tid, force=True
+                            )
+                log_event(
+                    "info",
+                    "gap_closer_sell_step",
+                    f"📈 SELL probe push deeper: -{_bps_to_pct(old_off)} → -{_bps_to_pct(self._sell_offset_bps)} past mid (survived → testing deeper)",
+                    data={
+                        "sell_offset_bps": self._sell_offset_bps,
+                        "sell_last_safe": self._sell_last_safe_offset_bps,
+                    },
+                )
                 side_action = True
             else:
                 self._sell_settled = True
                 self._sell_floor_bps = self._sell_offset_bps
-                log_event("info", "gap_closer_sell_settled_ceiling",
-                          f"📈 SELL side settled at ceiling -{_bps_to_pct(self._sell_offset_bps)} — no arbs detected at max depth",
-                          data={"sell_floor_bps": self._sell_floor_bps})
+                log_event(
+                    "info",
+                    "gap_closer_sell_settled_ceiling",
+                    f"📈 SELL side settled at ceiling -{_bps_to_pct(self._sell_offset_bps)} — no arbs detected at max depth",
+                    data={"sell_floor_bps": self._sell_floor_bps},
+                )
 
         if side_action:
             self._steps_taken += 1
@@ -745,7 +852,13 @@ class BoostManager:
             # offset_bps premium / received offset_bps discount per CAT, on
             # size_xch worth of trade).
             try:
-                est_cost_xch = self._effective_size_xch() * Decimal(self._buy_offset_bps if side == "buy" else self._sell_offset_bps) / Decimal("10000")
+                est_cost_xch = (
+                    self._effective_size_xch()
+                    * Decimal(
+                        self._buy_offset_bps if side == "buy" else self._sell_offset_bps
+                    )
+                    / Decimal("10000")
+                )
             except Exception:
                 est_cost_xch = Decimal("0")
 
@@ -761,13 +874,21 @@ class BoostManager:
                     self._arb_count += 1
                     self._session_total_arbs += 1
                     self._session_total_arb_cost_xch += est_cost_xch
-                    log_event("info", "gap_closer_buy_arbed",
-                              f"📈 BUY side arbed at +{_bps_to_pct(self._buy_offset_bps)} past mid — "
-                              f"floor proven. Last safe depth was +{_bps_to_pct(self._buy_last_safe_offset_bps)}.",
-                              data={"buy_floor_bps": self._buy_floor_bps,
-                                    "buy_last_safe_offset_bps": self._buy_last_safe_offset_bps,
-                                    "est_cost_xch": str(est_cost_xch)})
-                    print(f"📈 BUY arbed at +{_bps_to_pct(self._buy_offset_bps)} → floor settled", flush=True)
+                    log_event(
+                        "info",
+                        "gap_closer_buy_arbed",
+                        f"📈 BUY side arbed at +{_bps_to_pct(self._buy_offset_bps)} past mid — "
+                        f"floor proven. Last safe depth was +{_bps_to_pct(self._buy_last_safe_offset_bps)}.",
+                        data={
+                            "buy_floor_bps": self._buy_floor_bps,
+                            "buy_last_safe_offset_bps": self._buy_last_safe_offset_bps,
+                            "est_cost_xch": str(est_cost_xch),
+                        },
+                    )
+                    print(
+                        f"📈 BUY arbed at +{_bps_to_pct(self._buy_offset_bps)} → floor settled",
+                        flush=True,
+                    )
             elif side == "sell":
                 if not self._sell_settled:
                     self._sell_floor_bps = self._sell_offset_bps
@@ -776,13 +897,21 @@ class BoostManager:
                     self._arb_count += 1
                     self._session_total_arbs += 1
                     self._session_total_arb_cost_xch += est_cost_xch
-                    log_event("info", "gap_closer_sell_arbed",
-                              f"📈 SELL side arbed at -{_bps_to_pct(self._sell_offset_bps)} past mid — "
-                              f"floor proven. Last safe depth was -{_bps_to_pct(self._sell_last_safe_offset_bps)}.",
-                              data={"sell_floor_bps": self._sell_floor_bps,
-                                    "sell_last_safe_offset_bps": self._sell_last_safe_offset_bps,
-                                    "est_cost_xch": str(est_cost_xch)})
-                    print(f"📈 SELL arbed at -{_bps_to_pct(self._sell_offset_bps)} → floor settled", flush=True)
+                    log_event(
+                        "info",
+                        "gap_closer_sell_arbed",
+                        f"📈 SELL side arbed at -{_bps_to_pct(self._sell_offset_bps)} past mid — "
+                        f"floor proven. Last safe depth was -{_bps_to_pct(self._sell_last_safe_offset_bps)}.",
+                        data={
+                            "sell_floor_bps": self._sell_floor_bps,
+                            "sell_last_safe_offset_bps": self._sell_last_safe_offset_bps,
+                            "est_cost_xch": str(est_cost_xch),
+                        },
+                    )
+                    print(
+                        f"📈 SELL arbed at -{_bps_to_pct(self._sell_offset_bps)} → floor settled",
+                        flush=True,
+                    )
 
     def _inverted_complete_handoff(self) -> bool:
         """Both sides settled — log floors, plant a tighter inner-tier
@@ -796,21 +925,29 @@ class BoostManager:
         and competes for retail. We cancel a few of the FURTHEST inner
         offers to maintain count.
         """
-        log_event("info", "gap_closer_inverted_complete",
-                  f"📈 Inverted floor discovery complete. "
-                  f"BUY floor: +{_bps_to_pct(self._buy_floor_bps)} past mid "
-                  f"(last safe: +{_bps_to_pct(self._buy_last_safe_offset_bps)}). "
-                  f"SELL floor: -{_bps_to_pct(self._sell_floor_bps)} past mid "
-                  f"(last safe: -{_bps_to_pct(self._sell_last_safe_offset_bps)}). "
-                  f"Arbs: {self._arb_count}, steps: {self._steps_taken}.",
-                  data={"buy_floor_bps": self._buy_floor_bps,
-                        "sell_floor_bps": self._sell_floor_bps,
-                        "buy_last_safe": self._buy_last_safe_offset_bps,
-                        "sell_last_safe": self._sell_last_safe_offset_bps,
-                        "arb_count": self._arb_count,
-                        "steps_taken": self._steps_taken})
-        print(f"📈 Floor discovery complete: BUY +{_bps_to_pct(self._buy_floor_bps)}, "
-              f"SELL -{_bps_to_pct(self._sell_floor_bps)} (arbs: {self._arb_count})", flush=True)
+        log_event(
+            "info",
+            "gap_closer_inverted_complete",
+            f"📈 Inverted floor discovery complete. "
+            f"BUY floor: +{_bps_to_pct(self._buy_floor_bps)} past mid "
+            f"(last safe: +{_bps_to_pct(self._buy_last_safe_offset_bps)}). "
+            f"SELL floor: -{_bps_to_pct(self._sell_floor_bps)} past mid "
+            f"(last safe: -{_bps_to_pct(self._sell_last_safe_offset_bps)}). "
+            f"Arbs: {self._arb_count}, steps: {self._steps_taken}.",
+            data={
+                "buy_floor_bps": self._buy_floor_bps,
+                "sell_floor_bps": self._sell_floor_bps,
+                "buy_last_safe": self._buy_last_safe_offset_bps,
+                "sell_last_safe": self._sell_last_safe_offset_bps,
+                "arb_count": self._arb_count,
+                "steps_taken": self._steps_taken,
+            },
+        )
+        print(
+            f"📈 Floor discovery complete: BUY +{_bps_to_pct(self._buy_floor_bps)}, "
+            f"SELL -{_bps_to_pct(self._sell_floor_bps)} (arbs: {self._arb_count})",
+            flush=True,
+        )
 
         # Persist this run's floors as the most-recent completed values so
         # the GUI can show "BUY floor: +X% / SELL floor: -Y%" at a glance
@@ -825,8 +962,11 @@ class BoostManager:
         try:
             self._cascade_after_inverted_floor()
         except Exception as e:
-            log_event("warning", "gap_closer_cascade_failed",
-                      f"📈 Inverted-mode cascade failed (non-critical): {e}")
+            log_event(
+                "warning",
+                "gap_closer_cascade_failed",
+                f"📈 Inverted-mode cascade failed (non-critical): {e}",
+            )
 
         self.deactivate(preserve_convergence=True)
         return False
@@ -840,8 +980,11 @@ class BoostManager:
         """
         om = self._offer_manager
         if not om or not self._risk_manager:
-            log_event("info", "gap_closer_cascade_skip",
-                      "📈 Cascade skipped — missing offer_manager or risk_manager")
+            log_event(
+                "info",
+                "gap_closer_cascade_skip",
+                "📈 Cascade skipped — missing offer_manager or risk_manager",
+            )
             return
 
         mid_price = self._boost_mid_price
@@ -853,10 +996,15 @@ class BoostManager:
         # Default tight spread: 50 bps half-spread = 100 bps total. Always
         # positive half-spread on both sides, so always immune to TibetSwap
         # arb regardless of the discovered inverted floor depth.
-        tight_half_spread_bps = int(getattr(cfg, "GAP_PROBE_CASCADE_HALF_SPREAD_BPS", 50))
-        tight_spread_fraction = Decimal(str(tight_half_spread_bps * 2)) / Decimal("10000")
+        tight_half_spread_bps = int(
+            getattr(cfg, "GAP_PROBE_CASCADE_HALF_SPREAD_BPS", 50)
+        )
+        tight_spread_fraction = Decimal(str(tight_half_spread_bps * 2)) / Decimal(
+            "10000"
+        )
 
         from database import get_open_offers as _get_open_offers
+
         cascade_total = 0
 
         for side in ("buy", "sell"):
@@ -867,19 +1015,26 @@ class BoostManager:
 
             # Find the FURTHEST inner-tier offers (most stale) to swap out.
             try:
-                open_offers = _get_open_offers(side=side,
-                                               cat_asset_id=cfg.CAT_ASSET_ID) or []
+                open_offers = (
+                    _get_open_offers(side=side, cat_asset_id=cfg.CAT_ASSET_ID) or []
+                )
             except Exception as e:
-                log_event("warning", "gap_closer_cascade_query_fail",
-                          f"📈 Cascade {side}: could not query open offers: {e}")
+                log_event(
+                    "warning",
+                    "gap_closer_cascade_query_fail",
+                    f"📈 Cascade {side}: could not query open offers: {e}",
+                )
                 continue
 
-            inner_offers = [o for o in open_offers
-                            if (o.get("tier") or "").lower() == "inner"]
+            inner_offers = [
+                o for o in open_offers if (o.get("tier") or "").lower() == "inner"
+            ]
             for o in inner_offers:
                 p = o.get("price")
                 try:
-                    o["_distance"] = abs(Decimal(str(p)) - mid_price) if p else Decimal("0")
+                    o["_distance"] = (
+                        abs(Decimal(str(p)) - mid_price) if p else Decimal("0")
+                    )
                 except Exception:
                     o["_distance"] = Decimal("0")
             inner_offers.sort(key=lambda o: o.get("_distance", 0), reverse=True)
@@ -887,22 +1042,32 @@ class BoostManager:
             # Plant new tight offers FIRST, then cancel furthest old ones.
             new_offers = []
             try:
-                new_offers = om.create_ladder(
-                    mid_price, side,
-                    num_offers=num_to_swap,
-                    spread_fraction=tight_spread_fraction,
-                    risk_manager=self._risk_manager,
-                    coin_ids_enabled=cfg.COIN_IDS_ENABLED,
-                ) or []
+                new_offers = (
+                    om.create_ladder(
+                        mid_price,
+                        side,
+                        num_offers=num_to_swap,
+                        spread_fraction=tight_spread_fraction,
+                        risk_manager=self._risk_manager,
+                        coin_ids_enabled=cfg.COIN_IDS_ENABLED,
+                    )
+                    or []
+                )
             except Exception as e:
-                log_event("warning", "gap_closer_cascade_create_fail",
-                          f"📈 Cascade {side} create failed: {e}")
+                log_event(
+                    "warning",
+                    "gap_closer_cascade_create_fail",
+                    f"📈 Cascade {side} create failed: {e}",
+                )
                 continue
 
             created_n = len(new_offers)
             if created_n == 0:
-                log_event("info", "gap_closer_cascade_no_coins",
-                          f"📈 Cascade {side}: no spare coins — skipping swap")
+                log_event(
+                    "info",
+                    "gap_closer_cascade_no_coins",
+                    f"📈 Cascade {side}: no spare coins — skipping swap",
+                )
                 continue
 
             # Post new offers to Dexie (queued)
@@ -923,31 +1088,48 @@ class BoostManager:
                 for tid in cancel_ids:
                     om._bot_cancelled_ids.add(tid)
                 try:
-                    om.cancel_offers(cancel_ids,
-                                     reason="gap_closer_cascade_swap",
-                                     skip_confirmation=True)
+                    om.cancel_offers(
+                        cancel_ids,
+                        reason="gap_closer_cascade_swap",
+                        skip_confirmation=True,
+                    )
                 except Exception as e:
-                    log_event("warning", "gap_closer_cascade_cancel_fail",
-                              f"📈 Cascade {side} cancel failed: {e}")
+                    log_event(
+                        "warning",
+                        "gap_closer_cascade_cancel_fail",
+                        f"📈 Cascade {side} cancel failed: {e}",
+                    )
 
             cascade_total += created_n
             self._session_total_cascade_swaps += created_n
-            log_event("info", "gap_closer_cascade_swap",
-                      f"📈 Cascade {side}: planted {created_n} tight inner "
-                      f"offers at half-spread ±{_bps_to_pct(tight_half_spread_bps)}, "
-                      f"cancelled {len(cancel_ids)} furthest",
-                      data={"side": side, "planted": created_n,
-                            "cancelled": len(cancel_ids),
-                            "half_spread_bps": tight_half_spread_bps})
-            print(f"📈 Cascade {side}: planted {created_n} new inner offers at "
-                  f"±{_bps_to_pct(tight_half_spread_bps)} half-spread, "
-                  f"cancelled {len(cancel_ids)} furthest", flush=True)
+            log_event(
+                "info",
+                "gap_closer_cascade_swap",
+                f"📈 Cascade {side}: planted {created_n} tight inner "
+                f"offers at half-spread ±{_bps_to_pct(tight_half_spread_bps)}, "
+                f"cancelled {len(cancel_ids)} furthest",
+                data={
+                    "side": side,
+                    "planted": created_n,
+                    "cancelled": len(cancel_ids),
+                    "half_spread_bps": tight_half_spread_bps,
+                },
+            )
+            print(
+                f"📈 Cascade {side}: planted {created_n} new inner offers at "
+                f"±{_bps_to_pct(tight_half_spread_bps)} half-spread, "
+                f"cancelled {len(cancel_ids)} furthest",
+                flush=True,
+            )
 
         if cascade_total > 0:
-            log_event("info", "gap_closer_cascade_complete",
-                      f"📈 Inverted cascade complete: {cascade_total} new "
-                      f"tight inner offer(s) planted across both sides.",
-                      data={"total_planted": cascade_total})
+            log_event(
+                "info",
+                "gap_closer_cascade_complete",
+                f"📈 Inverted cascade complete: {cascade_total} new "
+                f"tight inner offer(s) planted across both sides.",
+                data={"total_planted": cascade_total},
+            )
 
     # ------- Legacy step path retained behind a flag (unreachable in inverted mode) -------
     def _legacy_step_tighter(self, current_arb_gap_bps: Decimal) -> bool:
@@ -1000,16 +1182,24 @@ class BoostManager:
                 self._create_gap_closer_pair(self._boost_mid_price)
                 self._stable_since = time.time()
 
-                log_event("info", "gap_closer_subprobe",
-                          f"📈 Below-floor sub-probe: {_bps_to_pct(old_spread)} "
-                          f"→ {_bps_to_pct(below_spread)} (calculated floor was "
-                          f"{_bps_to_pct(self._arb_floor_bps)} — testing whether "
-                          f"the market actually punishes this price)",
-                          data={"spread_bps": below_spread,
-                                "arb_floor_bps": self._arb_floor_bps,
-                                "steps_taken": self._steps_taken})
-                print(f"📈 Sub-probe below floor: {_bps_to_pct(old_spread)} → "
-                      f"{_bps_to_pct(below_spread)}", flush=True)
+                log_event(
+                    "info",
+                    "gap_closer_subprobe",
+                    f"📈 Below-floor sub-probe: {_bps_to_pct(old_spread)} "
+                    f"→ {_bps_to_pct(below_spread)} (calculated floor was "
+                    f"{_bps_to_pct(self._arb_floor_bps)} — testing whether "
+                    f"the market actually punishes this price)",
+                    data={
+                        "spread_bps": below_spread,
+                        "arb_floor_bps": self._arb_floor_bps,
+                        "steps_taken": self._steps_taken,
+                    },
+                )
+                print(
+                    f"📈 Sub-probe below floor: {_bps_to_pct(old_spread)} → "
+                    f"{_bps_to_pct(below_spread)}",
+                    flush=True,
+                )
                 return True  # acted this cycle
 
             # Already attempted sub-probe (or it would be no tighter) —
@@ -1018,17 +1208,25 @@ class BoostManager:
             # we're sitting at sub-probe spread and that's our new known-
             # safe price. Either way, hand off and stop.
             stable_secs = int(now - self._stable_since)
-            log_event("info", "gap_closer_auto_stop",
-                      f"📈 Close the Gap complete — held floor at "
-                      f"{_bps_to_pct(self._gap_spread_bps)} for {stable_secs}s "
-                      f"with no arb after {self._steps_taken} step(s). "
-                      f"Handing off to inner tier.",
-                      data={"spread_bps": self._gap_spread_bps,
-                            "arb_floor_bps": self._arb_floor_bps,
-                            "steps_taken": self._steps_taken,
-                            "stable_secs": stable_secs})
-            print(f"📈 Close the Gap complete — floor held for {stable_secs}s, "
-                  f"handing off to inner tier.", flush=True)
+            log_event(
+                "info",
+                "gap_closer_auto_stop",
+                f"📈 Close the Gap complete — held floor at "
+                f"{_bps_to_pct(self._gap_spread_bps)} for {stable_secs}s "
+                f"with no arb after {self._steps_taken} step(s). "
+                f"Handing off to inner tier.",
+                data={
+                    "spread_bps": self._gap_spread_bps,
+                    "arb_floor_bps": self._arb_floor_bps,
+                    "steps_taken": self._steps_taken,
+                    "stable_secs": stable_secs,
+                },
+            )
+            print(
+                f"📈 Close the Gap complete — floor held for {stable_secs}s, "
+                f"handing off to inner tier.",
+                flush=True,
+            )
 
             # --- Floor handoff: plant inner-tier offers at proven price ---
             self._handoff_to_inner_tier()
@@ -1081,13 +1279,23 @@ class BoostManager:
         # Reset stability timer for the new spread
         self._stable_since = time.time()
 
-        log_event("info", "gap_closer_step",
-                  f"📈 Step {self._steps_taken}: {_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} | arb floor: {_bps_to_pct(self._arb_floor_bps)}",
-                  data={"spread_bps": new_spread, "arb_floor_bps": self._arb_floor_bps,
-                        "steps_taken": self._steps_taken, "start_spread_bps": self._start_spread_bps})
-        print(f"📈 Close the Gap step {self._steps_taken}: "
-              f"{_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} "
-              f"[arb floor: {_bps_to_pct(self._arb_floor_bps)}]", flush=True)
+        log_event(
+            "info",
+            "gap_closer_step",
+            f"📈 Step {self._steps_taken}: {_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} | arb floor: {_bps_to_pct(self._arb_floor_bps)}",
+            data={
+                "spread_bps": new_spread,
+                "arb_floor_bps": self._arb_floor_bps,
+                "steps_taken": self._steps_taken,
+                "start_spread_bps": self._start_spread_bps,
+            },
+        )
+        print(
+            f"📈 Close the Gap step {self._steps_taken}: "
+            f"{_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} "
+            f"[arb floor: {_bps_to_pct(self._arb_floor_bps)}]",
+            flush=True,
+        )
 
         return True
 
@@ -1137,9 +1345,11 @@ class BoostManager:
 
         if len(self._active_boost_ids) < expected_active:
             needs_refresh = True
-            refresh_reason = (f"partial loss "
-                              f"({len(self._active_boost_ids)}/{expected_active} expected — "
-                              f"buy_settled={self._buy_settled}, sell_settled={self._sell_settled})")
+            refresh_reason = (
+                f"partial loss "
+                f"({len(self._active_boost_ids)}/{expected_active} expected — "
+                f"buy_settled={self._buy_settled}, sell_settled={self._sell_settled})"
+            )
 
         # ---- Check 1b: REMOVED — no expiry, no pre-emptive refresh needed ----
         # Offers no longer expire, so this check is unnecessary.
@@ -1149,13 +1359,18 @@ class BoostManager:
             spread_bps = Decimal(str(self._gap_spread_bps))
             recentre_threshold_bps = spread_bps / Decimal("2")
 
-            move_bps = (abs(current_mid_price - self._boost_mid_price)
-                        / self._boost_mid_price * Decimal("10000"))
+            move_bps = (
+                abs(current_mid_price - self._boost_mid_price)
+                / self._boost_mid_price
+                * Decimal("10000")
+            )
 
             if move_bps > recentre_threshold_bps:
                 needs_refresh = True
-                refresh_reason = (f"price moved {_bps_to_pct(move_bps)} "
-                                  f"(threshold: {_bps_to_pct(recentre_threshold_bps)})")
+                refresh_reason = (
+                    f"price moved {_bps_to_pct(move_bps)} "
+                    f"(threshold: {_bps_to_pct(recentre_threshold_bps)})"
+                )
 
         if not needs_refresh:
             return False
@@ -1163,8 +1378,9 @@ class BoostManager:
         # ---- Refresh: CREATE NEW first, THEN cancel old ----
         # Same pattern as cascade: never leave a gap in the orderbook.
         print(f"📈 Gap closer refresh: {refresh_reason}", flush=True)
-        log_event("info", "gap_closer_refresh",
-                  f"📈 Gap closer refreshing — {refresh_reason}")
+        log_event(
+            "info", "gap_closer_refresh", f"📈 Gap closer refreshing — {refresh_reason}"
+        )
 
         old_ids = list(self._active_boost_ids) if self._active_boost_ids else []
 
@@ -1174,9 +1390,13 @@ class BoostManager:
         # Only clear the side(s) that need re-creation — the OTHER side's
         # probe TID stays valid so prune can still attribute its arb.
         self._active_boost_ids.clear()
-        if not self._buy_settled and (self._buy_probe_tid in old_ids or not self._buy_probe_tid):
+        if not self._buy_settled and (
+            self._buy_probe_tid in old_ids or not self._buy_probe_tid
+        ):
             self._buy_probe_tid = ""
-        if not self._sell_settled and (self._sell_probe_tid in old_ids or not self._sell_probe_tid):
+        if not self._sell_settled and (
+            self._sell_probe_tid in old_ids or not self._sell_probe_tid
+        ):
             self._sell_probe_tid = ""
         created = self._create_inverted_probe_pair(current_mid_price)
 
@@ -1186,20 +1406,30 @@ class BoostManager:
             for tid in old_ids:
                 self._offer_manager._bot_cancelled_ids.add(tid)
             self._offer_manager.cancel_offers(
-                old_ids, reason="gap_closer_refresh",
+                old_ids,
+                reason="gap_closer_refresh",
                 skip_confirmation=True,
             )
 
         if created:
             self._total_refreshes += 1
-            log_event("info", "gap_closer_refreshed",
-                      f"📈 Gap closer refreshed: {len(created)} offers at "
-                      f"{_bps_to_pct(self._gap_spread_bps)}, mid {current_mid_price:.8f}")
-            print(f"📈 Gap closer refreshed: {len(created)} offers at "
-                  f"{_bps_to_pct(self._gap_spread_bps)}", flush=True)
+            log_event(
+                "info",
+                "gap_closer_refreshed",
+                f"📈 Gap closer refreshed: {len(created)} offers at "
+                f"{_bps_to_pct(self._gap_spread_bps)}, mid {current_mid_price:.8f}",
+            )
+            print(
+                f"📈 Gap closer refreshed: {len(created)} offers at "
+                f"{_bps_to_pct(self._gap_spread_bps)}",
+                flush=True,
+            )
         else:
-            log_event("warning", "gap_closer_refresh_failed",
-                      "📈 Gap closer refresh failed — will retry next cycle")
+            log_event(
+                "warning",
+                "gap_closer_refresh_failed",
+                "📈 Gap closer refresh failed — will retry next cycle",
+            )
             print("⚠️ Gap closer refresh failed — will retry next cycle", flush=True)
 
         return True
@@ -1229,8 +1459,11 @@ class BoostManager:
                     # Before declaring arb, check if this offer simply expired.
                     expiry_time = self._boost_id_expiry.get(tid, 0)
                     if expiry_time > 0 and now >= (expiry_time - 5):
-                        log_event("debug", "gap_closer_offer_expired",
-                                  f"Gap closer offer {tid[:16]}… expired naturally (not arbed)")
+                        log_event(
+                            "debug",
+                            "gap_closer_offer_expired",
+                            f"Gap closer offer {tid[:16]}… expired naturally (not arbed)",
+                        )
                     else:
                         # Inverted-mode arb detection: identify which side the
                         # missing trade_id belongs to. Check both the CURRENT
@@ -1238,29 +1471,40 @@ class BoostManager:
                         # arrive late, after the bot rotated to a new probe
                         # whose TID we now hold as the "current" one). The
                         # history catches that race.
-                        if tid == self._buy_probe_tid or tid in self._buy_probe_tid_history:
+                        if (
+                            tid == self._buy_probe_tid
+                            or tid in self._buy_probe_tid_history
+                        ):
                             self._on_inverted_arb("buy")
-                        elif tid == self._sell_probe_tid or tid in self._sell_probe_tid_history:
+                        elif (
+                            tid == self._sell_probe_tid
+                            or tid in self._sell_probe_tid_history
+                        ):
                             self._on_inverted_arb("sell")
                         else:
                             self._arb_count += 1
-                            log_event("warning", "gap_closer_arb_unknown_side",
-                                      f"Probe {tid[:16]}… arbed but didn't match any tracked probe TID")
+                            log_event(
+                                "warning",
+                                "gap_closer_arb_unknown_side",
+                                f"Probe {tid[:16]}… arbed but didn't match any tracked probe TID",
+                            )
 
             self._active_boost_ids = [
                 tid for tid in self._active_boost_ids if tid in open_trade_ids
             ]
             # Clean up stale expiry entries older than 5 minutes
             self._boost_id_expiry = {
-                k: v for k, v in self._boost_id_expiry.items()
-                if v > now - 300
+                k: v for k, v in self._boost_id_expiry.items() if v > now - 300
             }
             pruned = before - len(self._active_boost_ids)
 
         if pruned > 0:
-            log_event("debug", "gap_closer_pruned",
-                      f"Pruned {pruned} closed gap-closer offers "
-                      f"({len(self._active_boost_ids)} remaining)")
+            log_event(
+                "debug",
+                "gap_closer_pruned",
+                f"Pruned {pruned} closed gap-closer offers "
+                f"({len(self._active_boost_ids)} remaining)",
+            )
 
     # -------------------------------------------------------------------
     # Internal: create offers at current gap-closer spread
@@ -1313,8 +1557,9 @@ class BoostManager:
     # Single offer creation helper
     # -------------------------------------------------------------------
 
-    def _find_flexible_sniper_coin(self, side: str,
-                                   nominal_spend_mojos: int) -> Optional[Dict]:
+    def _find_flexible_sniper_coin(
+        self, side: str, nominal_spend_mojos: int
+    ) -> Optional[Dict]:
         """Find any currently selectable sniper-pool coin for a probe."""
         if not self._offer_manager:
             return None
@@ -1329,7 +1574,9 @@ class BoostManager:
             rpc_result = get_exact_spendable_coins_rpc(wallet_id)
             if not rpc_result or not rpc_result.get("success"):
                 return None
-            records = rpc_result.get("confirmed_records") or rpc_result.get("records") or []
+            records = (
+                rpc_result.get("confirmed_records") or rpc_result.get("records") or []
+            )
             spendable_amounts = {}
             for record in records:
                 coin_id = _coin_id_from_record(record)
@@ -1343,8 +1590,12 @@ class BoostManager:
                 for coin in get_reserve_coins(wallet_type)
                 if coin.get("coin_id")
             }
-            excluded = set(getattr(self._offer_manager, "_inflight_coin_ids", set()) or set())
-            excluded.update(getattr(self._offer_manager, "_cycle_used_coin_ids", set()) or set())
+            excluded = set(
+                getattr(self._offer_manager, "_inflight_coin_ids", set()) or set()
+            )
+            excluded.update(
+                getattr(self._offer_manager, "_cycle_used_coin_ids", set()) or set()
+            )
             excluded = {str(coin_id).lower() for coin_id in excluded if coin_id}
 
             candidates = []
@@ -1371,13 +1622,17 @@ class BoostManager:
             amount, coin_id = not_larger[-1] if not_larger else candidates[0]
             return {"coin_id": coin_id, "amount_mojos": amount}
         except Exception as exc:
-            log_event("debug", "gap_closer_flexible_coin_failed",
-                      f"Flexible sniper coin lookup failed: {exc}")
+            log_event(
+                "debug",
+                "gap_closer_flexible_coin_failed",
+                f"Flexible sniper coin lookup failed: {exc}",
+            )
             return None
 
     @staticmethod
-    def _amounts_for_probe_spend(side: str, price: Decimal,
-                                 spend_mojos: int) -> Optional[Dict]:
+    def _amounts_for_probe_spend(
+        side: str, price: Decimal, spend_mojos: int
+    ) -> Optional[Dict]:
         """Convert the selected spend coin amount into both offer legs."""
         if spend_mojos <= 0 or price <= 0:
             return None
@@ -1400,8 +1655,9 @@ class BoostManager:
             "xch_mojos": int(xch_mojos),
         }
 
-    def _create_single_offer(self, side: str, price: Decimal,
-                             size_xch: Decimal) -> Optional[Dict]:
+    def _create_single_offer(
+        self, side: str, price: Decimal, size_xch: Decimal
+    ) -> Optional[Dict]:
         """Create a single gap-closer offer. Returns offer dict or None."""
         if not self._offer_manager:
             return None
@@ -1414,29 +1670,38 @@ class BoostManager:
 
         # Amount validation — reject zero, negative, or absurdly large values
         if int(cat_mojos) <= 0 or int(xch_mojos) <= 0:
-            log_event("warning", "gap_closer_bad_amount",
-                      f"📈 Gap closer {side} rejected: invalid mojos "
-                      f"(cat={cat_mojos}, xch={xch_mojos}, price={price})")
+            log_event(
+                "warning",
+                "gap_closer_bad_amount",
+                f"📈 Gap closer {side} rejected: invalid mojos "
+                f"(cat={cat_mojos}, xch={xch_mojos}, price={price})",
+            )
             return None
         if int(xch_mojos) > 1_000_000_000_000_000:  # > 1000 XCH sanity cap
-            log_event("warning", "gap_closer_bad_amount",
-                      f"📈 Gap closer {side} rejected: xch_mojos too large ({xch_mojos})")
+            log_event(
+                "warning",
+                "gap_closer_bad_amount",
+                f"📈 Gap closer {side} rejected: xch_mojos too large ({xch_mojos})",
+            )
             return None
 
         if side == "buy":
             offer_dict = {
                 str(cfg.WALLET_ID_XCH): -int(xch_mojos),
-                str(cfg.CAT_WALLET_ID): int(cat_mojos)
+                str(cfg.CAT_WALLET_ID): int(cat_mojos),
             }
         else:
             offer_dict = {
                 str(cfg.CAT_WALLET_ID): -int(cat_mojos),
-                str(cfg.WALLET_ID_XCH): int(xch_mojos)
+                str(cfg.WALLET_ID_XCH): int(xch_mojos),
             }
 
         if cfg.DRY_RUN:
-            log_event("info", "gap_closer_dry_run",
-                      f"📈 [DRY RUN] Would create {side} at {price:.8f}")
+            log_event(
+                "info",
+                "gap_closer_dry_run",
+                f"📈 [DRY RUN] Would create {side} at {price:.8f}",
+            )
             return None
 
         # Use sniper expiry so probes survive long enough between steps.
@@ -1480,12 +1745,12 @@ class BoostManager:
                     if side == "buy":
                         offer_dict = {
                             str(cfg.WALLET_ID_XCH): -int(xch_mojos),
-                            str(cfg.CAT_WALLET_ID): int(cat_mojos)
+                            str(cfg.CAT_WALLET_ID): int(cat_mojos),
                         }
                     else:
                         offer_dict = {
                             str(cfg.CAT_WALLET_ID): -int(cat_mojos),
-                            str(cfg.WALLET_ID_XCH): int(xch_mojos)
+                            str(cfg.WALLET_ID_XCH): int(xch_mojos),
                         }
                     res = self._offer_manager.create_offer_with_retry(
                         offer_dict,
@@ -1501,12 +1766,15 @@ class BoostManager:
                             "gap_closer_flexible_size",
                             f"Close the Gap {side} probe resized to "
                             f"{size_xch} XCH / {cat_amount} CAT using "
-                            f"sniper coin {str(flexible_coin_id)[:16]}..."
+                            f"sniper coin {str(flexible_coin_id)[:16]}...",
                         )
 
         if not res or not res.get("success"):
-            log_event("warning", "gap_closer_create_failed",
-                      f"📈 Gap closer {side} creation failed: {res}")
+            log_event(
+                "warning",
+                "gap_closer_create_failed",
+                f"📈 Gap closer {side} creation failed: {res}",
+            )
             return None
 
         trade_record = res.get("trade_record") or {}
@@ -1522,7 +1790,10 @@ class BoostManager:
             # expires_at matches the on-chain expiry so cleanup and dashboard
             # reporting stay consistent with the actual wallet offer lifetime.
             from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-            _expiry_iso = (_dt.now(_tz.utc) + _td(seconds=offer_expiry)).strftime("%Y-%m-%d %H:%M:%S")
+
+            _expiry_iso = (_dt.now(_tz.utc) + _td(seconds=offer_expiry)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             db_ok = add_offer(
                 trade_id=trade_id,
                 side=side,
@@ -1537,11 +1808,16 @@ class BoostManager:
             if not db_ok:
                 # DB insert failed — cancel the on-chain offer to prevent
                 # wallet/DB divergence (offer exists in wallet but not in DB).
-                log_event("error", "boost_db_cancel",
-                          f"DB insert failed for boost {trade_id[:16]}..., cancelling on-chain offer")
+                log_event(
+                    "error",
+                    "boost_db_cancel",
+                    f"DB insert failed for boost {trade_id[:16]}..., cancelling on-chain offer",
+                )
                 if self._offer_manager:
                     self._offer_manager._bot_cancelled_ids.add(trade_id)
-                    self._offer_manager.cancel_offers([trade_id], reason="boost_db_insert_failed")
+                    self._offer_manager.cancel_offers(
+                        [trade_id], reason="boost_db_insert_failed"
+                    )
                 return None
             if locked_coin_id and self._offer_manager:
                 # Register in cycle exclusion set so ladder won't re-select this coin
@@ -1559,9 +1835,12 @@ class BoostManager:
                     "dexie_link": "",
                 }
 
-        log_event("info", "gap_closer_created",
-                  f"📈 Gap closer {side.upper()} at {price:.8f} XCH "
-                  f"({size_xch} XCH / {cat_amount:.2f} CAT)")
+        log_event(
+            "info",
+            "gap_closer_created",
+            f"📈 Gap closer {side.upper()} at {price:.8f} XCH "
+            f"({size_xch} XCH / {cat_amount:.2f} CAT)",
+        )
 
         return {
             "trade_id": trade_id,
@@ -1608,19 +1887,28 @@ class BoostManager:
             # Also widen main book convergence by 20%
             old_factor = self._convergence_factor
             self._convergence_factor = min(
-                Decimal("1.0"),
-                self._convergence_factor + Decimal("0.20")
+                Decimal("1.0"), self._convergence_factor + Decimal("0.20")
             )
 
-        log_event("warning", "gap_closer_arbed",
-                  f"⚠️ Gap closer arbed! Widening: "
-                  f"{_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} "
-                  f"(convergence: {old_factor:.2f} → {self._convergence_factor:.2f})",
-                  data={"spread_bps": new_spread, "arb_floor_bps": self._arb_floor_bps,
-                        "steps_taken": self._steps_taken, "start_spread_bps": self._start_spread_bps})
-        print(f"⚠️ Gap closer arbed! Backing off: "
-              f"{_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} "
-              f"(arb floor: {_bps_to_pct(self._arb_floor_bps)})", flush=True)
+        log_event(
+            "warning",
+            "gap_closer_arbed",
+            f"⚠️ Gap closer arbed! Widening: "
+            f"{_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} "
+            f"(convergence: {old_factor:.2f} → {self._convergence_factor:.2f})",
+            data={
+                "spread_bps": new_spread,
+                "arb_floor_bps": self._arb_floor_bps,
+                "steps_taken": self._steps_taken,
+                "start_spread_bps": self._start_spread_bps,
+            },
+        )
+        print(
+            f"⚠️ Gap closer arbed! Backing off: "
+            f"{_bps_to_pct(old_spread)} → {_bps_to_pct(new_spread)} "
+            f"(arb floor: {_bps_to_pct(self._arb_floor_bps)})",
+            flush=True,
+        )
 
         # Flag for the bot loop: if our probe got arbed, any inner-tier
         # offers at a similar or tighter spread could also be vulnerable.
@@ -1665,14 +1953,20 @@ class BoostManager:
         # Check stability (gap closer offers must have survived)
         if self._stable_since == 0:
             return False
-        stability_required = getattr(cfg, "GAP_CLOSE_CONVERGENCE_SECS",
-                                     getattr(cfg, "GAP_CLOSE_STEP_COOLDOWN_SECS", 60))
+        stability_required = getattr(
+            cfg,
+            "GAP_CLOSE_CONVERGENCE_SECS",
+            getattr(cfg, "GAP_CLOSE_STEP_COOLDOWN_SECS", 60),
+        )
         if (now - self._stable_since) < stability_required:
             return False
 
         # Cooldown between convergence steps (separate from gap closer step cooldown)
-        convergence_cooldown = getattr(cfg, "GAP_CLOSE_CONVERGENCE_SECS",
-                                       getattr(cfg, "GAP_CLOSE_STEP_COOLDOWN_SECS", 60))
+        convergence_cooldown = getattr(
+            cfg,
+            "GAP_CLOSE_CONVERGENCE_SECS",
+            getattr(cfg, "GAP_CLOSE_STEP_COOLDOWN_SECS", 60),
+        )
         if (now - self._last_convergence_time) < convergence_cooldown:
             return False
 
@@ -1685,18 +1979,19 @@ class BoostManager:
         step_dec = Decimal(str(step_pct)) / Decimal("100")
         old_factor = self._convergence_factor
         self._convergence_factor = max(
-            self._convergence_min,
-            self._convergence_factor - step_dec
+            self._convergence_min, self._convergence_factor - step_dec
         )
         self._last_convergence_time = now
 
         pct = self._convergence_factor * Decimal("100")
-        log_event("info", "gap_closer_convergence",
-                  f"📈 Main book converging: {old_factor:.2f} → "
-                  f"{self._convergence_factor:.2f} "
-                  f"(main spread now {pct:.0f}% of original)")
-        print(f"📈 Main book converging: now {pct:.0f}% of original spread",
-              flush=True)
+        log_event(
+            "info",
+            "gap_closer_convergence",
+            f"📈 Main book converging: {old_factor:.2f} → "
+            f"{self._convergence_factor:.2f} "
+            f"(main spread now {pct:.0f}% of original)",
+        )
+        print(f"📈 Main book converging: now {pct:.0f}% of original spread", flush=True)
 
         return True
 
@@ -1750,8 +2045,9 @@ class BoostManager:
 
         return True
 
-    def cascade_main_book(self, mid_price: Decimal,
-                          open_buys: list, open_sells: list) -> Dict:
+    def cascade_main_book(
+        self, mid_price: Decimal, open_buys: list, open_sells: list
+    ) -> Dict:
         """Cascade the main book behind the proven probe level.
 
         CRITICAL: Creates new offers FIRST, then cancels stale ones.
@@ -1778,8 +2074,10 @@ class BoostManager:
             return {"success": False, "reason": "missing dependencies"}
 
         batch_size = getattr(cfg, "GAP_CLOSE_CASCADE_BATCH_SIZE", 5)
-        results = {"buy": {"created": 0, "cancelled": 0},
-                   "sell": {"created": 0, "cancelled": 0}}
+        results = {
+            "buy": {"created": 0, "cancelled": 0},
+            "sell": {"created": 0, "cancelled": 0},
+        }
 
         for side in ["buy", "sell"]:
             if side == "buy" and not cfg.ENABLE_BUY:
@@ -1790,8 +2088,11 @@ class BoostManager:
             offers = open_buys if side == "buy" else open_sells
 
             # Skip boost/sniper offers — only cascade the main book
-            main_offers = [o for o in offers
-                           if o.get("trade_id") not in set(self._active_boost_ids)]
+            main_offers = [
+                o
+                for o in offers
+                if o.get("trade_id") not in set(self._active_boost_ids)
+            ]
 
             if not main_offers:
                 continue
@@ -1803,8 +2104,7 @@ class BoostManager:
             # compared to where they'd be at the new tighter spread.
             # For buys: stale = price too low (too far below mid)
             # For sells: stale = price too high (too far above mid)
-            stale = self._find_stale_offers(main_offers, mid_price, side,
-                                             target_spread)
+            stale = self._find_stale_offers(main_offers, mid_price, side, target_spread)
 
             if not stale:
                 continue
@@ -1817,24 +2117,31 @@ class BoostManager:
             new_count = len(to_replace)
             try:
                 new_offers = self._offer_manager.create_ladder(
-                    mid_price, side,
+                    mid_price,
+                    side,
                     num_offers=new_count,
                     spread_fraction=target_spread,
                     risk_manager=self._risk_manager,
-                    coin_ids_enabled=cfg.COIN_IDS_ENABLED
+                    coin_ids_enabled=cfg.COIN_IDS_ENABLED,
                 )
                 created = len(new_offers) if new_offers else 0
                 results[side]["created"] = created
             except Exception as e:
-                log_event("warning", "cascade_create_failed",
-                          f"Cascade {side} create failed: {e}")
+                log_event(
+                    "warning",
+                    "cascade_create_failed",
+                    f"Cascade {side} create failed: {e}",
+                )
                 created = 0
 
             if created == 0:
                 # No spare coins — skip cancellation too, try again next cycle
-                log_event("info", "cascade_no_coins",
-                          f"📈 Cascade {side}: no spare coins for new offers — "
-                          f"will retry next cycle")
+                log_event(
+                    "info",
+                    "cascade_no_coins",
+                    f"📈 Cascade {side}: no spare coins for new offers — "
+                    f"will retry next cycle",
+                )
                 continue
 
             # Post new offers to Dexie immediately
@@ -1847,8 +2154,9 @@ class BoostManager:
 
             # Step 2: CANCEL the stale offers we just replaced
             # Only cancel as many as we successfully created
-            cancel_ids = [o.get("trade_id") for o in to_replace[:created]
-                          if o.get("trade_id")]
+            cancel_ids = [
+                o.get("trade_id") for o in to_replace[:created] if o.get("trade_id")
+            ]
             if cancel_ids:
                 for tid in cancel_ids:
                     self._offer_manager._bot_cancelled_ids.add(tid)
@@ -1856,15 +2164,17 @@ class BoostManager:
                     cancel_ids, reason="cascade_replace"
                 )
                 cancelled = sum(
-                    1 for r in (cancel_result or {}).values()
-                    if r and r.get("success")
+                    1 for r in (cancel_result or {}).values() if r and r.get("success")
                 )
                 results[side]["cancelled"] = cancelled
 
-            log_event("info", "cascade_batch",
-                      f"📈 Cascade {side}: created {created} new, "
-                      f"cancelled {results[side]['cancelled']} stale "
-                      f"({len(stale) - created} remaining)")
+            log_event(
+                "info",
+                "cascade_batch",
+                f"📈 Cascade {side}: created {created} new, "
+                f"cancelled {results[side]['cancelled']} stale "
+                f"({len(stale) - created} remaining)",
+            )
 
         total_created = results["buy"]["created"] + results["sell"]["created"]
         total_cancelled = results["buy"]["cancelled"] + results["sell"]["cancelled"]
@@ -1872,18 +2182,21 @@ class BoostManager:
         if total_created > 0:
             self._cascade_done_at_spread = self._gap_spread_bps
             self._cascade_count += 1
-            print(f"📈 Cascade #{self._cascade_count}: "
-                  f"+{total_created} new, -{total_cancelled} stale "
-                  f"(probe at {_bps_to_pct(self._gap_spread_bps)})",
-                  flush=True)
+            print(
+                f"📈 Cascade #{self._cascade_count}: "
+                f"+{total_created} new, -{total_cancelled} stale "
+                f"(probe at {_bps_to_pct(self._gap_spread_bps)})",
+                flush=True,
+            )
 
         results["success"] = total_created > 0
         results["total_created"] = total_created
         results["total_cancelled"] = total_cancelled
         return results
 
-    def _find_stale_offers(self, offers: list, mid_price: Decimal,
-                            side: str, target_spread: Decimal) -> list:
+    def _find_stale_offers(
+        self, offers: list, mid_price: Decimal, side: str, target_spread: Decimal
+    ) -> list:
         """Find main book offers that are stale (too far from mid).
 
         An offer is "stale" if its price is further from mid than where
@@ -1930,11 +2243,13 @@ class BoostManager:
 
             # An offer is stale if it's beyond the new target range
             if distance_bps > target_bps:
-                stale.append({
-                    **offer,
-                    "_distance_bps": float(distance_bps),
-                    "_price": price,
-                })
+                stale.append(
+                    {
+                        **offer,
+                        "_distance_bps": float(distance_bps),
+                        "_price": price,
+                    }
+                )
 
         # Sort by distance (most stale = furthest from mid first)
         stale.sort(key=lambda o: o.get("_distance_bps", 0), reverse=True)
@@ -1960,7 +2275,9 @@ class BoostManager:
                 "total_floor_discoveries": int(self._session_total_floor_discoveries),
                 "total_arb_cost_xch": str(self._session_total_arb_cost_xch),
                 "last_completed_buy_floor_bps": int(self._last_completed_buy_floor_bps),
-                "last_completed_sell_floor_bps": int(self._last_completed_sell_floor_bps),
+                "last_completed_sell_floor_bps": int(
+                    self._last_completed_sell_floor_bps
+                ),
                 "last_completed_at": float(self._last_completed_at),
                 "currently_active": bool(self._boost_active),
             }
@@ -1977,7 +2294,9 @@ class BoostManager:
             # The actual blocker is whichever timer has more time left:
             # 1) cooldown since last step, 2) stability proof since last arb/refresh
             step_wait = max(0, cooldown - (now - self._last_step_time))
-            stable_wait = max(0, cooldown - stable_secs) if self._stable_since > 0 else cooldown
+            stable_wait = (
+                max(0, cooldown - stable_secs) if self._stable_since > 0 else cooldown
+            )
             secs_until_step = max(0, int(max(step_wait, stable_wait)))
 
             return {
@@ -2014,4 +2333,3 @@ class BoostManager:
                 "cascade_count": self._cascade_count,
                 "cascade_ready": self.should_cascade(),
             }
-

@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -26,6 +27,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Fake bots
 # ---------------------------------------------------------------------------
+
 
 def _fake_bot_stopped():
     """Minimal fake bot in a stopped state with non-zero coin counts."""
@@ -114,6 +116,7 @@ def _fake_bot_running():
 # Base — Flask test client
 # ---------------------------------------------------------------------------
 
+
 class _FlaskBase(unittest.TestCase):
     _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
 
@@ -130,9 +133,9 @@ class _FlaskBase(unittest.TestCase):
 # 1. /api/bot/state
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestBotStateContract(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self.client.get("/api/bot/state", environ_base=self._LOOPBACK)
@@ -189,9 +192,9 @@ class TestBotStateContract(_FlaskBase):
 # 2. /api/bot/price
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestBotPriceContract(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self.client.get("/api/bot/price", environ_base=self._LOOPBACK)
@@ -244,13 +247,15 @@ class TestBotPriceContract(_FlaskBase):
 # 3. /api/status — smoke contract (bot=None, no asset_id, startup not authorised)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestStatusEndpointSmoke(_FlaskBase):
-
     def setUp(self):
         super().setUp()
         # Patch get_wallet_type to avoid live wallet call
-        self._wt_patcher = patch.object(api_server, "get_wallet_type", return_value="sage")
+        self._wt_patcher = patch.object(
+            api_server, "get_wallet_type", return_value="sage"
+        )
         self._wt_patcher.start()
         # Clear active_cat so no TibetSwap/Dexie calls are made
         self._orig_cat = dict(api_server._active_cat)
@@ -312,6 +317,7 @@ class TestStatusEndpointSmoke(_FlaskBase):
 # 4. Write-guard — POST without token returns 401 (before Flask method-check)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestStatusEndpointWriteGuards(_FlaskBase):
     """The before_request guard intercepts POST requests without a valid token
@@ -332,8 +338,9 @@ class TestStatusEndpointWriteGuards(_FlaskBase):
     def test_bot_state_post_with_token_returns_405(self):
         """Valid token passes auth but Flask still rejects POST on GET-only route."""
         headers = {"X-Bot-Local-Token": api_server._LOCAL_API_TOKEN}
-        resp = self.client.post("/api/bot/state", headers=headers,
-                                environ_base=self._LOOPBACK)
+        resp = self.client.post(
+            "/api/bot/state", headers=headers, environ_base=self._LOOPBACK
+        )
         self.assertEqual(resp.status_code, 405)
 
 

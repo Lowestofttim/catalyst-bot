@@ -7,6 +7,7 @@ Regression test for the 2026-04-17 ladder bug:
     Old ±20% bounds → classified as inner (BUG — built misfit offer)
     SSOT bounds      → classified as misfit → goes to small (CORRECT)
 """
+
 import sys
 import types
 import unittest
@@ -26,17 +27,27 @@ if "requests" not in sys.modules:
 
     class _Resp:
         status_code = 200
-        def json(self): return {}
-        def raise_for_status(self): pass
+
+        def json(self):
+            return {}
+
+        def raise_for_status(self):
+            pass
 
     class _Session:
         headers = {}
-        def get(self, *a, **kw): return _Resp()
-        def mount(self, *a, **kw): pass
+
+        def get(self, *a, **kw):
+            return _Resp()
+
+        def mount(self, *a, **kw):
+            pass
 
     _requests.get = lambda *a, **kw: _Resp()
     _requests.Session = _Session
-    _requests.exceptions = types.SimpleNamespace(Timeout=Exception, ConnectionError=Exception)
+    _requests.exceptions = types.SimpleNamespace(
+        Timeout=Exception, ConnectionError=Exception
+    )
     _adapters = types.ModuleType("requests.adapters")
     _adapters.HTTPAdapter = object
     _requests.adapters = _adapters
@@ -72,7 +83,6 @@ _TIER_SIZES = {
 
 
 class SSOTFallbackTests(unittest.TestCase):
-
     # Attributes patched onto sys.modules["database"] inside _classify().
     # Without this restore step, the lambdas leak into every later test that
     # uses real database functions — e.g. test_plan_02_30_database_unit fails
@@ -90,8 +100,7 @@ class SSOTFallbackTests(unittest.TestCase):
         self._db_snapshot = None
         if db_mod is not None:
             self._db_snapshot = {
-                attr: getattr(db_mod, attr, _MISSING)
-                for attr in self._PATCHED_DB_ATTRS
+                attr: getattr(db_mod, attr, _MISSING) for attr in self._PATCHED_DB_ATTRS
             }
 
     def tearDown(self):
@@ -108,7 +117,9 @@ class SSOTFallbackTests(unittest.TestCase):
                 setattr(db_mod, attr, original)
 
     def _make_manager(self):
-        with patch.object(coin_manager.CoinManager, "_resolve_fingerprint", return_value="123"):
+        with patch.object(
+            coin_manager.CoinManager, "_resolve_fingerprint", return_value="123"
+        ):
             return coin_manager.CoinManager()
 
     def _classify(self, manager, records, *, db_raises=False):
@@ -117,7 +128,9 @@ class SSOTFallbackTests(unittest.TestCase):
         db_mod = sys.modules.get("database") or types.ModuleType("database")
 
         if db_raises:
-            db_mod.get_free_coins = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("db down"))
+            db_mod.get_free_coins = lambda *a, **kw: (_ for _ in ()).throw(
+                RuntimeError("db down")
+            )
             db_mod.get_locked_coins = lambda *a, **kw: []
             db_mod.set_coin_designation = lambda *a, **kw: None
             db_mod.get_tier_spare_counts = lambda *a, **kw: {}
@@ -187,8 +200,9 @@ class SSOTFallbackTests(unittest.TestCase):
         )
         # Legacy ±20% bounds: 26.7M * 0.8 = 21.36M <= 23.4M → accepted as inner
         self.assertEqual(
-            len(result_legacy["inner"]), 1,
-            "legacy classifier should accept misfit (this confirms the fix matters)"
+            len(result_legacy["inner"]),
+            1,
+            "legacy classifier should accept misfit (this confirms the fix matters)",
         )
 
     # ------------------------------------------------------------------
@@ -206,8 +220,9 @@ class SSOTFallbackTests(unittest.TestCase):
         # _infer_designation_by_size → SSOT → unknown/none → small
         result = self._classify(mgr, records, db_raises=False)
 
-        self.assertEqual(result["inner"], [], "misfit must not land in inner even in DB path")
+        self.assertEqual(
+            result["inner"], [], "misfit must not land in inner even in DB path"
+        )
         self.assertGreaterEqual(
-            len(result["small"]), 1,
-            "misfit must land in small via new-coin SSOT path"
+            len(result["small"]), 1, "misfit must land in small via new-coin SSOT path"
         )

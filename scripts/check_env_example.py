@@ -14,8 +14,12 @@ from __future__ import annotations
 # --- src-layout bootstrap (auto-inserted) ---
 import os as _os
 import sys as _sys
+
 _sys.path.insert(
-    0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "src", "catalyst")
+    0,
+    _os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)), "..", "src", "catalyst"
+    ),
 )
 # --- end bootstrap ---
 

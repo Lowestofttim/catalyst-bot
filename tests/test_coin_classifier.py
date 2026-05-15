@@ -5,8 +5,10 @@ was mis-designated `tier_spare/inner` by reconcile (using ±20% bounds) but
 flagged as a misfit by the absorber (using 0.98/1.5 bounds). Under the new
 classifier, both paths use the same 0.98/1.5 bounds and agree it's a misfit.
 """
+
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import pytest
@@ -27,10 +29,10 @@ from coin_classifier import (
 # Numbers are in mojos — inner is the largest for this reverse-ladder
 # configuration.
 MZ_TIERS = {
-    "inner":   26_678_000,
-    "mid":     13_339_000,
-    "outer":    5_802_000,
-    "extreme":  2_901_000,
+    "inner": 26_678_000,
+    "mid": 13_339_000,
+    "outer": 5_802_000,
+    "extreme": 2_901_000,
 }
 
 
@@ -48,7 +50,7 @@ class TestTheRegressionCoin:
         assert cls.nearest_tier == "inner"
         # Every tier should be rejected
         assert cls.candidates["inner"] == CoinFit.UNDER_FLOOR  # 23.4k < 26.16k floor
-        assert cls.candidates["mid"] == CoinFit.OVER_CEILING   # 23.4k > 20.0k ceiling
+        assert cls.candidates["mid"] == CoinFit.OVER_CEILING  # 23.4k > 20.0k ceiling
         assert cls.candidates["outer"] == CoinFit.OVER_CEILING
         assert cls.candidates["extreme"] == CoinFit.OVER_CEILING
 
@@ -57,7 +59,8 @@ class TestTheRegressionCoin:
         would have accepted 23.4k as tier_spare/inner. This is the bug."""
         # Simulate old bounds: 0.80 floor, 1.20 ceiling
         cls_old = classify_coin(
-            23_400_000, MZ_TIERS,
+            23_400_000,
+            MZ_TIERS,
             floor_tolerance=Decimal("0.80"),
             max_ratio=Decimal("1.20"),
         )
@@ -202,19 +205,29 @@ class TestLegacyCompat:
         assert is_misfit_coin(23_400_000, MZ_TIERS) is True
         # With very loose 2.0 ratio and 0.5 floor: now 23.4k passes inner
         # (26.7k × 0.5 = 13.3k floor, 26.7k × 2.0 = 53.4k ceiling, 23.4k is in range)
-        assert is_misfit_coin(
-            23_400_000, MZ_TIERS,
-            max_size_ratio=2.0, floor_tolerance=0.5,
-        ) is False
+        assert (
+            is_misfit_coin(
+                23_400_000,
+                MZ_TIERS,
+                max_size_ratio=2.0,
+                floor_tolerance=0.5,
+            )
+            is False
+        )
 
     def test_is_misfit_with_inf_ratio_treats_as_large_finite(self):
         """When callers pass float('inf') to disable the ratio guard, we
         should still classify sensibly without divide-by-zero issues."""
         # The infinite-ratio disables the upper bound, so a huge coin at the
         # reserve threshold becomes RESERVE not misfit.
-        assert is_misfit_coin(
-            500_000_000, MZ_TIERS, max_size_ratio=float("inf"),
-        ) is False   # it's a reserve candidate, not a misfit
+        assert (
+            is_misfit_coin(
+                500_000_000,
+                MZ_TIERS,
+                max_size_ratio=float("inf"),
+            )
+            is False
+        )  # it's a reserve candidate, not a misfit
 
 
 class TestEdgeCases:

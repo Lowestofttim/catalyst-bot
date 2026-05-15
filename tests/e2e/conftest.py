@@ -32,6 +32,7 @@ isn't usable for the element you need:
 Visible text changes more often than IDs or accessibility labels, so
 avoid `page.get_by_text(...)` for anything load-bearing.
 """
+
 from __future__ import annotations
 
 import os

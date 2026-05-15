@@ -24,10 +24,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from config import cfg
-from database import (
-    record_inventory_snapshot, get_net_position,
-    log_event
-)
+from database import record_inventory_snapshot, get_net_position, log_event
 
 
 def _bps_to_pct(val):
@@ -77,8 +74,10 @@ class RiskManager:
         #   ""       → treat as full halt (safe default)
         self._circuit_breaker_type: str = ""
         self._circuit_breaker_blocked_side: str = ""  # "buy", "sell", or "" (both)
-        self._cb_clear_streak: int = 0   # Consecutive cycles where CB would clear
-        self._cb_clear_threshold: int = 3  # Require 3 consecutive OK cycles before clearing
+        self._cb_clear_streak: int = 0  # Consecutive cycles where CB would clear
+        self._cb_clear_threshold: int = (
+            3  # Require 3 consecutive OK cycles before clearing
+        )
 
         # Soft-position warning gate — reset when CB clears so warnings
         # can fire again on the next soft-limit breach.
@@ -131,8 +130,9 @@ class RiskManager:
                 since=getattr(cfg, "RUN_HISTORY_CUTOFF", None),
             )
         except Exception as e:
-            log_event("warning", "inventory_update_failed",
-                      f"Failed to get net position: {e}")
+            log_event(
+                "warning", "inventory_update_failed", f"Failed to get net position: {e}"
+            )
             return self.get_inventory_state()
 
         # Acquire CB lock briefly to pair with reset_position() so a reset
@@ -154,8 +154,9 @@ class RiskManager:
             self._net_position_cat = Decimal("0")
             self._startup_position_xch = None
             self._soft_position_warned = False
-        log_event("info", "position_reset",
-                  "Net position and startup baseline reset to zero")
+        log_event(
+            "info", "position_reset", "Net position and startup baseline reset to zero"
+        )
 
     def reset_session(self) -> None:
         """Full session reset — clear ALL cached state for a clean start.
@@ -187,12 +188,16 @@ class RiskManager:
         self._competitor_adjustment_bps = Decimal("0")
         self._competitor_updated = 0
         self._market_toxicity_snapshot = None
-        log_event("info", "risk_session_reset",
-                  "Risk manager session state fully reset")
+        log_event(
+            "info", "risk_session_reset", "Risk manager session state fully reset"
+        )
 
-    def record_snapshot(self, xch_balance: Optional[Decimal] = None,
-                        cat_balance: Optional[Decimal] = None,
-                        mid_price: Decimal = Decimal("0")):
+    def record_snapshot(
+        self,
+        xch_balance: Optional[Decimal] = None,
+        cat_balance: Optional[Decimal] = None,
+        mid_price: Decimal = Decimal("0"),
+    ):
         """Record an inventory snapshot to the database.
 
         Called periodically (every few loops) for historical tracking.
@@ -217,7 +222,7 @@ class RiskManager:
                 xch_balance=xch_balance,
                 cat_balance=cat_balance,
                 mid_price=mid_price,
-                unrealised_pnl=unrealised_pnl
+                unrealised_pnl=unrealised_pnl,
             )
         except Exception as e:
             log_event("warning", "snapshot_failed", f"Failed to record snapshot: {e}")
@@ -330,9 +335,13 @@ class RiskManager:
             return spread
         try:
             if side == "buy":
-                multiplier = Decimal(str(getattr(snap, "buy_spread_multiplier", "1.0") or "1.0"))
+                multiplier = Decimal(
+                    str(getattr(snap, "buy_spread_multiplier", "1.0") or "1.0")
+                )
             elif side == "sell":
-                multiplier = Decimal(str(getattr(snap, "sell_spread_multiplier", "1.0") or "1.0"))
+                multiplier = Decimal(
+                    str(getattr(snap, "sell_spread_multiplier", "1.0") or "1.0")
+                )
             else:
                 multiplier = Decimal("1.0")
             if multiplier <= 0:
@@ -403,8 +412,9 @@ class RiskManager:
 
         return adjusted
 
-    def _apply_volatility_scaling(self, spread: Decimal,
-                                  side: Optional[str] = None) -> Decimal:
+    def _apply_volatility_scaling(
+        self, spread: Decimal, side: Optional[str] = None
+    ) -> Decimal:
         """Scale spread based on recent price volatility.
 
         Higher volatility → wider spreads to protect against adverse selection.
@@ -460,17 +470,20 @@ class RiskManager:
         is_corrective_side = False
         if side and self._net_position_cat != 0:
             if side == "sell" and self._net_position_cat > 0:
-                is_corrective_side = True   # long CAT → sells unwind the position
+                is_corrective_side = True  # long CAT → sells unwind the position
             elif side == "buy" and self._net_position_cat < 0:
-                is_corrective_side = True   # short CAT → buys unwind the position
+                is_corrective_side = True  # short CAT → buys unwind the position
 
         if not is_corrective_side:
-            fill_start = Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_START_PER_HOUR", "4")))
-            fill_full = Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_FULL_PER_HOUR", "12")))
-            fill_max_buffer = (
-                Decimal(str(getattr(cfg, "DYNAMIC_FILL_RATE_MAX_BPS", "100")))
-                / Decimal("10000")
+            fill_start = Decimal(
+                str(getattr(cfg, "DYNAMIC_FILL_RATE_START_PER_HOUR", "4"))
             )
+            fill_full = Decimal(
+                str(getattr(cfg, "DYNAMIC_FILL_RATE_FULL_PER_HOUR", "12"))
+            )
+            fill_max_buffer = Decimal(
+                str(getattr(cfg, "DYNAMIC_FILL_RATE_MAX_BPS", "100"))
+            ) / Decimal("10000")
             if self._recent_fill_rate > fill_start and fill_max_buffer > 0:
                 fill_span = max(Decimal("0.1"), fill_full - fill_start)
                 fill_ratio = (self._recent_fill_rate - fill_start) / fill_span
@@ -526,8 +539,7 @@ class RiskManager:
         if self._price_engine:
             try:
                 vol = self._price_engine.get_volatility(
-                    cfg.CAT_ASSET_ID,
-                    hours=float(cfg.VOLATILITY_WINDOW_HOURS)
+                    cfg.CAT_ASSET_ID, hours=float(cfg.VOLATILITY_WINDOW_HOURS)
                 )
                 if vol is None:
                     vol = Decimal("0")
@@ -573,10 +585,14 @@ class RiskManager:
             multiplier = Decimal("1") + (ratio / Decimal("0.05")) * Decimal("0.20")
         elif ratio <= Decimal("0.10"):
             # Significant impact — widen by 20-50%
-            multiplier = Decimal("1.20") + ((ratio - Decimal("0.05")) / Decimal("0.05")) * Decimal("0.30")
+            multiplier = Decimal("1.20") + (
+                (ratio - Decimal("0.05")) / Decimal("0.05")
+            ) * Decimal("0.30")
         else:
             # Large impact — widen substantially
-            multiplier = Decimal("1.50") + min((ratio - Decimal("0.10")) / Decimal("0.10"), Decimal("0.50"))
+            multiplier = Decimal("1.50") + min(
+                (ratio - Decimal("0.10")) / Decimal("0.10"), Decimal("0.50")
+            )
 
         # Cap multiplier at 2x
         multiplier = min(multiplier, Decimal("2.0"))
@@ -606,7 +622,11 @@ class RiskManager:
             except Exception:
                 pass
 
-        return self._pool_depth_ratio if self._pool_depth_ratio is not None else Decimal("0")
+        return (
+            self._pool_depth_ratio
+            if self._pool_depth_ratio is not None
+            else Decimal("0")
+        )
 
     # -------------------------------------------------------------------
     # Competitor-Aware Spread Adjustment (NEW — ecosystem intelligence)
@@ -683,6 +703,7 @@ class RiskManager:
             return cfg.DEFAULT_TRADE_XCH
 
         from config import get_buy_tier_size_xch, get_sell_tier_size_xch
+
         if side == "buy":
             val = get_buy_tier_size_xch(tier)
         else:
@@ -719,8 +740,11 @@ class RiskManager:
                     self._circuit_breaker_type = ""
                     self._circuit_breaker_blocked_side = ""
                     self._soft_position_warned = False
-                    log_event("info", "circuit_breaker_cleared",
-                              f"Circuit breaker cleared after {elapsed:.0f}s")
+                    log_event(
+                        "info",
+                        "circuit_breaker_cleared",
+                        f"Circuit breaker cleared after {elapsed:.0f}s",
+                    )
                     self._circuit_breaker_reason = ""
                     self._cb_clear_streak = 0
             else:
@@ -762,20 +786,26 @@ class RiskManager:
         if self._startup_position_xch is None:
             self._startup_position_xch = position_xch
             if position_xch > cfg.MAX_POSITION_XCH:
-                log_event("warning", "position_inherited",
-                          f"Inherited position: {position_xch:.4f} XCH "
-                          f"(exceeds limit of {cfg.MAX_POSITION_XCH} XCH). "
-                          f"This is from historical fills. Bot will use this "
-                          f"as the baseline and monitor for GROWTH beyond it. "
-                          f"Consider increasing MAX_POSITION_XCH in .env or "
-                          f"resetting fills if this position is stale.")
+                log_event(
+                    "warning",
+                    "position_inherited",
+                    f"Inherited position: {position_xch:.4f} XCH "
+                    f"(exceeds limit of {cfg.MAX_POSITION_XCH} XCH). "
+                    f"This is from historical fills. Bot will use this "
+                    f"as the baseline and monitor for GROWTH beyond it. "
+                    f"Consider increasing MAX_POSITION_XCH in .env or "
+                    f"resetting fills if this position is stale.",
+                )
 
         # Effective limit: the LARGER of the configured limit or the
         # inherited startup position + 10% headroom. This prevents the
         # bot from being permanently stuck when historical fills exceed
         # the configured limit, while still protecting against runaway growth.
         effective_limit = cfg.MAX_POSITION_XCH
-        if self._startup_position_xch is not None and self._startup_position_xch > effective_limit:
+        if (
+            self._startup_position_xch is not None
+            and self._startup_position_xch > effective_limit
+        ):
             effective_limit = self._startup_position_xch * Decimal("1.1")
 
         # Hard limit: trip full circuit breaker only at 1.5× effective limit.
@@ -788,7 +818,7 @@ class RiskManager:
             # net_position_cat > 0 → over-long CAT → buying pushed us over limit
             # net_position_cat < 0 → over-short CAT → selling pushed us over limit
             if self._net_position_cat > 0:
-                blocked_side = "buy"   # over-long: block more buys, keep selling
+                blocked_side = "buy"  # over-long: block more buys, keep selling
             elif self._net_position_cat < 0:
                 blocked_side = "sell"  # over-short: block more sells, keep buying
             else:
@@ -800,7 +830,7 @@ class RiskManager:
                 # decouples position_xch from net_position_cat (e.g. adding
                 # a fee/funding component). Full halt is the safest fallback
                 # because we have no signal about which side to throttle.
-                blocked_side = ""      # unknown — full halt to be safe
+                blocked_side = ""  # unknown — full halt to be safe
             self._trip_circuit_breaker(
                 f"Position hard limit exceeded: {position_xch:.4f} XCH > "
                 f"{hard_limit:.4f} XCH (1.5× limit of {effective_limit:.4f} XCH)",
@@ -812,10 +842,13 @@ class RiskManager:
         # Soft warning: position between 1.0× and 1.5× — log once, no halt.
         if position_xch > effective_limit:
             if not getattr(self, "_soft_position_warned", False):
-                log_event("warning", "position_soft_limit",
-                          f"Position {position_xch:.4f} XCH exceeds soft limit "
-                          f"{effective_limit:.4f} XCH — same-side offers paused "
-                          f"(circuit breaker trips at {hard_limit:.4f} XCH)")
+                log_event(
+                    "warning",
+                    "position_soft_limit",
+                    f"Position {position_xch:.4f} XCH exceeds soft limit "
+                    f"{effective_limit:.4f} XCH — same-side offers paused "
+                    f"(circuit breaker trips at {hard_limit:.4f} XCH)",
+                )
                 self._soft_position_warned = True
         else:
             self._soft_position_warned = False
@@ -863,8 +896,9 @@ class RiskManager:
 
         return False
 
-    def _trip_circuit_breaker(self, reason: str, cb_type: str = "price",
-                              blocked_side: str = "") -> None:
+    def _trip_circuit_breaker(
+        self, reason: str, cb_type: str = "price", blocked_side: str = ""
+    ) -> None:
         """Activate circuit breaker.
 
         Args:
@@ -881,8 +915,11 @@ class RiskManager:
                     self._circuit_breaker_type = cb_type
                     self._circuit_breaker_blocked_side = blocked_side
                     self._circuit_breaker_reason = reason
-                    log_event("warning", "cb_escalated",
-                              f"CB escalated from position to price: {reason}")
+                    log_event(
+                        "warning",
+                        "cb_escalated",
+                        f"CB escalated from position to price: {reason}",
+                    )
                 return
             self._circuit_breaker_active = True
             self._circuit_breaker_reason = reason
@@ -890,10 +927,16 @@ class RiskManager:
             self._circuit_breaker_type = cb_type
             self._cb_clear_streak = 0  # Reset hysteresis counter on any new trip
             self._circuit_breaker_blocked_side = blocked_side
-            side_note = (f" — only '{blocked_side}' side blocked, correcting side continues"
-                         if blocked_side else " — full halt (both sides)")
-            log_event("warning", "circuit_breaker_tripped",
-                      f"⚠️ Circuit breaker tripped ({cb_type}): {reason}{side_note}")
+            side_note = (
+                f" — only '{blocked_side}' side blocked, correcting side continues"
+                if blocked_side
+                else " — full halt (both sides)"
+            )
+            log_event(
+                "warning",
+                "circuit_breaker_tripped",
+                f"⚠️ Circuit breaker tripped ({cb_type}): {reason}{side_note}",
+            )
 
     def _clear_circuit_breaker(self):
         """Deactivate circuit breaker."""
@@ -904,8 +947,11 @@ class RiskManager:
                 self._circuit_breaker_type = ""
                 self._circuit_breaker_blocked_side = ""
                 self._soft_position_warned = False
-                log_event("info", "circuit_breaker_cleared",
-                          f"Circuit breaker cleared after {elapsed:.0f}s")
+                log_event(
+                    "info",
+                    "circuit_breaker_cleared",
+                    f"Circuit breaker cleared after {elapsed:.0f}s",
+                )
                 self._circuit_breaker_reason = ""
 
     def circuit_breaker_active(self) -> bool:
@@ -1025,7 +1071,10 @@ class RiskManager:
                 try:
                     throttled = set((snap or {}).get("throttled_sides") or [])
                     until = (snap or {}).get("throttle_until") or {}
-                    if side in throttled and float(until.get(side, 0) or 0) > time.time():
+                    if (
+                        side in throttled
+                        and float(until.get(side, 0) or 0) > time.time()
+                    ):
                         return False
                 except Exception as e:
                     log_event(
@@ -1057,7 +1106,10 @@ class RiskManager:
 
         # Use effective limit (accounts for inherited startup position)
         effective_limit = cfg.MAX_POSITION_XCH
-        if self._startup_position_xch is not None and self._startup_position_xch > effective_limit:
+        if (
+            self._startup_position_xch is not None
+            and self._startup_position_xch > effective_limit
+        ):
             effective_limit = self._startup_position_xch * Decimal("1.1")
 
         # If we're at max long, disable buying (we have enough CAT)
@@ -1117,8 +1169,10 @@ class RiskManager:
             if _bot is None:
                 # Try to get from module-level bot reference
                 import bot_loop as _bl
+
                 _bot = getattr(_bl, "bot", None)
             if _bot:
+
                 def _edge_decimal(source, key):
                     try:
                         return Decimal(str((source or {}).get(key, "0") or "0"))
@@ -1134,11 +1188,13 @@ class RiskManager:
                 if _best_ask <= 0:
                     _best_ask = _edge_decimal(_state, "our_best_ask")
                 try:
-                    _mid = Decimal(str(
-                        _state.get("mid_price", None)
-                        or getattr(_bot, "_current_mid_price", None)
-                        or "0"
-                    ))
+                    _mid = Decimal(
+                        str(
+                            _state.get("mid_price", None)
+                            or getattr(_bot, "_current_mid_price", None)
+                            or "0"
+                        )
+                    )
                 except Exception:
                     _mid = Decimal("0")
                 if _mid <= 0 and _best_bid > 0 and _best_ask > _best_bid:
@@ -1200,9 +1256,15 @@ class RiskManager:
                     hours=float(getattr(cfg, "VOLATILITY_WINDOW_HOURS", 24.0)),
                 )
                 if v3:
-                    metrics["market_fill_rate_per_hour"] = f"{v3.get('trades_per_hour', 0):.3f}"
-                    metrics["market_volatility_pct"] = f"{v3.get('price_stdev_pct', 0):.3f}"
-                    metrics["market_trades_in_window"] = int(v3.get("trades_in_window", 0))
+                    metrics["market_fill_rate_per_hour"] = (
+                        f"{v3.get('trades_per_hour', 0):.3f}"
+                    )
+                    metrics["market_volatility_pct"] = (
+                        f"{v3.get('price_stdev_pct', 0):.3f}"
+                    )
+                    metrics["market_trades_in_window"] = int(
+                        v3.get("trades_in_window", 0)
+                    )
                     metrics["market_high_low_pct"] = f"{v3.get('high_low_pct', 0):.3f}"
                     metrics["market_data_source"] = "dexie_v3"
         except Exception:
@@ -1222,7 +1284,9 @@ class RiskManager:
                 refreshes = int(summary.get("orderbook_refreshes", 0) or 0)
                 metrics["market_intel_refreshes"] = refreshes
                 metrics["market_intel_age_secs"] = summary.get("orderbook_age_secs")
-                metrics["market_intel_state"] = "ready" if refreshes > 0 else "searching"
+                metrics["market_intel_state"] = (
+                    "ready" if refreshes > 0 else "searching"
+                )
 
                 # Use competitor-only counts (non-bot offers)
                 comp_buys = int(summary.get("num_competitor_buys", 0))
@@ -1242,13 +1306,20 @@ class RiskManager:
                 metrics["market_spread_bps"] = str(comp_spread)
 
                 # Overall orderbook spread (including our own offers)
-                metrics["overall_spread_bps"] = str(summary.get("overall_spread_bps", "0"))
+                metrics["overall_spread_bps"] = str(
+                    summary.get("overall_spread_bps", "0")
+                )
             except Exception:
                 pass
 
         # --- Evaluate RED conditions (critical) ---
         if self._circuit_breaker_active:
-            conditions.append(("red", f"Circuit breaker tripped: {self._circuit_breaker_reason} — Go to Settings → Safety to review price limits and reset."))
+            conditions.append(
+                (
+                    "red",
+                    f"Circuit breaker tripped: {self._circuit_breaker_reason} — Go to Settings → Safety to review price limits and reset.",
+                )
+            )
 
         try:
             tox_score = int(toxicity.get("score", 0) or 0)
@@ -1257,12 +1328,28 @@ class RiskManager:
             tox_reasons = toxicity.get("reasons") or []
             top_reason = ""
             if tox_reasons:
-                top_reason = str(tox_reasons[0].get("detail") or tox_reasons[0].get("key") or "")
+                top_reason = str(
+                    tox_reasons[0].get("detail") or tox_reasons[0].get("key") or ""
+                )
             if tox_level == "extreme":
-                conditions.append(("red", f"Market toxicity extreme ({tox_score}/100): {top_reason or 'offers are at high adverse-selection risk'}"))
+                conditions.append(
+                    (
+                        "red",
+                        f"Market toxicity extreme ({tox_score}/100): {top_reason or 'offers are at high adverse-selection risk'}",
+                    )
+                )
             elif tox_level in ("elevated", "high") or tox_throttled:
-                sides = ", ".join(str(s).upper() for s in tox_throttled) if tox_throttled else "none"
-                conditions.append(("amber", f"Market toxicity {tox_level} ({tox_score}/100); throttled sides: {sides}. {top_reason}"))
+                sides = (
+                    ", ".join(str(s).upper() for s in tox_throttled)
+                    if tox_throttled
+                    else "none"
+                )
+                conditions.append(
+                    (
+                        "amber",
+                        f"Market toxicity {tox_level} ({tox_score}/100); throttled sides: {sides}. {top_reason}",
+                    )
+                )
         except Exception as e:
             log_event(
                 "debug",
@@ -1280,9 +1367,19 @@ class RiskManager:
                     pos_pct = (pos_xch / max_pos) * Decimal("100")
                     metrics["position_pct"] = str(pos_pct)
                     if pos_pct > Decimal("100"):
-                        conditions.append(("red", f"Position limit breached ({pos_pct:.0f}% of limit) — Reduce MAX_POSITION_XCH in Settings → Risk or allow bot to rebalance."))
+                        conditions.append(
+                            (
+                                "red",
+                                f"Position limit breached ({pos_pct:.0f}% of limit) — Reduce MAX_POSITION_XCH in Settings → Risk or allow bot to rebalance.",
+                            )
+                        )
                     elif pos_pct > Decimal("80"):
-                        conditions.append(("amber", f"Position nearing limit ({pos_pct:.0f}%) — Monitor closely; tighter spreads attract rebalancing fills."))
+                        conditions.append(
+                            (
+                                "amber",
+                                f"Position nearing limit ({pos_pct:.0f}%) — Monitor closely; tighter spreads attract rebalancing fills.",
+                            )
+                        )
         except Exception:
             pass
 
@@ -1297,7 +1394,12 @@ class RiskManager:
                 buy_bps = buy_spread * Decimal("10000")
                 sell_bps = sell_spread * Decimal("10000")
                 if (buy_bps <= min_bps or sell_bps <= min_bps) and base_bps != min_bps:
-                    conditions.append(("amber", "Dynamic spread is at the configured minimum clamp — review Smart Settings or MIN_SPREAD_BPS only if this persists."))
+                    conditions.append(
+                        (
+                            "amber",
+                            "Dynamic spread is at the configured minimum clamp — review Smart Settings or MIN_SPREAD_BPS only if this persists.",
+                        )
+                    )
         except Exception:
             pass
 
@@ -1308,7 +1410,12 @@ class RiskManager:
         # Suppress during first 3 loops — the sniper is still actively
         # closing the gap and the bot needs time to settle.
         if self._arb_gap_bps > Decimal("200") and loop_count >= 3:
-            conditions.append(("amber", f"Arb gap {_bps_to_pct(self._arb_gap_bps)} between Dexie & TibetSwap — sniper is active. Check SNIPER_* settings if this persists."))
+            conditions.append(
+                (
+                    "amber",
+                    f"Arb gap {_bps_to_pct(self._arb_gap_bps)} between Dexie & TibetSwap — sniper is active. Check SNIPER_* settings if this persists.",
+                )
+            )
 
         # Competitor count — informational only, more competitors = healthier market
         # (No amber/red condition — this is displayed as a metric, not a warning)
@@ -1316,7 +1423,12 @@ class RiskManager:
         # Pool depth concern
         if self._pool_depth_ratio > Decimal("0.05"):
             pct = self._pool_depth_ratio * 100
-            conditions.append(("amber", f"Trade size {pct:.1f}% of TibetSwap pool (high price impact) — reduce INNER_SIZE_XCH in Settings → Tiers."))
+            conditions.append(
+                (
+                    "amber",
+                    f"Trade size {pct:.1f}% of TibetSwap pool (high price impact) — reduce INNER_SIZE_XCH in Settings → Tiers.",
+                )
+            )
 
         # --- Determine overall status ---
         has_red = any(lvl == "red" for lvl, _ in conditions)
@@ -1333,7 +1445,11 @@ class RiskManager:
             status = "green"
             message = "Market healthy — bot operating normally"
 
-        if metrics.get("market_intel_state") != "ready" and not has_red and not has_amber:
+        if (
+            metrics.get("market_intel_state") != "ready"
+            and not has_red
+            and not has_amber
+        ):
             message = "Searching market orderbook..."
 
         # During settling period (first 3 loops), show a calmer status

@@ -103,10 +103,21 @@ class BoostMigrationPreservesColumnsTest(unittest.TestCase):
                        offer_bech32, lifecycle_state,
                        cancel_last_attempt_at, fee_mojos_xch
                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                ("trade-A", "buy", "0.1", "1.0", "1000", "mid",
-                 "2026-04-27T10:00:00+00:00", "asset-x", "coin-1",
-                 "offer1...", "cancel_requested",
-                 "2026-04-27T10:05:00+00:00", 12345)
+                (
+                    "trade-A",
+                    "buy",
+                    "0.1",
+                    "1.0",
+                    "1000",
+                    "mid",
+                    "2026-04-27T10:00:00+00:00",
+                    "asset-x",
+                    "coin-1",
+                    "offer1...",
+                    "cancel_requested",
+                    "2026-04-27T10:05:00+00:00",
+                    12345,
+                ),
             )
             conn.commit()
         finally:
@@ -141,8 +152,9 @@ class BoostMigrationPreservesColumnsTest(unittest.TestCase):
                 "cancel_last_attempt_at",
                 "fee_mojos_xch",
             ):
-                self.assertIn(must_exist, cols,
-                              f"{must_exist} dropped during boost migration")
+                self.assertIn(
+                    must_exist, cols, f"{must_exist} dropped during boost migration"
+                )
 
             # And the seeded row's data for those columns must survive.
             row = conn.execute(
@@ -165,8 +177,16 @@ class BoostMigrationPreservesColumnsTest(unittest.TestCase):
                        trade_id, side, price_xch, size_xch, size_cat, tier,
                        created_at, cat_asset_id
                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                ("trade-B", "sell", "0.2", "2.0", "2000", "boost",
-                 "2026-04-27T10:10:00+00:00", "asset-x"),
+                (
+                    "trade-B",
+                    "sell",
+                    "0.2",
+                    "2.0",
+                    "2000",
+                    "boost",
+                    "2026-04-27T10:10:00+00:00",
+                    "asset-x",
+                ),
             )
             conn.commit()
         finally:

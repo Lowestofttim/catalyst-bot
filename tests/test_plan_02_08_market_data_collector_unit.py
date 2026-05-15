@@ -14,10 +14,16 @@ from unittest.mock import patch
 try:
     import market_data_collector as _mdc
     from market_data_collector import (
-        _safe_float, _spacescan_smart_headers, _spacescan_count_from_payload,
-        _analyze_volatility, _analyze_liquidity, _analyze_token_health,
-        _analyze_bot_performance, _assess_data_quality,
+        _safe_float,
+        _spacescan_smart_headers,
+        _spacescan_count_from_payload,
+        _analyze_volatility,
+        _analyze_liquidity,
+        _analyze_token_health,
+        _analyze_bot_performance,
+        _assess_data_quality,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -42,6 +48,7 @@ class _MDC(unittest.TestCase):
 # ===========================================================================
 # _safe_float
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestSafeFloat(unittest.TestCase):
@@ -68,6 +75,7 @@ class TestSafeFloat(unittest.TestCase):
 # _spacescan_smart_headers
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestSpacescanSmartHeaders(unittest.TestCase):
     def test_no_key_no_api_key_header(self):
@@ -85,6 +93,7 @@ class TestSpacescanSmartHeaders(unittest.TestCase):
 # ===========================================================================
 # _spacescan_count_from_payload
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestSpacescanCountFromPayload(unittest.TestCase):
@@ -120,14 +129,23 @@ class TestSpacescanCountFromPayload(unittest.TestCase):
 # _analyze_volatility
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestAnalyzeVolatility(unittest.TestCase):
     def _raw_with_ticker(self, high_30d, low_30d, price=0.01):
-        return {"dexie_ticker": {"has_data": True, "price": price,
-                                  "high_30d": high_30d, "low_30d": low_30d,
-                                  "high_90d": 0, "low_90d": 0,
-                                  "high_1y": 0, "low_1y": 0},
-                "dexie_trades": {}}
+        return {
+            "dexie_ticker": {
+                "has_data": True,
+                "price": price,
+                "high_30d": high_30d,
+                "low_30d": low_30d,
+                "high_90d": 0,
+                "low_90d": 0,
+                "high_1y": 0,
+                "low_1y": 0,
+            },
+            "dexie_trades": {},
+        }
 
     def test_no_data_returns_quiet_regime(self):
         # vol_metric = 0 when no data → falls through all thresholds → "quiet"
@@ -156,10 +174,14 @@ class TestAnalyzeVolatility(unittest.TestCase):
         # 30d range small (quiet), 90d range >> 30d range (volatile history)
         raw = {
             "dexie_ticker": {
-                "has_data": True, "price": 0.01,
-                "high_30d": 0.0101, "low_30d": 0.0099,    # ~2% 30d range
-                "high_90d": 0.020, "low_90d": 0.005,       # ~120% 90d range
-                "high_1y": 0, "low_1y": 0,
+                "has_data": True,
+                "price": 0.01,
+                "high_30d": 0.0101,
+                "low_30d": 0.0099,  # ~2% 30d range
+                "high_90d": 0.020,
+                "low_90d": 0.005,  # ~120% 90d range
+                "high_1y": 0,
+                "low_1y": 0,
             },
             "dexie_trades": {},
         }
@@ -172,8 +194,9 @@ class TestAnalyzeVolatility(unittest.TestCase):
         # 20 daily trades with varying prices → std_dev populated
         trades = []
         import math
+
         for i in range(20):
-            day = f"2024-01-{i+1:02d}T12:00:00Z"
+            day = f"2024-01-{i + 1:02d}T12:00:00Z"
             price = 0.01 + 0.001 * math.sin(i)
             trades.append({"date": day, "price": price, "xch_amount": 1.0})
         raw = {"dexie_ticker": {}, "dexie_trades": {"trades": trades}}
@@ -185,29 +208,45 @@ class TestAnalyzeVolatility(unittest.TestCase):
 # _analyze_liquidity
 # ===========================================================================
 
+
 class TestAnalyzeLiquidity(_MDC):
     def test_no_data_returns_very_low(self):
         result = _analyze_liquidity({})
         self.assertEqual(result["level"], "very_low")
 
     def test_high_volume_high_fills_returns_high(self):
-        raw = {"dexie_trades": {"daily_volume_xch": 15, "fills_per_day": 12,
-                                "avg_trade_size_xch": 1.0, "volume_trend": "stable",
-                                "total_count": 100},
-               "tibet_pool": {}}
+        raw = {
+            "dexie_trades": {
+                "daily_volume_xch": 15,
+                "fills_per_day": 12,
+                "avg_trade_size_xch": 1.0,
+                "volume_trend": "stable",
+                "total_count": 100,
+            },
+            "tibet_pool": {},
+        }
         result = _analyze_liquidity(raw)
         self.assertEqual(result["level"], "high")
 
     def test_moderate_volume(self):
-        raw = {"dexie_trades": {"daily_volume_xch": 3, "fills_per_day": 5,
-                                "avg_trade_size_xch": 0.6, "volume_trend": "stable",
-                                "total_count": 30},
-               "tibet_pool": {}}
+        raw = {
+            "dexie_trades": {
+                "daily_volume_xch": 3,
+                "fills_per_day": 5,
+                "avg_trade_size_xch": 0.6,
+                "volume_trend": "stable",
+                "total_count": 30,
+            },
+            "tibet_pool": {},
+        }
         result = _analyze_liquidity(raw)
         self.assertEqual(result["level"], "moderate")
 
     def test_pool_depth_and_share_calculated(self):
-        raw = {"dexie_trades": {}, "tibet_pool": {"has_data": True, "xch_reserve": 100.0}}
+        raw = {
+            "dexie_trades": {},
+            "tibet_pool": {"has_data": True, "xch_reserve": 100.0},
+        }
         result = _analyze_liquidity(raw)
         self.assertEqual(result["pool_depth_xch"], 100.0)
         # pool_share = 0.5 / 100.0 * 100 = 0.5%
@@ -218,6 +257,7 @@ class TestAnalyzeLiquidity(_MDC):
 # _analyze_token_health
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestAnalyzeTokenHealth(unittest.TestCase):
     def test_no_spacescan_data_returns_moderate(self):
@@ -226,22 +266,40 @@ class TestAnalyzeTokenHealth(unittest.TestCase):
         self.assertEqual(result["confidence"], "low")
 
     def test_high_holders_healthy(self):
-        raw = {"spacescan": {"has_data": True, "holder_count": 600,
-                             "activity_count": 100, "circulating_supply": 1000000}}
+        raw = {
+            "spacescan": {
+                "has_data": True,
+                "holder_count": 600,
+                "activity_count": 100,
+                "circulating_supply": 1000000,
+            }
+        }
         result = _analyze_token_health(raw)
         self.assertEqual(result["risk_level"], "healthy")
         self.assertEqual(result["activity_level"], "active")
 
     def test_low_holders_risky(self):
-        raw = {"spacescan": {"has_data": True, "holder_count": 5,
-                             "activity_count": 0, "circulating_supply": 100}}
+        raw = {
+            "spacescan": {
+                "has_data": True,
+                "holder_count": 5,
+                "activity_count": 0,
+                "circulating_supply": 100,
+            }
+        }
         result = _analyze_token_health(raw)
         self.assertEqual(result["risk_level"], "risky")
         self.assertEqual(result["activity_level"], "dormant")
 
     def test_thin_holder_count(self):
-        raw = {"spacescan": {"has_data": True, "holder_count": 50,
-                             "activity_count": 7, "circulating_supply": 500}}
+        raw = {
+            "spacescan": {
+                "has_data": True,
+                "holder_count": 50,
+                "activity_count": 7,
+                "circulating_supply": 500,
+            }
+        }
         result = _analyze_token_health(raw)
         self.assertEqual(result["risk_level"], "thin")
 
@@ -250,6 +308,7 @@ class TestAnalyzeTokenHealth(unittest.TestCase):
 # _analyze_bot_performance
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestAnalyzeBotPerformance(unittest.TestCase):
     def test_no_history_no_fills(self):
@@ -257,21 +316,42 @@ class TestAnalyzeBotPerformance(unittest.TestCase):
         self.assertFalse(result["has_history"])
 
     def test_with_fill_history(self):
-        raw = {"internal_db": {"fill_count": 30, "buy_fills": 15, "sell_fills": 15,
-                               "avg_fill_size_xch": 0.5, "latest_net_position": 0}}
+        raw = {
+            "internal_db": {
+                "fill_count": 30,
+                "buy_fills": 15,
+                "sell_fills": 15,
+                "avg_fill_size_xch": 0.5,
+                "latest_net_position": 0,
+            }
+        }
         result = _analyze_bot_performance(raw)
         self.assertTrue(result["has_history"])
         self.assertEqual(result["inventory_drift"], "neutral")
 
     def test_positive_net_position_long_cat(self):
-        raw = {"internal_db": {"fill_count": 10, "buy_fills": 10, "sell_fills": 0,
-                               "avg_fill_size_xch": 0.5, "latest_net_position": 5}}
+        raw = {
+            "internal_db": {
+                "fill_count": 10,
+                "buy_fills": 10,
+                "sell_fills": 0,
+                "avg_fill_size_xch": 0.5,
+                "latest_net_position": 5,
+            }
+        }
         result = _analyze_bot_performance(raw)
         self.assertEqual(result["inventory_drift"], "long_cat")
 
     def test_negative_net_position_short_cat(self):
-        raw = {"internal_db": {"fill_count": 10, "buy_fills": 0, "sell_fills": 10,
-                               "avg_fill_size_xch": 0.5, "latest_net_position": -5}}
+        raw = {
+            "internal_db": {
+                "fill_count": 10,
+                "buy_fills": 0,
+                "sell_fills": 10,
+                "avg_fill_size_xch": 0.5,
+                "latest_net_position": -5,
+            }
+        }
         result = _analyze_bot_performance(raw)
         self.assertEqual(result["inventory_drift"], "short_cat")
 
@@ -280,12 +360,17 @@ class TestAnalyzeBotPerformance(unittest.TestCase):
 # _assess_data_quality
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"market_data_collector unavailable: {_SKIP}")
 class TestAssessDataQuality(unittest.TestCase):
     def _full_raw(self):
         return {
-            "dexie_ticker": {"has_data": True, "high_30d": 0.02, "low_30d": 0.01,
-                             "volume_30d": 10.0},
+            "dexie_ticker": {
+                "has_data": True,
+                "high_30d": 0.02,
+                "low_30d": 0.01,
+                "volume_30d": 10.0,
+            },
             "dexie_trades": {"total_count": 100},
             "tibet_pool": {"has_data": True},
             "spacescan": {"has_data": True, "holder_count": 500},
@@ -303,24 +388,40 @@ class TestAssessDataQuality(unittest.TestCase):
         self.assertEqual(result["quality"], "limited")
 
     def test_partial_sources_intermediate_score(self):
-        raw = {"dexie_ticker": {"has_data": True, "high_30d": 0.02, "low_30d": 0.01,
-                                "volume_30d": 5.0}}
+        raw = {
+            "dexie_ticker": {
+                "has_data": True,
+                "high_30d": 0.02,
+                "low_30d": 0.01,
+                "volume_30d": 5.0,
+            }
+        }
         result = _assess_data_quality(raw)
         self.assertGreater(result["score"], 0)
         self.assertLess(result["score"], 100)
 
     def test_partial_failure_flag_in_quality_string(self):
-        raw = {**self._full_raw(), "spacescan": {"has_data": True,
-                                                  "holder_count": 100,
-                                                  "activity_fetch_failed": True}}
+        raw = {
+            **self._full_raw(),
+            "spacescan": {
+                "has_data": True,
+                "holder_count": 100,
+                "activity_fetch_failed": True,
+            },
+        }
         result = _assess_data_quality(raw)
         self.assertIn("partial", result["quality"])
         self.assertIn("spacescan_activity", result["partial_failures"])
 
     def test_sources_dict_has_all_keys(self):
         result = _assess_data_quality({})
-        for key in ("dexie_ticker", "dexie_trades", "tibet_pool",
-                    "spacescan", "internal_db"):
+        for key in (
+            "dexie_ticker",
+            "dexie_trades",
+            "tibet_pool",
+            "spacescan",
+            "internal_db",
+        ):
             self.assertIn(key, result["sources"])
 
     def test_low_trade_count_gives_medium_confidence(self):

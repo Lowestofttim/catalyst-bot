@@ -10,15 +10,20 @@ import unittest
 
 try:
     from splash_manager import SplashManager
+
     _SKIP_SM = None
 except ModuleNotFoundError as exc:
     _SKIP_SM = str(exc)
 
 try:
     from splash_receive import (
-        _asset_key, _normalize_side, _from_maker_taker,
-        normalize_offer_summary, classify_offer_for_asset,
+        _asset_key,
+        _normalize_side,
+        _from_maker_taker,
+        normalize_offer_summary,
+        classify_offer_for_asset,
     )
+
     _SKIP_SR = None
 except ModuleNotFoundError as exc:
     _SKIP_SR = str(exc)
@@ -29,6 +34,7 @@ _ASSET = "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105"
 # ---------------------------------------------------------------------------
 # SplashManager._fingerprint
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_SM is not None, f"splash_manager unavailable: {_SKIP_SM}")
 class TestSplashFingerprint(unittest.TestCase):
@@ -71,6 +77,7 @@ class TestSplashQueuePurge(unittest.TestCase):
 # _asset_key
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_SR is not None, f"splash_receive unavailable: {_SKIP_SR}")
 class TestAssetKey(unittest.TestCase):
     def test_none_returns_xch(self):
@@ -99,6 +106,7 @@ class TestAssetKey(unittest.TestCase):
 # _normalize_side
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_SR is not None, f"splash_receive unavailable: {_SKIP_SR}")
 class TestNormalizeSide(unittest.TestCase):
     def test_non_dict_returns_empty(self):
@@ -122,6 +130,7 @@ class TestNormalizeSide(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _from_maker_taker
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_SR is not None, f"splash_receive unavailable: {_SKIP_SR}")
 class TestFromMakerTaker(unittest.TestCase):
@@ -155,6 +164,7 @@ class TestFromMakerTaker(unittest.TestCase):
 # normalize_offer_summary
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_SR is not None, f"splash_receive unavailable: {_SKIP_SR}")
 class TestNormalizeOfferSummary(unittest.TestCase):
     def test_none_returns_empty_dicts(self):
@@ -185,9 +195,7 @@ class TestNormalizeOfferSummary(unittest.TestCase):
 
     def test_nested_offer_object(self):
         view = {
-            "offer": {
-                "summary": {"offered": {"xch": 200}, "requested": {_ASSET: 100}}
-            }
+            "offer": {"summary": {"offered": {"xch": 200}, "requested": {_ASSET: 100}}}
         }
         result = normalize_offer_summary(view)
         self.assertIn("xch", result["offered"])
@@ -203,6 +211,7 @@ class TestNormalizeOfferSummary(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # classify_offer_for_asset
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_SR is not None, f"splash_receive unavailable: {_SKIP_SR}")
 class TestClassifyOfferForAsset(unittest.TestCase):

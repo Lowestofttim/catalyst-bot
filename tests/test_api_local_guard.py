@@ -6,6 +6,7 @@ from unittest.mock import patch
 try:
     import api_server
     import sage_node
+
     _IMPORT_ERROR = None
 except ModuleNotFoundError as exc:
     api_server = None
@@ -13,7 +14,10 @@ except ModuleNotFoundError as exc:
     _IMPORT_ERROR = exc
 
 
-@unittest.skipIf(api_server is None or sage_node is None, f"api_server import unavailable: {_IMPORT_ERROR}")
+@unittest.skipIf(
+    api_server is None or sage_node is None,
+    f"api_server import unavailable: {_IMPORT_ERROR}",
+)
 class TestApiLocalGuard(unittest.TestCase):
     def setUp(self):
         api_server.app.testing = True
@@ -68,18 +72,22 @@ class TestApiLocalGuard(unittest.TestCase):
         resp = self.client.get("/", environ_base=self.loopback)
         body = resp.get_data(as_text=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertNotIn('/api/open-external?url=', body)
-        self.assertNotIn('startupExternalLinkFrame', body)
+        self.assertNotIn("/api/open-external?url=", body)
+        self.assertNotIn("startupExternalLinkFrame", body)
         self.assertIn('href="https://sagewallet.net/"', body)
 
     def test_cors_reflects_loopback_origin_with_custom_port(self):
         origin = "http://127.0.0.1:5010"
-        resp = self.client.get("/", headers={"Origin": origin}, environ_base=self.loopback)
+        resp = self.client.get(
+            "/", headers={"Origin": origin}, environ_base=self.loopback
+        )
         self.assertEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
 
     def test_cors_does_not_reflect_non_loopback_origin(self):
         origin = "https://example.invalid"
-        resp = self.client.get("/", headers={"Origin": origin}, environ_base=self.loopback)
+        resp = self.client.get(
+            "/", headers={"Origin": origin}, environ_base=self.loopback
+        )
         self.assertNotEqual(resp.headers.get("Access-Control-Allow-Origin"), origin)
 
     def test_post_with_token_reaches_handler(self):
@@ -91,9 +99,11 @@ class TestApiLocalGuard(unittest.TestCase):
         self.assertNotEqual(resp.status_code, 401)
 
     def test_splash_incoming_is_token_exempt_for_loopback(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True), \
-                patch.object(api_server, "bot", None), \
-                patch("database.record_splash_incoming", return_value=True):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True),
+            patch.object(api_server, "bot", None),
+            patch("database.record_splash_incoming", return_value=True),
+        ):
             resp = self.client.post(
                 "/api/splash/incoming",
                 json={"offer": "offer1qqqq"},
@@ -104,9 +114,11 @@ class TestApiLocalGuard(unittest.TestCase):
         self.assertTrue(body["ok"])
 
     def test_splash_incoming_rejects_non_loopback_origin(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True), \
-                patch.object(api_server, "bot", None), \
-                patch("database.record_splash_incoming", return_value=True):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True),
+            patch.object(api_server, "bot", None),
+            patch("database.record_splash_incoming", return_value=True),
+        ):
             resp = self.client.post(
                 "/api/splash/incoming",
                 json={"offer": "offer1qqqq"},
@@ -116,9 +128,11 @@ class TestApiLocalGuard(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_splash_incoming_is_not_hit_by_generic_rate_limit(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True), \
-                patch.object(api_server, "bot", None), \
-                patch("database.record_splash_incoming", return_value=False):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True),
+            patch.object(api_server, "bot", None),
+            patch("database.record_splash_incoming", return_value=False),
+        ):
             statuses = []
             for i in range(25):
                 resp = self.client.post(
@@ -138,10 +152,14 @@ class TestApiLocalGuard(unittest.TestCase):
             environ_base=self.loopback,
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.get_json()["error"], "Only absolute http/https URLs are allowed")
+        self.assertEqual(
+            resp.get_json()["error"], "Only absolute http/https URLs are allowed"
+        )
 
     def test_open_external_uses_system_browser_for_http_urls(self):
-        with patch.object(api_server.webbrowser, "open", return_value=True) as mock_open:
+        with patch.object(
+            api_server.webbrowser, "open", return_value=True
+        ) as mock_open:
             resp = self.client.post(
                 "/api/open-external",
                 json={"url": "https://sagewallet.net/"},
@@ -175,7 +193,10 @@ class TestApiLocalGuard(unittest.TestCase):
     def test_quote_setting_update_returns_next_requote_notice(self):
         headers = {"X-Bot-Local-Token": api_server._LOCAL_API_TOKEN}
         fake_bot = SimpleNamespace(is_running=lambda: True)
-        with patch.object(api_server, "bot", fake_bot), patch.object(api_server.cfg, "update", return_value=True):
+        with (
+            patch.object(api_server, "bot", fake_bot),
+            patch.object(api_server.cfg, "update", return_value=True),
+        ):
             resp = self.client.post(
                 "/api/config",
                 json={"key": "BASE_SPREAD_BPS", "value": "920"},
@@ -218,16 +239,24 @@ class TestApiLocalGuard(unittest.TestCase):
             "cat_total": 92,
         }
 
-        with patch.dict(api_server._coin_prep_state, fake_state, clear=True), \
-                patch.object(api_server.os.path, "exists", side_effect=lambda p: p.endswith("coin_prep_status.json")), \
-                patch.object(api_server, "bot", None), \
-                patch.object(api_server, "_session_start_time", None), \
-                patch("api_server.json.load", return_value=fake_status), \
-                patch("builtins.open"), \
-                patch("database.get_coin_summary", return_value=fake_summary), \
-                patch("database.get_events_since", return_value=[]), \
-                patch("database.get_recent_events", return_value=[]):
-            resp = self.client.get("/api/coin-prep/status", headers=headers, environ_base=self.loopback)
+        with (
+            patch.dict(api_server._coin_prep_state, fake_state, clear=True),
+            patch.object(
+                api_server.os.path,
+                "exists",
+                side_effect=lambda p: p.endswith("coin_prep_status.json"),
+            ),
+            patch.object(api_server, "bot", None),
+            patch.object(api_server, "_session_start_time", None),
+            patch("api_server.json.load", return_value=fake_status),
+            patch("builtins.open"),
+            patch("database.get_coin_summary", return_value=fake_summary),
+            patch("database.get_events_since", return_value=[]),
+            patch("database.get_recent_events", return_value=[]),
+        ):
+            resp = self.client.get(
+                "/api/coin-prep/status", headers=headers, environ_base=self.loopback
+            )
 
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()

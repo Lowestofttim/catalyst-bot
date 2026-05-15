@@ -84,6 +84,7 @@ def install_dir() -> str:
 
 # ── Canonical file paths ────────────────────────────────────────────
 
+
 def env_file() -> str:
     """Path to the .env config file."""
     return os.path.join(data_dir(), ".env")
@@ -166,6 +167,7 @@ def migrate_legacy_files() -> None:
     # And any existing bot_backup_*.db from the install dir (move to
     # backups/ subdir).
     import glob as _glob
+
     moved = []
     try:
         for basename, dest_fn in _LEGACY_FILES:
@@ -221,7 +223,7 @@ def migrate_legacy_files() -> None:
             print(
                 f"[user_paths] Migrated {len(moved)} legacy file(s) from install "
                 f"dir to data dir: {', '.join(moved[:5])}"
-                + (f" (+{len(moved)-5} more)" if len(moved) > 5 else ""),
+                + (f" (+{len(moved) - 5} more)" if len(moved) > 5 else ""),
                 flush=True,
             )
     except Exception as e:
@@ -235,4 +237,3 @@ try:
     migrate_legacy_files()
 except Exception as _e:
     print(f"[user_paths] Import-time migration skipped: {_e}", flush=True)
-

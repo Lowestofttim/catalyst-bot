@@ -76,6 +76,7 @@ def _get_live_sage_fingerprint() -> Optional[str]:
     """Return the currently logged-in Sage fingerprint, if any."""
     try:
         from wallet_sage import get_current_key
+
         key = get_current_key()
         if key and key.get("fingerprint") is not None:
             return str(key.get("fingerprint"))
@@ -119,6 +120,7 @@ def _load_current_sage_version() -> str:
     """Read the current Sage version from the wallet RPC."""
     try:
         from wallet_sage import get_sage_version
+
         return get_sage_version() or "unknown"
     except Exception:
         return "unknown"
@@ -134,7 +136,12 @@ def get_sage_version_requirement() -> Dict:
         "reason": "",
     }
 
-    if compare_sage_versions(requirement["installed_version"], MIN_SUPPORTED_SAGE_VERSION) >= 0:
+    if (
+        compare_sage_versions(
+            requirement["installed_version"], MIN_SUPPORTED_SAGE_VERSION
+        )
+        >= 0
+    ):
         requirement["supported"] = True
         return requirement
 
@@ -156,6 +163,7 @@ def get_sage_version_requirement() -> Dict:
 # Fingerprint Management
 # ---------------------------------------------------------------------------
 
+
 def get_available_fingerprints() -> List[Dict]:
     """Get all available wallet fingerprints.
 
@@ -175,7 +183,9 @@ def get_available_fingerprints() -> List[Dict]:
     try:
         result = subprocess.run(
             ["chia", "keys", "show"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
             **hidden_subprocess_kwargs(),
         )
         if result.returncode == 0:
@@ -186,11 +196,13 @@ def get_available_fingerprints() -> List[Dict]:
                     fp = line.split(":", 1)[1].strip()
                     if fp.isdigit():
                         index += 1
-                        fingerprints.append({
-                            "fingerprint": fp,
-                            "index": index,
-                            "label": f"Wallet {index}",
-                        })
+                        fingerprints.append(
+                            {
+                                "fingerprint": fp,
+                                "index": index,
+                                "label": f"Wallet {index}",
+                            }
+                        )
             print(f"[Chia] Found {len(fingerprints)} fingerprints", flush=True)
         else:
             print(f"[Chia] chia keys show failed: {result.stderr[:200]}", flush=True)
@@ -208,16 +220,19 @@ def _get_sage_fingerprints() -> List[Dict]:
     """Get fingerprints from Sage RPC — returns real wallet names."""
     try:
         from wallet_sage import get_sage_keys
+
         keys = get_sage_keys()
         fingerprints = []
         for i, key in enumerate(keys):
             name = key.get("name", f"Wallet {i + 1}")
             fp = key.get("fingerprint", 0)
-            fingerprints.append({
-                "fingerprint": str(fp),
-                "index": i + 1,
-                "label": name,
-            })
+            fingerprints.append(
+                {
+                    "fingerprint": str(fp),
+                    "index": i + 1,
+                    "label": name,
+                }
+            )
         print(f"[Sage] Found {len(fingerprints)} fingerprints", flush=True)
         return fingerprints
     except Exception as e:
@@ -256,10 +271,14 @@ def trigger_start(fingerprint: str) -> Dict:
     _selected_fingerprint = fingerprint
     _start_triggered.set()
 
-    log_event("info", f"{wallet_type}_startup",
-              f"Fingerprint {fingerprint} selected — starting...")
-    print(f"{tag} Fingerprint {fingerprint} selected — starting immediately",
-          flush=True)
+    log_event(
+        "info",
+        f"{wallet_type}_startup",
+        f"Fingerprint {fingerprint} selected — starting...",
+    )
+    print(
+        f"{tag} Fingerprint {fingerprint} selected — starting immediately", flush=True
+    )
 
     def _do_start():
         global _sage_startup_phase
@@ -270,9 +289,15 @@ def trigger_start(fingerprint: str) -> Dict:
             if _sage_startup_phase == "ready":
                 active_fp = _get_live_sage_fingerprint()
                 if active_fp == str(fingerprint):
-                    print(f"{tag} Already logged in to fingerprint {fingerprint} — skipping duplicate login", flush=True)
+                    print(
+                        f"{tag} Already logged in to fingerprint {fingerprint} — skipping duplicate login",
+                        flush=True,
+                    )
                     return
-                print(f"{tag} Switching Sage session from fingerprint {active_fp or 'unknown'} to {fingerprint}", flush=True)
+                print(
+                    f"{tag} Switching Sage session from fingerprint {active_fp or 'unknown'} to {fingerprint}",
+                    flush=True,
+                )
             with _phase_lock:
                 _sage_startup_phase = "starting"
             print(f"{tag} Logging in to fingerprint {fingerprint}...", flush=True)
@@ -282,6 +307,7 @@ def trigger_start(fingerprint: str) -> Dict:
                 # Re-enable RPC error logging
                 try:
                     from wallet_sage import set_quiet_mode
+
                     set_quiet_mode(False)
                 except Exception:
                     pass
@@ -306,32 +332,48 @@ def trigger_start(fingerprint: str) -> Dict:
             # Chia: start daemon if needed, then login
             with _cache_lock:
                 cached = _node_status_cache
-            already_healthy = (cached and cached.get("status") == "healthy")
+            already_healthy = cached and cached.get("status") == "healthy"
 
             if already_healthy:
                 print("[Chia] Already healthy — skipping 'chia start all'", flush=True)
-                log_event("info", "chia_startup",
-                          "Chia already running and healthy — skipping start command")
+                log_event(
+                    "info",
+                    "chia_startup",
+                    "Chia already running and healthy — skipping start command",
+                )
             else:
                 print("[Chia] Running 'chia start all'...", flush=True)
                 result = start_chia("all")
                 if result.get("success"):
-                    log_event("info", "chia_startup",
-                              "Chia start command sent — waiting for services...")
-                    print(f"[Chia] Start OK: {result.get('output', '')[:120]}", flush=True)
+                    log_event(
+                        "info",
+                        "chia_startup",
+                        "Chia start command sent — waiting for services...",
+                    )
+                    print(
+                        f"[Chia] Start OK: {result.get('output', '')[:120]}", flush=True
+                    )
                 else:
                     err = result.get("error", "unknown")
-                    log_event("warning", "chia_startup", f"Start may have failed: {err}")
+                    log_event(
+                        "warning", "chia_startup", f"Start may have failed: {err}"
+                    )
                     print(f"[Chia] Start failed: {err}", flush=True)
 
-            log_event("info", "chia_startup",
-                      f"Waiting for wallet to respond, then logging in "
-                      f"fingerprint {fingerprint}...")
+            log_event(
+                "info",
+                "chia_startup",
+                f"Waiting for wallet to respond, then logging in "
+                f"fingerprint {fingerprint}...",
+            )
             _log_in_fingerprint(fingerprint)
 
     threading.Thread(target=_do_start, daemon=True, name="wallet-quick-start").start()
 
-    return {"success": True, "message": f"Starting wallet with fingerprint {fingerprint}"}
+    return {
+        "success": True,
+        "message": f"Starting wallet with fingerprint {fingerprint}",
+    }
 
 
 def _log_in_fingerprint(fingerprint: str) -> bool:
@@ -355,30 +397,46 @@ def _log_in_fingerprint(fingerprint: str) -> bool:
             if _sage_startup_phase == "ready":
                 active_fp = _get_live_sage_fingerprint()
                 if active_fp == str(fingerprint):
-                    print(f"[Sage] Login already complete for fingerprint {fingerprint} (skipping duplicate)", flush=True)
+                    print(
+                        f"[Sage] Login already complete for fingerprint {fingerprint} (skipping duplicate)",
+                        flush=True,
+                    )
                     return True
-                print(f"[Sage] Active fingerprint is {active_fp or 'unknown'} — re-login required for {fingerprint}", flush=True)
+                print(
+                    f"[Sage] Active fingerprint is {active_fp or 'unknown'} — re-login required for {fingerprint}",
+                    flush=True,
+                )
                 with _phase_lock:
                     _sage_startup_phase = "starting"
 
             # Sage: use the resync → login → verify sequence
             try:
                 from wallet_sage import sage_login
+
                 success = sage_login(int(fingerprint))
                 if success:
                     with _phase_lock:
-                        _sage_startup_phase = "ready"  # Set inside lock before anyone else can check
-                    log_event("success", "sage_startup",
-                              f"Logged in to fingerprint {fingerprint}")
+                        _sage_startup_phase = (
+                            "ready"  # Set inside lock before anyone else can check
+                        )
+                    log_event(
+                        "success",
+                        "sage_startup",
+                        f"Logged in to fingerprint {fingerprint}",
+                    )
                     print(f"[Sage] Logged in to fingerprint {fingerprint}", flush=True)
                 else:
-                    log_event("warning", "sage_startup",
-                              f"Could not log in to fingerprint {fingerprint}")
-                    print(f"[Sage] Login failed for fingerprint {fingerprint}", flush=True)
+                    log_event(
+                        "warning",
+                        "sage_startup",
+                        f"Could not log in to fingerprint {fingerprint}",
+                    )
+                    print(
+                        f"[Sage] Login failed for fingerprint {fingerprint}", flush=True
+                    )
                 return success
             except Exception as e:
-                log_event("warning", "sage_startup",
-                          f"Sage login error: {e}")
+                log_event("warning", "sage_startup", f"Sage login error: {e}")
                 print(f"[Sage] Login error: {e}", flush=True)
                 return False
 
@@ -389,18 +447,22 @@ def _log_in_fingerprint(fingerprint: str) -> bool:
         try:
             result = rpc("log_in", {"fingerprint": int(fingerprint)}, timeout=5)
             if result and result.get("success"):
-                log_event("success", "chia_startup",
-                          f"Logged in to fingerprint {fingerprint}")
+                log_event(
+                    "success", "chia_startup", f"Logged in to fingerprint {fingerprint}"
+                )
                 print(f"[Chia] Logged in to fingerprint {fingerprint}", flush=True)
                 return True
             elif result:
-                print(f"[Chia] log_in attempt {attempt+1}: {result}", flush=True)
+                print(f"[Chia] log_in attempt {attempt + 1}: {result}", flush=True)
         except Exception as e:
-            print(f"[Chia] log_in attempt {attempt+1} failed: {e}", flush=True)
+            print(f"[Chia] log_in attempt {attempt + 1} failed: {e}", flush=True)
         time.sleep(5)
 
-    log_event("warning", "chia_startup",
-              f"Could not log in to fingerprint {fingerprint} after 60s")
+    log_event(
+        "warning",
+        "chia_startup",
+        f"Could not log in to fingerprint {fingerprint} after 60s",
+    )
     return False
 
 
@@ -415,6 +477,7 @@ def _resolve_startup_fingerprint() -> Optional[str]:
     startup; a saved setting is not consent for a new process.
     """
     from dotenv import load_dotenv
+
     load_dotenv()
 
     wallet_type = os.getenv("WALLET_TYPE", "sage").lower().strip()
@@ -432,8 +495,9 @@ def _resolve_startup_fingerprint() -> Optional[str]:
                 flush=True,
             )
         else:
-            print(f"{tag} No fingerprint in .env - waiting for GUI selection",
-                  flush=True)
+            print(
+                f"{tag} No fingerprint in .env - waiting for GUI selection", flush=True
+            )
         return None
 
     # Optional .env override for legacy Chia startup.
@@ -443,8 +507,7 @@ def _resolve_startup_fingerprint() -> Optional[str]:
             print(f"{tag} Using {env_key} from .env: {fp}", flush=True)
             return fp
 
-    print(f"{tag} No fingerprint in .env - waiting for GUI selection",
-          flush=True)
+    print(f"{tag} No fingerprint in .env - waiting for GUI selection", flush=True)
     return None
 
 
@@ -497,12 +560,15 @@ def start_preload():
             global _sage_startup_phase
             with _phase_lock:
                 _sage_startup_phase = "connecting"
-            log_event("info", "sage_startup", "Starting Sage wallet startup sequence...")
+            log_event(
+                "info", "sage_startup", "Starting Sage wallet startup sequence..."
+            )
             print("[Sage] Starting startup sequence...", flush=True)
 
             # Suppress noisy RPC errors from other threads while starting
             try:
                 from wallet_sage import set_quiet_mode
+
                 set_quiet_mode(True)
             except Exception:
                 pass
@@ -518,7 +584,10 @@ def start_preload():
                     break
                 if _is_sage_rpc_port_listening():
                     sage_running = True
-                    print("[Sage] RPC port is listening - checking certificates", flush=True)
+                    print(
+                        "[Sage] RPC port is listening - checking certificates",
+                        flush=True,
+                    )
                     break
                 if attempt == 0:
                     print("[Sage] Checking if Sage is running...", flush=True)
@@ -530,27 +599,41 @@ def start_preload():
             if not sage_running and _is_sage_process_running():
                 with _phase_lock:
                     _sage_startup_phase = "rpc_disabled"
-                log_event("warning", "sage_startup",
-                          "Sage is running but RPC is not enabled — "
-                          "user needs to enable it in Sage Settings → Advanced")
-                print("[Sage] Sage open but RPC disabled — waiting for user to enable it",
-                      flush=True)
+                log_event(
+                    "warning",
+                    "sage_startup",
+                    "Sage is running but RPC is not enabled — "
+                    "user needs to enable it in Sage Settings → Advanced",
+                )
+                print(
+                    "[Sage] Sage open but RPC disabled — waiting for user to enable it",
+                    flush=True,
+                )
                 while _preload_running and not sage_running:
                     if _is_sage_rpc_available():
                         sage_running = True
                         with _phase_lock:
                             _sage_startup_phase = "connecting"
-                        log_event("success", "sage_startup",
-                                  "Sage RPC became available — resuming startup")
+                        log_event(
+                            "success",
+                            "sage_startup",
+                            "Sage RPC became available — resuming startup",
+                        )
                         print("[Sage] RPC enabled — resuming", flush=True)
                         break
                     if _is_sage_rpc_port_listening():
                         sage_running = True
                         with _phase_lock:
                             _sage_startup_phase = "connecting"
-                        log_event("info", "sage_startup",
-                                  "Sage RPC port became available - checking certificate access")
-                        print("[Sage] RPC port enabled - checking certificates", flush=True)
+                        log_event(
+                            "info",
+                            "sage_startup",
+                            "Sage RPC port became available - checking certificate access",
+                        )
+                        print(
+                            "[Sage] RPC port enabled - checking certificates",
+                            flush=True,
+                        )
                         break
                     time.sleep(5)
                 if not sage_running or not _preload_running:
@@ -572,65 +655,103 @@ def start_preload():
                 # If _auto_launch_sage is False the user said they'll open Sage
                 # themselves — fall through to the manual-start polling loop.
                 if exe_path and not _auto_launch_sage:
-                    log_event("info", "sage_startup",
-                              "User chose to open Sage manually — waiting for RPC")
-                    print("[Sage] User will open Sage manually — waiting...", flush=True)
+                    log_event(
+                        "info",
+                        "sage_startup",
+                        "User chose to open Sage manually — waiting for RPC",
+                    )
+                    print(
+                        "[Sage] User will open Sage manually — waiting...", flush=True
+                    )
                     exe_path = None  # skip launch, fall to manual-wait below
 
                 if exe_path:
-                    log_event("info", "sage_startup",
-                              f"Launching Sage: {os.path.basename(exe_path)}")
+                    log_event(
+                        "info",
+                        "sage_startup",
+                        f"Launching Sage: {os.path.basename(exe_path)}",
+                    )
                     print(f"[Sage] Launching {exe_path}...", flush=True)
 
                     if _launch_sage_exe(exe_path):
                         with _phase_lock:
-                            _sage_startup_phase = "connecting"  # Sage launched — waiting for RPC
+                            _sage_startup_phase = (
+                                "connecting"  # Sage launched — waiting for RPC
+                            )
                         # Wait for RPC to become available after launch.
                         # Give Sage ~10s to start the RPC server before deciding
                         # it's disabled. After that, if the process is running but
                         # RPC still isn't responding, show the user instructions
                         # instead of silently waiting for 3 minutes then failing.
                         print("[Sage] Waiting for RPC to come online...", flush=True)
-                        _RPC_GRACE_ATTEMPTS = 2   # 10s — enough for Sage to start
+                        _RPC_GRACE_ATTEMPTS = 2  # 10s — enough for Sage to start
                         for attempt in range(36):  # 3 minutes total
                             if _is_sage_rpc_available():
                                 sage_running = True
                                 print("[Sage] RPC came online after launch", flush=True)
-                                log_event("success", "sage_startup",
-                                          "Sage launched and RPC available")
+                                log_event(
+                                    "success",
+                                    "sage_startup",
+                                    "Sage launched and RPC available",
+                                )
                                 break
                             if _is_sage_rpc_port_listening():
                                 sage_running = True
-                                print("[Sage] RPC port came online after launch - checking certificates",
-                                      flush=True)
-                                log_event("info", "sage_startup",
-                                          "Sage RPC port is listening - checking certificate access")
+                                print(
+                                    "[Sage] RPC port came online after launch - checking certificates",
+                                    flush=True,
+                                )
+                                log_event(
+                                    "info",
+                                    "sage_startup",
+                                    "Sage RPC port is listening - checking certificate access",
+                                )
                                 break
-                            if attempt >= _RPC_GRACE_ATTEMPTS and _is_sage_process_running():
+                            if (
+                                attempt >= _RPC_GRACE_ATTEMPTS
+                                and _is_sage_process_running()
+                            ):
                                 # Sage is open but RPC never came up — likely disabled
                                 with _phase_lock:
                                     _sage_startup_phase = "rpc_disabled"
-                                log_event("warning", "sage_startup",
-                                          "Sage launched but RPC did not start — "
-                                          "user needs to enable RPC in Settings → Advanced")
-                                print("[Sage] Sage open but RPC disabled — "
-                                      "showing instructions", flush=True)
+                                log_event(
+                                    "warning",
+                                    "sage_startup",
+                                    "Sage launched but RPC did not start — "
+                                    "user needs to enable RPC in Settings → Advanced",
+                                )
+                                print(
+                                    "[Sage] Sage open but RPC disabled — "
+                                    "showing instructions",
+                                    flush=True,
+                                )
                                 while _preload_running and not sage_running:
                                     if _is_sage_rpc_available():
                                         sage_running = True
                                         with _phase_lock:
                                             _sage_startup_phase = "connecting"
-                                        log_event("success", "sage_startup",
-                                                  "Sage RPC became available — resuming")
-                                        print("[Sage] RPC enabled — resuming", flush=True)
+                                        log_event(
+                                            "success",
+                                            "sage_startup",
+                                            "Sage RPC became available — resuming",
+                                        )
+                                        print(
+                                            "[Sage] RPC enabled — resuming", flush=True
+                                        )
                                         break
                                     if _is_sage_rpc_port_listening():
                                         sage_running = True
                                         with _phase_lock:
                                             _sage_startup_phase = "connecting"
-                                        log_event("info", "sage_startup",
-                                                  "Sage RPC port became available - checking certificate access")
-                                        print("[Sage] RPC port enabled - checking certificates", flush=True)
+                                        log_event(
+                                            "info",
+                                            "sage_startup",
+                                            "Sage RPC port became available - checking certificate access",
+                                        )
+                                        print(
+                                            "[Sage] RPC port enabled - checking certificates",
+                                            flush=True,
+                                        )
                                         break
                                     time.sleep(5)
                                 break  # exit the 36-attempt loop either way
@@ -639,29 +760,44 @@ def start_preload():
                         if not sage_running:
                             with _phase_lock:
                                 _sage_startup_phase = "error"
-                            log_event("error", "sage_startup",
-                                      "Sage RPC did not respond after launching exe")
-                            print("[Sage] RPC did not come online after 3 min",
-                                  flush=True)
+                            log_event(
+                                "error",
+                                "sage_startup",
+                                "Sage RPC did not respond after launching exe",
+                            )
+                            print(
+                                "[Sage] RPC did not come online after 3 min", flush=True
+                            )
                 else:
-                    log_event("warning", "sage_startup",
-                              "Cannot find sage-tauri.exe — please start Sage manually "
-                              "and return to the CATalyst window")
-                    print("[Sage] sage-tauri.exe not found — waiting for manual start",
-                          flush=True)
+                    log_event(
+                        "warning",
+                        "sage_startup",
+                        "Cannot find sage-tauri.exe — please start Sage manually "
+                        "and return to the CATalyst window",
+                    )
+                    print(
+                        "[Sage] sage-tauri.exe not found — waiting for manual start",
+                        flush=True,
+                    )
 
                     # Wait for user to start Sage manually
                     while _preload_running and not sage_running:
                         if _is_sage_rpc_available():
                             sage_running = True
-                            log_event("success", "sage_startup",
-                                      "Sage detected — RPC is now available")
+                            log_event(
+                                "success",
+                                "sage_startup",
+                                "Sage detected — RPC is now available",
+                            )
                             print("[Sage] RPC detected!", flush=True)
                             break
                         if _is_sage_rpc_port_listening():
                             sage_running = True
-                            log_event("info", "sage_startup",
-                                      "Sage detected - RPC port is listening, checking certificates")
+                            log_event(
+                                "info",
+                                "sage_startup",
+                                "Sage detected - RPC port is listening, checking certificates",
+                            )
                             print("[Sage] RPC port detected!", flush=True)
                             break
                         time.sleep(5)
@@ -676,14 +812,19 @@ def start_preload():
             cert_path = os.getenv("SAGE_CERT_PATH", "").strip()
             key_path = os.getenv("SAGE_KEY_PATH", "").strip()
             if cert_path:
-                ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
+                ok, reason, cert_real, key_real = validate_sage_cert_pair(
+                    cert_path, key_path
+                )
                 if ok:
                     cert_path = cert_real
                     key_path = key_real
                     _set_sage_cert_env_and_reload(cert_real, key_real)
                 else:
-                    log_event("warning", "sage_startup",
-                              f"Configured Sage certificates are not usable: {reason}")
+                    log_event(
+                        "warning",
+                        "sage_startup",
+                        f"Configured Sage certificates are not usable: {reason}",
+                    )
                     cert_path = ""
             if not cert_path:
                 detected = detect_sage_cert_path()
@@ -692,45 +833,64 @@ def start_preload():
                     key_path = os.path.join(os.path.dirname(detected), "wallet.key")
                     _set_sage_cert_env_and_reload(detected, key_path)
                     # Auto-detected — note for user but don't need to ask
-                    log_event("info", "sage_startup",
-                              f"Auto-detected cert: {cert_path}")
+                    log_event(
+                        "info", "sage_startup", f"Auto-detected cert: {cert_path}"
+                    )
 
             if not cert_path:
                 with _phase_lock:
                     _sage_startup_phase = "waiting_certs"
-                log_event("warning", "sage_startup",
-                          "Sage certificates not configured — "
-                          "waiting for setup in the CATalyst window")
+                log_event(
+                    "warning",
+                    "sage_startup",
+                    "Sage certificates not configured — "
+                    "waiting for setup in the CATalyst window",
+                )
                 print("[Sage] Certs not configured — waiting for setup", flush=True)
                 # Wait for the user to configure certs through the frontend.
                 while _preload_running:
                     from dotenv import load_dotenv
+
                     try:
                         from user_paths import env_file as _env_file
+
                         load_dotenv(_env_file(), override=True)
                     except Exception:
                         load_dotenv(override=True)
                     cert_path = os.getenv("SAGE_CERT_PATH", "").strip()
                     key_path = os.getenv("SAGE_KEY_PATH", "").strip()
-                    ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
+                    ok, reason, cert_real, key_real = validate_sage_cert_pair(
+                        cert_path, key_path
+                    )
                     if ok:
                         _set_sage_cert_env_and_reload(cert_real, key_real)
-                        log_event("success", "sage_startup",
-                                  f"Certificate configured: {cert_real}")
+                        log_event(
+                            "success",
+                            "sage_startup",
+                            f"Certificate configured: {cert_real}",
+                        )
                         break
                     if cert_path:
-                        log_event("warning", "sage_startup",
-                                  f"Waiting for usable Sage certificate: {reason}")
+                        log_event(
+                            "warning",
+                            "sage_startup",
+                            f"Waiting for usable Sage certificate: {reason}",
+                        )
                     time.sleep(5)
 
             if not _is_sage_rpc_available():
                 with _phase_lock:
                     _sage_startup_phase = "waiting_certs"
-                log_event("warning", "sage_startup",
-                          "Sage RPC port is listening but CATalyst could not authenticate - "
-                          "checking Sage certificate paths")
-                print("[Sage] RPC port is listening but authenticated RPC failed - checking certs",
-                      flush=True)
+                log_event(
+                    "warning",
+                    "sage_startup",
+                    "Sage RPC port is listening but CATalyst could not authenticate - "
+                    "checking Sage certificate paths",
+                )
+                print(
+                    "[Sage] RPC port is listening but authenticated RPC failed - checking certs",
+                    flush=True,
+                )
                 while _preload_running:
                     detected = detect_sage_cert_path()
                     if detected:
@@ -739,9 +899,15 @@ def start_preload():
                     if _is_sage_rpc_available():
                         with _phase_lock:
                             _sage_startup_phase = "connecting"
-                        log_event("success", "sage_startup",
-                                  "Sage RPC authenticated after refreshing certificate paths")
-                        print("[Sage] Authenticated RPC available after cert refresh", flush=True)
+                        log_event(
+                            "success",
+                            "sage_startup",
+                            "Sage RPC authenticated after refreshing certificate paths",
+                        )
+                        print(
+                            "[Sage] Authenticated RPC available after cert refresh",
+                            flush=True,
+                        )
                         break
                     time.sleep(5)
                 if not _preload_running:
@@ -782,15 +948,19 @@ def start_preload():
                 with _phase_lock:
                     _sage_startup_phase = "starting"
                 _selected_fingerprint = fp
-                log_event("info", "sage_startup",
-                          f"Auto-logging in to fingerprint {fp}...")
+                log_event(
+                    "info", "sage_startup", f"Auto-logging in to fingerprint {fp}..."
+                )
                 success = _log_in_fingerprint(fp)
                 if success:
                     with _phase_lock:
                         _sage_startup_phase = "ready"
                 else:
-                    log_event("warning", "sage_startup",
-                              f"Auto-login failed for fingerprint {fp}")
+                    log_event(
+                        "warning",
+                        "sage_startup",
+                        f"Auto-login failed for fingerprint {fp}",
+                    )
                     with _phase_lock:
                         _sage_startup_phase = "waiting_fingerprint"
                     fp = None  # Fall through to picker
@@ -801,10 +971,13 @@ def start_preload():
                 # Wait for user to select fingerprint in GUI
                 with _phase_lock:
                     _sage_startup_phase = "waiting_fingerprint"
-                log_event("info", "sage_startup",
-                          "Waiting for wallet selection in GUI...")
-                print("[Sage] No fingerprint configured — waiting for GUI selection",
-                      flush=True)
+                log_event(
+                    "info", "sage_startup", "Waiting for wallet selection in GUI..."
+                )
+                print(
+                    "[Sage] No fingerprint configured — waiting for GUI selection",
+                    flush=True,
+                )
 
                 _start_triggered.wait(timeout=600)  # 10 min
 
@@ -815,9 +988,12 @@ def start_preload():
                     # Only login here if trigger_start didn't already do it
                     with _phase_lock:
                         _sage_startup_phase = "starting"
-                    log_event("info", "sage_startup",
-                              f"Logging in to selected fingerprint "
-                              f"{_selected_fingerprint}...")
+                    log_event(
+                        "info",
+                        "sage_startup",
+                        f"Logging in to selected fingerprint "
+                        f"{_selected_fingerprint}...",
+                    )
                     success = _log_in_fingerprint(_selected_fingerprint)
                     if success:
                         with _phase_lock:
@@ -830,20 +1006,21 @@ def start_preload():
                 elif _sage_startup_phase == "ready":
                     # trigger_start() already logged success + updated cache
                     login_handled_by_trigger = True
-                    print("[Sage] Login already handled by trigger_start",
-                          flush=True)
+                    print("[Sage] Login already handled by trigger_start", flush=True)
 
             # --- Step 5: Update cache and monitor ---
             # Only log success + update cache if THIS thread did the login
             # (trigger_start's _do_start already does this, so skip to avoid duplicates)
             if _sage_startup_phase == "ready" and not login_handled_by_trigger:
-                log_event("success", "sage_startup",
-                          "Sage wallet fully started and logged in")
+                log_event(
+                    "success", "sage_startup", "Sage wallet fully started and logged in"
+                )
                 print("[Sage] Startup complete — monitoring...", flush=True)
 
                 # Re-enable RPC error logging now that Sage is connected
                 try:
                     from wallet_sage import set_quiet_mode
+
                     set_quiet_mode(False)
                 except Exception:
                     pass
@@ -882,7 +1059,11 @@ def start_preload():
                 # Skip expensive RPC calls if we're just waiting for
                 # the user to pick a fingerprint (no point hammering
                 # a wallet that isn't running yet)
-                if _initial_check_done and not _selected_fingerprint and not _start_triggered.is_set():
+                if (
+                    _initial_check_done
+                    and not _selected_fingerprint
+                    and not _start_triggered.is_set()
+                ):
                     # Still waiting for user — don't waste time on RPCs
                     status = "unreachable"
                     wallet_ok = False
@@ -902,11 +1083,16 @@ def start_preload():
                     if not _healthy_logged:
                         peers = result.get("peer_count", 0)
                         height = result.get("peak_height", 0)
-                        log_event("success", "chia_startup",
-                                  f"Sage wallet healthy — height #{height:,}, "
-                                  f"{peers} peers connected")
-                        print(f"[Chia] Node healthy — height #{height:,}, {peers} peers",
-                              flush=True)
+                        log_event(
+                            "success",
+                            "chia_startup",
+                            f"Sage wallet healthy — height #{height:,}, "
+                            f"{peers} peers connected",
+                        )
+                        print(
+                            f"[Chia] Node healthy — height #{height:,}, {peers} peers",
+                            flush=True,
+                        )
                         _healthy_logged = True
                     time.sleep(15)
 
@@ -914,8 +1100,11 @@ def start_preload():
                     progress = result.get("sync_progress_height", 0)
                     tip = result.get("sync_tip_height", 0)
                     if not _startup_logged:
-                        log_event("info", "chia_startup",
-                                  f"Sage wallet syncing... ({progress:,} / {tip:,})")
+                        log_event(
+                            "info",
+                            "chia_startup",
+                            f"Sage wallet syncing... ({progress:,} / {tip:,})",
+                        )
                         _startup_logged = True
                     time.sleep(10)
 
@@ -929,17 +1118,26 @@ def start_preload():
 
                     if _selected_fingerprint and not _start_triggered.is_set():
                         # Have a fingerprint from .env — auto-start Chia
-                        log_event("info", "chia_startup",
-                                  f"Starting all Chia services (fingerprint: "
-                                  f"{_selected_fingerprint})...")
-                        print(f"[Chia] Auto-starting with fingerprint "
-                              f"{_selected_fingerprint}...", flush=True)
+                        log_event(
+                            "info",
+                            "chia_startup",
+                            f"Starting all Chia services (fingerprint: "
+                            f"{_selected_fingerprint})...",
+                        )
+                        print(
+                            f"[Chia] Auto-starting with fingerprint "
+                            f"{_selected_fingerprint}...",
+                            flush=True,
+                        )
                         start_result = start_chia("all")
                         _chia_started = True
                         if start_result.get("success"):
-                            log_event("info", "chia_startup",
-                                      "Chia start command sent — waiting for "
-                                      "node to come online...")
+                            log_event(
+                                "info",
+                                "chia_startup",
+                                "Chia start command sent — waiting for "
+                                "node to come online...",
+                            )
                             # Log in once wallet is up
                             _log_in_fingerprint(_selected_fingerprint)
                         time.sleep(5)
@@ -948,18 +1146,25 @@ def start_preload():
                         # trigger_start() already launched Chia in its own
                         # thread — just mark as started and wait for it
                         _chia_started = True
-                        print("[Chia] Startup triggered by GUI — monitoring...",
-                              flush=True)
+                        print(
+                            "[Chia] Startup triggered by GUI — monitoring...",
+                            flush=True,
+                        )
                         time.sleep(5)
 
                     else:
                         # No fingerprint — wait for user to select in the
                         # GUI startup modal
                         if not _startup_logged:
-                            log_event("info", "chia_startup",
-                                      "Waiting for wallet selection...")
-                            print("[Chia] No fingerprint — waiting for GUI "
-                                  "selection...", flush=True)
+                            log_event(
+                                "info",
+                                "chia_startup",
+                                "Waiting for wallet selection...",
+                            )
+                            print(
+                                "[Chia] No fingerprint — waiting for GUI selection...",
+                                flush=True,
+                            )
                             _startup_logged = True
                         # Wait for trigger (short timeout so we stay responsive)
                         _start_triggered.wait(timeout=5)
@@ -968,7 +1173,12 @@ def start_preload():
                         # Still waiting — skip expensive get_node_status next loop
                         continue
 
-                elif _chia_started and not _login_done and wallet_ok and _selected_fingerprint:
+                elif (
+                    _chia_started
+                    and not _login_done
+                    and wallet_ok
+                    and _selected_fingerprint
+                ):
                     # Wallet is up — log in (unless trigger_start's thread
                     # is already handling this via _start_triggered)
                     if _start_triggered.is_set():
@@ -976,14 +1186,20 @@ def start_preload():
                         _login_done = True
                         print("[Chia] Login handled by startup thread", flush=True)
                     else:
-                        log_event("info", "chia_startup",
-                                  f"Wallet responding — logging in to fingerprint "
-                                  f"{_selected_fingerprint}...")
+                        log_event(
+                            "info",
+                            "chia_startup",
+                            f"Wallet responding — logging in to fingerprint "
+                            f"{_selected_fingerprint}...",
+                        )
                         success = _log_in_fingerprint(_selected_fingerprint)
                         _login_done = True
                         if not success:
-                            log_event("warning", "chia_startup",
-                                      "Login failed — wallet may use default fingerprint")
+                            log_event(
+                                "warning",
+                                "chia_startup",
+                                "Login failed — wallet may use default fingerprint",
+                            )
                     time.sleep(3)
 
                 else:
@@ -996,19 +1212,24 @@ def start_preload():
                             parts.append("node OK")
                         if not parts:
                             parts.append("waiting for services")
-                        log_event("info", "chia_startup",
-                                  f"Chia starting up — {', '.join(parts)}...")
+                        log_event(
+                            "info",
+                            "chia_startup",
+                            f"Chia starting up — {', '.join(parts)}...",
+                        )
                         _startup_logged = True
                     time.sleep(5)
 
             except Exception as e:
                 import traceback
+
                 print(f"[Chia] Preload error: {e}", flush=True)
                 traceback.print_exc()
                 time.sleep(5)
 
-    _preload_thread = threading.Thread(target=_preload_loop, daemon=True,
-                                       name="chia-startup")
+    _preload_thread = threading.Thread(
+        target=_preload_loop, daemon=True, name="chia-startup"
+    )
     _preload_thread.start()
 
 
@@ -1048,9 +1269,8 @@ def get_startup_status() -> Dict:
     # the user accepts the disclaimer, BEFORE they've had a chance to
     # pick — making cold-start always silently adopt, defeating the
     # explicit checkpoint the user wants.
-    _is_mid_session_recovery = (_sage_startup_phase == "ready")
-    if (wallet_type == "sage" and not _selected_fingerprint
-            and _is_mid_session_recovery):
+    _is_mid_session_recovery = _sage_startup_phase == "ready"
+    if wallet_type == "sage" and not _selected_fingerprint and _is_mid_session_recovery:
         try:
             live_fp = _get_live_sage_fingerprint()
             if live_fp:
@@ -1114,7 +1334,10 @@ def get_startup_status() -> Dict:
                     message = "Sage wallet is syncing..."
                 elif sync_state == "unknown":
                     wallets_result = get_wallets() or {}
-                    if not wallets_result.get("success") or wallets_result.get("wallets") is None:
+                    if (
+                        not wallets_result.get("success")
+                        or wallets_result.get("wallets") is None
+                    ):
                         phase = "starting"
                         message = "Sage connected - loading wallet data..."
                     else:
@@ -1179,7 +1402,9 @@ def get_startup_status() -> Dict:
     if wallet_type == "sage" and phase not in ("idle", "waiting_certs"):
         try:
             version_gate = get_sage_version_requirement()
-            result["sage_min_required_version"] = version_gate["minimum_required_version"]
+            result["sage_min_required_version"] = version_gate[
+                "minimum_required_version"
+            ]
             installed_version = version_gate.get("installed_version", "unknown")
             if installed_version != "unknown":
                 result["sage_version"] = installed_version
@@ -1214,6 +1439,7 @@ _cache_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 # Sage Auto-Detection Helpers
 # ---------------------------------------------------------------------------
+
 
 def _detect_sage_exe_path() -> Optional[str]:
     """Auto-detect sage-tauri.exe on Windows.
@@ -1300,10 +1526,16 @@ def _candidate_sage_data_dirs(extra_dirs: Optional[List[str]] = None) -> List[st
             roots.append(os.path.join(localappdata, "Sage"))
             roots.append(os.path.join(localappdata, "sage"))
         if userprofile:
-            roots.append(os.path.join(userprofile, "AppData", "Roaming", "com.rigidnetwork.sage"))
-            roots.append(os.path.join(userprofile, "AppData", "Local", "com.rigidnetwork.sage"))
+            roots.append(
+                os.path.join(userprofile, "AppData", "Roaming", "com.rigidnetwork.sage")
+            )
+            roots.append(
+                os.path.join(userprofile, "AppData", "Local", "com.rigidnetwork.sage")
+            )
     elif system == "Darwin":
-        roots.append(os.path.expanduser("~/Library/Application Support/com.rigidnetwork.sage"))
+        roots.append(
+            os.path.expanduser("~/Library/Application Support/com.rigidnetwork.sage")
+        )
         roots.append(os.path.expanduser("~/Library/Application Support/Sage"))
     else:
         xdg_config = os.environ.get("XDG_CONFIG_HOME", "").strip()
@@ -1384,7 +1616,12 @@ def validate_sage_cert_pair(
         return False, "Certificate path is invalid.", "", ""
 
     if os.path.basename(cert_real).lower() != "wallet.crt":
-        return False, "Choose Sage's wallet.crt file, not another certificate.", cert_real, ""
+        return (
+            False,
+            "Choose Sage's wallet.crt file, not another certificate.",
+            cert_real,
+            "",
+        )
 
     cert_dir = os.path.dirname(cert_real)
     if not key_path or not key_path.strip():
@@ -1397,16 +1634,40 @@ def validate_sage_cert_pair(
     if os.path.basename(key_real).lower() != "wallet.key":
         return False, "Sage's key file must be named wallet.key.", cert_real, key_real
     if os.path.normcase(os.path.dirname(key_real)) != os.path.normcase(cert_dir):
-        return False, "wallet.crt and wallet.key must be in the same Sage ssl folder.", cert_real, key_real
+        return (
+            False,
+            "wallet.crt and wallet.key must be in the same Sage ssl folder.",
+            cert_real,
+            key_real,
+        )
     if os.path.basename(os.path.dirname(cert_real)).lower() != "ssl":
-        return False, "wallet.crt and wallet.key must be inside Sage's ssl folder.", cert_real, key_real
+        return (
+            False,
+            "wallet.crt and wallet.key must be inside Sage's ssl folder.",
+            cert_real,
+            key_real,
+        )
 
     sage_root = os.path.dirname(cert_dir)
     expected_ssl_dir = os.path.join(sage_root, "ssl")
-    if os.path.normcase(cert_dir) != os.path.normcase(os.path.realpath(expected_ssl_dir)):
-        return False, "wallet.crt and wallet.key must be in Sage's ssl folder.", cert_real, key_real
-    if not _realpath_is_within(cert_real, sage_root) or not _realpath_is_within(key_real, sage_root):
-        return False, "Sage certificate paths must stay inside the selected Sage data folder.", cert_real, key_real
+    if os.path.normcase(cert_dir) != os.path.normcase(
+        os.path.realpath(expected_ssl_dir)
+    ):
+        return (
+            False,
+            "wallet.crt and wallet.key must be in Sage's ssl folder.",
+            cert_real,
+            key_real,
+        )
+    if not _realpath_is_within(cert_real, sage_root) or not _realpath_is_within(
+        key_real, sage_root
+    ):
+        return (
+            False,
+            "Sage certificate paths must stay inside the selected Sage data folder.",
+            cert_real,
+            key_real,
+        )
 
     known_cert, known_key = _known_sage_cert_pair(cert_real, key_real, extra_data_dirs)
     if not known_cert:
@@ -1419,7 +1680,12 @@ def validate_sage_cert_pair(
         )
 
     if not os.path.isfile(known_cert):
-        return False, "Certificate file not found at the specified path.", known_cert, known_key
+        return (
+            False,
+            "Certificate file not found at the specified path.",
+            known_cert,
+            known_key,
+        )
     if not os.path.isfile(known_key):
         return False, "Key file not found next to wallet.crt.", known_cert, known_key
 
@@ -1430,8 +1696,11 @@ def _set_sage_cert_env_and_reload(cert_path: str, key_path: str) -> bool:
     """Apply Sage cert paths to this process and refresh the wallet RPC client."""
     ok, reason, cert_real, key_real = validate_sage_cert_pair(cert_path, key_path)
     if not ok:
-        log_event("warning", "sage_cert_path_rejected",
-                  f"Rejected Sage certificate selection: {reason}")
+        log_event(
+            "warning",
+            "sage_cert_path_rejected",
+            f"Rejected Sage certificate selection: {reason}",
+        )
         return False
 
     os.environ["SAGE_CERT_PATH"] = cert_real
@@ -1440,6 +1709,7 @@ def _set_sage_cert_env_and_reload(cert_path: str, key_path: str) -> bool:
 
     try:
         import wallet_sage
+
         wallet_sage.reload_connection_settings()
     except Exception as reload_err:
         print(f"[Sage] Warning: could not refresh wallet_sage config: {reload_err}")
@@ -1543,8 +1813,9 @@ def _launch_sage_exe(exe_path: str) -> bool:
         else:
             proc = subprocess.Popen([exe_path])
 
-        print(f"[Sage] Launched {os.path.basename(exe_path)} (PID {proc.pid})",
-              flush=True)
+        print(
+            f"[Sage] Launched {os.path.basename(exe_path)} (PID {proc.pid})", flush=True
+        )
         log_event("info", "sage_startup", f"Launched sage-tauri.exe (PID {proc.pid})")
         return True
 
@@ -1560,19 +1831,25 @@ def _is_sage_process_running() -> bool:
     Used to distinguish "Sage not open" from "Sage open but RPC disabled".
     """
     import sys as _sys
+
     try:
         if _sys.platform == "win32":
             from win_subprocess import hidden_subprocess_kwargs as _hskw
+
             result = subprocess.run(
                 ["tasklist", "/FI", "IMAGENAME eq sage-tauri.exe", "/NH"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
                 **_hskw(),
             )
             return "sage-tauri.exe" in result.stdout
         else:
             result = subprocess.run(
                 ["pgrep", "-fi", "sage"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return result.returncode == 0
     except Exception:
@@ -1601,6 +1878,7 @@ def _is_sage_rpc_available() -> bool:
     """
     try:
         from wallet_sage import rpc
+
         result = rpc("get_version", {}, timeout=3)
         if result is None:
             return False
@@ -1622,6 +1900,7 @@ def _is_sage_rpc_port_listening() -> bool:
     """
     try:
         from wallet_sage import _sage_rpc_port_reachable
+
         return bool(_sage_rpc_port_reachable())
     except Exception:
         return False
@@ -1630,6 +1909,7 @@ def _is_sage_rpc_port_listening() -> bool:
 # ---------------------------------------------------------------------------
 # Node Status (aggregated view for dashboard)
 # ---------------------------------------------------------------------------
+
 
 def get_node_status(bypass_cache: bool = False) -> Dict:
     """Get comprehensive node status for the dashboard Node Status tab.
@@ -1716,18 +1996,15 @@ def get_node_status(bypass_cache: bool = False) -> Dict:
         # Overall status
         "status": health.get("status", "unknown"),
         "healthy": health.get("healthy", False),
-
         # Wallet
         "wallet_synced": health.get("wallet", {}).get("synced", False),
         "wallet_syncing": health.get("wallet", {}).get("syncing", False),
         "wallet_sync_state": health.get("wallet", {}).get("sync_state", "unknown"),
         "wallet_reachable": health.get("wallet", {}).get("reachable", False),
-
         # Full node
         "node_synced": blockchain.get("synced", False),
         "node_syncing": blockchain.get("syncing", False),
         "node_reachable": health.get("node", {}).get("reachable", False),
-
         # Blockchain
         "peak_height": blockchain.get("peak_height", 0),
         "peak_timestamp": peak_ts,
@@ -1735,16 +2012,13 @@ def get_node_status(bypass_cache: bool = False) -> Dict:
         "difficulty": blockchain.get("difficulty", 0),
         "network_space": space_display,
         "mempool_size": blockchain.get("mempool_size", 0),
-
         # Sync progress (when syncing)
         "sync_tip_height": blockchain.get("sync_tip_height", 0),
         "sync_progress_height": blockchain.get("sync_progress_height", 0),
-
         # Peers
         "peer_count": len(full_node_peers),
         "total_connections": len(peers),
         "peers": full_node_peers[:20],  # Cap at 20 for display
-
         "timestamp": time.time(),
     }
 
@@ -1752,6 +2026,7 @@ def get_node_status(bypass_cache: bool = False) -> Dict:
 # ---------------------------------------------------------------------------
 # Wallet Status (aggregated view for dashboard Wallet Status tab)
 # ---------------------------------------------------------------------------
+
 
 def get_wallet_status() -> Dict:
     """Get aggregated wallet status for the dashboard Wallet Status tab.
@@ -1763,8 +2038,13 @@ def get_wallet_status() -> Dict:
     - XCH balance + coin breakdown
     - CAT wallet summaries
     """
-    from wallet import (get_wallet_sync_status, get_wallets, get_wallet_balance,
-                        get_spendable_coins_rpc, get_transaction_count)
+    from wallet import (
+        get_wallet_sync_status,
+        get_wallets,
+        get_wallet_balance,
+        get_spendable_coins_rpc,
+        get_transaction_count,
+    )
     from wallet import rpc, WALLET_ID_XCH
 
     result = {
@@ -1796,15 +2076,15 @@ def get_wallet_status() -> Dict:
         _wtype = os.getenv("WALLET_TYPE", "sage").lower().strip()
         if _wtype == "sage":
             from wallet_sage import get_current_key as _get_key
+
             futures["fingerprint"] = executor.submit(_get_key)
         else:
             futures["fingerprint"] = executor.submit(
-                rpc, "get_logged_in_fingerprint", {}, 5)
+                rpc, "get_logged_in_fingerprint", {}, 5
+            )
         futures["wallets"] = executor.submit(get_wallets)
-        futures["xch_balance"] = executor.submit(
-            get_wallet_balance, WALLET_ID_XCH)
-        futures["xch_coins"] = executor.submit(
-            get_spendable_coins_rpc, WALLET_ID_XCH)
+        futures["xch_balance"] = executor.submit(get_wallet_balance, WALLET_ID_XCH)
+        futures["xch_coins"] = executor.submit(get_spendable_coins_rpc, WALLET_ID_XCH)
 
         # Collect results with individual timeouts
         for key, fut in futures.items():
@@ -1876,6 +2156,7 @@ def get_wallet_status() -> Dict:
         try:
             from database import get_open_offers, get_locked_coins
             from config import cfg
+
             # Method 1: count open buy offers (each locks one XCH coin)
             buy_offers = get_open_offers(side="buy", cat_asset_id=cfg.CAT_ASSET_ID)
             offers_locked = len(buy_offers)
@@ -1917,7 +2198,8 @@ def get_wallet_status() -> Dict:
             if bal and isinstance(bal, dict):
                 wb = bal.get("wallet_balance", bal)
                 cat_info["balance"] = round(
-                    wb.get("confirmed_wallet_balance", 0) / (10 ** decimals), 2)
+                    wb.get("confirmed_wallet_balance", 0) / (10**decimals), 2
+                )
         except Exception:
             pass
 
@@ -1938,6 +2220,7 @@ def get_wallet_status() -> Dict:
 # Balances (all wallets)
 # ---------------------------------------------------------------------------
 
+
 def get_all_balances() -> Dict:
     """Get balances for XCH + all CAT wallets.
 
@@ -1956,17 +2239,19 @@ def get_all_balances() -> Dict:
     xch_result = get_wallet_balance(WALLET_ID_XCH)
     if xch_result and xch_result.get("success"):
         wb = xch_result.get("wallet_balance", {})
-        balances.append({
-            "wallet_id": WALLET_ID_XCH,
-            "name": "Chia (XCH)",
-            "type": "xch",
-            "confirmed": float(wb.get("confirmed_wallet_balance", 0)) / 1e12,
-            "spendable": float(wb.get("spendable_balance", 0)) / 1e12,
-            "pending_total": float(wb.get("pending_total_balance", 0)) / 1e12,
-            "unconfirmed": float(wb.get("unconfirmed_wallet_balance", 0)) / 1e12,
-            "unit": "XCH",
-            "decimals": 12,
-        })
+        balances.append(
+            {
+                "wallet_id": WALLET_ID_XCH,
+                "name": "Chia (XCH)",
+                "type": "xch",
+                "confirmed": float(wb.get("confirmed_wallet_balance", 0)) / 1e12,
+                "spendable": float(wb.get("spendable_balance", 0)) / 1e12,
+                "pending_total": float(wb.get("pending_total_balance", 0)) / 1e12,
+                "unconfirmed": float(wb.get("unconfirmed_wallet_balance", 0)) / 1e12,
+                "unit": "XCH",
+                "decimals": 12,
+            }
+        )
 
     # CAT balances
     if wallets_result and wallets_result.get("success"):
@@ -1985,20 +2270,29 @@ def get_all_balances() -> Dict:
                 cat_result = get_wallet_balance(wallet_id)
                 if cat_result and cat_result.get("success"):
                     wb = cat_result.get("wallet_balance", {})
-                    scale = 10 ** decimals
-                    balances.append({
-                        "wallet_id": wallet_id,
-                        "name": name,
-                        "type": "cat",
-                        "asset_id": asset_id[:16] + "..." if len(asset_id) > 16 else asset_id,
-                        "asset_id_full": asset_id,
-                        "confirmed": float(wb.get("confirmed_wallet_balance", 0)) / scale,
-                        "spendable": float(wb.get("spendable_balance", 0)) / scale,
-                        "pending_total": float(wb.get("pending_total_balance", 0)) / scale,
-                        "unconfirmed": float(wb.get("unconfirmed_wallet_balance", 0)) / scale,
-                        "unit": unit,
-                        "decimals": decimals,
-                    })
+                    scale = 10**decimals
+                    balances.append(
+                        {
+                            "wallet_id": wallet_id,
+                            "name": name,
+                            "type": "cat",
+                            "asset_id": asset_id[:16] + "..."
+                            if len(asset_id) > 16
+                            else asset_id,
+                            "asset_id_full": asset_id,
+                            "confirmed": float(wb.get("confirmed_wallet_balance", 0))
+                            / scale,
+                            "spendable": float(wb.get("spendable_balance", 0)) / scale,
+                            "pending_total": float(wb.get("pending_total_balance", 0))
+                            / scale,
+                            "unconfirmed": float(
+                                wb.get("unconfirmed_wallet_balance", 0)
+                            )
+                            / scale,
+                            "unit": unit,
+                            "decimals": decimals,
+                        }
+                    )
 
     return {
         "balances": balances,
@@ -2010,8 +2304,10 @@ def get_all_balances() -> Dict:
 # Coins (UTXO listing with lock detection)
 # ---------------------------------------------------------------------------
 
-def get_coins_for_display(wallet_id: int, is_cat: bool = False,
-                          decimals: int = 3) -> Dict:
+
+def get_coins_for_display(
+    wallet_id: int, is_cat: bool = False, decimals: int = 3
+) -> Dict:
     """Get all coins for a wallet with status information.
 
     Shows which coins are free (spendable) vs locked in offers.
@@ -2031,7 +2327,7 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
         return {"coins": [], "error": "Could not fetch coins"}
 
     coins = []
-    scale = 1e12 if not is_cat else (10 ** decimals)
+    scale = 1e12 if not is_cat else (10**decimals)
     seen_coin_ids = set()
 
     for record in spendable_result.get("confirmed_records", []):
@@ -2043,16 +2339,20 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
         coin_id = _compute_coin_id(parent, puzzle, amount)
         normalised = coin_id.lower().replace("0x", "")
 
-        coins.append({
-            "coin_id": coin_id,
-            "coin_id_short": coin_id[:12] + "..." + coin_id[-8:] if len(coin_id) > 24 else coin_id,
-            "parent": parent[:16] + "..." if len(parent) > 16 else parent,
-            "amount_mojos": amount,
-            "amount_display": amount / scale,
-            "status": "free",
-            "confirmed_height": record.get("confirmed_block_index", 0),
-            "timestamp": record.get("timestamp", 0),
-        })
+        coins.append(
+            {
+                "coin_id": coin_id,
+                "coin_id_short": coin_id[:12] + "..." + coin_id[-8:]
+                if len(coin_id) > 24
+                else coin_id,
+                "parent": parent[:16] + "..." if len(parent) > 16 else parent,
+                "amount_mojos": amount,
+                "amount_display": amount / scale,
+                "status": "free",
+                "confirmed_height": record.get("confirmed_block_index", 0),
+                "timestamp": record.get("timestamp", 0),
+            }
+        )
         seen_coin_ids.add(normalised)
 
     # ---- Step 2: Get locked coins from our database ----
@@ -2080,7 +2380,7 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
             if is_cat:
                 try:
                     size_cat = float(offer.get("size_cat", 0))
-                    amount_mojos = int(size_cat * (10 ** decimals))
+                    amount_mojos = int(size_cat * (10**decimals))
                 except Exception:
                     amount_mojos = 0
             else:
@@ -2090,16 +2390,20 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
                 except Exception:
                     amount_mojos = 0
 
-            locked_coin_entries.append({
-                "coin_id": offer_coin_id,
-                "coin_id_short": offer_coin_id[:12] + "..." + offer_coin_id[-8:] if len(offer_coin_id) > 24 else offer_coin_id,
-                "parent": "",
-                "amount_mojos": amount_mojos,
-                "amount_display": amount_mojos / scale,
-                "status": "locked",
-                "confirmed_height": 0,
-                "timestamp": 0,
-            })
+            locked_coin_entries.append(
+                {
+                    "coin_id": offer_coin_id,
+                    "coin_id_short": offer_coin_id[:12] + "..." + offer_coin_id[-8:]
+                    if len(offer_coin_id) > 24
+                    else offer_coin_id,
+                    "parent": "",
+                    "amount_mojos": amount_mojos,
+                    "amount_display": amount_mojos / scale,
+                    "status": "locked",
+                    "confirmed_height": 0,
+                    "timestamp": 0,
+                }
+            )
             seen_coin_ids.add(normalised)
 
         # Source B: coins table — locked coins not already captured
@@ -2110,16 +2414,20 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
             if normalised in seen_coin_ids:
                 continue
             amount_mojos = db_coin.get("amount_mojos", 0)
-            locked_coin_entries.append({
-                "coin_id": cid,
-                "coin_id_short": cid[:12] + "..." + cid[-8:] if len(cid) > 24 else cid,
-                "parent": "",
-                "amount_mojos": amount_mojos,
-                "amount_display": amount_mojos / scale,
-                "status": "locked",
-                "confirmed_height": 0,
-                "timestamp": 0,
-            })
+            locked_coin_entries.append(
+                {
+                    "coin_id": cid,
+                    "coin_id_short": cid[:12] + "..." + cid[-8:]
+                    if len(cid) > 24
+                    else cid,
+                    "parent": "",
+                    "amount_mojos": amount_mojos,
+                    "amount_display": amount_mojos / scale,
+                    "status": "locked",
+                    "confirmed_height": 0,
+                    "timestamp": 0,
+                }
+            )
             seen_coin_ids.add(normalised)
 
     except Exception:
@@ -2131,16 +2439,18 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
     for record in spendable_result.get("unconfirmed_additions", []):
         coin_data = record.get("coin", {})
         amount = coin_data.get("amount", 0)
-        coins.append({
-            "coin_id": "pending",
-            "coin_id_short": "Pending...",
-            "parent": "",
-            "amount_mojos": amount,
-            "amount_display": amount / scale,
-            "status": "pending",
-            "confirmed_height": 0,
-            "timestamp": 0,
-        })
+        coins.append(
+            {
+                "coin_id": "pending",
+                "coin_id_short": "Pending...",
+                "parent": "",
+                "amount_mojos": amount,
+                "amount_display": amount / scale,
+                "status": "pending",
+                "confirmed_height": 0,
+                "timestamp": 0,
+            }
+        )
 
     # Sort: locked first, then free, then pending. Within each: largest first.
     status_order = {"locked": 0, "free": 1, "pending": 2}
@@ -2172,8 +2482,14 @@ def get_coins_for_display(wallet_id: int, is_cat: bool = False,
 # Coin Operations (split via CLI — proven pattern from coin_prep_worker)
 # ---------------------------------------------------------------------------
 
-def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
-               is_cat: bool = False, decimals: int = 3) -> Dict:
+
+def split_coin(
+    wallet_id: int,
+    coin_id: str,
+    num_pieces: int,
+    is_cat: bool = False,
+    decimals: int = 3,
+) -> Dict:
     """Split a specific coin into multiple pieces.
 
     Chia: Uses `chia wallet coins split` CLI (proven reliable method).
@@ -2202,12 +2518,21 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
     if wallet_type == "sage":
         try:
             from wallet import split_coins_rpc
-            log_event("info", "coin_split_manual",
-                      f"[Sage] Splitting coin {coin_id[:16]}... into {num_pieces} pieces")
-            result = split_coins_rpc(wallet_id, num_pieces, coin_id, is_cat=is_cat, fee_mojos=0)
+
+            log_event(
+                "info",
+                "coin_split_manual",
+                f"[Sage] Splitting coin {coin_id[:16]}... into {num_pieces} pieces",
+            )
+            result = split_coins_rpc(
+                wallet_id, num_pieces, coin_id, is_cat=is_cat, fee_mojos=0
+            )
             if result and (result.get("success") or isinstance(result, dict)):
-                log_event("success", "coin_split_manual",
-                          f"[Sage] Split submitted: {coin_id[:16]}... → {num_pieces} pieces")
+                log_event(
+                    "success",
+                    "coin_split_manual",
+                    f"[Sage] Split submitted: {coin_id[:16]}... → {num_pieces} pieces",
+                )
                 return {
                     "success": True,
                     "message": f"Split submitted via Sage RPC! Creating {num_pieces} coins.",
@@ -2222,10 +2547,14 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
 
     # Get fingerprint from env
     from dotenv import load_dotenv
+
     load_dotenv()
     fingerprint = os.getenv("CHIA_FINGERPRINT", "")
     if not fingerprint:
-        return {"success": False, "error": "Select a wallet fingerprint in the app before starting Chia"}
+        return {
+            "success": False,
+            "error": "Select a wallet fingerprint in the app before starting Chia",
+        }
 
     # Normalize coin_id
     if not coin_id.startswith("0x"):
@@ -2244,14 +2573,20 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
             amt = coin_data.get("amount", 0)
             if parent and puzzle:
                 computed_id = _compute_coin_id(parent, puzzle, amt)
-                if computed_id.lower() == coin_id.lower() or \
-                   computed_id.lower().replace("0x", "") == coin_id.lower().replace("0x", ""):
+                if (
+                    computed_id.lower() == coin_id.lower()
+                    or computed_id.lower().replace("0x", "")
+                    == coin_id.lower().replace("0x", "")
+                ):
                     target_coin = record
                     amount_mojos = amt
                     break
 
     if not target_coin:
-        return {"success": False, "error": f"Coin {coin_id[:16]}... not found or not spendable"}
+        return {
+            "success": False,
+            "error": f"Coin {coin_id[:16]}... not found or not spendable",
+        }
     if amount_mojos <= 0:
         return {"success": False, "error": "Coin has zero or negative amount"}
 
@@ -2260,25 +2595,37 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
 
     if is_cat:
         # CAT: amount in token units for CLI
-        amount_str = str(Decimal(str(amount_per_piece)) / Decimal(10 ** decimals))
+        amount_str = str(Decimal(str(amount_per_piece)) / Decimal(10**decimals))
     else:
         # XCH: amount in XCH for CLI
         amount_str = str(Decimal(str(amount_per_piece)) / Decimal("1000000000000"))
 
     # Build CLI command
     cmd = [
-        "chia", "wallet", "coins", "split",
-        "-f", fingerprint,
-        "-i", str(wallet_id),
-        "-n", str(num_pieces),
-        "-a", amount_str,
-        "-t", coin_id,
-        "-m", "0",
+        "chia",
+        "wallet",
+        "coins",
+        "split",
+        "-f",
+        fingerprint,
+        "-i",
+        str(wallet_id),
+        "-n",
+        str(num_pieces),
+        "-a",
+        amount_str,
+        "-t",
+        coin_id,
+        "-m",
+        "0",
     ]
 
-    log_event("info", "coin_split_manual",
-              f"Splitting coin {coin_id[:16]}... into {num_pieces} × {amount_str} "
-              f"({'CAT' if is_cat else 'XCH'})")
+    log_event(
+        "info",
+        "coin_split_manual",
+        f"Splitting coin {coin_id[:16]}... into {num_pieces} × {amount_str} "
+        f"({'CAT' if is_cat else 'XCH'})",
+    )
 
     try:
         result = subprocess.run(
@@ -2291,16 +2638,20 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
 
         output = result.stdout + result.stderr
         if result.returncode == 0 and "transaction submitted" in output.lower():
-            log_event("success", "coin_split_manual",
-                      f"Split submitted: {coin_id[:16]}... → {num_pieces} pieces")
+            log_event(
+                "success",
+                "coin_split_manual",
+                f"Split submitted: {coin_id[:16]}... → {num_pieces} pieces",
+            )
             return {
                 "success": True,
                 "message": f"Split submitted! Creating {num_pieces} coins of {amount_str} each.",
                 "output": output[:500],
             }
         else:
-            log_event("warning", "coin_split_manual",
-                      f"Split may have failed: {output[:200]}")
+            log_event(
+                "warning", "coin_split_manual", f"Split may have failed: {output[:200]}"
+            )
             return {
                 "success": False,
                 "error": f"CLI returned: {output[:300]}",
@@ -2318,8 +2669,8 @@ def split_coin(wallet_id: int, coin_id: str, num_pieces: int,
 # Transaction History
 # ---------------------------------------------------------------------------
 
-def get_transaction_history(wallet_id: int, offset: int = 0,
-                            limit: int = 50) -> Dict:
+
+def get_transaction_history(wallet_id: int, offset: int = 0, limit: int = 50) -> Dict:
     """Get formatted transaction history for the dashboard.
 
     Returns transactions in a display-friendly format.
@@ -2333,7 +2684,7 @@ def get_transaction_history(wallet_id: int, offset: int = 0,
         return {"transactions": [], "total": 0, "error": "Could not fetch transactions"}
 
     # Determine scale based on wallet type
-    is_xch = (wallet_id == 1)
+    is_xch = wallet_id == 1
     scale = 1e12 if is_xch else 1000  # XCH uses 1e12, CATs typically 1e3
 
     transactions = []
@@ -2354,28 +2705,31 @@ def get_transaction_history(wallet_id: int, offset: int = 0,
         time_str = ""
         if created > 0:
             import datetime
+
             dt = datetime.datetime.fromtimestamp(created)
             time_str = dt.strftime("%Y-%m-%d %H:%M")
 
         additions = tx.get("additions", [])
         removals = tx.get("removals", [])
 
-        transactions.append({
-            "tx_name": tx.get("name", "")[:16] + "...",
-            "tx_name_full": tx.get("name", ""),
-            "type": direction,
-            "amount": amount / scale,
-            "amount_mojos": amount,
-            "fee": fee / 1e12,  # Fees always in XCH
-            "fee_mojos": fee,
-            "confirmed": confirmed,
-            "height": height,
-            "timestamp": created,
-            "time_display": time_str,
-            "additions_count": len(additions),
-            "removals_count": len(removals),
-            "trade_id": tx.get("trade_id", ""),
-        })
+        transactions.append(
+            {
+                "tx_name": tx.get("name", "")[:16] + "...",
+                "tx_name_full": tx.get("name", ""),
+                "type": direction,
+                "amount": amount / scale,
+                "amount_mojos": amount,
+                "fee": fee / 1e12,  # Fees always in XCH
+                "fee_mojos": fee,
+                "confirmed": confirmed,
+                "height": height,
+                "timestamp": created,
+                "time_display": time_str,
+                "additions_count": len(additions),
+                "removals_count": len(removals),
+                "trade_id": tx.get("trade_id", ""),
+            }
+        )
 
     return {
         "transactions": transactions,
@@ -2390,6 +2744,7 @@ def get_transaction_history(wallet_id: int, offset: int = 0,
 # ---------------------------------------------------------------------------
 # Daemon Control (via CLI — simple and reliable)
 # ---------------------------------------------------------------------------
+
 
 def get_daemon_status() -> Dict:
     """Check which Chia services are currently running.
@@ -2420,6 +2775,7 @@ def get_daemon_status() -> Dict:
         }
         try:
             from wallet import get_wallet_sync_status
+
             ws = get_wallet_sync_status()
             if ws.get("reachable"):
                 status["wallet_running"] = True
@@ -2445,7 +2801,9 @@ def get_daemon_status() -> Dict:
             # Check if daemon is running by trying to get status
             result = subprocess.run(
                 ["chia", "show", "-s"],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True,
+                text=True,
+                timeout=15,
                 **hidden_subprocess_kwargs(),
             )
             output = result.stdout + result.stderr
@@ -2454,7 +2812,10 @@ def get_daemon_status() -> Dict:
             # Parse output for service status
             output_lower = output.lower()
 
-            if "current blockchain status" in output_lower or "full node" in output_lower:
+            if (
+                "current blockchain status" in output_lower
+                or "full node" in output_lower
+            ):
                 status["daemon_running"] = True
                 status["full_node_running"] = True
                 status["services"].append("full_node")
@@ -2474,6 +2835,7 @@ def get_daemon_status() -> Dict:
             # Also try wallet RPC to confirm wallet is actually responding
             try:
                 from wallet import get_wallet_sync_status
+
                 ws = get_wallet_sync_status()
                 if ws.get("reachable"):
                     status["wallet_running"] = True
@@ -2518,14 +2880,19 @@ def start_chia(services: str = "wallet") -> Dict:
 
     valid_services = {"wallet", "farmer", "all"}
     if services not in valid_services:
-        return {"success": False, "error": f"Invalid service: {services}. Use: {valid_services}"}
+        return {
+            "success": False,
+            "error": f"Invalid service: {services}. Use: {valid_services}",
+        }
 
     log_event("info", "daemon_start", f"Starting Chia services: {services}")
 
     try:
         result = subprocess.run(
             ["chia", "start", services],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             **hidden_subprocess_kwargs(),
         )
         output = result.stdout + result.stderr
@@ -2535,14 +2902,20 @@ def start_chia(services: str = "wallet") -> Dict:
         _last_daemon_check = 0
 
         if result.returncode == 0:
-            log_event("success", "daemon_start", f"Chia {services} started: {output[:100]}")
+            log_event(
+                "success", "daemon_start", f"Chia {services} started: {output[:100]}"
+            )
             return {
                 "success": True,
                 "message": f"Chia {services} started",
                 "output": output[:500],
             }
         else:
-            log_event("warning", "daemon_start", f"Start returned code {result.returncode}: {output[:200]}")
+            log_event(
+                "warning",
+                "daemon_start",
+                f"Start returned code {result.returncode}: {output[:200]}",
+            )
             return {
                 "success": False,
                 "error": output[:300],
@@ -2578,7 +2951,10 @@ def stop_chia(services: str = "all") -> Dict:
 
     valid_services = {"all", "wallet", "farmer"}
     if services not in valid_services:
-        return {"success": False, "error": f"Invalid service: {services}. Use: {valid_services}"}
+        return {
+            "success": False,
+            "error": f"Invalid service: {services}. Use: {valid_services}",
+        }
 
     log_event("info", "daemon_stop", f"Stopping Chia services: {services}")
 
@@ -2590,7 +2966,9 @@ def stop_chia(services: str = "all") -> Dict:
 
         result = subprocess.run(
             cmd,
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             **hidden_subprocess_kwargs(),
         )
         output = result.stdout + result.stderr
@@ -2600,14 +2978,20 @@ def stop_chia(services: str = "all") -> Dict:
         _last_daemon_check = 0
 
         if result.returncode == 0:
-            log_event("success", "daemon_stop", f"Chia {services} stopped: {output[:100]}")
+            log_event(
+                "success", "daemon_stop", f"Chia {services} stopped: {output[:100]}"
+            )
             return {
                 "success": True,
                 "message": f"Chia {services} stopped",
                 "output": output[:500],
             }
         else:
-            log_event("warning", "daemon_stop", f"Stop returned code {result.returncode}: {output[:200]}")
+            log_event(
+                "warning",
+                "daemon_stop",
+                f"Stop returned code {result.returncode}: {output[:200]}",
+            )
             return {
                 "success": False,
                 "error": output[:300],
@@ -2636,6 +3020,7 @@ def stop_sage(services: str = "all") -> Dict:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _format_bytes(num_bytes: int) -> str:
     """Format byte count to human-readable (EiB for network space)."""
@@ -2683,18 +3068,19 @@ def _build_cat_name_lookup() -> Dict[str, str]:
 
     # Well-known Chia CATs (common tokens users are likely to have)
     well_known = {
-        "a628c1c2c6fcb74d53746157e438e108eab5c0bb3e5c80ff3b1684d  ": "SBX",      # Spacebucks
-        "6d95dae356e32a71db5ddcb42224754a02524c615c5fc35f568c2af04774e589": "USDS",     # Stably USD
-        "8ebf855de6eb146db5602f0456d2f0cbe750d57f821b6f91a8592ee9f1d4cf31": "DBX",      # dexie bucks
-        "509deafe3cd8bbfbb9ccce1d930e3d7b57b40c964fa33379b18d628175eb7a8f": "CH21",     # Chia Holiday 2021
-        "78ad32a8c9ea70f27d73e9306fc467bab2a6b15b30289791e37e6a9a6cf03884": "SBX",      # Spacebucks v2
-        "ccda19944b4def44bb4bc25363bb54b7a3d0b627f05a3f1aec67cf69aee7dadb": "HOA",      # HOA
+        "a628c1c2c6fcb74d53746157e438e108eab5c0bb3e5c80ff3b1684d  ": "SBX",  # Spacebucks
+        "6d95dae356e32a71db5ddcb42224754a02524c615c5fc35f568c2af04774e589": "USDS",  # Stably USD
+        "8ebf855de6eb146db5602f0456d2f0cbe750d57f821b6f91a8592ee9f1d4cf31": "DBX",  # dexie bucks
+        "509deafe3cd8bbfbb9ccce1d930e3d7b57b40c964fa33379b18d628175eb7a8f": "CH21",  # Chia Holiday 2021
+        "78ad32a8c9ea70f27d73e9306fc467bab2a6b15b30289791e37e6a9a6cf03884": "SBX",  # Spacebucks v2
+        "ccda19944b4def44bb4bc25363bb54b7a3d0b627f05a3f1aec67cf69aee7dadb": "HOA",  # HOA
     }
     names.update(well_known)
 
     # .env config — the active trading CAT (highest priority)
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
         env_asset_id = os.getenv("CAT_ASSET_ID", "").strip().lower()
         env_cat_name = os.getenv("CAT_NAME", "").strip()
@@ -2706,8 +3092,10 @@ def _build_cat_name_lookup() -> Dict[str, str]:
     # Try to get Dexie pairs for broader name resolution
     try:
         import requests as _req
+
         try:
             from api_call_tracker import record as _t
+
             _t("dexie", "/v2/prices/tickers")
         except Exception:
             pass
@@ -2720,7 +3108,9 @@ def _build_cat_name_lookup() -> Dict[str, str]:
                 ticker_id = ticker.get("ticker_id", "")
                 if "_XCH" in ticker_id:
                     base_id = ticker.get("base_id", "").strip().lower()
-                    base_name = ticker.get("base_name", "") or ticker_id.replace("_XCH", "")
+                    base_name = ticker.get("base_name", "") or ticker_id.replace(
+                        "_XCH", ""
+                    )
                     if base_id and base_name:
                         # Don't overwrite .env config (already set above)
                         if base_id not in names:
@@ -2731,8 +3121,9 @@ def _build_cat_name_lookup() -> Dict[str, str]:
     return names
 
 
-def _resolve_cat_name(raw_name: str, asset_id: str, wallet_id: int,
-                      cat_names: Dict[str, str]) -> str:
+def _resolve_cat_name(
+    raw_name: str, asset_id: str, wallet_id: int, cat_names: Dict[str, str]
+) -> str:
     """Resolve a friendly display name for a CAT token.
 
     The Chia wallet often stores CATs with names like their full tail hash

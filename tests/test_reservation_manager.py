@@ -33,7 +33,6 @@ from reservation_manager import ReservationManager, init_reservation_table
 
 
 class TestReservationManager(unittest.TestCase):
-
     def setUp(self):
         _setup_test_db()
         init_reservation_table()

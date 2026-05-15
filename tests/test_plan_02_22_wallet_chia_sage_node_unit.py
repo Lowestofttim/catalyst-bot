@@ -29,6 +29,7 @@ try:
         _is_open_status,
         classify_offers_from_list,
     )
+
     _SKIP_WC = None
 except ModuleNotFoundError as exc:
     _SKIP_WC = str(exc)
@@ -39,6 +40,7 @@ try:
         _parse_sage_version,
         compare_sage_versions,
     )
+
     _SKIP_SN = None
 except ModuleNotFoundError as exc:
     _SKIP_SN = str(exc)
@@ -49,6 +51,7 @@ _ASSET = "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105"
 # ---------------------------------------------------------------------------
 # wallet_chia — cat_to_mojos
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaCatToMojos(unittest.TestCase):
@@ -71,6 +74,7 @@ class TestWalletChiaCatToMojos(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # wallet_chia — xch_to_mojos
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaXchToMojos(unittest.TestCase):
@@ -97,6 +101,7 @@ class TestWalletChiaXchToMojos(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # wallet_chia — mojos_to_xch
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaMojosToXch(unittest.TestCase):
@@ -125,6 +130,7 @@ class TestWalletChiaMojosToXch(unittest.TestCase):
 # wallet_chia — mojos_to_cat
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaMojosToCat(unittest.TestCase):
     def test_1000_mojos_3_decimals(self):
@@ -151,6 +157,7 @@ class TestWalletChiaMojosToCat(unittest.TestCase):
 # (wallet_chia only checks valid_times.max_time — NOT top-level max_time)
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaIsOfferTimeExpired(unittest.TestCase):
     def test_no_valid_times_returns_false(self):
@@ -176,6 +183,7 @@ class TestWalletChiaIsOfferTimeExpired(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # wallet_chia — get_offer_expiry_info
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaGetOfferExpiryInfo(unittest.TestCase):
@@ -207,6 +215,7 @@ class TestWalletChiaGetOfferExpiryInfo(unittest.TestCase):
 # wallet_chia — _is_open_status
 # (wallet_chia differs: no "ACTIVE" in OPEN_STATUSES, unknown → False w/o log)
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaIsOpenStatus(unittest.TestCase):
@@ -257,6 +266,7 @@ class TestWalletChiaIsOpenStatus(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # wallet_chia — classify_offers_from_list
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_WC is not None, f"wallet_chia unavailable: {_SKIP_WC}")
 class TestWalletChiaClassifyOffersFromList(unittest.TestCase):
@@ -310,6 +320,7 @@ class TestWalletChiaClassifyOffersFromList(unittest.TestCase):
 # sage_node — _parse_sage_version
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_SN is not None, f"sage_node unavailable: {_SKIP_SN}")
 class TestParseSageVersion(unittest.TestCase):
     def test_standard_semver(self):
@@ -346,6 +357,7 @@ class TestParseSageVersion(unittest.TestCase):
 # sage_node — compare_sage_versions
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_SN is not None, f"sage_node unavailable: {_SKIP_SN}")
 class TestCompareSageVersions(unittest.TestCase):
     def test_equal(self):
@@ -377,6 +389,7 @@ class TestCompareSageVersions(unittest.TestCase):
 # sage_node — Sage certificate path discovery
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_SN is not None, f"sage_node unavailable: {_SKIP_SN}")
 class TestDetectSageCertPath(unittest.TestCase):
     def _write_sage_cert_pair(self, data_dir):
@@ -391,9 +404,11 @@ class TestDetectSageCertPath(unittest.TestCase):
         return cert_path
 
     def test_honors_sage_data_dir_env(self):
-        with tempfile.TemporaryDirectory() as appdata, \
-             tempfile.TemporaryDirectory() as localappdata, \
-             tempfile.TemporaryDirectory() as sage_data_dir:
+        with (
+            tempfile.TemporaryDirectory() as appdata,
+            tempfile.TemporaryDirectory() as localappdata,
+            tempfile.TemporaryDirectory() as sage_data_dir,
+        ):
             cert_path = self._write_sage_cert_pair(sage_data_dir)
             env = {
                 "APPDATA": appdata,
@@ -406,8 +421,10 @@ class TestDetectSageCertPath(unittest.TestCase):
                 self.assertEqual(_detect_sage_cert_path(), cert_path)
 
     def test_searches_localappdata_default_sage_dir(self):
-        with tempfile.TemporaryDirectory() as appdata, \
-             tempfile.TemporaryDirectory() as localappdata:
+        with (
+            tempfile.TemporaryDirectory() as appdata,
+            tempfile.TemporaryDirectory() as localappdata,
+        ):
             sage_data_dir = os.path.join(localappdata, "com.rigidnetwork.sage")
             cert_path = self._write_sage_cert_pair(sage_data_dir)
             env = {
@@ -417,8 +434,10 @@ class TestDetectSageCertPath(unittest.TestCase):
                 "SAGE_HOME": "",
                 "SAGE_ALLOWED_CERT_ROOTS": "",
             }
-            with patch("platform.system", return_value="Windows"), \
-                 patch.dict(os.environ, env, clear=False):
+            with (
+                patch("platform.system", return_value="Windows"),
+                patch.dict(os.environ, env, clear=False),
+            ):
                 self.assertEqual(_detect_sage_cert_path(), cert_path)
 
 
@@ -442,8 +461,12 @@ class TestSageRpcStartupProbes(unittest.TestCase):
         client = api_server.app.test_client()
         token = getattr(api_server, "_LOCAL_API_TOKEN", "")
 
-        with patch.object(sage_node, "_is_sage_rpc_available", return_value=False), \
-             patch.object(sage_node, "_is_sage_rpc_port_listening", return_value=True, create=True):
+        with (
+            patch.object(sage_node, "_is_sage_rpc_available", return_value=False),
+            patch.object(
+                sage_node, "_is_sage_rpc_port_listening", return_value=True, create=True
+            ),
+        ):
             resp = client.get(
                 "/api/wallet/sage-running",
                 headers={"X-Bot-Local-Token": token},
@@ -460,16 +483,27 @@ class TestSageRpcStartupProbes(unittest.TestCase):
             cert_path = self._write_sage_cert_pair(sage_data_dir)
             key_path = os.path.join(os.path.dirname(cert_path), "wallet.key")
             helper = getattr(sage_node, "_set_sage_cert_env_and_reload", None)
-            self.assertIsNotNone(helper, "startup must reload wallet_sage after auto-detecting certs")
+            self.assertIsNotNone(
+                helper, "startup must reload wallet_sage after auto-detecting certs"
+            )
 
             env = {"SAGE_ALLOWED_CERT_ROOTS": sage_data_dir}
-            with patch.dict(os.environ, env, clear=False), \
-                 patch("wallet_sage.reload_connection_settings") as reload_settings:
+            with (
+                patch.dict(os.environ, env, clear=False),
+                patch("wallet_sage.reload_connection_settings") as reload_settings,
+            ):
                 helper(cert_path, key_path)
 
-                self.assertEqual(os.environ.get("SAGE_CERT_PATH"), os.path.realpath(cert_path))
-                self.assertEqual(os.environ.get("SAGE_KEY_PATH"), os.path.realpath(key_path))
-                self.assertEqual(os.environ.get("SAGE_DATA_DIR"), os.path.dirname(os.path.dirname(os.path.realpath(cert_path))))
+                self.assertEqual(
+                    os.environ.get("SAGE_CERT_PATH"), os.path.realpath(cert_path)
+                )
+                self.assertEqual(
+                    os.environ.get("SAGE_KEY_PATH"), os.path.realpath(key_path)
+                )
+                self.assertEqual(
+                    os.environ.get("SAGE_DATA_DIR"),
+                    os.path.dirname(os.path.dirname(os.path.realpath(cert_path))),
+                )
                 reload_settings.assert_called_once()
 
 
@@ -477,10 +511,12 @@ class TestSageRpcStartupProbes(unittest.TestCase):
 # chia_node — re-export spot-check
 # ---------------------------------------------------------------------------
 
+
 class TestChiaNodeReExports(unittest.TestCase):
     def test_chia_node_imports_from_sage_node(self):
         try:
             import chia_node
+
             self.assertTrue(hasattr(chia_node, "compare_sage_versions"))
         except ModuleNotFoundError:
             self.skipTest("chia_node unavailable")

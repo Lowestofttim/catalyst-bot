@@ -51,6 +51,9 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check .
 
+      - name: Ruff format check
+        run: python -m ruff format --check .
+
       - name: Import check (critical modules)
         run: |
           echo "Verifying critical modules can be imported..."

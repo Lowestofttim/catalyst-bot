@@ -5,6 +5,7 @@ No existing tests. Covers:
   _apply_safety_guards (dynamic / hard / step), pricing strategy selection,
   arb gap calculation, constant product slippage, get_pool_depth_ratio.
 """
+
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from unittest.mock import patch
 try:
     import price_engine as _pe_mod
     from price_engine import PriceEngine, _decimal_sqrt
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _pe_mod = None
@@ -27,6 +29,7 @@ def _make_engine():
 
 class _CfgPatch:
     """Context manager that patches price_engine.cfg with a minimal fake."""
+
     DYNAMIC_LIMIT_PCT = Decimal("10")
     HARD_MIN_PRICE_XCH = Decimal("0")
     HARD_MAX_PRICE_XCH = Decimal("0")
@@ -149,7 +152,9 @@ class TestGetDynamicLimits(unittest.TestCase):
         eng = _make_engine()
         eng._reference_price = Decimal("1.00")
         lo, hi = eng.get_dynamic_limits()
-        self.assertAlmostEqual(float(hi - Decimal("1.00")), float(Decimal("1.00") - lo), places=8)
+        self.assertAlmostEqual(
+            float(hi - Decimal("1.00")), float(Decimal("1.00") - lo), places=8
+        )
 
     def test_band_width_matches_pct(self):
         eng = _make_engine()
@@ -273,8 +278,8 @@ class TestPricingStrategySelection(unittest.TestCase):
 
     def _eng_with_prices(self, dexie, tibet):
         eng = _make_engine()
-        eng._fetch_dexie_price = lambda *a, **kw: (Decimal(dexie) if dexie else None)
-        eng._fetch_tibet_price = lambda *a, **kw: (Decimal(tibet) if tibet else None)
+        eng._fetch_dexie_price = lambda *a, **kw: Decimal(dexie) if dexie else None
+        eng._fetch_tibet_price = lambda *a, **kw: Decimal(tibet) if tibet else None
         # Disable safety guards for strategy tests
         eng._apply_safety_guards = lambda p: p
         # Disable DB side-effects
@@ -321,8 +326,12 @@ class TestPricingStrategySelection(unittest.TestCase):
         eng = self._eng_with_prices("1.00", "1.05")
         with patch("database.record_price"):
             result = eng.get_price()
-        expected_gap = abs(Decimal("1.00") - Decimal("1.05")) / Decimal("1.00") * Decimal("10000")
-        self.assertAlmostEqual(float(result["arb_gap_bps"]), float(expected_gap), places=4)
+        expected_gap = (
+            abs(Decimal("1.00") - Decimal("1.05")) / Decimal("1.00") * Decimal("10000")
+        )
+        self.assertAlmostEqual(
+            float(result["arb_gap_bps"]), float(expected_gap), places=4
+        )
 
     def test_no_arb_when_prices_equal(self):
         eng = self._eng_with_prices("1.00", "1.00")
@@ -349,42 +358,48 @@ class TestDexieTickerFreshness(unittest.TestCase):
         return eng
 
     def test_dexie_uses_live_bid_ask_midpoint(self):
-        eng = self._engine_with_ticker({
-            "ticker_id": "MZ_XCH",
-            "bid": "0.00010000",
-            "ask": "0.00012000",
-            "current_avg_price": "0.00050000",
-            "price_24h": "0.00040000",
-            "last_price": "0.00030000",
-        })
+        eng = self._engine_with_ticker(
+            {
+                "ticker_id": "MZ_XCH",
+                "bid": "0.00010000",
+                "ask": "0.00012000",
+                "current_avg_price": "0.00050000",
+                "price_24h": "0.00040000",
+                "last_price": "0.00030000",
+            }
+        )
 
         price = eng._fetch_dexie_price("MZ_XCH")
 
         self.assertEqual(price, Decimal("0.00011000"))
 
     def test_dexie_rejects_average_fields_when_live_bid_ask_missing(self):
-        eng = self._engine_with_ticker({
-            "ticker_id": "MZ_XCH",
-            "bid": None,
-            "ask": None,
-            "current_avg_price": "0.00050000",
-            "price_24h": "0.00040000",
-            "last_price": "0.00030000",
-        })
+        eng = self._engine_with_ticker(
+            {
+                "ticker_id": "MZ_XCH",
+                "bid": None,
+                "ask": None,
+                "current_avg_price": "0.00050000",
+                "price_24h": "0.00040000",
+                "last_price": "0.00030000",
+            }
+        )
 
         price = eng._fetch_dexie_price("MZ_XCH")
 
         self.assertIsNone(price)
 
     def test_dexie_rejects_crossed_bid_ask_instead_of_historical_fallback(self):
-        eng = self._engine_with_ticker({
-            "ticker_id": "MZ_XCH",
-            "bid": "0.00013000",
-            "ask": "0.00010000",
-            "current_avg_price": "0.00050000",
-            "price_24h": "0.00040000",
-            "last_price": "0.00030000",
-        })
+        eng = self._engine_with_ticker(
+            {
+                "ticker_id": "MZ_XCH",
+                "bid": "0.00013000",
+                "ask": "0.00010000",
+                "current_avg_price": "0.00050000",
+                "price_24h": "0.00040000",
+                "last_price": "0.00030000",
+            }
+        )
 
         price = eng._fetch_dexie_price("MZ_XCH")
 
@@ -413,12 +428,14 @@ class TestTibetCacheInjection(unittest.TestCase):
 
     def test_inject_tibet_reserves_updates_matching_cached_pair(self):
         with _pe_mod._tibet_lock:
-            _pe_mod._tibet_cache["pairs"] = [{
-                "pair_id": "pair-1",
-                "asset_id": "abc123",
-                "xch_reserve": 1000,
-                "token_reserve": 2000,
-            }]
+            _pe_mod._tibet_cache["pairs"] = [
+                {
+                    "pair_id": "pair-1",
+                    "asset_id": "abc123",
+                    "xch_reserve": 1000,
+                    "token_reserve": 2000,
+                }
+            ]
             _pe_mod._tibet_cache["fetched_at"] = 10
 
         eng = _make_engine()
@@ -438,12 +455,14 @@ class TestTibetCacheInjection(unittest.TestCase):
 
     def test_inject_tibet_reserves_invalidates_cache_when_pair_missing(self):
         with _pe_mod._tibet_lock:
-            _pe_mod._tibet_cache["pairs"] = [{
-                "pair_id": "pair-1",
-                "asset_id": "abc123",
-                "xch_reserve": 1000,
-                "token_reserve": 2000,
-            }]
+            _pe_mod._tibet_cache["pairs"] = [
+                {
+                    "pair_id": "pair-1",
+                    "asset_id": "abc123",
+                    "xch_reserve": 1000,
+                    "token_reserve": 2000,
+                }
+            ]
             _pe_mod._tibet_cache["fetched_at"] = 10
 
         eng = _make_engine()
@@ -477,26 +496,32 @@ class TestConstantProductFormula(unittest.TestCase):
     def _pair(self, xch_xch=1000, cat_units=500000):
         """Build a pair dict from human-readable pool sizes."""
         return {
-            "xch_reserve": int(xch_xch * 1e12),    # mojos
-            "token_reserve": cat_units * 1000,      # token-mojos (decimals=3)
+            "xch_reserve": int(xch_xch * 1e12),  # mojos
+            "token_reserve": cat_units * 1000,  # token-mojos (decimals=3)
         }
 
     def test_buy_side_has_positive_slippage(self):
         eng = _make_engine()
-        result = eng._estimate_slippage_from_reserves(self._pair(), Decimal("10"), "buy")
+        result = eng._estimate_slippage_from_reserves(
+            self._pair(), Decimal("10"), "buy"
+        )
         self.assertIsNotNone(result)
         self.assertGreater(float(result["slippage_bps"]), 0)
 
     def test_sell_side_has_positive_slippage(self):
         eng = _make_engine()
-        result = eng._estimate_slippage_from_reserves(self._pair(), Decimal("10"), "sell")
+        result = eng._estimate_slippage_from_reserves(
+            self._pair(), Decimal("10"), "sell"
+        )
         self.assertIsNotNone(result)
         self.assertGreater(float(result["slippage_bps"]), 0)
 
     def test_larger_trade_has_more_slippage(self):
         eng = _make_engine()
         small = eng._estimate_slippage_from_reserves(self._pair(), Decimal("1"), "buy")
-        large = eng._estimate_slippage_from_reserves(self._pair(), Decimal("100"), "buy")
+        large = eng._estimate_slippage_from_reserves(
+            self._pair(), Decimal("100"), "buy"
+        )
         self.assertGreater(
             float(large["slippage_bps"]),
             float(small["slippage_bps"]),

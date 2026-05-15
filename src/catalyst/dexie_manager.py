@@ -75,8 +75,7 @@ class DexieManager:
     # Queue management
     # -------------------------------------------------------------------
 
-    def queue_post(self, offer_bech32: str, trade_id: str = None,
-                   force: bool = False):
+    def queue_post(self, offer_bech32: str, trade_id: str = None, force: bool = False):
         """Queue an offer for posting to Dexie.
 
         Args:
@@ -88,11 +87,13 @@ class DexieManager:
             return
 
         with self._lock:
-            self._queue.append({
-                "offer": offer_bech32.strip(),
-                "trade_id": trade_id,
-                "force": force,
-            })
+            self._queue.append(
+                {
+                    "offer": offer_bech32.strip(),
+                    "trade_id": trade_id,
+                    "force": force,
+                }
+            )
             # Bounded queue. Without a cap, operators who disable
             # DEXIE_AUTO_POST (or who pause posting during an outage)
             # would see offer blobs accumulate indefinitely — each
@@ -119,9 +120,11 @@ class DexieManager:
                         f"while. Oldest offers will be reposted on the "
                         f"next successful flush via the startup-repost "
                         f"path.",
-                        data={"cap": _max_queue,
-                              "dropped": overflow,
-                              "queue_len_after": len(self._queue)},
+                        data={
+                            "cap": _max_queue,
+                            "dropped": overflow,
+                            "queue_len_after": len(self._queue),
+                        },
                     )
 
     def purge_trade_ids(self, trade_ids):
@@ -139,13 +142,15 @@ class DexieManager:
         with self._lock:
             before = len(self._queue)
             self._queue = [
-                item for item in self._queue
-                if item.get("trade_id") not in ids
+                item for item in self._queue if item.get("trade_id") not in ids
             ]
             removed = before - len(self._queue)
         if removed:
-            log_event("debug", "dexie_queue_purged",
-                      f"Removed {removed} cancelled offer(s) from Dexie queue")
+            log_event(
+                "debug",
+                "dexie_queue_purged",
+                f"Removed {removed} cancelled offer(s) from Dexie queue",
+            )
 
     def flush_queue(self, flush_all: bool = False) -> Dict:
         """Post all queued offers to Dexie.
@@ -215,9 +220,13 @@ class DexieManager:
         # Parallel posting for large batches (startup repost)
         if len(batch) > 10:
             from concurrent.futures import ThreadPoolExecutor, as_completed
+
             workers = min(8, len(batch))  # Up to 8 concurrent posts
-            log_event("info", "dexie_flush_parallel",
-                      f"Parallel flush: {len(batch)} offers with {workers} workers")
+            log_event(
+                "info",
+                "dexie_flush_parallel",
+                f"Parallel flush: {len(batch)} offers with {workers} workers",
+            )
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(_process_one, item): item for item in batch}
                 for future in as_completed(futures):
@@ -226,8 +235,11 @@ class DexieManager:
                         result = future.result()
                         _handle_result(result, item)
                     except Exception as e:
-                        log_event("warning", "dexie_parallel_error",
-                                  f"Parallel Dexie post failed: {e}")
+                        log_event(
+                            "warning",
+                            "dexie_parallel_error",
+                            f"Parallel Dexie post failed: {e}",
+                        )
                         with self._lock:
                             failed += 1
                             self._total_failed += 1
@@ -245,22 +257,33 @@ class DexieManager:
         if failed_items:
             with self._lock:
                 self._queue.extend(failed_items)
-            log_event("info", "dexie_requeue",
-                      f"Re-queued {len(failed_items)} failed Dexie posts for next cycle")
+            log_event(
+                "info",
+                "dexie_requeue",
+                f"Re-queued {len(failed_items)} failed Dexie posts for next cycle",
+            )
 
-        summary = {"posted": posted, "failed": failed, "skipped": skipped,
-                    "requeued": len(failed_items)}
+        summary = {
+            "posted": posted,
+            "failed": failed,
+            "skipped": skipped,
+            "requeued": len(failed_items),
+        }
         if posted > 0:
-            log_event("info", "dexie_flush",
-                      f"Posted {posted} queued offers to Dexie ({skipped} skipped, {failed} failed)")
+            log_event(
+                "info",
+                "dexie_flush",
+                f"Posted {posted} queued offers to Dexie ({skipped} skipped, {failed} failed)",
+            )
         return summary
 
     # -------------------------------------------------------------------
     # Core posting
     # -------------------------------------------------------------------
 
-    def _post_single(self, offer_bech32: str, trade_id: str = None,
-                     force: bool = False) -> Dict:
+    def _post_single(
+        self, offer_bech32: str, trade_id: str = None, force: bool = False
+    ) -> Dict:
         """Post a single offer to Dexie with retries.
 
         Returns result dict with success/skipped/error fields.
@@ -268,7 +291,10 @@ class DexieManager:
         # Respect 429 cooldown — don't hammer Dexie during backoff
         if time.time() < self._rate_limited_until:
             remaining = int(self._rate_limited_until - time.time())
-            return {"success": False, "error": f"rate_limited (cooldown {remaining}s remaining)"}
+            return {
+                "success": False,
+                "error": f"rate_limited (cooldown {remaining}s remaining)",
+            }
 
         # Validate bech32 format
         if not offer_bech32.lower().startswith("offer1"):
@@ -302,8 +328,7 @@ class DexieManager:
         for attempt in range(cfg.DEXIE_POST_RETRIES + 1):
             try:
                 r = requests.post(
-                    url, json=payload, headers=headers,
-                    timeout=cfg.DEXIE_POST_TIMEOUT
+                    url, json=payload, headers=headers, timeout=cfg.DEXIE_POST_TIMEOUT
                 )
 
                 if 200 <= r.status_code < 300:
@@ -316,9 +341,12 @@ class DexieManager:
 
                     if not dexie_id:
                         _tid_log = (trade_id[:16] + "...") if trade_id else "?"
-                        log_event("warning", "dexie_no_id",
-                                  f"Dexie returned 2xx but no offer ID found "
-                                  f"(trade: {_tid_log}, response keys: {list(data.keys()) if isinstance(data, dict) else 'non-dict'})")
+                        log_event(
+                            "warning",
+                            "dexie_no_id",
+                            f"Dexie returned 2xx but no offer ID found "
+                            f"(trade: {_tid_log}, response keys: {list(data.keys()) if isinstance(data, dict) else 'non-dict'})",
+                        )
 
                     # Mark as posted (thread-safe for parallel flush)
                     with self._lock:
@@ -332,13 +360,20 @@ class DexieManager:
                         try:
                             update_offer_dexie(trade_id, str(dexie_id))
                         except Exception as e:
-                            log_event("warning", "dexie_db_update_failed",
-                                      f"Failed to update dexie_id in DB: {e}")
+                            log_event(
+                                "warning",
+                                "dexie_db_update_failed",
+                                f"Failed to update dexie_id in DB: {e}",
+                            )
 
-                    log_event("info", "dexie_posted",
-                              f"✅ Posted to Dexie: {str(dexie_id)[:20]}... "
-                              f"(trade: {trade_id[:16]}...)" if trade_id else
-                              f"✅ Posted to Dexie: {str(dexie_id)[:20]}...")
+                    log_event(
+                        "info",
+                        "dexie_posted",
+                        f"✅ Posted to Dexie: {str(dexie_id)[:20]}... "
+                        f"(trade: {trade_id[:16]}...)"
+                        if trade_id
+                        else f"✅ Posted to Dexie: {str(dexie_id)[:20]}...",
+                    )
 
                     return {
                         "success": True,
@@ -354,8 +389,11 @@ class DexieManager:
                         retry_after = 30  # Fallback if Retry-After is HTTP-date format
                     self._rate_limited_until = time.time() + retry_after
                     last_err = f"HTTP 429 rate limited (backing off {retry_after}s)"
-                    log_event("warning", "dexie_rate_limited",
-                              f"Dexie returned 429 — backing off {retry_after}s")
+                    log_event(
+                        "warning",
+                        "dexie_rate_limited",
+                        f"Dexie returned 429 — backing off {retry_after}s",
+                    )
                     break  # Don't burn remaining retries
 
                 # 4xx (except 429) — permanent client error, don't retry.
@@ -390,9 +428,16 @@ class DexieManager:
             _level = "warning"
         else:
             _level = "error"
-        _retries_text = "1 attempt (permanent 4xx)" if _permanent else f"{cfg.DEXIE_POST_RETRIES + 1} attempts"
-        log_event(_level, "dexie_post_failed",
-                  f"Failed to post to Dexie after {_retries_text}: {last_err}")
+        _retries_text = (
+            "1 attempt (permanent 4xx)"
+            if _permanent
+            else f"{cfg.DEXIE_POST_RETRIES + 1} attempts"
+        )
+        log_event(
+            _level,
+            "dexie_post_failed",
+            f"Failed to post to Dexie after {_retries_text}: {last_err}",
+        )
         return {"success": False, "error": last_err, "permanent": _permanent}
 
     # -------------------------------------------------------------------
@@ -423,8 +468,11 @@ class DexieManager:
                 count += 1
 
         if count > 0:
-            log_event("info", "dexie_repost_queued",
-                      f"Queued {count} active offers for Dexie repost")
+            log_event(
+                "info",
+                "dexie_repost_queued",
+                f"Queued {count} active offers for Dexie repost",
+            )
 
     # -------------------------------------------------------------------
     # Tracking queries
@@ -485,9 +533,9 @@ class DexieManager:
     # and trade size distribution for the trading pair.
     # -------------------------------------------------------------------
 
-    def fetch_v3_historical_trades(self, ticker_id: str,
-                                   limit: int = 50,
-                                   force: bool = False) -> Optional[List[Dict]]:
+    def fetch_v3_historical_trades(
+        self, ticker_id: str, limit: int = 50, force: bool = False
+    ) -> Optional[List[Dict]]:
         """Fetch recent historical trades for a Dexie ticker pair.
 
         Cached for v3_trades_ttl_secs to avoid hammering the API.
@@ -508,7 +556,10 @@ class DexieManager:
         # Cache check
         if not force:
             cached = self._v3_trades_cache.get(ticker_id)
-            if cached and (time.time() - cached["fetched_at"]) < self._v3_trades_ttl_secs:
+            if (
+                cached
+                and (time.time() - cached["fetched_at"]) < self._v3_trades_ttl_secs
+            ):
                 return cached["trades"]
 
         url = f"{cfg.DEXIE_API_BASE.rstrip('/')}/v3/prices/historical_trades"
@@ -518,17 +569,26 @@ class DexieManager:
             r = requests.get(url, params=params, timeout=10)
             if r.status_code == 429:
                 self._rate_limited_until = time.time() + 60
-                log_event("warning", "dexie_v3_rate_limited",
-                          "Dexie v3 historical trades — rate limited")
+                log_event(
+                    "warning",
+                    "dexie_v3_rate_limited",
+                    "Dexie v3 historical trades — rate limited",
+                )
                 return None
             if r.status_code != 200:
-                log_event("debug", "dexie_v3_trades_http_error",
-                          f"v3 historical_trades returned HTTP {r.status_code}")
+                log_event(
+                    "debug",
+                    "dexie_v3_trades_http_error",
+                    f"v3 historical_trades returned HTTP {r.status_code}",
+                )
                 return None
             data = r.json()
         except Exception as e:
-            log_event("debug", "dexie_v3_trades_error",
-                      f"v3 historical_trades fetch failed: {e}")
+            log_event(
+                "debug",
+                "dexie_v3_trades_error",
+                f"v3 historical_trades fetch failed: {e}",
+            )
             return None
 
         # Dexie v3 returns either a list directly or a dict with "trades" key
@@ -541,12 +601,16 @@ class DexieManager:
             "trades": trades,
             "fetched_at": time.time(),
         }
-        log_event("debug", "dexie_v3_trades_fetched",
-                  f"Cached {len(trades)} v3 historical trade(s) for {ticker_id}")
+        log_event(
+            "debug",
+            "dexie_v3_trades_fetched",
+            f"Cached {len(trades)} v3 historical trade(s) for {ticker_id}",
+        )
         return trades
 
-    def compute_v3_trade_metrics(self, ticker_id: str,
-                                 hours: float = 24.0) -> Optional[Dict]:
+    def compute_v3_trade_metrics(
+        self, ticker_id: str, hours: float = 24.0
+    ) -> Optional[Dict]:
         """Compute volatility / fill-rate metrics from cached v3 trades.
 
         Returns dict with:
@@ -573,7 +637,9 @@ class DexieManager:
                 ts = float(tr.get("timestamp") or tr.get("time") or 0)
                 if ts < cutoff:
                     continue
-                price_raw = tr.get("price") or tr.get("price_xch") or tr.get("avg_price")
+                price_raw = (
+                    tr.get("price") or tr.get("price_xch") or tr.get("avg_price")
+                )
                 if price_raw is None:
                     continue
                 prices.append(_D(str(price_raw)))
@@ -592,14 +658,21 @@ class DexieManager:
                 "trades_in_window": len(prices),
                 "trades_per_hour": float(len(prices) / hours),
                 "mean_price": mean_p,
-                "price_stdev_pct": float(std_p / mean_p * _D("100")) if mean_p > 0 else 0.0,
+                "price_stdev_pct": float(std_p / mean_p * _D("100"))
+                if mean_p > 0
+                else 0.0,
                 "min_price": min_p,
                 "max_price": max_p,
-                "high_low_pct": float((max_p - min_p) / mean_p * _D("100")) if mean_p > 0 else 0.0,
+                "high_low_pct": float((max_p - min_p) / mean_p * _D("100"))
+                if mean_p > 0
+                else 0.0,
             }
         except Exception as e:
-            log_event("debug", "v3_metrics_compute_error",
-                      f"Failed to compute v3 trade metrics: {e}")
+            log_event(
+                "debug",
+                "v3_metrics_compute_error",
+                f"Failed to compute v3 trade metrics: {e}",
+            )
             return None
 
     # -------------------------------------------------------------------
@@ -629,13 +702,15 @@ class DexieManager:
                 self._rate_limited_until = time.time() + 60
                 return None
             if r.status_code != 200:
-                log_event("debug", "dexie_v3_pairs_http_error",
-                          f"v3 pairs returned HTTP {r.status_code}")
+                log_event(
+                    "debug",
+                    "dexie_v3_pairs_http_error",
+                    f"v3 pairs returned HTTP {r.status_code}",
+                )
                 return None
             data = r.json()
         except Exception as e:
-            log_event("debug", "dexie_v3_pairs_error",
-                      f"v3 pairs fetch failed: {e}")
+            log_event("debug", "dexie_v3_pairs_error", f"v3 pairs fetch failed: {e}")
             return None
 
         pairs = data if isinstance(data, list) else data.get("pairs", [])
@@ -644,8 +719,9 @@ class DexieManager:
 
         self._v3_pairs_cache = {"pairs": pairs}
         self._v3_pairs_fetched_at = time.time()
-        log_event("debug", "dexie_v3_pairs_fetched",
-                  f"Cached {len(pairs)} Dexie v3 pair(s)")
+        log_event(
+            "debug", "dexie_v3_pairs_fetched", f"Cached {len(pairs)} Dexie v3 pair(s)"
+        )
         return pairs
 
     def get_v3_pair_stats(self, ticker_id: str) -> Optional[Dict]:
@@ -683,12 +759,16 @@ class DexieManager:
                 # (which will succeed as a force=True re-post anyway)
                 old_len = len(self._posted_fingerprints)
                 self._posted_fingerprints.clear()
-                log_event("debug", "dexie_fingerprints_cleared",
-                          f"Cleared {old_len} fingerprints (exceeded {max_fps} cap)")
+                log_event(
+                    "debug",
+                    "dexie_fingerprints_cleared",
+                    f"Cleared {old_len} fingerprints (exceeded {max_fps} cap)",
+                )
 
         if stale:
-            log_event("debug", "dexie_pruned",
-                      f"Pruned {len(stale)} stale Dexie mappings")
+            log_event(
+                "debug", "dexie_pruned", f"Pruned {len(stale)} stale Dexie mappings"
+            )
 
         # Cap module-level offer detail cache
         global _offer_detail_cache, _offer_detail_cache_at
@@ -714,8 +794,9 @@ class DexieManager:
             return {"raw": resp.text[:500]}
 
 
-def get_offer_detail(dexie_id: str, timeout: int = 8,
-                     cache_ttl_secs: int = 15) -> Optional[Dict]:
+def get_offer_detail(
+    dexie_id: str, timeout: int = 8, cache_ttl_secs: int = 15
+) -> Optional[Dict]:
     """Fetch Dexie detail for a specific posted offer."""
     if not dexie_id:
         return None
@@ -738,8 +819,11 @@ def get_offer_detail(dexie_id: str, timeout: int = 8,
         if resp.status_code == 404:
             return None
         if resp.status_code == 429:
-            log_event("warning", "dexie_rate_limited",
-                      f"Dexie GET 429 on offer detail {dexie_id[:16]}...")
+            log_event(
+                "warning",
+                "dexie_rate_limited",
+                f"Dexie GET 429 on offer detail {dexie_id[:16]}...",
+            )
             return None
         resp.raise_for_status()
         data = resp.json()
@@ -749,8 +833,10 @@ def get_offer_detail(dexie_id: str, timeout: int = 8,
             _offer_detail_cache_at[dexie_id] = now
             return dict(offer)
     except Exception as e:
-        log_event("debug", "dexie_offer_detail_failed",
-                  f"Could not fetch Dexie detail for {dexie_id[:16]}...: {e}")
+        log_event(
+            "debug",
+            "dexie_offer_detail_failed",
+            f"Could not fetch Dexie detail for {dexie_id[:16]}...: {e}",
+        )
 
     return None
-

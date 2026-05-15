@@ -24,20 +24,28 @@ def api_health():
     """Health check endpoint — does a LIVE wallet check even when bot is stopped."""
     # Don't touch Sage RPC before the user has accepted the disclaimer.
     import chia_node
+
     if not chia_node.is_startup_authorised():
-        return jsonify({
-            "status": "ok",
-            "version": api_server.get_app_version(),
-            "wallet_type": api_server.get_wallet_type(),
-            "bot_running": False,
-            "sse_clients": api_server.events.subscriber_count,
-            "timestamp": int(time.time()),
-            "chia_health": {"status": "not_started", "healthy": False, "consecutive_failures": 0},
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "version": api_server.get_app_version(),
+                "wallet_type": api_server.get_wallet_type(),
+                "bot_running": False,
+                "sse_clients": api_server.events.subscriber_count,
+                "timestamp": int(time.time()),
+                "chia_health": {
+                    "status": "not_started",
+                    "healthy": False,
+                    "consecutive_failures": 0,
+                },
+            }
+        )
 
     health_data = {}
     try:
         from wallet import get_chia_health
+
         raw_health = get_chia_health()
         # Flatten for GUI compatibility (sync indicator expects top-level fields)
         wallet_info = raw_health.get("wallet") or {}
@@ -56,18 +64,24 @@ def api_health():
         }
     except Exception as e:
         log_event("warning", "health_check_unreachable", str(e))
-        health_data = {"status": "unreachable", "error": "health_check_unreachable", "consecutive_failures": 0}
+        health_data = {
+            "status": "unreachable",
+            "error": "health_check_unreachable",
+            "consecutive_failures": 0,
+        }
 
     bot = api_server.bot
-    return jsonify({
-        "status": "ok",
-        "version": api_server.get_app_version(),
-        "wallet_type": api_server.get_wallet_type(),
-        "bot_running": bot.is_running() if bot else False,
-        "sse_clients": api_server.events.subscriber_count,
-        "timestamp": int(time.time()),
-        "chia_health": health_data,
-    })
+    return jsonify(
+        {
+            "status": "ok",
+            "version": api_server.get_app_version(),
+            "wallet_type": api_server.get_wallet_type(),
+            "bot_running": bot.is_running() if bot else False,
+            "sse_clients": api_server.events.subscriber_count,
+            "timestamp": int(time.time()),
+            "chia_health": health_data,
+        }
+    )
 
 
 @bp.route("/api/doctor")
@@ -75,13 +89,24 @@ def api_doctor():
     """Run preflight checks and return a structured readiness report."""
     try:
         from doctor import run_preflight
+
         force = request.args.get("force", "").lower() in ("1", "true", "yes")
         report = run_preflight(force=force)
         return jsonify(report.to_dict())
     except Exception as e:
-        log_event("error", "api_error", f"Preflight check failed: {e}", {"endpoint": request.path})
-        return jsonify({"can_start": False, "summary": "Preflight check failed — see debug log",
-                        "checks": []}), 500
+        log_event(
+            "error",
+            "api_error",
+            f"Preflight check failed: {e}",
+            {"endpoint": request.path},
+        )
+        return jsonify(
+            {
+                "can_start": False,
+                "summary": "Preflight check failed — see debug log",
+                "checks": [],
+            }
+        ), 500
 
 
 @bp.route("/api/health/runtime")
@@ -98,16 +123,25 @@ def api_health_runtime():
     """
     try:
         from bot_health import run_runtime_checks
+
         auto_repair = request.args.get("repair", "").lower() in ("1", "true", "yes")
         force = request.args.get("force", "").lower() in ("1", "true", "yes")
         report = run_runtime_checks(auto_repair=auto_repair, force=force)
         return jsonify(report.to_dict())
     except Exception as e:
-        log_event("error", "api_error", f"Runtime health check failed: {e}",
-                  {"endpoint": request.path})
-        return jsonify({"healthy": False,
-                        "summary": "Runtime health check failed — see debug log",
-                        "checks": []}), 500
+        log_event(
+            "error",
+            "api_error",
+            f"Runtime health check failed: {e}",
+            {"endpoint": request.path},
+        )
+        return jsonify(
+            {
+                "healthy": False,
+                "summary": "Runtime health check failed — see debug log",
+                "checks": [],
+            }
+        ), 500
 
 
 @bp.route("/api/config/history")
@@ -121,6 +155,7 @@ def api_config_history():
     """
     try:
         from database import get_config_history
+
         limit = max(1, min(500, int(request.args.get("limit", 50) or 50)))
         key = request.args.get("key") or None
         since_hours = request.args.get("since_hours")
@@ -149,12 +184,15 @@ def api_self_test():
                 log_event("error", "self_test_failed", str(e))
                 return jsonify({"error": "self_test_failed"}), 500
         results = getattr(bot, "_startup_self_test_results", {}) if bot else {}
-        all_ok = all(r.get("ok", False) for r in results.values()
-                     if not r.get("skipped", False))
-        return jsonify({
-            "all_ok": all_ok,
-            "results": results,
-        })
+        all_ok = all(
+            r.get("ok", False) for r in results.values() if not r.get("skipped", False)
+        )
+        return jsonify(
+            {
+                "all_ok": all_ok,
+                "results": results,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -169,6 +207,7 @@ def api_config_validate():
         if cached is not None:
             return jsonify(cached.to_dict())
         from config_validator import validate_config
+
         report = validate_config(cfg)
         return jsonify(report.to_dict())
     except Exception:
@@ -184,65 +223,137 @@ def api_config_export_env():
     """
     try:
         sections = [
-            ("Trading Core", [
-                "LOOP_SECONDS", "SPREAD_BPS", "DEFAULT_TRADE_XCH",
-                "MAX_ACTIVE_BUY", "MAX_ACTIVE_SELL",
-                "ENABLE_BUY", "ENABLE_SELL", "DRY_RUN",
-            ]),
-            ("Reserves", [
-                "XCH_RESERVE", "CAT_RESERVE",
-            ]),
-            ("Auto-Requote", [
-                "AUTO_REQUOTE", "REQUOTE_BPS", "REQUOTE_COOLDOWN_SECS",
-                "REQUOTE_BATCH_SIZE",
-            ]),
-            ("Price Safety & Limits", [
-                "HARD_MIN_PRICE_XCH", "HARD_MAX_PRICE_XCH",
-                "DYNAMIC_LIMIT_PCT", "MAX_STEP_CHANGE_FRACTION",
-                "TIBET_SHOCK_CANCEL_TRIGGER_PCT",
-                "ARB_ALERT_THRESHOLD_BPS",
-            ]),
-            ("Smart Pricing - Dynamic Spreads", [
-                "DYNAMIC_SPREAD_ENABLED", "BASE_SPREAD_BPS",
-                "MIN_EDGE_BPS", "MIN_SPREAD_BPS", "MAX_SPREAD_BPS",
-                "VOLATILITY_WINDOW_HOURS",
-            ]),
-            ("Smart Pricing - Inventory Management", [
-                "INVENTORY_ENABLED", "SKEW_INTENSITY", "MAX_POSITION_XCH",
-            ]),
-            ("Tiered Orders", [
-                "TIER_ENABLED", "BUY_LADDER_REVERSED",
-                "INNER_SIZE_XCH", "MID_SIZE_XCH",
-                "OUTER_SIZE_XCH", "EXTREME_SIZE_XCH",
-                "INNER_TIER_COUNT", "MID_TIER_COUNT",
-                "OUTER_TIER_COUNT", "EXTREME_TIER_COUNT",
-                "BUY_INNER_TIER_COUNT", "BUY_MID_TIER_COUNT",
-                "BUY_OUTER_TIER_COUNT", "BUY_EXTREME_TIER_COUNT",
-                "SELL_INNER_TIER_COUNT", "SELL_MID_TIER_COUNT",
-                "SELL_OUTER_TIER_COUNT", "SELL_EXTREME_TIER_COUNT",
-                "INNER_TIER_SPARE_COUNT", "MID_TIER_SPARE_COUNT",
-                "OUTER_TIER_SPARE_COUNT", "EXTREME_TIER_SPARE_COUNT",
-                "BUY_INNER_TIER_SPARE_COUNT", "BUY_MID_TIER_SPARE_COUNT",
-                "BUY_OUTER_TIER_SPARE_COUNT", "BUY_EXTREME_TIER_SPARE_COUNT",
-                "SELL_INNER_TIER_SPARE_COUNT", "SELL_MID_TIER_SPARE_COUNT",
-                "SELL_OUTER_TIER_SPARE_COUNT", "SELL_EXTREME_TIER_SPARE_COUNT",
-            ]),
-            ("Market Intelligence", [
-                "COMPETITOR_AWARE_ENABLED", "DBX_MAX_SPREAD_BPS",
-            ]),
-            ("Bot Operations", [
-                "SNIPER_ENABLED", "SNIPER_SIZE_XCH", "SNIPER_PREP_COUNT",
-                "SNIPER_REARM_PRICE_MOVE_BPS", "SNIPER_REARM_GAP_MOVE_BPS",
-                "TRANSACTION_FEE_MODE", "TRANSACTION_FEE_XCH",
-                "TRANSACTION_FEE_TARGET_SECS",
-                "FEE_PREP_COUNT", "FEE_COIN_SIZE_XCH",
-                "SPLASH_ENABLED", "ENABLE_COIN_PREP",
-                "ENABLE_RUNTIME_COIN_HEALTH", "SAGE_SET_CHANGE_ADDRESS",
-                "COIN_PREP_MULTIPLIER", "COIN_PREP_HEADROOM_PCT",
-            ]),
-            ("CAT Token", [
-                "CAT_ASSET_ID", "CAT_TICKER_ID", "CAT_NAME", "CAT_DECIMALS",
-            ]),
+            (
+                "Trading Core",
+                [
+                    "LOOP_SECONDS",
+                    "SPREAD_BPS",
+                    "DEFAULT_TRADE_XCH",
+                    "MAX_ACTIVE_BUY",
+                    "MAX_ACTIVE_SELL",
+                    "ENABLE_BUY",
+                    "ENABLE_SELL",
+                    "DRY_RUN",
+                ],
+            ),
+            (
+                "Reserves",
+                [
+                    "XCH_RESERVE",
+                    "CAT_RESERVE",
+                ],
+            ),
+            (
+                "Auto-Requote",
+                [
+                    "AUTO_REQUOTE",
+                    "REQUOTE_BPS",
+                    "REQUOTE_COOLDOWN_SECS",
+                    "REQUOTE_BATCH_SIZE",
+                ],
+            ),
+            (
+                "Price Safety & Limits",
+                [
+                    "HARD_MIN_PRICE_XCH",
+                    "HARD_MAX_PRICE_XCH",
+                    "DYNAMIC_LIMIT_PCT",
+                    "MAX_STEP_CHANGE_FRACTION",
+                    "TIBET_SHOCK_CANCEL_TRIGGER_PCT",
+                    "ARB_ALERT_THRESHOLD_BPS",
+                ],
+            ),
+            (
+                "Smart Pricing - Dynamic Spreads",
+                [
+                    "DYNAMIC_SPREAD_ENABLED",
+                    "BASE_SPREAD_BPS",
+                    "MIN_EDGE_BPS",
+                    "MIN_SPREAD_BPS",
+                    "MAX_SPREAD_BPS",
+                    "VOLATILITY_WINDOW_HOURS",
+                ],
+            ),
+            (
+                "Smart Pricing - Inventory Management",
+                [
+                    "INVENTORY_ENABLED",
+                    "SKEW_INTENSITY",
+                    "MAX_POSITION_XCH",
+                ],
+            ),
+            (
+                "Tiered Orders",
+                [
+                    "TIER_ENABLED",
+                    "BUY_LADDER_REVERSED",
+                    "INNER_SIZE_XCH",
+                    "MID_SIZE_XCH",
+                    "OUTER_SIZE_XCH",
+                    "EXTREME_SIZE_XCH",
+                    "INNER_TIER_COUNT",
+                    "MID_TIER_COUNT",
+                    "OUTER_TIER_COUNT",
+                    "EXTREME_TIER_COUNT",
+                    "BUY_INNER_TIER_COUNT",
+                    "BUY_MID_TIER_COUNT",
+                    "BUY_OUTER_TIER_COUNT",
+                    "BUY_EXTREME_TIER_COUNT",
+                    "SELL_INNER_TIER_COUNT",
+                    "SELL_MID_TIER_COUNT",
+                    "SELL_OUTER_TIER_COUNT",
+                    "SELL_EXTREME_TIER_COUNT",
+                    "INNER_TIER_SPARE_COUNT",
+                    "MID_TIER_SPARE_COUNT",
+                    "OUTER_TIER_SPARE_COUNT",
+                    "EXTREME_TIER_SPARE_COUNT",
+                    "BUY_INNER_TIER_SPARE_COUNT",
+                    "BUY_MID_TIER_SPARE_COUNT",
+                    "BUY_OUTER_TIER_SPARE_COUNT",
+                    "BUY_EXTREME_TIER_SPARE_COUNT",
+                    "SELL_INNER_TIER_SPARE_COUNT",
+                    "SELL_MID_TIER_SPARE_COUNT",
+                    "SELL_OUTER_TIER_SPARE_COUNT",
+                    "SELL_EXTREME_TIER_SPARE_COUNT",
+                ],
+            ),
+            (
+                "Market Intelligence",
+                [
+                    "COMPETITOR_AWARE_ENABLED",
+                    "DBX_MAX_SPREAD_BPS",
+                ],
+            ),
+            (
+                "Bot Operations",
+                [
+                    "SNIPER_ENABLED",
+                    "SNIPER_SIZE_XCH",
+                    "SNIPER_PREP_COUNT",
+                    "SNIPER_REARM_PRICE_MOVE_BPS",
+                    "SNIPER_REARM_GAP_MOVE_BPS",
+                    "TRANSACTION_FEE_MODE",
+                    "TRANSACTION_FEE_XCH",
+                    "TRANSACTION_FEE_TARGET_SECS",
+                    "FEE_PREP_COUNT",
+                    "FEE_COIN_SIZE_XCH",
+                    "SPLASH_ENABLED",
+                    "ENABLE_COIN_PREP",
+                    "ENABLE_RUNTIME_COIN_HEALTH",
+                    "SAGE_SET_CHANGE_ADDRESS",
+                    "COIN_PREP_MULTIPLIER",
+                    "COIN_PREP_HEADROOM_PCT",
+                ],
+            ),
+            (
+                "CAT Token",
+                [
+                    "CAT_ASSET_ID",
+                    "CAT_TICKER_ID",
+                    "CAT_NAME",
+                    "CAT_DECIMALS",
+                ],
+            ),
         ]
 
         lines = ["# CATalyst — exported settings", "# Generated by bot GUI export", ""]
@@ -275,7 +386,9 @@ def api_config_export_env():
         return Response(
             content,
             mimetype="text/plain",
-            headers={"Content-Disposition": "attachment; filename=chia_bot_settings.env"},
+            headers={
+                "Content-Disposition": "attachment; filename=chia_bot_settings.env"
+            },
         )
     except Exception:
         return api_server._api_exception(request.path)

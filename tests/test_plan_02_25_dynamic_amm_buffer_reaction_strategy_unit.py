@@ -11,20 +11,28 @@ from decimal import Decimal
 
 try:
     from reaction_strategy import (
-        RequoteSeverity, CycleBudget,
-        compute_offer_staleness, classify_drift,
-        tiers_for_severity, filter_offers_by_tiers,
+        RequoteSeverity,
+        CycleBudget,
+        compute_offer_staleness,
+        classify_drift,
+        tiers_for_severity,
+        filter_offers_by_tiers,
         TIER_PRIORITY,
     )
+
     _SKIP_RS = None
 except ModuleNotFoundError as exc:
     _SKIP_RS = str(exc)
 
 try:
     from dynamic_amm_buffer import (
-        DynamicAMMBuffer, reset_buffer, _get_buffer_instance,
-        record_sweep, get_buffer,
+        DynamicAMMBuffer,
+        reset_buffer,
+        _get_buffer_instance,
+        record_sweep,
+        get_buffer,
     )
+
     _SKIP_DAB = None
 except ModuleNotFoundError as exc:
     _SKIP_DAB = str(exc)
@@ -33,6 +41,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # RequoteSeverity enum
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestRequoteSeverity(unittest.TestCase):
@@ -54,6 +63,7 @@ class TestRequoteSeverity(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # CycleBudget dataclass
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestCycleBudget(unittest.TestCase):
@@ -130,6 +140,7 @@ class TestCycleBudget(unittest.TestCase):
 # compute_offer_staleness
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestComputeOfferStaleness(unittest.TestCase):
     def test_perfect_match_is_zero(self):
@@ -145,13 +156,20 @@ class TestComputeOfferStaleness(unittest.TestCase):
         self.assertEqual(compute_offer_staleness({}, Decimal("0.001")), Decimal("0"))
 
     def test_zero_ideal_price_returns_zero(self):
-        self.assertEqual(compute_offer_staleness({"price_xch": "0.001"}, Decimal("0")), Decimal("0"))
+        self.assertEqual(
+            compute_offer_staleness({"price_xch": "0.001"}, Decimal("0")), Decimal("0")
+        )
 
     def test_zero_actual_price_returns_zero(self):
-        self.assertEqual(compute_offer_staleness({"price_xch": "0"}, Decimal("0.001")), Decimal("0"))
+        self.assertEqual(
+            compute_offer_staleness({"price_xch": "0"}, Decimal("0.001")), Decimal("0")
+        )
 
     def test_invalid_price_string_returns_zero(self):
-        self.assertEqual(compute_offer_staleness({"price_xch": "bad"}, Decimal("0.001")), Decimal("0"))
+        self.assertEqual(
+            compute_offer_staleness({"price_xch": "bad"}, Decimal("0.001")),
+            Decimal("0"),
+        )
 
     def test_staleness_is_always_non_negative(self):
         # Price below ideal
@@ -163,6 +181,7 @@ class TestComputeOfferStaleness(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # classify_drift
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestClassifyDrift(unittest.TestCase):
@@ -191,17 +210,20 @@ class TestClassifyDrift(unittest.TestCase):
         self.assertEqual(classify_drift(Decimal("0.10")), RequoteSeverity.EMERGENCY)
 
     def test_custom_thresholds(self):
-        result = classify_drift(Decimal("0.01"),
-                                inner_threshold=Decimal("0.001"),
-                                mid_threshold=Decimal("0.005"),
-                                full_threshold=Decimal("0.02"),
-                                emergency_threshold=Decimal("0.05"))
+        result = classify_drift(
+            Decimal("0.01"),
+            inner_threshold=Decimal("0.001"),
+            mid_threshold=Decimal("0.005"),
+            full_threshold=Decimal("0.02"),
+            emergency_threshold=Decimal("0.05"),
+        )
         self.assertEqual(result, RequoteSeverity.INNER_MID)
 
 
 # ---------------------------------------------------------------------------
 # tiers_for_severity
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestTiersForSeverity(unittest.TestCase):
@@ -212,7 +234,9 @@ class TestTiersForSeverity(unittest.TestCase):
         self.assertEqual(tiers_for_severity(RequoteSeverity.INNER), {"inner"})
 
     def test_inner_mid_returns_inner_and_mid(self):
-        self.assertEqual(tiers_for_severity(RequoteSeverity.INNER_MID), {"inner", "mid"})
+        self.assertEqual(
+            tiers_for_severity(RequoteSeverity.INNER_MID), {"inner", "mid"}
+        )
 
     def test_full_returns_all_four_tiers(self):
         result = tiers_for_severity(RequoteSeverity.FULL)
@@ -226,6 +250,7 @@ class TestTiersForSeverity(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # filter_offers_by_tiers
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestFilterOffersByTiers(unittest.TestCase):
@@ -266,6 +291,7 @@ class TestFilterOffersByTiers(unittest.TestCase):
 # TIER_PRIORITY constant
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_RS is not None, f"reaction_strategy unavailable: {_SKIP_RS}")
 class TestTierPriority(unittest.TestCase):
     def test_inner_is_highest_priority(self):
@@ -281,6 +307,7 @@ class TestTierPriority(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # DynamicAMMBuffer — sweep tracking + multiplier
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP_DAB is not None, f"dynamic_amm_buffer unavailable: {_SKIP_DAB}")
 class TestDynamicAMMBuffer(unittest.TestCase):

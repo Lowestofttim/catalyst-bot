@@ -33,24 +33,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ─── CONFIG ─────────────────────────────────────────────────────
 # Tiny test amounts — these offers are priced to NEVER get filled
-TEST_BUY_XCH_MOJOS = 10_000_000_000       # 0.01 XCH offered
-TEST_BUY_CAT_AMOUNT = 10                   # Request just 10 CAT units (absurdly cheap)
-TEST_SELL_CAT_AMOUNT = 10                  # Offer just 10 CAT units
-TEST_SELL_XCH_MOJOS = 100_000_000_000_000  # Request 100 XCH (absurdly expensive — won't fill)
+TEST_BUY_XCH_MOJOS = 10_000_000_000  # 0.01 XCH offered
+TEST_BUY_CAT_AMOUNT = 10  # Request just 10 CAT units (absurdly cheap)
+TEST_SELL_CAT_AMOUNT = 10  # Offer just 10 CAT units
+TEST_SELL_XCH_MOJOS = (
+    100_000_000_000_000  # Request 100 XCH (absurdly expensive — won't fill)
+)
 
 # Coin prep sizes — what we split off for test offers
-PREP_XCH_COIN_SIZE = 20_000_000_000        # 0.02 XCH — enough for the buy offer + headroom
-PREP_XCH_SPLIT_COUNT = 2                   # Split into 2 coins (0.01 XCH each)
-PREP_CAT_SPLIT_COUNT = 2                   # Split CAT coin into 2 pieces
+PREP_XCH_COIN_SIZE = 20_000_000_000  # 0.02 XCH — enough for the buy offer + headroom
+PREP_XCH_SPLIT_COUNT = 2  # Split into 2 coins (0.01 XCH each)
+PREP_CAT_SPLIT_COUNT = 2  # Split CAT coin into 2 pieces
 
 # Thresholds — skip prep if we already have small enough coins
-SMALL_XCH_THRESHOLD = 50_000_000_000       # 0.05 XCH — coins below this are "small enough"
-SMALL_CAT_THRESHOLD = 1000                 # CAT mojos below this are "small enough"
+SMALL_XCH_THRESHOLD = 50_000_000_000  # 0.05 XCH — coins below this are "small enough"
+SMALL_CAT_THRESHOLD = 1000  # CAT mojos below this are "small enough"
 
 DRY_RUN = "--dry-run" in sys.argv
-CANCEL_DELAY = 1.0   # seconds between cancel calls (sequential rule)
-POLL_INTERVAL = 5     # seconds between coin count polls
-POLL_TIMEOUT = 120    # max seconds to wait for split to confirm
+CANCEL_DELAY = 1.0  # seconds between cancel calls (sequential rule)
+POLL_INTERVAL = 5  # seconds between coin count polls
+POLL_TIMEOUT = 120  # max seconds to wait for split to confirm
 
 
 # ─── HELPERS ────────────────────────────────────────────────────
@@ -81,18 +83,27 @@ class TestResult:
         failed = sum(1 for s, _ in self.tests if s == "FAIL")
         skipped = sum(1 for s, _ in self.tests if s == "SKIP")
         total = len(self.tests)
-        self.log(f"\n{'='*60}")
-        self.log(f"  Results: {passed} passed, {failed} failed, {skipped} skipped / {total} total")
+        self.log(f"\n{'=' * 60}")
+        self.log(
+            f"  Results: {passed} passed, {failed} failed, {skipped} skipped / {total} total"
+        )
         if failed == 0:
             self.log("  🎉 ALL TESTS PASSED!")
         else:
             self.log(f"  ⚠️  {failed} TEST(S) FAILED — see above")
-        self.log(f"{'='*60}")
+        self.log(f"{'=' * 60}")
         return failed == 0
 
 
-def poll_for_coin_change(ws, wallet_id, initial_count, direction="increase",
-                         timeout=POLL_TIMEOUT, interval=POLL_INTERVAL, T=None):
+def poll_for_coin_change(
+    ws,
+    wallet_id,
+    initial_count,
+    direction="increase",
+    timeout=POLL_TIMEOUT,
+    interval=POLL_INTERVAL,
+    T=None,
+):
     """Poll until coin count changes in the expected direction.
 
     direction: "increase" = wait for more coins, "decrease" = wait for fewer
@@ -110,7 +121,9 @@ def poll_for_coin_change(ws, wallet_id, initial_count, direction="increase",
                 return True, current
         elapsed = time.time() - start
         if T:
-            T.log(f"    Polling... {elapsed:.0f}s elapsed, coins={current if result else '?'} (waiting for {direction})")
+            T.log(
+                f"    Polling... {elapsed:.0f}s elapsed, coins={current if result else '?'} (waiting for {direction})"
+            )
         time.sleep(interval)
     return False, initial_count
 
@@ -127,14 +140,15 @@ def get_coin_count_and_list(ws, wallet_id):
 # ─── MAIN ───────────────────────────────────────────────────────
 def main():
     T = TestResult()
-    T.log(f"{'='*60}")
+    T.log(f"{'=' * 60}")
     T.log(f"  Offer Creation Test {'(DRY RUN)' if DRY_RUN else '(LIVE)'}")
-    T.log(f"{'='*60}")
+    T.log(f"{'=' * 60}")
 
     # ── Load wallet module ──────────────────────────────────────
     T.log("\n📦 Loading wallet_sage module...")
     try:
         import wallet_sage as ws
+
         T.pass_test("Import wallet_sage")
     except Exception as e:
         T.fail_test("Import wallet_sage", str(e))
@@ -162,7 +176,10 @@ def main():
             T.pass_test("XCH balance query", f"{spendable_xch} XCH spendable")
 
             if spendable < TEST_BUY_XCH_MOJOS * 2:
-                T.fail_test("Sufficient XCH balance", f"Need at least 0.02 XCH, have {spendable_xch}")
+                T.fail_test(
+                    "Sufficient XCH balance",
+                    f"Need at least 0.02 XCH, have {spendable_xch}",
+                )
                 return T.summary()
         else:
             T.fail_test("XCH balance query", f"Got: {xch_bal_raw}")
@@ -177,7 +194,10 @@ def main():
             T.pass_test("CAT balance query", f"{cat_spendable} spendable mojos")
 
             if cat_spendable < TEST_SELL_CAT_AMOUNT * 2:
-                T.fail_test("Sufficient CAT balance", f"Need at least {TEST_SELL_CAT_AMOUNT * 2}, have {cat_spendable}")
+                T.fail_test(
+                    "Sufficient CAT balance",
+                    f"Need at least {TEST_SELL_CAT_AMOUNT * 2}, have {cat_spendable}",
+                )
                 return T.summary()
         else:
             T.fail_test("CAT balance query", f"Got: {cat_bal_raw}")
@@ -185,6 +205,7 @@ def main():
     except Exception as e:
         T.fail_test("Balance queries", str(e))
         import traceback
+
         traceback.print_exc()
         return T.summary()
 
@@ -200,22 +221,30 @@ def main():
         T.log(f"  Found {xch_count} XCH coins")
 
         # Check if we already have a small XCH coin
-        small_xch = [r for r in xch_coins
-                     if isinstance(r, dict) and r.get("coin", {}).get("amount", 0) <= SMALL_XCH_THRESHOLD
-                     and r.get("coin", {}).get("amount", 0) >= TEST_BUY_XCH_MOJOS]
+        small_xch = [
+            r
+            for r in xch_coins
+            if isinstance(r, dict)
+            and r.get("coin", {}).get("amount", 0) <= SMALL_XCH_THRESHOLD
+            and r.get("coin", {}).get("amount", 0) >= TEST_BUY_XCH_MOJOS
+        ]
 
         if small_xch:
             small_amt = small_xch[0]["coin"]["amount"]
             small_xch_mojos = Decimal(str(small_amt)) / Decimal("1000000000000")
-            T.log(f"  Already have {len(small_xch)} small XCH coin(s) — smallest usable: {small_xch_mojos} XCH")
+            T.log(
+                f"  Already have {len(small_xch)} small XCH coin(s) — smallest usable: {small_xch_mojos} XCH"
+            )
             T.pass_test("XCH coin prep", f"small coin exists ({small_xch_mojos} XCH)")
         else:
             T.log("  No small XCH coins found — need to split")
 
             # Find the largest XCH coin to split
-            xch_coins_sorted = sorted(xch_coins,
-                                      key=lambda r: r.get("coin", {}).get("amount", 0),
-                                      reverse=True)
+            xch_coins_sorted = sorted(
+                xch_coins,
+                key=lambda r: r.get("coin", {}).get("amount", 0),
+                reverse=True,
+            )
             if not xch_coins_sorted:
                 T.fail_test("XCH coin prep", "No XCH coins available!")
                 return T.summary()
@@ -224,7 +253,9 @@ def main():
             source_id = source_coin.get("coin_id", "")
             source_amt = source_coin.get("coin", {}).get("amount", 0)
             source_xch = Decimal(str(source_amt)) / Decimal("1000000000000")
-            T.log(f"  Splitting coin {source_id[:16]}... ({source_xch} XCH) into {PREP_XCH_SPLIT_COUNT} pieces")
+            T.log(
+                f"  Splitting coin {source_id[:16]}... ({source_xch} XCH) into {PREP_XCH_SPLIT_COUNT} pieces"
+            )
 
             try:
                 split_result = ws.split_coins_rpc(
@@ -233,7 +264,7 @@ def main():
                     num_coins=PREP_XCH_SPLIT_COUNT,
                     amount_per_coin=0,  # Sage splits evenly
                     fee_mojos=0,
-                    is_cat=False
+                    is_cat=False,
                 )
                 if split_result:
                     T.log("  Split submitted, waiting for confirmation...")
@@ -243,15 +274,23 @@ def main():
                         ws, XCH_WALLET_ID, xch_count, "increase", T=T
                     )
                     if success:
-                        T.pass_test("XCH coin split", f"{xch_count} → {new_count} coins")
+                        T.pass_test(
+                            "XCH coin split", f"{xch_count} → {new_count} coins"
+                        )
                     else:
-                        T.fail_test("XCH coin split", f"Timed out waiting — still {xch_count} coins")
+                        T.fail_test(
+                            "XCH coin split",
+                            f"Timed out waiting — still {xch_count} coins",
+                        )
                         T.log("  Continuing anyway — the split may still be pending...")
                 else:
-                    T.fail_test("XCH coin split", f"split_coins_rpc returned: {split_result}")
+                    T.fail_test(
+                        "XCH coin split", f"split_coins_rpc returned: {split_result}"
+                    )
             except Exception as e:
                 T.fail_test("XCH coin split", str(e))
                 import traceback
+
                 traceback.print_exc()
 
         # ── 2b: CAT coin prep ──────────────────────────────────
@@ -259,20 +298,28 @@ def main():
         cat_count, cat_coins = get_coin_count_and_list(ws, CAT_WALLET_ID)
         T.log(f"  Found {cat_count} CAT coins")
 
-        small_cat = [r for r in cat_coins
-                     if isinstance(r, dict) and r.get("coin", {}).get("amount", 0) <= SMALL_CAT_THRESHOLD
-                     and r.get("coin", {}).get("amount", 0) >= TEST_SELL_CAT_AMOUNT]
+        small_cat = [
+            r
+            for r in cat_coins
+            if isinstance(r, dict)
+            and r.get("coin", {}).get("amount", 0) <= SMALL_CAT_THRESHOLD
+            and r.get("coin", {}).get("amount", 0) >= TEST_SELL_CAT_AMOUNT
+        ]
 
         if small_cat:
             small_amt = small_cat[0]["coin"]["amount"]
-            T.log(f"  Already have {len(small_cat)} small CAT coin(s) — smallest usable: {small_amt} mojos")
+            T.log(
+                f"  Already have {len(small_cat)} small CAT coin(s) — smallest usable: {small_amt} mojos"
+            )
             T.pass_test("CAT coin prep", f"small coin exists ({small_amt} mojos)")
         else:
             T.log("  No small CAT coins found — need to split")
 
-            cat_coins_sorted = sorted(cat_coins,
-                                      key=lambda r: r.get("coin", {}).get("amount", 0),
-                                      reverse=True)
+            cat_coins_sorted = sorted(
+                cat_coins,
+                key=lambda r: r.get("coin", {}).get("amount", 0),
+                reverse=True,
+            )
             if not cat_coins_sorted:
                 T.fail_test("CAT coin prep", "No CAT coins available!")
                 return T.summary()
@@ -280,7 +327,9 @@ def main():
             source_coin = cat_coins_sorted[0]
             source_id = source_coin.get("coin_id", "")
             source_amt = source_coin.get("coin", {}).get("amount", 0)
-            T.log(f"  Splitting CAT coin {source_id[:16]}... ({source_amt} mojos) into {PREP_CAT_SPLIT_COUNT} pieces")
+            T.log(
+                f"  Splitting CAT coin {source_id[:16]}... ({source_amt} mojos) into {PREP_CAT_SPLIT_COUNT} pieces"
+            )
 
             try:
                 split_result = ws.split_coins_rpc(
@@ -289,7 +338,7 @@ def main():
                     num_coins=PREP_CAT_SPLIT_COUNT,
                     amount_per_coin=0,  # Sage splits evenly
                     fee_mojos=0,
-                    is_cat=True
+                    is_cat=True,
                 )
                 if split_result:
                     T.log("  Split submitted, waiting for confirmation...")
@@ -298,15 +347,23 @@ def main():
                         ws, CAT_WALLET_ID, cat_count, "increase", T=T
                     )
                     if success:
-                        T.pass_test("CAT coin split", f"{cat_count} → {new_count} coins")
+                        T.pass_test(
+                            "CAT coin split", f"{cat_count} → {new_count} coins"
+                        )
                     else:
-                        T.fail_test("CAT coin split", f"Timed out waiting — still {cat_count} coins")
+                        T.fail_test(
+                            "CAT coin split",
+                            f"Timed out waiting — still {cat_count} coins",
+                        )
                         T.log("  Continuing anyway — the split may still be pending...")
                 else:
-                    T.fail_test("CAT coin split", f"split_coins_rpc returned: {split_result}")
+                    T.fail_test(
+                        "CAT coin split", f"split_coins_rpc returned: {split_result}"
+                    )
             except Exception as e:
                 T.fail_test("CAT coin split", str(e))
                 import traceback
+
                 traceback.print_exc()
 
     # ── Test 3: Fetch existing offers and inspect status ────────
@@ -321,7 +378,7 @@ def main():
 
         if len(offers) > 0:
             # Show the raw status of each offer
-            T.log(f"\n  {'─'*50}")
+            T.log(f"\n  {'─' * 50}")
             T.log("  Raw status values from Sage:")
             status_counts = {}
             for i, o in enumerate(offers[:10]):
@@ -335,12 +392,14 @@ def main():
                 status_counts[status_key] = status_counts.get(status_key, 0) + 1
 
                 if i < 5:  # Show first 5 in detail
-                    T.log(f"    Offer {i}: status={repr(raw_status)}, "
-                          f"id={trade_id}..., "
-                          f"max_time={max_time}, expires_at={expires}")
+                    T.log(
+                        f"    Offer {i}: status={repr(raw_status)}, "
+                        f"id={trade_id}..., "
+                        f"max_time={max_time}, expires_at={expires}"
+                    )
 
             T.log(f"\n  Status distribution: {status_counts}")
-            T.log(f"  {'─'*50}")
+            T.log(f"  {'─' * 50}")
 
             # Check if _is_open_status agrees
             open_count = 0
@@ -351,7 +410,9 @@ def main():
                 else:
                     closed_count += 1
             T.log(f"  _is_open_status says: {open_count} open, {closed_count} closed")
-            T.pass_test("Fetch and inspect offers", f"{len(offers)} offers, {open_count} open")
+            T.pass_test(
+                "Fetch and inspect offers", f"{len(offers)} offers, {open_count} open"
+            )
         else:
             T.log("  No existing offers to inspect (that's OK)")
             T.pass_test("Fetch offers", "0 offers returned (clean slate)")
@@ -359,6 +420,7 @@ def main():
     except Exception as e:
         T.fail_test("Fetch offers", str(e))
         import traceback
+
         traceback.print_exc()
 
     # ── Test 4: Create a BUY offer ──────────────────────────────
@@ -372,8 +434,8 @@ def main():
         try:
             # Buy offer: offer XCH (negative), request CAT (positive)
             buy_dict = {
-                XCH_WALLET_ID: -TEST_BUY_XCH_MOJOS,    # Offering 0.01 XCH
-                CAT_WALLET_ID: TEST_BUY_CAT_AMOUNT,     # Requesting 10 MZ
+                XCH_WALLET_ID: -TEST_BUY_XCH_MOJOS,  # Offering 0.01 XCH
+                CAT_WALLET_ID: TEST_BUY_CAT_AMOUNT,  # Requesting 10 MZ
             }
             T.log(f"  Offer dict: {buy_dict}")
             T.log("  max_time=0 (should NOT send expires_at_second)")
@@ -392,17 +454,27 @@ def main():
 
                     T.log(f"  Response keys: {list(result.keys())}")
                     T.log(f"  success: {success}")
-                    T.log(f"  trade_id: {buy_trade_id[:20]}..." if buy_trade_id else "  trade_id: MISSING!")
+                    T.log(
+                        f"  trade_id: {buy_trade_id[:20]}..."
+                        if buy_trade_id
+                        else "  trade_id: MISSING!"
+                    )
 
                     if buy_trade_id and (success or offer_str):
-                        T.pass_test("Create BUY offer", f"trade_id={buy_trade_id[:16]}...")
+                        T.pass_test(
+                            "Create BUY offer", f"trade_id={buy_trade_id[:16]}..."
+                        )
                     else:
-                        T.fail_test("Create BUY offer", f"No trade_id or success flag: {str(result)[:200]}")
+                        T.fail_test(
+                            "Create BUY offer",
+                            f"No trade_id or success flag: {str(result)[:200]}",
+                        )
             else:
                 T.fail_test("Create BUY offer", f"Result: {result}")
         except Exception as e:
             T.fail_test("Create BUY offer", str(e))
             import traceback
+
             traceback.print_exc()
 
     # Small delay between offers
@@ -421,8 +493,8 @@ def main():
         try:
             # Sell offer: offer CAT (negative), request XCH (positive)
             sell_dict = {
-                CAT_WALLET_ID: -TEST_SELL_CAT_AMOUNT,    # Offering 10 MZ
-                XCH_WALLET_ID: TEST_SELL_XCH_MOJOS,      # Requesting 100 XCH (absurd!)
+                CAT_WALLET_ID: -TEST_SELL_CAT_AMOUNT,  # Offering 10 MZ
+                XCH_WALLET_ID: TEST_SELL_XCH_MOJOS,  # Requesting 100 XCH (absurd!)
             }
             T.log(f"  Offer dict: {sell_dict}")
             T.log("  max_time=0 (should NOT send expires_at_second)")
@@ -440,17 +512,27 @@ def main():
 
                     T.log(f"  Response keys: {list(result.keys())}")
                     T.log(f"  success: {success}")
-                    T.log(f"  trade_id: {sell_trade_id[:20]}..." if sell_trade_id else "  trade_id: MISSING!")
+                    T.log(
+                        f"  trade_id: {sell_trade_id[:20]}..."
+                        if sell_trade_id
+                        else "  trade_id: MISSING!"
+                    )
 
                     if sell_trade_id and (success or offer_str):
-                        T.pass_test("Create SELL offer", f"trade_id={sell_trade_id[:16]}...")
+                        T.pass_test(
+                            "Create SELL offer", f"trade_id={sell_trade_id[:16]}..."
+                        )
                     else:
-                        T.fail_test("Create SELL offer", f"No trade_id or success flag: {str(result)[:200]}")
+                        T.fail_test(
+                            "Create SELL offer",
+                            f"No trade_id or success flag: {str(result)[:200]}",
+                        )
             else:
                 T.fail_test("Create SELL offer", f"Result: {result}")
         except Exception as e:
             T.fail_test("Create SELL offer", str(e))
             import traceback
+
             traceback.print_exc()
 
     # ── Test 6: Verify offers appear as OPEN ────────────────────
@@ -494,25 +576,35 @@ def main():
                         T.log(f"    expires_at_second: {expires}")
 
                         if is_open:
-                            T.pass_test("BUY offer is OPEN", f"status={repr(raw_status)}")
+                            T.pass_test(
+                                "BUY offer is OPEN", f"status={repr(raw_status)}"
+                            )
                         else:
-                            T.fail_test("BUY offer is OPEN",
-                                        f"status={repr(raw_status)} — "
-                                        f"_is_open_status returned False! "
-                                        f"This is the bug we're testing for.")
+                            T.fail_test(
+                                "BUY offer is OPEN",
+                                f"status={repr(raw_status)} — "
+                                f"_is_open_status returned False! "
+                                f"This is the bug we're testing for.",
+                            )
                     else:
-                        T.fail_test("BUY offer found in wallet",
-                                    f"trade_id {buy_trade_id[:16]}... not in {len(offers)} offers")
+                        T.fail_test(
+                            "BUY offer found in wallet",
+                            f"trade_id {buy_trade_id[:16]}... not in {len(offers)} offers",
+                        )
                         # Show what statuses exist
                         for i, o in enumerate(offers[:5]):
-                            T.log(f"    offer {i}: status={repr(o.get('status'))}, "
-                                  f"id={(o.get('trade_id') or o.get('offer_id', '?'))[:16]}")
+                            T.log(
+                                f"    offer {i}: status={repr(o.get('status'))}, "
+                                f"id={(o.get('trade_id') or o.get('offer_id', '?'))[:16]}"
+                            )
 
                 # Check sell offer
                 if sell_trade_id:
                     if found_sell:
                         raw_status = found_sell.get("status")
-                        is_open = ws._is_open_status(raw_status, offer_record=found_sell)
+                        is_open = ws._is_open_status(
+                            raw_status, offer_record=found_sell
+                        )
                         valid_times = found_sell.get("valid_times", {})
                         expires = found_sell.get("expires_at_second", "not set")
 
@@ -523,18 +615,25 @@ def main():
                         T.log(f"    expires_at_second: {expires}")
 
                         if is_open:
-                            T.pass_test("SELL offer is OPEN", f"status={repr(raw_status)}")
+                            T.pass_test(
+                                "SELL offer is OPEN", f"status={repr(raw_status)}"
+                            )
                         else:
-                            T.fail_test("SELL offer is OPEN",
-                                        f"status={repr(raw_status)} — "
-                                        f"_is_open_status returned False!")
+                            T.fail_test(
+                                "SELL offer is OPEN",
+                                f"status={repr(raw_status)} — "
+                                f"_is_open_status returned False!",
+                            )
                     else:
-                        T.fail_test("SELL offer found in wallet",
-                                    f"trade_id {sell_trade_id[:16]}... not in {len(offers)} offers")
+                        T.fail_test(
+                            "SELL offer found in wallet",
+                            f"trade_id {sell_trade_id[:16]}... not in {len(offers)} offers",
+                        )
 
         except Exception as e:
             T.fail_test("Verify offers OPEN", str(e))
             import traceback
+
             traceback.print_exc()
 
     # ── Test 7: Classification test ─────────────────────────────
@@ -563,8 +662,10 @@ def main():
                     if buy_in_open:
                         T.pass_test("BUY in open_buys list")
                     else:
-                        T.fail_test("BUY in open_buys list",
-                                    f"trade_id {buy_trade_id[:16]}... not found in {len(open_buys)} open buys")
+                        T.fail_test(
+                            "BUY in open_buys list",
+                            f"trade_id {buy_trade_id[:16]}... not found in {len(open_buys)} open buys",
+                        )
 
                 # Our test sell should be in open_sells
                 if sell_trade_id:
@@ -575,13 +676,16 @@ def main():
                     if sell_in_open:
                         T.pass_test("SELL in open_sells list")
                     else:
-                        T.fail_test("SELL in open_sells list",
-                                    f"trade_id {sell_trade_id[:16]}... not found in {len(open_sells)} open sells")
+                        T.fail_test(
+                            "SELL in open_sells list",
+                            f"trade_id {sell_trade_id[:16]}... not found in {len(open_sells)} open sells",
+                        )
             else:
                 T.fail_test("Classification test", "No offers to classify")
         except Exception as e:
             T.fail_test("Classification test", str(e))
             import traceback
+
             traceback.print_exc()
 
     # ── Done — leave offers open for manual inspection ─────────

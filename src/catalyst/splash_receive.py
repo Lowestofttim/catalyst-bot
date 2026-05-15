@@ -100,4 +100,3 @@ def classify_offer_for_asset(view_result: Any, asset_id: str) -> Dict[str, Any]:
         "side": side,
         "summary": summary,
     }
-

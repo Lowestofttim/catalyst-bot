@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     from database import get_open_offers, init_database
+
     _SKIP_DB = None
 except ModuleNotFoundError as exc:
     _db = None
@@ -29,6 +30,7 @@ except ModuleNotFoundError as exc:
 try:
     import sniper as _sniper_mod
     from sniper import Sniper
+
     _SKIP_SN = None
 except ModuleNotFoundError as exc:
     Sniper = None
@@ -39,10 +41,11 @@ except ModuleNotFoundError as exc:
 # Fake config factory
 # ---------------------------------------------------------------------------
 
+
 def _fake_cfg(**overrides):
     defaults = dict(
         LIQUIDITY_MODE="two_sided",
-        SNIPER_COOLDOWN_SECS=0,        # no cooldown in tests
+        SNIPER_COOLDOWN_SECS=0,  # no cooldown in tests
         ENABLE_BUY=True,
         ENABLE_SELL=True,
         DRY_RUN=False,
@@ -54,7 +57,7 @@ def _fake_cfg(**overrides):
         CAT_ASSET_ID="aabbcc",
         SNIPER_ENABLED=True,
         SNIPER_SIZE_XCH=Decimal("0.01"),
-        SNIPER_SCALE_FACTOR=Decimal("0"),   # fixed size
+        SNIPER_SCALE_FACTOR=Decimal("0"),  # fixed size
         SNIPER_MIN_SIZE_XCH=Decimal("0.001"),
         SNIPER_MAX_SIZE_XCH=Decimal("1.0"),
         MAX_TRADE_XCH=Decimal("10.0"),
@@ -72,6 +75,7 @@ _trade_counter = [0]
 def _fake_offer_manager():
     """Return a minimal mock offer_manager that simulates a successful create."""
     om = MagicMock()
+
     # Each call gets a unique trade_id to avoid add_offer duplicate rejection
     def _create(*a, **kw):
         _trade_counter[0] += 1
@@ -82,6 +86,7 @@ def _fake_offer_manager():
             "locked_coin_id": None,
             "trade_record": {},
         }
+
     om.create_offer_with_retry.side_effect = _create
     om._cycle_used_coin_ids = set()
     om._offer_details_cache = {}
@@ -98,6 +103,7 @@ def _fake_risk_manager(full_halt=False, blocked_side=None):
 # ---------------------------------------------------------------------------
 # Temp-DB base class
 # ---------------------------------------------------------------------------
+
 
 class _TempDB(unittest.TestCase):
     def setUp(self):
@@ -140,12 +146,12 @@ class _TempDB(unittest.TestCase):
 # 1. Full arb cycle — try_snipe + DB recording
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_SN is not None,
-    f"dependencies unavailable: db={_SKIP_DB} sn={_SKIP_SN}"
+    f"dependencies unavailable: db={_SKIP_DB} sn={_SKIP_SN}",
 )
 class TestSniperArbCycle(_TempDB):
-
     def _make_sniper(self, **cfg_overrides):
         fake_cfg = _fake_cfg(**cfg_overrides)
         om = _fake_offer_manager()
@@ -214,6 +220,7 @@ class TestSniperArbCycle(_TempDB):
         sniper, om = self._make_sniper(SNIPER_COOLDOWN_SECS=3600)
         # Force last_snipe_time to now — immediate cooldown
         import time
+
         sniper._last_snipe_time = time.time()
         results = sniper.try_snipe(
             bid_price=Decimal("0.001"),
@@ -239,10 +246,17 @@ class TestSniperArbCycle(_TempDB):
         om = _fake_offer_manager()
         # unique trade id per call
         call_count = [0]
+
         def _side_result(*a, **kw):
             call_count[0] += 1
-            return {"success": True, "trade_id": f"snipe-{call_count[0]}",
-                    "offer": "", "locked_coin_id": None, "trade_record": {}}
+            return {
+                "success": True,
+                "trade_id": f"snipe-{call_count[0]}",
+                "offer": "",
+                "locked_coin_id": None,
+                "trade_record": {},
+            }
+
         om.create_offer_with_retry.side_effect = _side_result
         sniper = Sniper(offer_manager=om, risk_manager=rm)
         with patch.object(_sniper_mod, "cfg", fake_cfg):
@@ -257,7 +271,7 @@ class TestSniperArbCycle(_TempDB):
 
     def test_offer_manager_called_with_correct_side_amounts(self):
         sniper, om = self._make_sniper(
-            ENABLE_SELL=False,   # buy only to simplify assertion
+            ENABLE_SELL=False,  # buy only to simplify assertion
             SNIPER_SIZE_XCH=Decimal("0.1"),
         )
         sniper.try_snipe(
@@ -269,7 +283,7 @@ class TestSniperArbCycle(_TempDB):
         # First positional arg should be the offer_dict {wallet_id: mojos}
         offer_dict = call_kwargs[0][0]
         # For a buy: XCH is negative (spent), CAT is positive (received)
-        self.assertIn("1", offer_dict)    # WALLET_ID_XCH = 1
+        self.assertIn("1", offer_dict)  # WALLET_ID_XCH = 1
         xch_mojos = offer_dict["1"]
         self.assertLess(xch_mojos, 0)
 
@@ -278,12 +292,12 @@ class TestSniperArbCycle(_TempDB):
 # 2. prune_active_snipes cleanup
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_SN is not None,
-    f"dependencies unavailable: db={_SKIP_DB} sn={_SKIP_SN}"
+    f"dependencies unavailable: db={_SKIP_DB} sn={_SKIP_SN}",
 )
 class TestSniperPruneCycle(_TempDB):
-
     def _make_sniper_with_active(self, trade_ids):
         fake_cfg = _fake_cfg()
         sniper = Sniper(offer_manager=MagicMock(), risk_manager=_fake_risk_manager())
@@ -322,8 +336,11 @@ class TestSniperPruneCycle(_TempDB):
         fake_cfg = _fake_cfg()
         om = _fake_offer_manager()
         om.create_offer_with_retry.return_value = {
-            "success": True, "trade_id": "new-snipe",
-            "offer": "", "locked_coin_id": None, "trade_record": {},
+            "success": True,
+            "trade_id": "new-snipe",
+            "offer": "",
+            "locked_coin_id": None,
+            "trade_record": {},
         }
         sniper = Sniper(offer_manager=om, risk_manager=_fake_risk_manager())
         # Fill both slots
@@ -346,12 +363,12 @@ class TestSniperPruneCycle(_TempDB):
 # 3. Stats tracking across the cycle
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_SN is not None,
-    f"dependencies unavailable: db={_SKIP_DB} sn={_SKIP_SN}"
+    f"dependencies unavailable: db={_SKIP_DB} sn={_SKIP_SN}",
 )
 class TestSniperStats(_TempDB):
-
     def test_stats_increment_on_successful_snipe(self):
         fake_cfg = _fake_cfg()
         om = _fake_offer_manager()

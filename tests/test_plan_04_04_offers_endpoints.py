@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -27,6 +28,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
+
 
 class _FlaskBase(unittest.TestCase):
     _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
@@ -65,9 +67,9 @@ def _make_bot(offers=([], [], [])):
 # 1. GET /api/offers
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestOffersGet(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self.client.get("/api/offers", environ_base=self._LOOPBACK)
@@ -99,17 +101,19 @@ class TestOffersGet(_FlaskBase):
 # 2. GET /api/offers/cancel_all/status
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCancelAllStatus(_FlaskBase):
-
     def test_returns_200_always(self):
-        resp = self.client.get("/api/offers/cancel_all/status",
-                               environ_base=self._LOOPBACK)
+        resp = self.client.get(
+            "/api/offers/cancel_all/status", environ_base=self._LOOPBACK
+        )
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_success_key(self):
-        resp = self.client.get("/api/offers/cancel_all/status",
-                               environ_base=self._LOOPBACK)
+        resp = self.client.get(
+            "/api/offers/cancel_all/status", environ_base=self._LOOPBACK
+        )
         body = resp.get_json()
         self.assertTrue(body.get("success"))
 
@@ -117,6 +121,7 @@ class TestCancelAllStatus(_FlaskBase):
 # ---------------------------------------------------------------------------
 # 3. GET /api/offers/open_count
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestOpenOfferCount(_FlaskBase):
@@ -127,29 +132,28 @@ class TestOpenOfferCount(_FlaskBase):
     def setUp(self):
         super().setUp()
         import database
+
         self._orig_get_open_offers = database.get_open_offers
         database.get_open_offers = lambda *a, **kw: []
 
     def tearDown(self):
         import database
+
         database.get_open_offers = self._orig_get_open_offers
         super().tearDown()
 
     def test_returns_200(self):
-        resp = self.client.get("/api/offers/open_count",
-                               environ_base=self._LOOPBACK)
+        resp = self.client.get("/api/offers/open_count", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_open_count(self):
-        resp = self.client.get("/api/offers/open_count",
-                               environ_base=self._LOOPBACK)
+        resp = self.client.get("/api/offers/open_count", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertIn("open_count", body)
         self.assertIsInstance(body["open_count"], int)
 
     def test_success_key_true_on_success(self):
-        resp = self.client.get("/api/offers/open_count",
-                               environ_base=self._LOOPBACK)
+        resp = self.client.get("/api/offers/open_count", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertTrue(body.get("success"))
 
@@ -158,12 +162,11 @@ class TestOpenOfferCount(_FlaskBase):
 # 4. POST /api/offers/cancel
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCancelOffer(_FlaskBase):
-
     def test_requires_token(self):
-        resp = self._post("/api/offers/cancel",
-                          {"trade_id": "abc123"}, auth=False)
+        resp = self._post("/api/offers/cancel", {"trade_id": "abc123"}, auth=False)
         self.assertEqual(resp.status_code, 401)
 
     def test_bot_none_returns_500(self):
@@ -222,19 +225,21 @@ class TestCancelOffer(_FlaskBase):
 # 5. POST /api/offers/cancel_all
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestCancelAllPost(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/offers/cancel_all", auth=False)
         self.assertEqual(resp.status_code, 401)
 
     def test_bot_none_uses_direct_wallet_path(self):
         # bot=None → direct wallet RPC path; no open offers → 200 success
-        with patch.object(api_server, "bot", None), \
-             patch("wallet.get_all_offers", return_value=[]), \
-             patch("wallet.cancel_offers_batch", return_value={}), \
-             patch("wallet.is_offer_time_expired", return_value=False):
+        with (
+            patch.object(api_server, "bot", None),
+            patch("wallet.get_all_offers", return_value=[]),
+            patch("wallet.cancel_offers_batch", return_value={}),
+            patch("wallet.is_offer_time_expired", return_value=False),
+        ):
             resp = self._post("/api/offers/cancel_all")
         self.assertEqual(resp.status_code, 200)
 
@@ -248,10 +253,12 @@ class TestCancelAllPost(_FlaskBase):
     def test_bot_stopped_cancel_all_returns_success(self):
         stopped = _make_bot()
         stopped.is_running.return_value = False
-        with patch.object(api_server, "bot", stopped), \
-             patch("wallet.get_all_offers", return_value=[]), \
-             patch("wallet.cancel_offers_batch", return_value={}), \
-             patch("wallet.is_offer_time_expired", return_value=False):
+        with (
+            patch.object(api_server, "bot", stopped),
+            patch("wallet.get_all_offers", return_value=[]),
+            patch("wallet.cancel_offers_batch", return_value={}),
+            patch("wallet.is_offer_time_expired", return_value=False),
+        ):
             resp = self._post("/api/offers/cancel_all")
         self.assertIn(resp.status_code, (200, 202))
 

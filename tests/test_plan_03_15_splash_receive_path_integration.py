@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     _db = None
@@ -33,7 +34,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 
 
 _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
-_VALID_OFFER = "offer1" + "a" * 100   # minimal valid offer (starts with offer1)
+_VALID_OFFER = "offer1" + "a" * 100  # minimal valid offer (starts with offer1)
 
 
 class _TempDB(unittest.TestCase):
@@ -79,10 +80,13 @@ class _TempDB(unittest.TestCase):
         api_server._rate_limit_log.clear()
 
     def _post_offer(self, offer=_VALID_OFFER, enabled=True):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", enabled,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(
+                api_server.cfg, "SPLASH_RECEIVE_ENABLED", enabled, create=True
+            ),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+            patch.object(api_server, "bot", None),
+        ):
             return self.client.post(
                 "/api/splash/incoming",
                 json={"offer": offer},
@@ -93,6 +97,7 @@ class _TempDB(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # DB write and retrieval
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestSplashReceiveDB(_TempDB):
@@ -135,6 +140,7 @@ class TestSplashReceiveDB(_TempDB):
 # Deduplication
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestSplashReceiveDeduplicate(_TempDB):
     """Same offer submitted twice must be deduplicated at the DB level."""
@@ -166,6 +172,7 @@ class TestSplashReceiveDeduplicate(_TempDB):
 # Stats
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestSplashReceiveStats(_TempDB):
     """Stats function must reflect what's in the DB."""
@@ -188,6 +195,7 @@ class TestSplashReceiveStats(_TempDB):
 # Bot-present path: SSE emit
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestSplashReceiveBotPresent(_TempDB):
     """When bot is present, receive stats are emitted to SSE subscribers."""
@@ -195,13 +203,17 @@ class TestSplashReceiveBotPresent(_TempDB):
     def test_bot_receive_stats_called_on_new_offer(self):
         """When a new offer arrives and bot is present, get_splash_receive_stats is called."""
         fake_bot = MagicMock()
-        fake_bot.get_splash_receive_stats.return_value = {"enabled": True, "received": 1}
+        fake_bot.get_splash_receive_stats.return_value = {
+            "enabled": True,
+            "received": 1,
+        }
 
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False), \
-             patch("api_server.events") as mock_events, \
-             patch.object(api_server, "bot", fake_bot):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+            patch("api_server.events") as mock_events,
+            patch.object(api_server, "bot", fake_bot),
+        ):
             self.client.post(
                 "/api/splash/incoming",
                 json={"offer": _VALID_OFFER},
@@ -219,16 +231,17 @@ class TestSplashReceiveBotPresent(_TempDB):
 
     def test_duplicate_offer_does_not_emit_sse(self):
         """Duplicate offer (new=False) must NOT emit SSE."""
-        self._post_offer()   # first — new=True, would emit if bot present
+        self._post_offer()  # first — new=True, would emit if bot present
 
         fake_bot = MagicMock()
         fake_bot.get_splash_receive_stats.return_value = {}
 
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False), \
-             patch("api_server.events") as mock_events, \
-             patch.object(api_server, "bot", fake_bot):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+            patch("api_server.events") as mock_events,
+            patch.object(api_server, "bot", fake_bot),
+        ):
             self.client.post(
                 "/api/splash/incoming",
                 json={"offer": _VALID_OFFER},

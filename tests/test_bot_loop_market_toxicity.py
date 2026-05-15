@@ -35,7 +35,12 @@ class _FakeMarketIntel:
         }
 
     def get_orderbook_snapshot(self):
-        return {"buy_count": 5, "sell_count": 7, "buy_truncated": False, "sell_truncated": False}
+        return {
+            "buy_count": 5,
+            "sell_count": 7,
+            "buy_truncated": False,
+            "sell_truncated": False,
+        }
 
 
 class _FakeCoinManager:
@@ -44,10 +49,18 @@ class _FakeCoinManager:
         self._cat_inventory = {"trading": [{"amount": 100_000}]}
 
     def get_status(self):
-        return {"inventory": {"xch_locked_amount_raw": 200_000_000_000, "cat_locked_amount_raw": 50_000}}
+        return {
+            "inventory": {
+                "xch_locked_amount_raw": 200_000_000_000,
+                "cat_locked_amount_raw": 50_000,
+            }
+        }
 
     def get_inventory_summary(self):
-        return {"xch_locked_amount_raw": 200_000_000_000, "cat_locked_amount_raw": 50_000}
+        return {
+            "xch_locked_amount_raw": 200_000_000_000,
+            "cat_locked_amount_raw": 50_000,
+        }
 
 
 def _loop():
@@ -75,9 +88,16 @@ def test_update_market_toxicity_builds_context_and_updates_risk_manager(monkeypa
         price_data={"dexie_price": "0.0101", "tibet_price": "0.0099"},
         mid_price=Decimal("0.01"),
         arb_gap=Decimal("150"),
-        open_buys=[{"trade_id": "open-buy", "summary": {"offered": {"xch": 200_000_000_000}, "requested": {}}}],
+        open_buys=[
+            {
+                "trade_id": "open-buy",
+                "summary": {"offered": {"xch": 200_000_000_000}, "requested": {}},
+            }
+        ],
         open_sells=[],
-        buy_fills=[{"trade_id": "fill-buy", "side": "buy", "size_xch": Decimal("0.05")}],
+        buy_fills=[
+            {"trade_id": "fill-buy", "side": "buy", "size_xch": Decimal("0.05")}
+        ],
         sell_fills=[],
     )
 
@@ -94,9 +114,13 @@ def test_update_market_toxicity_builds_context_and_updates_risk_manager(monkeypa
 
 def test_update_market_toxicity_failure_keeps_loop_alive(monkeypatch):
     loop = _loop()
-    loop.market_toxicity_guard.update = lambda context: (_ for _ in ()).throw(RuntimeError("boom"))
+    loop.market_toxicity_guard.update = lambda context: (_ for _ in ()).throw(
+        RuntimeError("boom")
+    )
     events = []
-    monkeypatch.setattr(bot_loop, "log_event", lambda *args, **kwargs: events.append(args))
+    monkeypatch.setattr(
+        bot_loop, "log_event", lambda *args, **kwargs: events.append(args)
+    )
 
     loop._update_market_toxicity(
         price_data={},
@@ -115,7 +139,9 @@ def test_toxicity_inventory_state_logs_position_parse_failure(monkeypatch):
     loop = _loop()
     loop.risk_manager._net_position_cat = "not-a-decimal"
     events = []
-    monkeypatch.setattr(bot_loop, "log_event", lambda *args, **kwargs: events.append(args))
+    monkeypatch.setattr(
+        bot_loop, "log_event", lambda *args, **kwargs: events.append(args)
+    )
 
     state = loop._build_toxicity_inventory_state(Decimal("0.01"))
 

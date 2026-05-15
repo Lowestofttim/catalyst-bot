@@ -136,7 +136,9 @@ def _full_node_rpc(endpoint: str, payload: dict, timeout: int = 5) -> Optional[D
     try:
         import requests
 
-        base_url = str(getattr(cfg, "CHIA_FULL_NODE_RPC_URL", "https://localhost:8555") or "").rstrip("/")
+        base_url = str(
+            getattr(cfg, "CHIA_FULL_NODE_RPC_URL", "https://localhost:8555") or ""
+        ).rstrip("/")
         if not base_url:
             return None
         # Use the Chia CA cert when available so TLS server identity is verified.
@@ -180,7 +182,11 @@ def _coinset_fee_estimate(target_seconds: int, cost: int) -> Optional[Dict]:
 
     try:
         import requests as _requests
-        api_url = str(getattr(cfg, "COINSET_API_URL", "https://api.coinset.org") or "https://api.coinset.org").rstrip("/")
+
+        api_url = str(
+            getattr(cfg, "COINSET_API_URL", "https://api.coinset.org")
+            or "https://api.coinset.org"
+        ).rstrip("/")
         timeout = int(getattr(cfg, "COINSET_TIMEOUT", 5) or 5)
         # F77 (2026-04-17): retry on 429/5xx with exponential backoff.
         # Coinset occasionally rate-limits during congestion; a silent
@@ -191,13 +197,17 @@ def _coinset_fee_estimate(target_seconds: int, cost: int) -> Optional[Dict]:
         for _attempt in range(3):
             try:
                 from api_call_tracker import record as _t
+
                 _t("coinset", "/get_fee_estimate")
             except Exception:
                 pass
             r = _requests.post(
                 f"{api_url}/get_fee_estimate",
                 json={"cost": cost, "target_times": [target_seconds]},
-                headers={"content-type": "application/json", "User-Agent": "CATalyst/2.0"},
+                headers={
+                    "content-type": "application/json",
+                    "User-Agent": "CATalyst/2.0",
+                },
                 timeout=(3, timeout),
             )
             if r.status_code == 200:
@@ -214,7 +224,11 @@ def _coinset_fee_estimate(target_seconds: int, cost: int) -> Optional[Dict]:
             return None
 
         estimates = data.get("estimates") or []
-        estimated = int(Decimal(str(estimates[0] if estimates else 0)).to_integral_value(rounding=ROUND_UP))
+        estimated = int(
+            Decimal(str(estimates[0] if estimates else 0)).to_integral_value(
+                rounding=ROUND_UP
+            )
+        )
         snapshot = {
             "available": True,
             "source": "coinset",
@@ -223,7 +237,7 @@ def _coinset_fee_estimate(target_seconds: int, cost: int) -> Optional[Dict]:
             "target_seconds": target_seconds,
             "cost": cost,
             "fee_mojos": max(0, estimated),
-            "fee_xch": format(mojos_to_xch(max(0, estimated)), 'f'),
+            "fee_xch": format(mojos_to_xch(max(0, estimated)), "f"),
             "full_node_synced": bool(data.get("full_node_synced", False)),
             "mempool_size": int(data.get("mempool_size", 0) or 0),
             "mempool_fees": int(data.get("mempool_fees", 0) or 0),
@@ -237,8 +251,12 @@ def _coinset_fee_estimate(target_seconds: int, cost: int) -> Optional[Dict]:
 
 
 def get_suggested_transaction_fee(target_seconds: int = None, cost: int = None) -> Dict:
-    target = int(target_seconds or getattr(cfg, "TRANSACTION_FEE_TARGET_SECS", 300) or 300)
-    cost_val = int(cost or getattr(cfg, "TRANSACTION_FEE_ESTIMATE_COST", 20_000_000) or 20_000_000)
+    target = int(
+        target_seconds or getattr(cfg, "TRANSACTION_FEE_TARGET_SECS", 300) or 300
+    )
+    cost_val = int(
+        cost or getattr(cfg, "TRANSACTION_FEE_ESTIMATE_COST", 20_000_000) or 20_000_000
+    )
     target = max(0, target)
     cost_val = max(1, cost_val)
     cache_key = (target, cost_val)
@@ -250,10 +268,18 @@ def get_suggested_transaction_fee(target_seconds: int = None, cost: int = None) 
 
     env = get_wallet_fee_environment()
     payload = {"cost": cost_val, "target_times": [target]}
-    result = _full_node_rpc("get_fee_estimate", payload, timeout=6) if env.get("supports_auto_estimate") else None
+    result = (
+        _full_node_rpc("get_fee_estimate", payload, timeout=6)
+        if env.get("supports_auto_estimate")
+        else None
+    )
     if result and result.get("success"):
         estimates = result.get("estimates") or []
-        estimated = int(Decimal(str(estimates[0] if estimates else 0)).to_integral_value(rounding=ROUND_UP))
+        estimated = int(
+            Decimal(str(estimates[0] if estimates else 0)).to_integral_value(
+                rounding=ROUND_UP
+            )
+        )
         snapshot = {
             "available": True,
             "source": "full_node_rpc",
@@ -277,7 +303,9 @@ def get_suggested_transaction_fee(target_seconds: int = None, cost: int = None) 
 
     snapshot = {
         "available": False,
-        "source": "unavailable" if env.get("supports_auto_estimate") else "manual_fallback_only",
+        "source": "unavailable"
+        if env.get("supports_auto_estimate")
+        else "manual_fallback_only",
         "reason": env.get("reason"),
         "message": env.get("message"),
         "target_seconds": target,
@@ -350,7 +378,7 @@ def get_fee_settings_snapshot() -> Dict:
         "manual_fee_mojos": get_manual_transaction_fee_mojos(),
         "manual_fee_xch": str(getattr(cfg, "TRANSACTION_FEE_XCH", Decimal("0"))),
         "effective_fee_mojos": effective_mojos,
-        "effective_fee_xch": format(mojos_to_xch(effective_mojos), 'f'),
+        "effective_fee_xch": format(mojos_to_xch(effective_mojos), "f"),
         "suggested": suggested,
         "fee_pool_configured": fee_pool_configured(),
         "fee_pool_enabled": fee_pool_enabled(),
@@ -359,4 +387,3 @@ def get_fee_settings_snapshot() -> Dict:
         "fee_prep_count": get_fee_pool_count(),
         "tier_name": FEE_TIER_NAME,
     }
-

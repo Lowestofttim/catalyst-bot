@@ -28,28 +28,31 @@ from typing import Dict, List, Optional
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SweepEntry:
     """One fill inside a sweep group."""
-    fill_id:            int
-    trade_id:           str
-    classification:     str
-    spent_block_index:  int
-    taker_puzzle_hash:  Optional[str] = None
+
+    fill_id: int
+    trade_id: str
+    classification: str
+    spent_block_index: int
+    taker_puzzle_hash: Optional[str] = None
     # "buy" or "sell" — which side of our book was swept.
     # Stamped from FillClassification.side by fill_tracker so that
     # bot_loop can determine protected side without a DB lookup.
-    side:               Optional[str] = None
-    added_at:           float = field(default_factory=time.monotonic)
+    side: Optional[str] = None
+    added_at: float = field(default_factory=time.monotonic)
 
 
 @dataclass
 class SweepEvent:
     """A finalised group of fills swept in the same on-chain transaction."""
-    sweep_group_id:     str
-    spent_block_index:  int
-    fills:              List[SweepEntry]
-    finalised_at:       float = field(default_factory=time.monotonic)
+
+    sweep_group_id: str
+    spent_block_index: int
+    fills: List[SweepEntry]
+    finalised_at: float = field(default_factory=time.monotonic)
 
     @property
     def fill_count(self) -> int:
@@ -99,7 +102,7 @@ class SweepCoordinator:
     def process_fill(
         self,
         fill_id: int,
-        classification,   # FillClassification instance
+        classification,  # FillClassification instance
     ) -> Optional[str]:
         """Register a fill with the coordinator.
 
@@ -154,9 +157,7 @@ class SweepCoordinator:
         with self._lock:
             return {
                 "pending_block_groups": len(self._pending),
-                "pending_fill_count": sum(
-                    len(v) for v in self._pending.values()
-                ),
+                "pending_fill_count": sum(len(v) for v in self._pending.values()),
                 "buffered_events": len(self._events),
             }
 
@@ -180,9 +181,7 @@ class SweepCoordinator:
         for b in expired_blocks:
             self._pending.pop(b, None)
 
-    def _finalise_group_locked(
-        self, block_idx: int, entries: List[SweepEntry]
-    ) -> None:
+    def _finalise_group_locked(self, block_idx: int, entries: List[SweepEntry]) -> None:
         """Convert a list of entries into a SweepEvent (or discard if single)."""
         # Read min-fills threshold from config (default 3).
         # On liquid pairs, two fills in the same block are usually two retail
@@ -190,6 +189,7 @@ class SweepCoordinator:
         # thin/illiquid pairs; 3 (default) or higher for liquid ones.
         try:
             from config import cfg as _cfg
+
             _min_fills = max(2, int(getattr(_cfg, "SWEEP_MIN_FILLS", 3) or 3))
         except Exception:
             _min_fills = 3
@@ -229,6 +229,7 @@ class SweepCoordinator:
             # Upgrade UNKNOWN → DEXIE_COMBINED
             try:
                 from database import get_connection
+
                 conn = get_connection()
                 conn.execute(
                     """UPDATE fills
@@ -260,6 +261,7 @@ def get_coordinator() -> SweepCoordinator:
                 window = _DEFAULT_WINDOW_SECS
                 try:
                     from config import cfg
+
                     window = float(
                         getattr(cfg, "SWEEP_WINDOW_SECS", _DEFAULT_WINDOW_SECS)
                     )
@@ -280,10 +282,12 @@ def reset_coordinator() -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _set_sweep_group(fill_id: int, group_id: str) -> None:
     """Stamp sweep_group_id on a fill without changing classification."""
     try:
         from database import get_connection
+
         conn = get_connection()
         conn.execute(
             "UPDATE fills SET sweep_group_id = ? WHERE fill_id = ?",
@@ -292,4 +296,3 @@ def _set_sweep_group(fill_id: int, group_id: str) -> None:
         conn.commit()
     except Exception:
         pass
-

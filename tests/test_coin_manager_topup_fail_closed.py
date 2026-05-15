@@ -31,6 +31,7 @@ if "requests" not in sys.modules:
 
     class _StubSession:
         """Minimal Session stub — supports headers.update() so amm_monitor.__init__ works."""
+
         def __init__(self):
             self.headers = {}
 
@@ -73,9 +74,18 @@ def _record(coin_id: str, amount: int) -> dict:
     }
 
 
-_CACHED_MODS = ("amm_monitor", "coin_manager", "wallet_sage",
-                "wallet_chia", "wallet", "price_engine", "tx_fees",
-                "win_subprocess", "config", "database")
+_CACHED_MODS = (
+    "amm_monitor",
+    "coin_manager",
+    "wallet_sage",
+    "wallet_chia",
+    "wallet",
+    "price_engine",
+    "tx_fees",
+    "win_subprocess",
+    "config",
+    "database",
+)
 
 
 class CoinManagerTopupFailClosedTests(unittest.TestCase):
@@ -106,34 +116,41 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
                 sys.modules[name] = saved
 
     def _make_manager(self):
-        with patch.object(coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"):
+        with patch.object(
+            coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"
+        ):
             return coin_manager.CoinManager()
 
     def test_missing_fingerprint_is_startup_info_not_error(self):
         manager = coin_manager.CoinManager.__new__(coin_manager.CoinManager)
         fake_wallet = types.SimpleNamespace(get_current_key=lambda: None)
 
-        with patch.dict(sys.modules, {"wallet": fake_wallet}), \
-                patch.dict(coin_manager.os.environ, {"WALLET_TYPE": "sage"}), \
-                patch.object(coin_manager.cfg, "WALLET_FINGERPRINT", "", create=True), \
-                patch.object(coin_manager, "log_event") as log_event:
+        with (
+            patch.dict(sys.modules, {"wallet": fake_wallet}),
+            patch.dict(coin_manager.os.environ, {"WALLET_TYPE": "sage"}),
+            patch.object(coin_manager.cfg, "WALLET_FINGERPRINT", "", create=True),
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
             result = manager._resolve_fingerprint()
 
         self.assertEqual(result, "")
         fingerprint_events = [
-            call for call in log_event.call_args_list
+            call
+            for call in log_event.call_args_list
             if call.args[1] == "coin_mgr_no_fingerprint"
         ]
         self.assertEqual(len(fingerprint_events), 1)
         self.assertEqual(fingerprint_events[0].args[0], "info")
 
     def test_extract_sage_transaction_ids_handles_nested_fields(self):
-        tx_ids = coin_manager.CoinManager._extract_sage_transaction_ids({
-            "transaction_id": "abc123",
-            "transaction": {
-                "transaction_ids": ["def456", "0xabc123"],
-            },
-        })
+        tx_ids = coin_manager.CoinManager._extract_sage_transaction_ids(
+            {
+                "transaction_id": "abc123",
+                "transaction": {
+                    "transaction_ids": ["def456", "0xabc123"],
+                },
+            }
+        )
         self.assertEqual(tx_ids, ["0xabc123", "0xdef456"])
 
     def test_unadvised_unknown_deposit_is_not_a_topup_source(self):
@@ -169,26 +186,41 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_owned_coin_map_falls_back_to_selectable_lower_bound(self):
         manager = self._make_manager()
 
-        with patch.object(coin_manager, "get_owned_coins", side_effect=RuntimeError("owned unavailable")), \
-             patch.object(coin_manager, "_get_free_coins_rpc", return_value={
-                 "records": [
-                     _record("0xcoin1", 100),
-                     _record("0xcoin2", 200),
-                 ]
-             }), \
-             patch.object(coin_manager, "log_event"):
+        with (
+            patch.object(
+                coin_manager,
+                "get_owned_coins",
+                side_effect=RuntimeError("owned unavailable"),
+            ),
+            patch.object(
+                coin_manager,
+                "_get_free_coins_rpc",
+                return_value={
+                    "records": [
+                        _record("0xcoin1", 100),
+                        _record("0xcoin2", 200),
+                    ]
+                },
+            ),
+            patch.object(coin_manager, "log_event"),
+        ):
             owned_map = manager._get_owned_coin_amount_map(1, "topup_test")
 
-        self.assertEqual(owned_map, {
-            "0xcoin1": 100,
-            "0xcoin2": 200,
-        })
+        self.assertEqual(
+            owned_map,
+            {
+                "0xcoin1": 100,
+                "0xcoin2": 200,
+            },
+        )
 
     def test_two_step_split_aborts_when_address_lookup_fails(self):
         manager = self._make_manager()
 
-        with patch.object(coin_manager, "get_next_address", return_value=None), \
-             patch.object(coin_manager, "log_event"):
+        with (
+            patch.object(coin_manager, "get_next_address", return_value=None),
+            patch.object(coin_manager, "log_event"),
+        ):
             with self.assertRaises(coin_manager._TopupWalletDegraded):
                 manager._two_step_split(
                     name="XCH-mid",
@@ -209,25 +241,61 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         # Scenario: sage_topup_split returns None (e.g. RPC hiccup), but
         # spacescan confirms the split landed on-chain, so the method recovers
         # and waits until the output coins become selectable.
-        with patch("wallet_sage.sage_topup_split", return_value=None), \
-             patch.object(coin_manager, "get_next_address", return_value={"success": True, "address": "xch1testaddress"}), \
-             patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-             patch.object(manager, "_spacescan_self_send_confirmed", return_value=True), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {"0xsource": 600},             # pre-snapshot
-                 {"0xsource": 600},             # iteration 1 — no new coins yet
-                 {"0xchange": 200, "0xa": 100, "0xb": 100, "0xc": 100, "0xd": 100},  # iteration 2 — coins ready
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set", side_effect=[
-                 set(),                                      # iteration 1
-                 {"0xa", "0xb", "0xc", "0xd"},              # iteration 2
-             ]), \
-             patch.object(manager, "_get_transaction_confirmation_state", side_effect=[
-                 {"known": False, "confirmed": False, "confirmed_count": 0, "total": 1, "height": 0},
-                 {"known": False, "confirmed": False, "confirmed_count": 0, "total": 1, "height": 0},
-             ]), \
-             patch.object(coin_manager, "log_event"), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch("wallet_sage.sage_topup_split", return_value=None),
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1testaddress"},
+            ),
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(manager, "_spacescan_self_send_confirmed", return_value=True),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {"0xsource": 600},  # pre-snapshot
+                    {"0xsource": 600},  # iteration 1 — no new coins yet
+                    {
+                        "0xchange": 200,
+                        "0xa": 100,
+                        "0xb": 100,
+                        "0xc": 100,
+                        "0xd": 100,
+                    },  # iteration 2 — coins ready
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                side_effect=[
+                    set(),  # iteration 1
+                    {"0xa", "0xb", "0xc", "0xd"},  # iteration 2
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                side_effect=[
+                    {
+                        "known": False,
+                        "confirmed": False,
+                        "confirmed_count": 0,
+                        "total": 1,
+                        "height": 0,
+                    },
+                    {
+                        "known": False,
+                        "confirmed": False,
+                        "confirmed_count": 0,
+                        "total": 1,
+                        "height": 0,
+                    },
+                ],
+            ),
+            patch.object(coin_manager, "log_event"),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             result = manager._two_step_split(
                 name="XCH-mid",
                 wallet_id=1,
@@ -246,24 +314,63 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         # Scenario: sage_topup_split returns a tx result; Sage confirms the tx
         # but the outputs are owned (in owned_map) before they become selectable.
         # The method should accept tx-confirmed + owned outputs as sufficient.
-        with patch("wallet_sage.sage_topup_split", return_value={"transaction_id": "def456"}), \
-             patch.object(coin_manager, "get_next_address", return_value={"success": True, "address": "xch1testaddress"}), \
-             patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {"0xsource": 600},             # pre-snapshot
-                 {"0xsource": 600},             # iteration 1 — tx pending, no new coins
-                 {"0xchange": 200, "0xa": 100, "0xb": 100, "0xc": 100, "0xd": 100},  # iteration 2 — coins owned (tx confirmed)
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set", side_effect=[
-                 set(),    # iteration 1 — nothing selectable yet
-                 set(),    # iteration 2 — coins owned but not yet selectable (key assertion)
-             ]), \
-             patch.object(manager, "_get_transaction_confirmation_state", side_effect=[
-                 {"known": False, "confirmed": False, "confirmed_count": 0, "total": 1, "height": 0},
-                 {"known": True, "confirmed": True, "confirmed_count": 1, "total": 1, "height": 123},
-             ]), \
-             patch.object(coin_manager, "log_event"), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch(
+                "wallet_sage.sage_topup_split",
+                return_value={"transaction_id": "def456"},
+            ),
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1testaddress"},
+            ),
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {"0xsource": 600},  # pre-snapshot
+                    {"0xsource": 600},  # iteration 1 — tx pending, no new coins
+                    {
+                        "0xchange": 200,
+                        "0xa": 100,
+                        "0xb": 100,
+                        "0xc": 100,
+                        "0xd": 100,
+                    },  # iteration 2 — coins owned (tx confirmed)
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                side_effect=[
+                    set(),  # iteration 1 — nothing selectable yet
+                    set(),  # iteration 2 — coins owned but not yet selectable (key assertion)
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                side_effect=[
+                    {
+                        "known": False,
+                        "confirmed": False,
+                        "confirmed_count": 0,
+                        "total": 1,
+                        "height": 0,
+                    },
+                    {
+                        "known": True,
+                        "confirmed": True,
+                        "confirmed_count": 1,
+                        "total": 1,
+                        "height": 123,
+                    },
+                ],
+            ),
+            patch.object(coin_manager, "log_event"),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             result = manager._two_step_split(
                 name="XCH-mid",
                 wallet_id=1,
@@ -279,9 +386,13 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_sage_topup_split_passes_fee_coin_to_create_transaction(self):
         import wallet_sage
 
-        with patch.object(wallet_sage, "_require_signing_capability", return_value=True), \
-             patch.object(wallet_sage, "_get_cat_asset_id", return_value="0xasset"), \
-             patch.object(wallet_sage, "create_transaction_rpc", return_value={"success": True}) as create_tx:
+        with (
+            patch.object(wallet_sage, "_require_signing_capability", return_value=True),
+            patch.object(wallet_sage, "_get_cat_asset_id", return_value="0xasset"),
+            patch.object(
+                wallet_sage, "create_transaction_rpc", return_value={"success": True}
+            ) as create_tx,
+        ):
             result = wallet_sage.sage_topup_split(
                 source_coin_id="0xsource",
                 num_coins=1,
@@ -302,15 +413,25 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_create_transaction_rpc_signs_and_submits_coin_spends_without_txid(self):
         import wallet_sage
 
-        with patch.object(wallet_sage, "_require_signing_capability", return_value=True), \
-                patch.object(wallet_sage, "rpc", return_value={
+        with (
+            patch.object(wallet_sage, "_require_signing_capability", return_value=True),
+            patch.object(
+                wallet_sage,
+                "rpc",
+                return_value={
                     "summary": {},
                     "coin_spends": [{"coin": "spend"}],
-                }) as rpc_mock, \
-                patch.object(wallet_sage, "_sage_post", side_effect=[
+                },
+            ) as rpc_mock,
+            patch.object(
+                wallet_sage,
+                "_sage_post",
+                side_effect=[
                     {"spend_bundle": {"aggregated_signature": "0xsig"}},
                     {"success": True, "transaction_id": "0xtx"},
-                ]) as sage_post:
+                ],
+            ) as sage_post,
+        ):
             result = wallet_sage.create_transaction_rpc(
                 selected_coin_ids=["0xsource"],
                 actions=[{"type": "send", "amount": "1"}],
@@ -327,15 +448,25 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_combine_coins_signs_and_submits_coin_spends_without_txid(self):
         import wallet_sage
 
-        with patch.object(wallet_sage, "_require_signing_capability", return_value=True), \
-                patch.object(wallet_sage, "rpc", return_value={
+        with (
+            patch.object(wallet_sage, "_require_signing_capability", return_value=True),
+            patch.object(
+                wallet_sage,
+                "rpc",
+                return_value={
                     "summary": {},
                     "coin_spends": [{"coin": "a"}, {"coin": "b"}],
-                }) as rpc_mock, \
-                patch.object(wallet_sage, "_sage_post", side_effect=[
+                },
+            ) as rpc_mock,
+            patch.object(
+                wallet_sage,
+                "_sage_post",
+                side_effect=[
                     {"spend_bundle": {"aggregated_signature": "0xsig"}},
                     {"success": True, "transaction_id": "0xcombine"},
-                ]) as sage_post:
+                ],
+            ) as sage_post,
+        ):
             result = wallet_sage.combine_coins(
                 coin_ids=["0xa", "0xb"],
                 fee_mojos=1,
@@ -351,16 +482,26 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_create_transaction_rpc_rejects_submit_without_txid_or_pending(self):
         import wallet_sage
 
-        with patch.object(wallet_sage, "_require_signing_capability", return_value=True), \
-                patch.object(wallet_sage, "rpc", return_value={
+        with (
+            patch.object(wallet_sage, "_require_signing_capability", return_value=True),
+            patch.object(
+                wallet_sage,
+                "rpc",
+                return_value={
                     "summary": {},
                     "coin_spends": [{"coin": "spend"}],
-                }), \
-                patch.object(wallet_sage, "_sage_post", side_effect=[
+                },
+            ),
+            patch.object(
+                wallet_sage,
+                "_sage_post",
+                side_effect=[
                     {"spend_bundle": {"aggregated_signature": "0xsig"}},
                     {"success": True, "status": "success"},
-                ]), \
-                patch.object(wallet_sage, "get_pending_transactions", return_value=[]):
+                ],
+            ),
+            patch.object(wallet_sage, "get_pending_transactions", return_value=[]),
+        ):
             result = wallet_sage.create_transaction_rpc(
                 selected_coin_ids=["0xsource"],
                 actions=[{"type": "send", "amount": "1"}],
@@ -374,24 +515,43 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         manager = self._make_manager()
         manager.fee_pool.refresh([_record("0xfee", 1000)])
 
-        with patch("wallet_sage.sage_topup_split", return_value={"transaction_id": "fee123"}) as split_mock, \
-             patch.object(coin_manager, "get_next_address", return_value={"success": True, "address": "xch1testaddress"}), \
-             patch.object(manager, "_fee_pool_enabled", return_value=True), \
-             patch.object(manager, "_tx_fee_mojos", return_value=13), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {"0xsource": 600},
-                 {"0xsource": 600, "0xa": 100},
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set", return_value={"0xa"}), \
-             patch.object(manager, "_get_transaction_confirmation_state", return_value={
-                 "known": False,
-                 "confirmed": False,
-                 "confirmed_count": 0,
-                 "total": 1,
-                 "height": 0,
-             }), \
-             patch.object(coin_manager, "log_event"), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch(
+                "wallet_sage.sage_topup_split",
+                return_value={"transaction_id": "fee123"},
+            ) as split_mock,
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1testaddress"},
+            ),
+            patch.object(manager, "_fee_pool_enabled", return_value=True),
+            patch.object(manager, "_tx_fee_mojos", return_value=13),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {"0xsource": 600},
+                    {"0xsource": 600, "0xa": 100},
+                ],
+            ),
+            patch.object(
+                manager, "_get_strict_selectable_coin_id_set", return_value={"0xa"}
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                return_value={
+                    "known": False,
+                    "confirmed": False,
+                    "confirmed_count": 0,
+                    "total": 1,
+                    "height": 0,
+                },
+            ),
+            patch.object(coin_manager, "log_event"),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             result = manager._sage_one_step_split(
                 name="CAT-inner",
                 wallet_id=2,
@@ -408,27 +568,44 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_one_step_split_debounces_duplicate_pending_source(self):
         manager = self._make_manager()
 
-        with patch("wallet_sage.sage_topup_split",
-                   return_value={"transaction_id": "0xtx"}) as split_mock, \
-             patch.object(coin_manager, "get_next_address",
-                          return_value={"success": True, "address": "xch1test"}), \
-             patch.object(manager, "_tx_fee_mojos", return_value=0), \
-             patch.object(manager, "_fee_pool_enabled", return_value=False), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {},
-                 {"0xnew": 100},
-                 {},
-                 {"0xnew2": 50, "0xnew3": 50},
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set", side_effect=[
-                 {"0xnew"},
-                 {"0xnew2", "0xnew3"},
-             ]), \
-             patch.object(manager, "_get_transaction_confirmation_state",
-                          return_value={"confirmed": False, "height": None}), \
-             patch.object(manager, "_stamp_topup_output_designations"), \
-             patch.object(coin_manager, "log_event"), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch(
+                "wallet_sage.sage_topup_split", return_value={"transaction_id": "0xtx"}
+            ) as split_mock,
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1test"},
+            ),
+            patch.object(manager, "_tx_fee_mojos", return_value=0),
+            patch.object(manager, "_fee_pool_enabled", return_value=False),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {},
+                    {"0xnew": 100},
+                    {},
+                    {"0xnew2": 50, "0xnew3": 50},
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                side_effect=[
+                    {"0xnew"},
+                    {"0xnew2", "0xnew3"},
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                return_value={"confirmed": False, "height": None},
+            ),
+            patch.object(manager, "_stamp_topup_output_designations"),
+            patch.object(coin_manager, "log_event"),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             first = manager._sage_one_step_split(
                 name="CAT-inner",
                 wallet_id=2,
@@ -455,26 +632,40 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
 
         times = iter([1000, 1001, 1002, 1123, 1124])
 
-        with patch("wallet_sage.sage_topup_split",
-                   return_value={"success": True}) as split_mock, \
-             patch("wallet_sage.get_pending_transactions", return_value=[]), \
-             patch.object(coin_manager, "get_next_address",
-                          return_value={"success": True, "address": "xch1test"}), \
-             patch.object(manager, "_tx_fee_mojos", return_value=0), \
-             patch.object(manager, "_fee_pool_enabled", return_value=False), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {"0xsource": 600},
-                 {"0xsource": 600},
-                 {"0xsource": 600},
-                 {"0xsource": 600},
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set",
-                          return_value={"0xsource"}), \
-             patch.object(manager, "_get_transaction_confirmation_state",
-                          return_value={"confirmed": False, "height": None}), \
-             patch.object(coin_manager, "log_event") as log_event, \
-             patch.object(coin_manager.time, "time", side_effect=lambda: next(times)), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch(
+                "wallet_sage.sage_topup_split", return_value={"success": True}
+            ) as split_mock,
+            patch("wallet_sage.get_pending_transactions", return_value=[]),
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1test"},
+            ),
+            patch.object(manager, "_tx_fee_mojos", return_value=0),
+            patch.object(manager, "_fee_pool_enabled", return_value=False),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {"0xsource": 600},
+                    {"0xsource": 600},
+                    {"0xsource": 600},
+                    {"0xsource": 600},
+                ],
+            ),
+            patch.object(
+                manager, "_get_strict_selectable_coin_id_set", return_value={"0xsource"}
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                return_value={"confirmed": False, "height": None},
+            ),
+            patch.object(coin_manager, "log_event") as log_event,
+            patch.object(coin_manager.time, "time", side_effect=lambda: next(times)),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             first = manager._sage_one_step_split(
                 name="CAT-inner",
                 wallet_id=2,
@@ -499,7 +690,8 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertIn("topup_cat-inner_osstep_not_submitted", event_types)
         self.assertNotIn("topup_cat-inner_osstep_debounce", event_types)
         not_submitted_levels = [
-            call.args[0] for call in log_event.call_args_list
+            call.args[0]
+            for call in log_event.call_args_list
             if call.args[1] == "topup_cat-inner_osstep_not_submitted"
         ]
         self.assertTrue(not_submitted_levels)
@@ -514,28 +706,45 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             clock["now"] += 20
             return clock["now"]
 
-        with patch("wallet_sage.sage_topup_split",
-                   return_value={"success": True}) as split_mock, \
-             patch("wallet_sage.get_pending_transactions", return_value=[]), \
-             patch.object(coin_manager, "get_next_address",
-                          return_value={"success": True, "address": "xch1test"}), \
-             patch.object(manager, "_tx_fee_mojos", return_value=0), \
-             patch.object(manager, "_fee_pool_enabled", return_value=False), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {"0xsource": 600},  # first pre-snapshot
-                 {"0xsource": 600},  # first grace poll
-                 {"0xsource": 600},  # second pre-snapshot
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set", side_effect=[
-                 set(),          # source briefly hidden just after submit
-                 {"0xsource"},   # source returned selectable during grace
-                 {"0xsource"},   # second attempt should not be debounced
-             ]), \
-             patch.object(manager, "_get_transaction_confirmation_state",
-                          return_value={"confirmed": False, "height": None}), \
-             patch.object(coin_manager, "log_event") as log_event, \
-             patch.object(coin_manager.time, "time", side_effect=fake_time), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch(
+                "wallet_sage.sage_topup_split", return_value={"success": True}
+            ) as split_mock,
+            patch("wallet_sage.get_pending_transactions", return_value=[]),
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1test"},
+            ),
+            patch.object(manager, "_tx_fee_mojos", return_value=0),
+            patch.object(manager, "_fee_pool_enabled", return_value=False),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {"0xsource": 600},  # first pre-snapshot
+                    {"0xsource": 600},  # first grace poll
+                    {"0xsource": 600},  # second pre-snapshot
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                side_effect=[
+                    set(),  # source briefly hidden just after submit
+                    {"0xsource"},  # source returned selectable during grace
+                    {"0xsource"},  # second attempt should not be debounced
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                return_value={"confirmed": False, "height": None},
+            ),
+            patch.object(coin_manager, "log_event") as log_event,
+            patch.object(coin_manager.time, "time", side_effect=fake_time),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             first = manager._sage_one_step_split(
                 name="CAT-inner",
                 wallet_id=2,
@@ -563,24 +772,45 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
     def test_sage_one_step_split_stamps_sniper_outputs(self):
         manager = self._make_manager()
 
-        with patch("wallet_sage.sage_topup_split", return_value={"transaction_id": "sniper123"}), \
-             patch("database.upsert_coin") as upsert_coin, \
-             patch("database.set_coin_designation") as set_designation, \
-             patch.object(coin_manager, "get_next_address", return_value={"success": True, "address": "xch1testaddress"}), \
-             patch.object(manager, "_get_owned_coin_amount_map", side_effect=[
-                 {"0xsource": 600},
-                 {"0xsource": 600, "0xa": 100, "0xb": 100},
-             ]), \
-             patch.object(manager, "_get_strict_selectable_coin_id_set", return_value={"0xa", "0xb"}), \
-             patch.object(manager, "_get_transaction_confirmation_state", return_value={
-                 "known": False,
-                 "confirmed": False,
-                 "confirmed_count": 0,
-                 "total": 1,
-                 "height": 0,
-             }), \
-             patch.object(coin_manager, "log_event"), \
-             patch.object(coin_manager.time, "sleep", return_value=None):
+        with (
+            patch(
+                "wallet_sage.sage_topup_split",
+                return_value={"transaction_id": "sniper123"},
+            ),
+            patch("database.upsert_coin") as upsert_coin,
+            patch("database.set_coin_designation") as set_designation,
+            patch.object(
+                coin_manager,
+                "get_next_address",
+                return_value={"success": True, "address": "xch1testaddress"},
+            ),
+            patch.object(
+                manager,
+                "_get_owned_coin_amount_map",
+                side_effect=[
+                    {"0xsource": 600},
+                    {"0xsource": 600, "0xa": 100, "0xb": 100},
+                ],
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                return_value={"0xa", "0xb"},
+            ),
+            patch.object(
+                manager,
+                "_get_transaction_confirmation_state",
+                return_value={
+                    "known": False,
+                    "confirmed": False,
+                    "confirmed_count": 0,
+                    "total": 1,
+                    "height": 0,
+                },
+            ),
+            patch.object(coin_manager, "log_event"),
+            patch.object(coin_manager.time, "sleep", return_value=None),
+        ):
             result = manager._sage_one_step_split(
                 name="XCH-sniper",
                 wallet_id=1,
@@ -667,37 +897,57 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             return name == "XCH"
 
         original_reversed = getattr(coin_manager.cfg, "BUY_LADDER_REVERSED", False)
-        self.addCleanup(setattr, coin_manager.cfg, "BUY_LADDER_REVERSED", original_reversed)
+        self.addCleanup(
+            setattr, coin_manager.cfg, "BUY_LADDER_REVERSED", original_reversed
+        )
         coin_manager.cfg.BUY_LADDER_REVERSED = False
 
-        with patch.dict(sys.modules, {"wallet": fake_wallet}), \
-                patch.object(coin_manager.cfg, "TIER_ENABLED", True), \
-                patch.object(coin_manager.cfg, "ENABLE_BUY", True), \
-                patch.object(coin_manager.cfg, "ENABLE_SELL", True), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 24), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 24), \
-                patch.object(coin_manager.cfg, "WALLET_ID_XCH", 1), \
-                patch.object(coin_manager.cfg, "CAT_WALLET_ID", 2), \
-                patch.object(coin_manager.cfg, "CAT_ASSET_ID", "a" * 64), \
-                patch.object(coin_manager.cfg, "CAT_DECIMALS", 3), \
-                patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1")), \
-                patch.object(coin_manager, "get_tier_distribution", return_value=tier_counts), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts", return_value=prepped_counts), \
-                patch.object(coin_manager, "_get_free_coins_rpc", return_value={
-                    "confirmed_records": [_record("0xwalletcoin", 1)]
-                }), \
-                patch.object(manager, "_classify_coins_by_designation", side_effect=classify), \
-                patch.object(manager, "_get_tier_sizes_mojos", return_value=tier_sizes), \
-                patch.object(manager, "_configured_tier_sizes_xch", return_value={
+        with (
+            patch.dict(sys.modules, {"wallet": fake_wallet}),
+            patch.object(coin_manager.cfg, "TIER_ENABLED", True),
+            patch.object(coin_manager.cfg, "ENABLE_BUY", True),
+            patch.object(coin_manager.cfg, "ENABLE_SELL", True),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 24),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 24),
+            patch.object(coin_manager.cfg, "WALLET_ID_XCH", 1),
+            patch.object(coin_manager.cfg, "CAT_WALLET_ID", 2),
+            patch.object(coin_manager.cfg, "CAT_ASSET_ID", "a" * 64),
+            patch.object(coin_manager.cfg, "CAT_DECIMALS", 3),
+            patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1")),
+            patch.object(
+                coin_manager, "get_tier_distribution", return_value=tier_counts
+            ),
+            patch.object(
+                coin_manager,
+                "get_weighted_tier_prep_counts",
+                return_value=prepped_counts,
+            ),
+            patch.object(
+                coin_manager,
+                "_get_free_coins_rpc",
+                return_value={"confirmed_records": [_record("0xwalletcoin", 1)]},
+            ),
+            patch.object(
+                manager, "_classify_coins_by_designation", side_effect=classify
+            ),
+            patch.object(manager, "_get_tier_sizes_mojos", return_value=tier_sizes),
+            patch.object(
+                manager,
+                "_configured_tier_sizes_xch",
+                return_value={
                     "inner": Decimal("1"),
                     "mid": Decimal("0.5"),
                     "outer": Decimal("0.25"),
                     "extreme": Decimal("0.125"),
-                }), \
-                patch.object(manager, "get_trading_pace", return_value="normal"), \
-                patch.object(manager, "_absorb_misfits_to_reserve", side_effect=absorb), \
-                patch.object(manager, "_smart_topup_wallet", return_value=True) as smart_topup, \
-                patch("database.get_open_offers", side_effect=open_offers):
+                },
+            ),
+            patch.object(manager, "get_trading_pace", return_value="normal"),
+            patch.object(manager, "_absorb_misfits_to_reserve", side_effect=absorb),
+            patch.object(
+                manager, "_smart_topup_wallet", return_value=True
+            ) as smart_topup,
+            patch("database.get_open_offers", side_effect=open_offers),
+        ):
             manager._topup_worker(active_buy=24, active_sell=17)
 
         self.assertNotIn("XCH", absorb_calls)
@@ -786,33 +1036,51 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
                 "COIN_PREP_MULTIPLIER": Decimal("1"),
             }.items():
                 stack.enter_context(patch.object(coin_manager.cfg, name, value))
-            stack.enter_context(patch.object(
-                coin_manager,
-                "get_weighted_tier_prep_counts",
-                return_value=prepared_counts,
-            ))
-            stack.enter_context(patch.object(coin_manager, "_get_free_coins_rpc", return_value={
-                "confirmed_records": [_record("0xwalletcoin", 1)]
-            }))
-            stack.enter_context(patch.object(
-                manager,
-                "_classify_coins_by_designation",
-                side_effect=classify,
-            ))
-            stack.enter_context(patch.object(
-                manager,
-                "_get_tier_sizes_mojos",
-                return_value=tier_sizes,
-            ))
-            stack.enter_context(patch.object(manager, "get_trading_pace", return_value="normal"))
-            stack.enter_context(patch.object(
-                manager,
-                "_absorb_misfits_to_reserve",
-                side_effect=absorb,
-            ))
-            stack.enter_context(patch.object(manager, "_smart_topup_wallet", return_value=True))
+            stack.enter_context(
+                patch.object(
+                    coin_manager,
+                    "get_weighted_tier_prep_counts",
+                    return_value=prepared_counts,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    coin_manager,
+                    "_get_free_coins_rpc",
+                    return_value={"confirmed_records": [_record("0xwalletcoin", 1)]},
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    manager,
+                    "_classify_coins_by_designation",
+                    side_effect=classify,
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    manager,
+                    "_get_tier_sizes_mojos",
+                    return_value=tier_sizes,
+                )
+            )
+            stack.enter_context(
+                patch.object(manager, "get_trading_pace", return_value="normal")
+            )
+            stack.enter_context(
+                patch.object(
+                    manager,
+                    "_absorb_misfits_to_reserve",
+                    side_effect=absorb,
+                )
+            )
+            stack.enter_context(
+                patch.object(manager, "_smart_topup_wallet", return_value=True)
+            )
             log_event = stack.enter_context(patch.object(coin_manager, "log_event"))
-            stack.enter_context(patch("database.get_open_offers", side_effect=open_offers))
+            stack.enter_context(
+                patch("database.get_open_offers", side_effect=open_offers)
+            )
             manager._topup_worker(active_buy=45, active_sell=44)
 
         self.assertIn("XCH", absorb_calls)
@@ -881,37 +1149,57 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             return name == "XCH"
 
         original_reversed = getattr(coin_manager.cfg, "BUY_LADDER_REVERSED", False)
-        self.addCleanup(setattr, coin_manager.cfg, "BUY_LADDER_REVERSED", original_reversed)
+        self.addCleanup(
+            setattr, coin_manager.cfg, "BUY_LADDER_REVERSED", original_reversed
+        )
         coin_manager.cfg.BUY_LADDER_REVERSED = False
 
-        with patch.dict(sys.modules, {"wallet": fake_wallet}), \
-                patch.object(coin_manager.cfg, "TIER_ENABLED", True), \
-                patch.object(coin_manager.cfg, "ENABLE_BUY", True), \
-                patch.object(coin_manager.cfg, "ENABLE_SELL", True), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 24), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 24), \
-                patch.object(coin_manager.cfg, "WALLET_ID_XCH", 1), \
-                patch.object(coin_manager.cfg, "CAT_WALLET_ID", 2), \
-                patch.object(coin_manager.cfg, "CAT_ASSET_ID", "a" * 64), \
-                patch.object(coin_manager.cfg, "CAT_DECIMALS", 3), \
-                patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1")), \
-                patch.object(coin_manager, "get_tier_distribution", return_value=tier_counts), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts", return_value=prepped_counts), \
-                patch.object(coin_manager, "_get_free_coins_rpc", return_value={
-                    "confirmed_records": [_record("0xwalletcoin", 1)]
-                }), \
-                patch.object(manager, "_classify_coins_by_designation", side_effect=classify), \
-                patch.object(manager, "_get_tier_sizes_mojos", return_value=tier_sizes), \
-                patch.object(manager, "_configured_tier_sizes_xch", return_value={
+        with (
+            patch.dict(sys.modules, {"wallet": fake_wallet}),
+            patch.object(coin_manager.cfg, "TIER_ENABLED", True),
+            patch.object(coin_manager.cfg, "ENABLE_BUY", True),
+            patch.object(coin_manager.cfg, "ENABLE_SELL", True),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 24),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 24),
+            patch.object(coin_manager.cfg, "WALLET_ID_XCH", 1),
+            patch.object(coin_manager.cfg, "CAT_WALLET_ID", 2),
+            patch.object(coin_manager.cfg, "CAT_ASSET_ID", "a" * 64),
+            patch.object(coin_manager.cfg, "CAT_DECIMALS", 3),
+            patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1")),
+            patch.object(
+                coin_manager, "get_tier_distribution", return_value=tier_counts
+            ),
+            patch.object(
+                coin_manager,
+                "get_weighted_tier_prep_counts",
+                return_value=prepped_counts,
+            ),
+            patch.object(
+                coin_manager,
+                "_get_free_coins_rpc",
+                return_value={"confirmed_records": [_record("0xwalletcoin", 1)]},
+            ),
+            patch.object(
+                manager, "_classify_coins_by_designation", side_effect=classify
+            ),
+            patch.object(manager, "_get_tier_sizes_mojos", return_value=tier_sizes),
+            patch.object(
+                manager,
+                "_configured_tier_sizes_xch",
+                return_value={
                     "inner": Decimal("1"),
                     "mid": Decimal("0.5"),
                     "outer": Decimal("0.25"),
                     "extreme": Decimal("0.125"),
-                }), \
-                patch.object(manager, "get_trading_pace", return_value="normal"), \
-                patch.object(manager, "_absorb_misfits_to_reserve", side_effect=absorb), \
-                patch.object(manager, "_smart_topup_wallet", return_value=True) as smart_topup, \
-                patch("database.get_open_offers", side_effect=open_offers):
+                },
+            ),
+            patch.object(manager, "get_trading_pace", return_value="normal"),
+            patch.object(manager, "_absorb_misfits_to_reserve", side_effect=absorb),
+            patch.object(
+                manager, "_smart_topup_wallet", return_value=True
+            ) as smart_topup,
+            patch("database.get_open_offers", side_effect=open_offers),
+        ):
             manager._topup_worker(active_buy=24, active_sell=24)
 
         self.assertNotIn("XCH", absorb_calls)
@@ -938,17 +1226,24 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         }
         free_result = {"confirmed_records": [reserve, small]}
 
-        with patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-                patch.object(coin_manager, "_get_free_coins_rpc", return_value=free_result), \
-                patch.object(manager, "_tx_fee_mojos", return_value=1), \
-                patch.object(manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids), \
-                patch.object(manager, "_record_topup_pool_refund"), \
-                patch("database.set_setting", return_value=True), \
-                patch("wallet_sage.combine_coins", return_value={
+        with (
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(coin_manager, "_get_free_coins_rpc", return_value=free_result),
+            patch.object(manager, "_tx_fee_mojos", return_value=1),
+            patch.object(
+                manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+            patch.object(manager, "_record_topup_pool_refund"),
+            patch("database.set_setting", return_value=True),
+            patch(
+                "wallet_sage.combine_coins",
+                return_value={
                     "success": True,
                     "transaction_id": "0xabsorbtx",
                     "coin_spends": [{}, {}],
-                }) as combine:
+                },
+            ) as combine,
+        ):
             first = manager._absorb_misfits_to_reserve(
                 "XCH",
                 1,
@@ -988,19 +1283,29 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         }
         free_result = {"confirmed_records": [reserve, small]}
 
-        with patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-                patch.object(coin_manager, "_get_free_coins_rpc", return_value=free_result), \
-                patch.object(manager, "_tx_fee_mojos", return_value=1), \
-                patch.object(manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids), \
-                patch.object(manager, "_get_strict_selectable_coin_id_set",
-                             return_value={"0xreserve", "0xsmall"}), \
-                patch.object(manager, "_record_topup_pool_refund") as refund, \
-                patch("wallet_sage.get_pending_transactions", return_value=[]), \
-                patch("wallet_sage.combine_coins", return_value={
+        with (
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(coin_manager, "_get_free_coins_rpc", return_value=free_result),
+            patch.object(manager, "_tx_fee_mojos", return_value=1),
+            patch.object(
+                manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                return_value={"0xreserve", "0xsmall"},
+            ),
+            patch.object(manager, "_record_topup_pool_refund") as refund,
+            patch("wallet_sage.get_pending_transactions", return_value=[]),
+            patch(
+                "wallet_sage.combine_coins",
+                return_value={
                     "summary": {},
                     "coin_spends": [{}, {}],
-                }) as combine, \
-                patch.object(coin_manager, "log_event") as log_event:
+                },
+            ) as combine,
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
             first = manager._absorb_misfits_to_reserve(
                 "XCH",
                 1,
@@ -1024,7 +1329,8 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertIn("topup_xch_absorb_not_submitted", event_types)
         self.assertNotIn("topup_xch_absorb_debounce", event_types)
         not_submitted_levels = [
-            call.args[0] for call in log_event.call_args_list
+            call.args[0]
+            for call in log_event.call_args_list
             if call.args[1] == "topup_xch_absorb_not_submitted"
         ]
         self.assertTrue(not_submitted_levels)
@@ -1053,15 +1359,21 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             def fetchall(self):
                 return []
 
-        with patch.object(coin_manager, "_get_free_coins_rpc", return_value=fresh_result), \
-                patch.object(manager, "_configured_tier_sizes_xch", return_value={}), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                             return_value={"mid": 1}), \
-                patch("database.get_connection", return_value=_Conn()), \
-                patch.object(manager, "_consolidate_coins",
-                             return_value="pending") as consolidate, \
-                patch.object(manager, "_record_topup_pool_refund") as refund, \
-                patch.object(coin_manager, "log_event") as log_event:
+        with (
+            patch.object(
+                coin_manager, "_get_free_coins_rpc", return_value=fresh_result
+            ),
+            patch.object(manager, "_configured_tier_sizes_xch", return_value={}),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", return_value={"mid": 1}
+            ),
+            patch("database.get_connection", return_value=_Conn()),
+            patch.object(
+                manager, "_consolidate_coins", return_value="pending"
+            ) as consolidate,
+            patch.object(manager, "_record_topup_pool_refund") as refund,
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
             result = manager._smart_topup_wallet(
                 "CAT-inner",
                 2,
@@ -1107,15 +1419,21 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             manager._last_consolidate_not_submitted = True
             return False
 
-        with patch.object(coin_manager, "_get_free_coins_rpc", return_value=fresh_result), \
-                patch.object(manager, "_configured_tier_sizes_xch", return_value={}), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                             return_value={"mid": 1}), \
-                patch("database.get_connection", return_value=_Conn()), \
-                patch.object(manager, "_consolidate_coins",
-                             side_effect=not_submitted_consolidate) as consolidate, \
-                patch.object(manager, "_record_topup_pool_refund") as refund, \
-                patch.object(coin_manager, "log_event") as log_event:
+        with (
+            patch.object(
+                coin_manager, "_get_free_coins_rpc", return_value=fresh_result
+            ),
+            patch.object(manager, "_configured_tier_sizes_xch", return_value={}),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", return_value={"mid": 1}
+            ),
+            patch("database.get_connection", return_value=_Conn()),
+            patch.object(
+                manager, "_consolidate_coins", side_effect=not_submitted_consolidate
+            ) as consolidate,
+            patch.object(manager, "_record_topup_pool_refund") as refund,
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
             result = manager._smart_topup_wallet(
                 "CAT-inner",
                 2,
@@ -1137,15 +1455,21 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         manager = self._make_manager()
         source_ids = ["0xa", "0xb", "0xc"]
 
-        with patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-                patch.object(manager, "_tx_fee_mojos", return_value=1), \
-                patch.object(manager, "_filter_out_protected_coin_ids",
-                             side_effect=lambda ids: ids), \
-                patch("wallet_sage.combine_coins", return_value={
+        with (
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(manager, "_tx_fee_mojos", return_value=1),
+            patch.object(
+                manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+            patch(
+                "wallet_sage.combine_coins",
+                return_value={
                     "success": True,
                     "transaction_id": "0xcombinetx",
                     "coin_spends": [{}, {}, {}],
-                }) as combine:
+                },
+            ) as combine,
+        ):
             first = manager._consolidate_coins(
                 "CAT-inner",
                 2,
@@ -1165,22 +1489,33 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertEqual(second, "pending")
         combine.assert_called_once()
 
-    def test_consolidate_coins_without_txid_and_no_pending_does_not_debounce_inputs(self):
+    def test_consolidate_coins_without_txid_and_no_pending_does_not_debounce_inputs(
+        self,
+    ):
         manager = self._make_manager()
         source_ids = ["0xa", "0xb", "0xc"]
 
-        with patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-                patch.object(manager, "_tx_fee_mojos", return_value=1), \
-                patch.object(manager, "_filter_out_protected_coin_ids",
-                             side_effect=lambda ids: ids), \
-                patch.object(manager, "_get_strict_selectable_coin_id_set",
-                             return_value={"0xa", "0xb", "0xc"}), \
-                patch("wallet_sage.get_pending_transactions", return_value=[]), \
-                patch("wallet_sage.combine_coins", return_value={
+        with (
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(manager, "_tx_fee_mojos", return_value=1),
+            patch.object(
+                manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+            patch.object(
+                manager,
+                "_get_strict_selectable_coin_id_set",
+                return_value={"0xa", "0xb", "0xc"},
+            ),
+            patch("wallet_sage.get_pending_transactions", return_value=[]),
+            patch(
+                "wallet_sage.combine_coins",
+                return_value={
                     "summary": {},
                     "coin_spends": [{}, {}, {}],
-                }) as combine, \
-                patch.object(coin_manager, "log_event") as log_event:
+                },
+            ) as combine,
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
             first = manager._consolidate_coins(
                 "CAT-inner",
                 2,
@@ -1203,7 +1538,8 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         self.assertIn("consolidate_cat-inner_combine_not_submitted", event_types)
         self.assertNotIn("consolidate_cat-inner_debounce", event_types)
         not_submitted_levels = [
-            call.args[0] for call in log_event.call_args_list
+            call.args[0]
+            for call in log_event.call_args_list
             if call.args[1] == "consolidate_cat-inner_combine_not_submitted"
         ]
         self.assertTrue(not_submitted_levels)
@@ -1213,20 +1549,28 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         manager = self._make_manager()
         source_ids = ["0xa", "0xb", "0xc"]
 
-        with patch.object(coin_manager, "get_wallet_type", return_value="sage"), \
-                patch.object(manager, "_tx_fee_mojos", return_value=1), \
-                patch.object(manager, "_filter_out_protected_coin_ids",
-                             side_effect=lambda ids: ids), \
-                patch.object(manager, "_get_strict_selectable_coin_id_set",
-                             return_value=set()), \
-                patch("wallet_sage.get_pending_transactions", return_value=[]), \
-                patch("wallet_sage.combine_coins", return_value={
+        with (
+            patch.object(coin_manager, "get_wallet_type", return_value="sage"),
+            patch.object(manager, "_tx_fee_mojos", return_value=1),
+            patch.object(
+                manager, "_filter_out_protected_coin_ids", side_effect=lambda ids: ids
+            ),
+            patch.object(
+                manager, "_get_strict_selectable_coin_id_set", return_value=set()
+            ),
+            patch("wallet_sage.get_pending_transactions", return_value=[]),
+            patch(
+                "wallet_sage.combine_coins",
+                return_value={
                     "summary": {},
                     "coin_spends": [{}, {}, {}],
-                }) as combine, \
-                patch.object(coin_manager.cfg, "TOPUP_COMBINE_NO_TXID_GRACE_SECS",
-                             0, create=True), \
-                patch.object(coin_manager, "log_event") as log_event:
+                },
+            ) as combine,
+            patch.object(
+                coin_manager.cfg, "TOPUP_COMBINE_NO_TXID_GRACE_SECS", 0, create=True
+            ),
+            patch.object(coin_manager, "log_event") as log_event,
+        ):
             result = manager._consolidate_coins(
                 "CAT-inner",
                 2,
@@ -1264,12 +1608,19 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             def fetchall(self):
                 return []
 
-        with patch.object(coin_manager, "_get_free_coins_rpc", return_value=fresh_result), \
-                patch.object(manager, "_configured_tier_sizes_xch", return_value={}), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                             return_value={"mid": 1}), \
-                patch("database.get_connection", return_value=_Conn()), \
-                patch.object(manager, "_consolidate_coins", return_value=True) as consolidate:
+        with (
+            patch.object(
+                coin_manager, "_get_free_coins_rpc", return_value=fresh_result
+            ),
+            patch.object(manager, "_configured_tier_sizes_xch", return_value={}),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", return_value={"mid": 1}
+            ),
+            patch("database.get_connection", return_value=_Conn()),
+            patch.object(
+                manager, "_consolidate_coins", return_value=True
+            ) as consolidate,
+        ):
             result = manager._smart_topup_wallet(
                 "CAT-inner",
                 2,
@@ -1312,12 +1663,19 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
             def fetchall(self):
                 return []
 
-        with patch.object(coin_manager, "_get_free_coins_rpc", return_value=fresh_result), \
-                patch.object(manager, "_configured_tier_sizes_xch", return_value={}), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                             return_value={"mid": 3}), \
-                patch("database.get_connection", return_value=_Conn()), \
-                patch.object(manager, "_consolidate_coins", return_value=True) as consolidate:
+        with (
+            patch.object(
+                coin_manager, "_get_free_coins_rpc", return_value=fresh_result
+            ),
+            patch.object(manager, "_configured_tier_sizes_xch", return_value={}),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", return_value={"mid": 3}
+            ),
+            patch("database.get_connection", return_value=_Conn()),
+            patch.object(
+                manager, "_consolidate_coins", return_value=True
+            ) as consolidate,
+        ):
             result = manager._smart_topup_wallet(
                 "CAT-inner",
                 2,
@@ -1354,17 +1712,20 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
         # CAT_TARGET_COINS can be stale from older non-tier setup. Tier mode
         # should use the tier plan itself so a successful prep does not keep
         # re-triggering against an unrelated static floor.
-        with patch.object(coin_manager.cfg, "TIER_ENABLED", True), \
-                patch.object(coin_manager.cfg, "ENABLE_COIN_PREP", True), \
-                patch.object(coin_manager.cfg, "ENABLE_BUY", True), \
-                patch.object(coin_manager.cfg, "ENABLE_SELL", True), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 20), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 30), \
-                patch.object(coin_manager.cfg, "XCH_TARGET_COINS", 500), \
-                patch.object(coin_manager.cfg, "CAT_TARGET_COINS", 500), \
-                patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                             side_effect=prep_counts):
+        with (
+            patch.object(coin_manager.cfg, "TIER_ENABLED", True),
+            patch.object(coin_manager.cfg, "ENABLE_COIN_PREP", True),
+            patch.object(coin_manager.cfg, "ENABLE_BUY", True),
+            patch.object(coin_manager.cfg, "ENABLE_SELL", True),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 20),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 30),
+            patch.object(coin_manager.cfg, "XCH_TARGET_COINS", 500),
+            patch.object(coin_manager.cfg, "CAT_TARGET_COINS", 500),
+            patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", side_effect=prep_counts
+            ),
+        ):
             self.assertFalse(manager.needs_coin_prep())
 
     def test_needs_coin_prep_has_minimum_threshold_for_small_tier_plan(self):
@@ -1380,15 +1741,18 @@ class CoinManagerTopupFailClosedTests(unittest.TestCase):
                 return {"inner": 1}
             return {}
 
-        with patch.object(coin_manager.cfg, "TIER_ENABLED", True), \
-                patch.object(coin_manager.cfg, "ENABLE_COIN_PREP", True), \
-                patch.object(coin_manager.cfg, "ENABLE_BUY", True), \
-                patch.object(coin_manager.cfg, "ENABLE_SELL", True), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 2), \
-                patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 1), \
-                patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")), \
-                patch.object(coin_manager, "get_weighted_tier_prep_counts",
-                             side_effect=prep_counts):
+        with (
+            patch.object(coin_manager.cfg, "TIER_ENABLED", True),
+            patch.object(coin_manager.cfg, "ENABLE_COIN_PREP", True),
+            patch.object(coin_manager.cfg, "ENABLE_BUY", True),
+            patch.object(coin_manager.cfg, "ENABLE_SELL", True),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_BUY_OFFERS", 2),
+            patch.object(coin_manager.cfg, "MAX_ACTIVE_SELL_OFFERS", 1),
+            patch.object(coin_manager.cfg, "COIN_PREP_MULTIPLIER", Decimal("1.0")),
+            patch.object(
+                coin_manager, "get_weighted_tier_prep_counts", side_effect=prep_counts
+            ),
+        ):
             self.assertTrue(manager.needs_coin_prep())
 
 

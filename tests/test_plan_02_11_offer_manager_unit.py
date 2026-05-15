@@ -16,10 +16,13 @@ try:
     import offer_manager as _om_mod
     from offer_manager import (
         OfferManager,
-        xch_to_mojos, mojos_to_xch,
-        cat_to_mojos, mojos_to_cat,
+        xch_to_mojos,
+        mojos_to_xch,
+        cat_to_mojos,
+        mojos_to_cat,
         CANCEL_PENDING_METHODS,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -68,6 +71,7 @@ class _OM(unittest.TestCase):
 # Conversion helpers (module-level pure functions)
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestConversionHelpers(unittest.TestCase):
     def test_xch_to_mojos_one_xch(self):
@@ -112,6 +116,7 @@ class TestConversionHelpers(unittest.TestCase):
 # CANCEL_PENDING_METHODS frozenset
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestCancelPendingMethods(unittest.TestCase):
     def test_submitted_pending_in_set(self):
@@ -127,6 +132,7 @@ class TestCancelPendingMethods(unittest.TestCase):
 # ===========================================================================
 # _slot_size_variation (static, pure)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestSlotSizeVariation(unittest.TestCase):
@@ -161,6 +167,7 @@ class TestSlotSizeVariation(unittest.TestCase):
 # _size_key (static, pure)
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestSizeKey(unittest.TestCase):
     def test_normalises_to_8_decimal_places(self):
@@ -175,6 +182,7 @@ class TestSizeKey(unittest.TestCase):
 # ===========================================================================
 # _coin_designation_priority (static, pure)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_manager unavailable: {_SKIP}")
 class TestCoinDesignationPriority(unittest.TestCase):
@@ -207,6 +215,7 @@ class TestCoinDesignationPriority(unittest.TestCase):
 # Slot suspension lifecycle
 # ===========================================================================
 
+
 class TestSlotSuspension(_OM):
     def test_new_slot_not_suspended(self):
         self.assertFalse(self._manager.is_slot_suspended("buy", 0))
@@ -216,10 +225,12 @@ class TestSlotSuspension(_OM):
         for _ in range(threshold):
             self._manager.record_slot_coin_failure("buy", 0)
         self.assertTrue(self._manager.is_slot_suspended("buy", 0))
-        self.assertTrue(any(
-            call.args[0] == "info" and call.args[1] == "slot_suspended"
-            for call in self.log_event.call_args_list
-        ))
+        self.assertTrue(
+            any(
+                call.args[0] == "info" and call.args[1] == "slot_suspended"
+                for call in self.log_event.call_args_list
+            )
+        )
 
     def test_below_threshold_not_suspended(self):
         threshold = self._manager._slot_suspend_threshold
@@ -249,10 +260,13 @@ class TestSlotSuspension(_OM):
         for _ in range(self._manager._slot_suspend_threshold):
             self._manager.record_slot_coin_failure("sell", 0)
 
-        with patch("database.get_free_coins", return_value=[
-            {"designation": "tier_spare", "assigned_tier": "mid"},
-            {"designation": "tier_spare", "assigned_tier": "outer"},
-        ]):
+        with patch(
+            "database.get_free_coins",
+            return_value=[
+                {"designation": "tier_spare", "assigned_tier": "mid"},
+                {"designation": "tier_spare", "assigned_tier": "outer"},
+            ],
+        ):
             self._manager.unsuspend_slots_if_coins_available("sell")
 
         self.assertTrue(self._manager.is_slot_suspended("sell", 0))
@@ -286,18 +300,24 @@ class TestPositionHardGuard(_OM):
         pause = self._manager.get_position_guard_pause("sell")
         self.assertEqual(pause["side"], "sell")
         self.assertEqual(pause["opposite_side"], "buy")
-        self.assertTrue(any(
-            call.args[0] == "warning" and call.args[1] == "position_hard_guard_blocked"
-            for call in self.log_event.call_args_list
-        ))
+        self.assertTrue(
+            any(
+                call.args[0] == "warning"
+                and call.args[1] == "position_hard_guard_blocked"
+                for call in self.log_event.call_args_list
+            )
+        )
 
     def test_unsuspend_clears_slot_when_required_tier_coin_is_available(self):
         for _ in range(self._manager._slot_suspend_threshold):
             self._manager.record_slot_coin_failure("sell", 0)
 
-        with patch("database.get_free_coins", return_value=[
-            {"designation": "tier_spare", "assigned_tier": "inner"},
-        ]):
+        with patch(
+            "database.get_free_coins",
+            return_value=[
+                {"designation": "tier_spare", "assigned_tier": "inner"},
+            ],
+        ):
             self._manager.unsuspend_slots_if_coins_available("sell")
 
         self.assertFalse(self._manager.is_slot_suspended("sell", 0))
@@ -329,6 +349,7 @@ class TestPositionHardGuard(_OM):
 # Bot-cancel tracking
 # ===========================================================================
 
+
 class TestBotCancelTracking(_OM):
     def test_not_bot_cancelled_initially(self):
         self.assertFalse(self._manager.is_bot_cancelled("0xtrade123"))
@@ -348,12 +369,15 @@ class TestBotCancelTracking(_OM):
 
     def test_get_cached_details_known_returns_dict(self):
         self._manager._offer_details_cache["tid1"] = {"price": Decimal("0.001")}
-        self.assertEqual(self._manager.get_cached_details("tid1"), {"price": Decimal("0.001")})
+        self.assertEqual(
+            self._manager.get_cached_details("tid1"), {"price": Decimal("0.001")}
+        )
 
 
 # ===========================================================================
 # detect_expiring_offers
 # ===========================================================================
+
 
 class TestDetectExpiringOffers(_OM):
     def _make_offer(self, trade_id: str, max_time: int):
@@ -389,7 +413,7 @@ class TestDetectExpiringOffers(_OM):
 
     def test_custom_refresh_window_respected(self):
         soon = int(time.time()) + 200  # within 300s
-        far = int(time.time()) + 400   # outside 300s
+        far = int(time.time()) + 400  # outside 300s
         offers = [self._make_offer("soon", soon), self._make_offer("far", far)]
         result = self._manager.detect_expiring_offers(offers, refresh_before_secs=300)
         self.assertIn("soon", result)
@@ -399,6 +423,7 @@ class TestDetectExpiringOffers(_OM):
 # ===========================================================================
 # _classify_tier
 # ===========================================================================
+
 
 class TestClassifyTier(_OM):
     def test_tier_disabled_returns_mid(self):
@@ -430,9 +455,13 @@ class TestClassifyTier(_OM):
 
     def test_no_tier_counts_uses_ratio(self):
         no_tier_cfg = SimpleNamespace(
-            **{**_FAKE_CFG.__dict__,
-               "BUY_INNER_TIER_COUNT": 0, "BUY_MID_TIER_COUNT": 0,
-               "BUY_OUTER_TIER_COUNT": 0, "BUY_EXTREME_TIER_COUNT": 0}
+            **{
+                **_FAKE_CFG.__dict__,
+                "BUY_INNER_TIER_COUNT": 0,
+                "BUY_MID_TIER_COUNT": 0,
+                "BUY_OUTER_TIER_COUNT": 0,
+                "BUY_EXTREME_TIER_COUNT": 0,
+            }
         )
         with patch.object(_om_mod, "cfg", no_tier_cfg):
             # ratio 0/10 = 0.0 < 0.1 → inner
@@ -441,9 +470,13 @@ class TestClassifyTier(_OM):
 
     def test_ratio_mid_range(self):
         no_tier_cfg = SimpleNamespace(
-            **{**_FAKE_CFG.__dict__,
-               "BUY_INNER_TIER_COUNT": 0, "BUY_MID_TIER_COUNT": 0,
-               "BUY_OUTER_TIER_COUNT": 0, "BUY_EXTREME_TIER_COUNT": 0}
+            **{
+                **_FAKE_CFG.__dict__,
+                "BUY_INNER_TIER_COUNT": 0,
+                "BUY_MID_TIER_COUNT": 0,
+                "BUY_OUTER_TIER_COUNT": 0,
+                "BUY_EXTREME_TIER_COUNT": 0,
+            }
         )
         with patch.object(_om_mod, "cfg", no_tier_cfg):
             # slot 3/10 = 0.3 → mid
@@ -455,12 +488,12 @@ class TestClassifyTier(_OM):
 # should_requote
 # ===========================================================================
 
+
 class TestShouldRequote(_OM):
     def test_auto_requote_disabled_returns_false(self):
         no_rq_cfg = SimpleNamespace(**{**_FAKE_CFG.__dict__, "AUTO_REQUOTE": False})
         with patch.object(_om_mod, "cfg", no_rq_cfg):
-            result = self._manager.should_requote(
-                "buy", Decimal("100"), Decimal("90"))
+            result = self._manager.should_requote("buy", Decimal("100"), Decimal("90"))
         self.assertFalse(result)
 
     def test_within_cooldown_returns_false(self):
@@ -476,22 +509,22 @@ class TestShouldRequote(_OM):
     def test_small_drift_returns_false(self):
         # drift 0.5% < 1% threshold
         self._manager._last_requote_time["buy"] = 0.0
-        result = self._manager.should_requote(
-            "buy", Decimal("100.5"), Decimal("100"))
+        result = self._manager.should_requote("buy", Decimal("100.5"), Decimal("100"))
         self.assertFalse(result)
 
     def test_large_drift_returns_true(self):
         # drift 5% > 1% threshold
         self._manager._last_requote_time["buy"] = 0.0
-        result = self._manager.should_requote(
-            "buy", Decimal("105"), Decimal("100"))
+        result = self._manager.should_requote("buy", Decimal("105"), Decimal("100"))
         self.assertTrue(result)
 
     def test_sell_side_respects_cooldown_independently(self):
         self._manager._last_requote_time["buy"] = 0.0
         self._manager._last_requote_time["sell"] = time.time()
         buy_result = self._manager.should_requote("buy", Decimal("105"), Decimal("100"))
-        sell_result = self._manager.should_requote("sell", Decimal("105"), Decimal("100"))
+        sell_result = self._manager.should_requote(
+            "sell", Decimal("105"), Decimal("100")
+        )
         self.assertTrue(buy_result)
         self.assertFalse(sell_result)
 
@@ -499,6 +532,7 @@ class TestShouldRequote(_OM):
 # ===========================================================================
 # _allocate_unique_requested_mojos
 # ===========================================================================
+
 
 class TestAllocateUniqueRequestedMojos(_OM):
     def test_no_collision_returns_base(self):

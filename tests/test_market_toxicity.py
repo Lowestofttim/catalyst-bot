@@ -184,10 +184,7 @@ def test_public_depth_signal_does_not_stack_every_loop():
 def test_sweep_response_cools_when_only_thin_depth_remains():
     guard = MarketToxicityGuard()
 
-    fills = [
-        {"side": "sell", "age_secs": 8 + i, "size_xch": "0.05"}
-        for i in range(14)
-    ]
+    fills = [{"side": "sell", "age_secs": 8 + i, "size_xch": "0.05"} for i in range(14)]
     hot = guard.update(
         _ctx(
             now=1000.0,
@@ -270,7 +267,9 @@ def test_scores_decay_when_conditions_calm():
 
 
 def test_disabled_guard_returns_normal(monkeypatch):
-    monkeypatch.setattr("market_toxicity.cfg.MARKET_TOXICITY_ENABLED", False, raising=False)
+    monkeypatch.setattr(
+        "market_toxicity.cfg.MARKET_TOXICITY_ENABLED", False, raising=False
+    )
     guard = MarketToxicityGuard()
 
     snap = guard.update(

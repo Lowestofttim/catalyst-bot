@@ -30,6 +30,7 @@ from super_log import slog
 try:
     from api_call_tracker import record as _record_api_call
 except Exception:
+
     def _record_api_call(*args, **kwargs):
         return None
 
@@ -54,6 +55,7 @@ def _get_dexie_pairs() -> list:
     """
     try:
         import requests as _req
+
         dexie_base = getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
         url = f"{dexie_base}/v2/prices/tickers"
         _record_api_call("dexie", "/v2/prices/tickers")
@@ -68,17 +70,19 @@ def _get_dexie_pairs() -> list:
             ticker_id = ticker.get("ticker_id", "")
             if "_XCH" in ticker_id and ticker_id != "XCH_USDT":
                 base_name = ticker_id.replace("_XCH", "")
-                pairs.append({
-                    "ticker_id": ticker_id,
-                    "name": ticker.get("base_name", base_name),
-                    "asset_id": ticker.get("base_id", ""),
-                    "price": float(ticker.get("current_avg_price", 0) or 0),
-                    "volume_24h": float(ticker.get("target_volume", 0) or 0),
-                    "vol_7d_xch":   float(ticker.get("target_volume_7d",  0) or 0),
-                    "vol_30d_xch":  float(ticker.get("target_volume_30d", 0) or 0),
-                    "price_high_7d": float(ticker.get("high_7d",  0) or 0),
-                    "price_low_7d":  float(ticker.get("low_7d",   0) or 0),
-                })
+                pairs.append(
+                    {
+                        "ticker_id": ticker_id,
+                        "name": ticker.get("base_name", base_name),
+                        "asset_id": ticker.get("base_id", ""),
+                        "price": float(ticker.get("current_avg_price", 0) or 0),
+                        "volume_24h": float(ticker.get("target_volume", 0) or 0),
+                        "vol_7d_xch": float(ticker.get("target_volume_7d", 0) or 0),
+                        "vol_30d_xch": float(ticker.get("target_volume_30d", 0) or 0),
+                        "price_high_7d": float(ticker.get("high_7d", 0) or 0),
+                        "price_low_7d": float(ticker.get("low_7d", 0) or 0),
+                    }
+                )
 
         pairs.sort(key=lambda x: x["volume_24h"], reverse=True)
         print(f"[CATS] Fetched {len(pairs)} Dexie pairs")
@@ -107,6 +111,7 @@ def api_deposit_advisory_allocate():
     """
     cfg = api_server.cfg
     from database import get_setting as _get_setting, set_setting as _set_setting
+
     slog("GUI_ACTION", ">>> BUTTON: Deposit Advisory Allocate")
 
     try:
@@ -155,20 +160,29 @@ def api_deposit_advisory_allocate():
         # cfg.update() on TOPUP_POOL_* resets the session spend counter
         # to zero as a side effect — correct for Smart Settings, wrong
         # here: a deposit is ADDITIVE. Snapshot & restore.
-        spend_key = ("topup_pool_cat_spent_mojos" if wallet_type == "cat"
-                     else "topup_pool_xch_spent_mojos")
+        spend_key = (
+            "topup_pool_cat_spent_mojos"
+            if wallet_type == "cat"
+            else "topup_pool_xch_spent_mojos"
+        )
         pre_spent = 0
         try:
             pre_spent = int(str(_get_setting(spend_key, "0") or "0"))
         except Exception:
             pre_spent = 0
 
-        budget_ok = cfg.update(budget_cfg, budget_str,
-                               source="deposit_advisory",
-                               note=f"deposit {coin_id[:16]}... to pool")
-        reserve_ok = cfg.update(reserve_cfg, reserve_str,
-                                source="deposit_advisory",
-                                note=f"deposit {coin_id[:16]}... to reserve")
+        budget_ok = cfg.update(
+            budget_cfg,
+            budget_str,
+            source="deposit_advisory",
+            note=f"deposit {coin_id[:16]}... to pool",
+        )
+        reserve_ok = cfg.update(
+            reserve_cfg,
+            reserve_str,
+            source="deposit_advisory",
+            note=f"deposit {coin_id[:16]}... to reserve",
+        )
 
         if to_pool_pct > 0 and budget_ok:
             try:
@@ -193,19 +207,24 @@ def api_deposit_advisory_allocate():
         except Exception:
             pass
 
-        log_event("info", "deposit_advisory_allocated",
-                  f"Deposit {coin_id[:16]}... allocated: "
-                  f"{to_pool_asset} to {budget_cfg} (now {budget_str}), "
-                  f"{to_reserve_asset} to {reserve_cfg} (now {reserve_str})")
+        log_event(
+            "info",
+            "deposit_advisory_allocated",
+            f"Deposit {coin_id[:16]}... allocated: "
+            f"{to_pool_asset} to {budget_cfg} (now {budget_str}), "
+            f"{to_reserve_asset} to {reserve_cfg} (now {reserve_str})",
+        )
 
-        return jsonify({
-            "success": True,
-            "coin_id": coin_id,
-            "to_pool_asset": str(to_pool_asset),
-            "to_reserve_asset": str(to_reserve_asset),
-            "new_budget": budget_str,
-            "new_reserve": reserve_str,
-        })
+        return jsonify(
+            {
+                "success": True,
+                "coin_id": coin_id,
+                "to_pool_asset": str(to_pool_asset),
+                "to_reserve_asset": str(to_reserve_asset),
+                "new_budget": budget_str,
+                "new_reserve": reserve_str,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -218,6 +237,7 @@ def api_token_overview():
         return jsonify({"success": False, "description": "", "website": ""})
     try:
         import requests as _req
+
         dexie_base = getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
         for page in range(1, 4):
             _record_api_call("dexie", "/v1/assets")
@@ -231,17 +251,26 @@ def api_token_overview():
             assets = data.get("assets", [])
             for asset in assets:
                 if asset.get("id", "").lower() == dexie_asset_id:
-                    return jsonify({
-                        "success": True,
-                        "description": asset.get("description", ""),
-                        "website": asset.get("website", ""),
-                    })
+                    return jsonify(
+                        {
+                            "success": True,
+                            "description": asset.get("description", ""),
+                            "website": asset.get("website", ""),
+                        }
+                    )
             if len(assets) < 100:
                 break
         return jsonify({"success": True, "description": "", "website": ""})
     except Exception as e:
         print(f"[TOKEN_OVERVIEW] Failed for {dexie_asset_id[:12]}: {e}")
-        return jsonify({"success": False, "description": "", "website": "", "error": "token_overview_lookup_failed"})
+        return jsonify(
+            {
+                "success": False,
+                "description": "",
+                "website": "",
+                "error": "token_overview_lookup_failed",
+            }
+        )
 
 
 @bp.route("/api/dexie/v3-pairs")
@@ -265,6 +294,7 @@ def api_cats():
     cats = []
     try:
         from wallet import get_wallets
+
         result = get_wallets()
         wallet_cats = {}
 
@@ -284,10 +314,14 @@ def api_cats():
                             "name": name,
                             "asset_id": asset_id,
                         }
-                        print(f"[CATS] Found wallet CAT: {name} (Wallet {wallet_id}, Asset: {asset_id[:16]}...)")
+                        print(
+                            f"[CATS] Found wallet CAT: {name} (Wallet {wallet_id}, Asset: {asset_id[:16]}...)"
+                        )
 
         print(f"[CATS] Total wallet CATs found: {len(wallet_cats)}")
-        log_event("info", "cat_discovery", f"Found {len(wallet_cats)} CAT tokens in wallet")
+        log_event(
+            "info", "cat_discovery", f"Found {len(wallet_cats)} CAT tokens in wallet"
+        )
 
         dexie_pairs = _get_dexie_pairs()
         print(f"[CATS] Found {len(dexie_pairs)} Dexie pairs")
@@ -317,85 +351,102 @@ def api_cats():
             wallet_info = None
             for wallet_asset, wallet_data in wallet_cats.items():
                 normalized_wallet = _normalize_asset_id(wallet_asset)
-                if (wallet_asset.lower() == raw_asset_id.lower() or
-                        normalized_wallet == normalized_dexie):
+                if (
+                    wallet_asset.lower() == raw_asset_id.lower()
+                    or normalized_wallet == normalized_dexie
+                ):
                     wallet_info = wallet_data
                     break
 
             if wallet_info:
                 matched_count += 1
-                print(f"[CATS] Matched: {pair['name']} ({pair['ticker_id']}) in wallet {wallet_info['wallet_id']}")
+                print(
+                    f"[CATS] Matched: {pair['name']} ({pair['ticker_id']}) in wallet {wallet_info['wallet_id']}"
+                )
                 # Use the Dexie base_id (full 64-char) for the icon URL.
                 # icons.dexie.space serves .webp ONLY — .png returns a placeholder.
                 dexie_asset_id = pair.get("asset_id", "") or wallet_info["asset_id"]
-                icon_url = (f"https://icons.dexie.space/{dexie_asset_id}.webp"
-                            if dexie_asset_id else "")
+                icon_url = (
+                    f"https://icons.dexie.space/{dexie_asset_id}.webp"
+                    if dexie_asset_id
+                    else ""
+                )
                 _v3 = v3_by_ticker.get(pair["ticker_id"].upper(), {})
-                cats.append({
-                    "asset_id": wallet_info["asset_id"],
-                    "dexie_asset_id": dexie_asset_id,
-                    "icon_url": icon_url,
-                    "name": pair["name"],
-                    "ticker": pair["ticker_id"].replace("_XCH", ""),
-                    "ticker_id": pair["ticker_id"],
-                    "wallet_id": wallet_info["wallet_id"],
-                    "decimals": 3,
-                    "category": "ready",
-                    "volume_24h":    pair.get("volume_24h", 0),
-                    "price":         pair.get("price", 0),
-                    "vol_7d_xch":    pair.get("vol_7d_xch", 0),
-                    "vol_30d_xch":   pair.get("vol_30d_xch", 0),
-                    "price_high_7d": pair.get("price_high_7d", 0),
-                    "price_low_7d":  pair.get("price_low_7d", 0),
-                    "v3_last_price":      _v3.get("last_price"),
-                    "v3_base_volume":     _v3.get("base_volume"),
-                    "v3_target_volume":   _v3.get("target_volume"),
-                    "v3_high":            _v3.get("high"),
-                    "v3_low":             _v3.get("low"),
-                    "v3_bid":             _v3.get("bid"),
-                    "v3_ask":             _v3.get("ask"),
-                })
+                cats.append(
+                    {
+                        "asset_id": wallet_info["asset_id"],
+                        "dexie_asset_id": dexie_asset_id,
+                        "icon_url": icon_url,
+                        "name": pair["name"],
+                        "ticker": pair["ticker_id"].replace("_XCH", ""),
+                        "ticker_id": pair["ticker_id"],
+                        "wallet_id": wallet_info["wallet_id"],
+                        "decimals": 3,
+                        "category": "ready",
+                        "volume_24h": pair.get("volume_24h", 0),
+                        "price": pair.get("price", 0),
+                        "vol_7d_xch": pair.get("vol_7d_xch", 0),
+                        "vol_30d_xch": pair.get("vol_30d_xch", 0),
+                        "price_high_7d": pair.get("price_high_7d", 0),
+                        "price_low_7d": pair.get("price_low_7d", 0),
+                        "v3_last_price": _v3.get("last_price"),
+                        "v3_base_volume": _v3.get("base_volume"),
+                        "v3_target_volume": _v3.get("target_volume"),
+                        "v3_high": _v3.get("high"),
+                        "v3_low": _v3.get("low"),
+                        "v3_bid": _v3.get("bid"),
+                        "v3_ask": _v3.get("ask"),
+                    }
+                )
 
         print(f"[CATS] Matched {matched_count} wallet CATs with Dexie pairs")
-        log_event("success", "cat_discovery",
-                  f"Matched {matched_count} wallet CATs with Dexie trading pairs")
+        log_event(
+            "success",
+            "cat_discovery",
+            f"Matched {matched_count} wallet CATs with Dexie trading pairs",
+        )
 
         matched_assets = {c["asset_id"].lower() for c in cats}
         for asset_id, wdata in wallet_cats.items():
             if asset_id.lower() not in matched_assets:
                 ticker = wdata["name"].split(" ")[0] if wdata["name"] else asset_id[:8]
-                cats.append({
-                    "asset_id": asset_id,
-                    "name": wdata["name"],
-                    "ticker": ticker,
-                    "ticker_id": f"{ticker}_XCH",
-                    "wallet_id": wdata["wallet_id"],
-                    "decimals": 3,
-                    "category": "wallet_only",
-                    "volume_24h": 0,
-                })
+                cats.append(
+                    {
+                        "asset_id": asset_id,
+                        "name": wdata["name"],
+                        "ticker": ticker,
+                        "ticker_id": f"{ticker}_XCH",
+                        "wallet_id": wdata["wallet_id"],
+                        "decimals": 3,
+                        "category": "wallet_only",
+                        "volume_24h": 0,
+                    }
+                )
 
     except Exception as e:
         print(f"[CATS] Error in CAT discovery: {e}")
         import traceback
+
         traceback.print_exc()
 
     # Fallback: if everything failed, use configured CAT from .env
     if not cats:
         cat_id = cfg.CAT_ASSET_ID
         if cat_id:
-            cat_name = getattr(cfg, 'CAT_NAME', 'CAT')
-            cat_ticker = getattr(cfg, 'CAT_TICKER_ID', cat_id[:8])
-            cats.append({
-                "asset_id": cat_id,
-                "name": cat_name,
-                "ticker": cat_ticker,
-                "ticker_id": cat_ticker,
-                "wallet_id": getattr(cfg, 'CAT_WALLET_ID', 2),
-                "decimals": getattr(cfg, 'CAT_DECIMALS', 3),
-                "category": "ready",
-                "volume_24h": 0,
-            })
+            cat_name = getattr(cfg, "CAT_NAME", "CAT")
+            cat_ticker = getattr(cfg, "CAT_TICKER_ID", cat_id[:8])
+            cats.append(
+                {
+                    "asset_id": cat_id,
+                    "name": cat_name,
+                    "ticker": cat_ticker,
+                    "ticker_id": cat_ticker,
+                    "wallet_id": getattr(cfg, "CAT_WALLET_ID", 2),
+                    "decimals": getattr(cfg, "CAT_DECIMALS", 3),
+                    "category": "ready",
+                    "volume_24h": 0,
+                }
+            )
 
     return jsonify({"success": True, "cats": cats})
 
@@ -417,18 +468,26 @@ def api_cat_select():
     # Validate asset_id format (64 lowercase hex chars) BEFORE writing to .env.
     if asset_id:
         asset_id = str(asset_id).strip()
-        if len(asset_id) != 64 or not all(c in '0123456789abcdefABCDEF' for c in asset_id):
-            return jsonify({
-                "success": False,
-                "error": "CAT asset_id must be exactly 64 hex characters",
-            }), 400
+        if len(asset_id) != 64 or not all(
+            c in "0123456789abcdefABCDEF" for c in asset_id
+        ):
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "CAT asset_id must be exactly 64 hex characters",
+                }
+            ), 400
         asset_id = asset_id.lower()
 
         # Defensive guard: reject asset_id that isn't actually in the Sage wallet.
         try:
             from wallet import get_wallets as _get_wallets
+
             _wallets_resp = _get_wallets()
-            if isinstance(_wallets_resp, dict) and _wallets_resp.get("success") is not False:
+            if (
+                isinstance(_wallets_resp, dict)
+                and _wallets_resp.get("success") is not False
+            ):
                 _wallets = _wallets_resp.get("wallets") or []
                 _known_asset_ids = set()
                 for _w in _wallets:
@@ -436,17 +495,24 @@ def api_cat_select():
                     if len(_aid) == 64:
                         _known_asset_ids.add(_aid)
                 if _known_asset_ids and asset_id not in _known_asset_ids:
-                    return jsonify({
-                        "success": False,
-                        "error": (f"CAT asset_id not found in Sage wallet "
-                                  f"(wallet has {len(_known_asset_ids)} known CAT"
-                                  f"{'s' if len(_known_asset_ids) != 1 else ''}). "
-                                  f"Receive the CAT first, or double-check the ID."),
-                    }), 400
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": (
+                                f"CAT asset_id not found in Sage wallet "
+                                f"(wallet has {len(_known_asset_ids)} known CAT"
+                                f"{'s' if len(_known_asset_ids) != 1 else ''}). "
+                                f"Receive the CAT first, or double-check the ID."
+                            ),
+                        }
+                    ), 400
         except Exception as _wallet_check_err:
-            log_event("warning", "cat_select_wallet_check_failed",
-                      f"Could not verify asset_id against wallet "
-                      f"({_wallet_check_err}) — proceeding without existence check")
+            log_event(
+                "warning",
+                "cat_select_wallet_check_failed",
+                f"Could not verify asset_id against wallet "
+                f"({_wallet_check_err}) — proceeding without existence check",
+            )
 
     if name and len(str(name)) > 128:
         return jsonify({"success": False, "error": "CAT name too long"}), 400
@@ -463,11 +529,13 @@ def api_cat_select():
     # Safety: never change the trading pair while the bot is running.
     try:
         if bot is not None and bot.is_running():
-            return jsonify({
-                "success": False,
-                "error": "Stop the bot before changing the trading pair. "
-                         "Switching CAT mid-run would cause offers for the wrong token."
-            }), 409
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Stop the bot before changing the trading pair. "
+                    "Switching CAT mid-run would cause offers for the wrong token.",
+                }
+            ), 409
     except Exception:
         pass
 
@@ -495,46 +563,70 @@ def api_cat_select():
         try:
             if hasattr(bot, "risk_manager") and bot.risk_manager:
                 bot.risk_manager.reset_session()
-                log_event("info", "cat_switch_risk_reset",
-                          f"Risk manager reset for CAT change to {name}")
+                log_event(
+                    "info",
+                    "cat_switch_risk_reset",
+                    f"Risk manager reset for CAT change to {name}",
+                )
         except Exception as e:
-            log_event("warning", "cat_switch_risk_reset_failed",
-                      f"Could not reset risk manager on CAT switch: {e}")
+            log_event(
+                "warning",
+                "cat_switch_risk_reset_failed",
+                f"Could not reset risk manager on CAT switch: {e}",
+            )
 
     # Auto-resolve TIBET_PAIR_ID for the newly selected CAT in the background.
     if asset_id:
+
         def _resolve_new_cat_tibet():
             try:
                 import cat_resolver as _cr
+
                 _cr._cache = None
                 _cr._last_resolve_at = 0
                 cfg.update("TIBET_PAIR_ID", "")
                 meta = _cr.resolve_and_apply(cfg)
                 if meta.get("pair_id"):
-                    log_event("info", "cat_tibet_pair_resolved",
-                              f"TIBET_PAIR_ID auto-resolved for {name}: "
-                              f"{meta['pair_id'][:20]}...")
-                    print(f"[CAT SELECT] TIBET_PAIR_ID resolved: {meta['pair_id'][:20]}...")
+                    log_event(
+                        "info",
+                        "cat_tibet_pair_resolved",
+                        f"TIBET_PAIR_ID auto-resolved for {name}: "
+                        f"{meta['pair_id'][:20]}...",
+                    )
+                    print(
+                        f"[CAT SELECT] TIBET_PAIR_ID resolved: {meta['pair_id'][:20]}..."
+                    )
                 else:
-                    log_event("info", "cat_tibet_pair_not_found",
-                              f"CAT {name} ({asset_id[:12]}...) has no TibetSwap pair — "
-                              f"AMM monitoring disabled for this token")
+                    log_event(
+                        "info",
+                        "cat_tibet_pair_not_found",
+                        f"CAT {name} ({asset_id[:12]}...) has no TibetSwap pair — "
+                        f"AMM monitoring disabled for this token",
+                    )
             except Exception as e:
-                log_event("warning", "cat_tibet_resolve_error",
-                          f"TIBET_PAIR_ID auto-resolve failed after CAT select: {e}")
-        threading.Thread(target=_resolve_new_cat_tibet, daemon=True,
-                         name="cat-tibet-resolve").start()
+                log_event(
+                    "warning",
+                    "cat_tibet_resolve_error",
+                    f"TIBET_PAIR_ID auto-resolve failed after CAT select: {e}",
+                )
+
+        threading.Thread(
+            target=_resolve_new_cat_tibet, daemon=True, name="cat-tibet-resolve"
+        ).start()
 
     # Notify the Sage wallet adapter so _get_cat_asset_id() returns the new
     # asset ID immediately — without waiting for .env to be re-read.
     try:
         from wallet_sage import notify_cat_asset_id_changed
+
         notify_cat_asset_id_changed(asset_id)
     except Exception:
         pass
 
     print(f"🔄 CAT selected: {name} (wallet_id={wallet_id}, asset={asset_id[:12]}...)")
-    log_event("info", "cat_selected", f"Trading pair selected: {name} (wallet {wallet_id})")
+    log_event(
+        "info", "cat_selected", f"Trading pair selected: {name} (wallet {wallet_id})"
+    )
     return jsonify({"success": True, "asset_id": asset_id, "wallet_id": wallet_id})
 
 
@@ -554,26 +646,41 @@ def api_balances_refresh():
         cat_bal = {"spendable": 0, "total": 0}
         try:
             from wallet import get_wallet_balance, WALLET_ID_XCH
+
             xr = get_wallet_balance(WALLET_ID_XCH)
             if xr and xr.get("success"):
                 wb = xr.get("wallet_balance") or {}
-                xch_bal["total"] = api_server._safe_float(wb.get("confirmed_wallet_balance", 0)) / 1e12
-                xch_bal["spendable"] = api_server._safe_float(wb.get("spendable_balance", 0)) / 1e12
-            cat_wid = api_server._active_cat.get("wallet_id") or getattr(cfg, 'CAT_WALLET_ID', 2)
-            cat_dec = api_server._active_cat.get("decimals") or getattr(cfg, 'CAT_DECIMALS', 3)
+                xch_bal["total"] = (
+                    api_server._safe_float(wb.get("confirmed_wallet_balance", 0)) / 1e12
+                )
+                xch_bal["spendable"] = (
+                    api_server._safe_float(wb.get("spendable_balance", 0)) / 1e12
+                )
+            cat_wid = api_server._active_cat.get("wallet_id") or getattr(
+                cfg, "CAT_WALLET_ID", 2
+            )
+            cat_dec = api_server._active_cat.get("decimals") or getattr(
+                cfg, "CAT_DECIMALS", 3
+            )
             cr = get_wallet_balance(cat_wid)
             if cr and cr.get("success"):
                 wb = cr.get("wallet_balance") or {}
-                cat_bal["total"] = api_server._safe_float(wb.get("confirmed_wallet_balance", 0)) / (10 ** cat_dec)
-                cat_bal["spendable"] = api_server._safe_float(wb.get("spendable_balance", 0)) / (10 ** cat_dec)
+                cat_bal["total"] = api_server._safe_float(
+                    wb.get("confirmed_wallet_balance", 0)
+                ) / (10**cat_dec)
+                cat_bal["spendable"] = api_server._safe_float(
+                    wb.get("spendable_balance", 0)
+                ) / (10**cat_dec)
         except Exception:
             pass
-        return jsonify({
-            "success": True,
-            "balances": {
-                "xch": xch_bal,
-                "cat": cat_bal,
+        return jsonify(
+            {
+                "success": True,
+                "balances": {
+                    "xch": xch_bal,
+                    "cat": cat_bal,
+                },
             }
-        })
+        )
     except Exception:
         return api_server._api_exception(request.path)

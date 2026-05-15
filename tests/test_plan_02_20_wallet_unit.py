@@ -12,6 +12,7 @@ import unittest
 try:
     import wallet as _w
     from wallet import get_wallet_type
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)

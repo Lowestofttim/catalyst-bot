@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import api_server
     from flask import jsonify as _jsonify
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -28,13 +29,15 @@ except (ModuleNotFoundError, ImportError) as exc:
 def _fake_defaults_response(**kwargs):
     """Return a Flask Response mimicking _calculate_smart_defaults output."""
     with api_server.app.app_context():
-        return _jsonify({
-            "success": True,
-            "spread_bps": 200,
-            "default_trade_xch": "0.5",
-            "liquidity_mode": kwargs.get("liquidity_mode", "two_sided"),
-            "risk_profile": kwargs.get("risk_profile", "balanced"),
-        })
+        return _jsonify(
+            {
+                "success": True,
+                "spread_bps": 200,
+                "default_trade_xch": "0.5",
+                "liquidity_mode": kwargs.get("liquidity_mode", "two_sided"),
+                "risk_profile": kwargs.get("risk_profile", "balanced"),
+            }
+        )
 
 
 class _FlaskBase(unittest.TestCase):
@@ -51,12 +54,11 @@ class _FlaskBase(unittest.TestCase):
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSmartDefaults(_FlaskBase):
-
     def test_returns_200(self):
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=_fake_defaults_response):
-            resp = self.client.get("/api/smart-defaults",
-                                   environ_base=self._LOOPBACK)
+        with patch.object(
+            api_server, "_calculate_smart_defaults", side_effect=_fake_defaults_response
+        ):
+            resp = self.client.get("/api/smart-defaults", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_default_liquidity_mode_two_sided(self):
@@ -66,10 +68,8 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
-            self.client.get("/api/smart-defaults",
-                            environ_base=self._LOOPBACK)
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
+            self.client.get("/api/smart-defaults", environ_base=self._LOOPBACK)
         self.assertEqual(captured.get("liquidity_mode"), "two_sided")
 
     def test_buy_only_mode_forwarded(self):
@@ -79,10 +79,11 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
-            self.client.get("/api/smart-defaults?liquidity_mode=buy_only",
-                            environ_base=self._LOOPBACK)
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
+            self.client.get(
+                "/api/smart-defaults?liquidity_mode=buy_only",
+                environ_base=self._LOOPBACK,
+            )
         self.assertEqual(captured.get("liquidity_mode"), "buy_only")
 
     def test_sell_only_mode_forwarded(self):
@@ -92,10 +93,11 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
-            self.client.get("/api/smart-defaults?liquidity_mode=sell_only",
-                            environ_base=self._LOOPBACK)
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
+            self.client.get(
+                "/api/smart-defaults?liquidity_mode=sell_only",
+                environ_base=self._LOOPBACK,
+            )
         self.assertEqual(captured.get("liquidity_mode"), "sell_only")
 
     def test_invalid_liquidity_mode_falls_back_to_two_sided(self):
@@ -105,10 +107,11 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
-            self.client.get("/api/smart-defaults?liquidity_mode=invalid_mode",
-                            environ_base=self._LOOPBACK)
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
+            self.client.get(
+                "/api/smart-defaults?liquidity_mode=invalid_mode",
+                environ_base=self._LOOPBACK,
+            )
         self.assertEqual(captured.get("liquidity_mode"), "two_sided")
 
     def test_risk_profile_forwarded(self):
@@ -118,17 +121,20 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
-            self.client.get("/api/smart-defaults?risk_profile=conservative",
-                            environ_base=self._LOOPBACK)
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
+            self.client.get(
+                "/api/smart-defaults?risk_profile=conservative",
+                environ_base=self._LOOPBACK,
+            )
         self.assertEqual(captured.get("risk_profile"), "conservative")
 
     def test_exception_returns_500(self):
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=Exception("market data unavailable")):
-            resp = self.client.get("/api/smart-defaults",
-                                   environ_base=self._LOOPBACK)
+        with patch.object(
+            api_server,
+            "_calculate_smart_defaults",
+            side_effect=Exception("market data unavailable"),
+        ):
+            resp = self.client.get("/api/smart-defaults", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 500)
         body = resp.get_json()
         self.assertIn("error", body)
@@ -140,8 +146,7 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
             self.client.get(
                 "/api/smart-defaults?xch_reserve=0.5&cat_reserve=100",
                 environ_base=self._LOOPBACK,
@@ -156,8 +161,7 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
             self.client.get(
                 "/api/smart-defaults?"
                 "asset_id=abc123&cat_wallet_id=7&cat_decimals=5&"
@@ -178,8 +182,7 @@ class TestSmartDefaults(_FlaskBase):
             captured.update(kwargs)
             return _fake_defaults_response(**kwargs)
 
-        with patch.object(api_server, "_calculate_smart_defaults",
-                          side_effect=capture):
+        with patch.object(api_server, "_calculate_smart_defaults", side_effect=capture):
             self.client.get(
                 "/api/smart-defaults?asset_id=abc123&cat_decimals=0",
                 environ_base=self._LOOPBACK,
@@ -189,7 +192,6 @@ class TestSmartDefaults(_FlaskBase):
 
 
 class TestSmartDefaultsSourceContract(unittest.TestCase):
-
     def test_tibet_shock_trigger_derives_from_inner_edge(self):
         from blueprints.smart_defaults import _smart_tibet_shock_trigger_pct
 
@@ -222,11 +224,13 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
             ticker={},
             tibet={},
             spacescan={},
-            trades={"trades": [
-                {"price": 2.0, "xch_amount": 1.0},
-                {"price": 4.0, "xch_amount": 3.0},
-                {"price": 10.0, "xch_amount": 0.0},
-            ]},
+            trades={
+                "trades": [
+                    {"price": 2.0, "xch_amount": 1.0},
+                    {"price": 4.0, "xch_amount": 3.0},
+                    {"price": 10.0, "xch_amount": 0.0},
+                ]
+            },
             orderbook={},
             messages=messages,
         )
@@ -238,7 +242,9 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
 
     def test_response_contract_includes_safety_fields(self):
         root = Path(__file__).resolve().parents[1]
-        src = (root / "src" / "catalyst" / "blueprints" / "smart_defaults.py").read_text(encoding="utf-8")
+        src = (
+            root / "src" / "catalyst" / "blueprints" / "smart_defaults.py"
+        ).read_text(encoding="utf-8")
         result_block = src.split("    result = {\n        # Smart Pricing", 1)[1].split(
             'print(f"[SMART_DEFAULTS v2]', 1
         )[0]
@@ -343,9 +349,9 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
 
     def test_single_sided_smart_defaults_disable_inventory_management(self):
         root = Path(__file__).resolve().parents[1]
-        src = (root / "src" / "catalyst" / "blueprints" / "smart_defaults.py").read_text(
-            encoding="utf-8"
-        )
+        src = (
+            root / "src" / "catalyst" / "blueprints" / "smart_defaults.py"
+        ).read_text(encoding="utf-8")
         buy_block = src.split('if liquidity_mode == "buy_only":', 1)[1].split(
             'elif liquidity_mode == "sell_only":', 1
         )[0]
@@ -359,7 +365,9 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
     def test_frontend_smart_settings_watches_safety_fields(self):
         root = Path(__file__).resolve().parents[1]
         html = (root / "bot_gui.html").read_text(encoding="utf-8")
-        watched = html.split("const SMART_SETTINGS_WATCHED_INPUTS = [", 1)[1].split("];", 1)[0]
+        watched = html.split("const SMART_SETTINGS_WATCHED_INPUTS = [", 1)[1].split(
+            "];", 1
+        )[0]
 
         for field_id in (
             "configBaseSpreadBps",
@@ -405,7 +413,6 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
 
 
 class TestSmartDefaultsSmallWalletSizing(unittest.TestCase):
-
     def test_small_wallet_position_limit_has_no_five_xch_floor(self):
         from blueprints.smart_defaults import _smart_initial_max_position
 
@@ -436,7 +443,9 @@ class TestSmartDefaultsSmallWalletSizing(unittest.TestCase):
 
         self.assertLessEqual(_smart_fee_prep_count(5, 0.001), 20)
 
-        one_xch_sniper = _smart_sniper_prep_plan(1, fills_per_day=12, sniper_size_xch=0.01)
+        one_xch_sniper = _smart_sniper_prep_plan(
+            1, fills_per_day=12, sniper_size_xch=0.01
+        )
         self.assertLessEqual(one_xch_sniper["count"], 2)
         self.assertLessEqual(one_xch_sniper["pool_xch"], 0.02)
 

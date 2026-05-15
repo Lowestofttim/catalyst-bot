@@ -29,12 +29,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 07-03: Dexie API 5xx — retry + graceful failure
 # ---------------------------------------------------------------------------
 
+
 class TestDexie5xxRetry(unittest.TestCase):
     """DexieManager should retry 5xx responses up to DEXIE_POST_RETRIES times
     and return an error dict (never raise) when retries are exhausted."""
 
     def _make_manager(self):
         from dexie_manager import DexieManager
+
         return DexieManager()
 
     def _make_5xx_response(self, status=500):
@@ -46,8 +48,10 @@ class TestDexie5xxRetry(unittest.TestCase):
     def test_5xx_response_does_not_raise(self):
         mgr = self._make_manager()
         mock_resp = self._make_5xx_response(500)
-        with patch("dexie_manager.requests.post", return_value=mock_resp), \
-             patch("dexie_manager.time.sleep"):
+        with (
+            patch("dexie_manager.requests.post", return_value=mock_resp),
+            patch("dexie_manager.time.sleep"),
+        ):
             result = mgr._post_single("offer1abc", "tid123")
         self.assertIsInstance(result, dict)
         self.assertFalse(result.get("success"))
@@ -55,11 +59,14 @@ class TestDexie5xxRetry(unittest.TestCase):
     def test_5xx_exhausts_retries(self):
         """All attempts return 5xx — manager tries DEXIE_POST_RETRIES+1 times."""
         from config import cfg
+
         mgr = self._make_manager()
         mock_resp = self._make_5xx_response(503)
         post_mock = MagicMock(return_value=mock_resp)
-        with patch("dexie_manager.requests.post", post_mock), \
-             patch("dexie_manager.time.sleep"):
+        with (
+            patch("dexie_manager.requests.post", post_mock),
+            patch("dexie_manager.time.sleep"),
+        ):
             mgr._post_single("offer1abc", "tid456")
         expected_calls = cfg.DEXIE_POST_RETRIES + 1
         self.assertEqual(post_mock.call_count, expected_calls)
@@ -72,10 +79,11 @@ class TestDexie5xxRetry(unittest.TestCase):
         success_resp.status_code = 200
         success_resp.json.return_value = {"id": "dexie-id-123"}
 
-        with patch("dexie_manager.requests.post",
-                   side_effect=[fail_resp, success_resp]), \
-             patch("dexie_manager.time.sleep"), \
-             patch("dexie_manager.update_offer_dexie"):
+        with (
+            patch("dexie_manager.requests.post", side_effect=[fail_resp, success_resp]),
+            patch("dexie_manager.time.sleep"),
+            patch("dexie_manager.update_offer_dexie"),
+        ):
             result = mgr._post_single("offer1test", "trade_abc")
         self.assertTrue(result.get("success"))
 
@@ -87,8 +95,10 @@ class TestDexie5xxRetry(unittest.TestCase):
         rate_limited_resp.headers = {"Retry-After": "60"}
 
         before = time.time()
-        with patch("dexie_manager.requests.post", return_value=rate_limited_resp), \
-             patch("dexie_manager.time.sleep"):
+        with (
+            patch("dexie_manager.requests.post", return_value=rate_limited_resp),
+            patch("dexie_manager.time.sleep"),
+        ):
             mgr._post_single("offer1xyz", "tid789")
         self.assertGreater(mgr._rate_limited_until, before + 30)
 
@@ -100,8 +110,10 @@ class TestDexie5xxRetry(unittest.TestCase):
         rate_limited_resp.headers = {"Retry-After": "90"}
 
         before = time.time()
-        with patch("dexie_manager.requests.post", return_value=rate_limited_resp), \
-             patch("dexie_manager.time.sleep"):
+        with (
+            patch("dexie_manager.requests.post", return_value=rate_limited_resp),
+            patch("dexie_manager.time.sleep"),
+        ):
             mgr._post_single("offer1rrr", "trrr")
         self.assertGreaterEqual(mgr._rate_limited_until, before + 89)
 
@@ -123,8 +135,10 @@ class TestDexie5xxRetry(unittest.TestCase):
         success_resp = MagicMock()
         success_resp.status_code = 200
         success_resp.json.return_value = {"id": "ok-id"}
-        with patch("dexie_manager.requests.post", return_value=success_resp), \
-             patch("dexie_manager.update_offer_dexie"):
+        with (
+            patch("dexie_manager.requests.post", return_value=success_resp),
+            patch("dexie_manager.update_offer_dexie"),
+        ):
             result = mgr._post_single("offer1ok", "tok")
         # Requests.post should be called since rate limit expired
         self.assertTrue(result.get("success"))
@@ -132,10 +146,15 @@ class TestDexie5xxRetry(unittest.TestCase):
     def test_connection_error_does_not_raise(self):
         """Network-level ConnectionError must be caught and return error dict."""
         import requests as req
+
         mgr = self._make_manager()
-        with patch("dexie_manager.requests.post",
-                   side_effect=req.ConnectionError("connection refused")), \
-             patch("dexie_manager.time.sleep"):
+        with (
+            patch(
+                "dexie_manager.requests.post",
+                side_effect=req.ConnectionError("connection refused"),
+            ),
+            patch("dexie_manager.time.sleep"),
+        ):
             result = mgr._post_single("offer1conn", "tcnn")
         self.assertIsInstance(result, dict)
         self.assertFalse(result.get("success"))
@@ -143,10 +162,12 @@ class TestDexie5xxRetry(unittest.TestCase):
     def test_timeout_does_not_raise(self):
         """Timeout must be caught and return error dict."""
         import requests as req
+
         mgr = self._make_manager()
-        with patch("dexie_manager.requests.post",
-                   side_effect=req.Timeout("timed out")), \
-             patch("dexie_manager.time.sleep"):
+        with (
+            patch("dexie_manager.requests.post", side_effect=req.Timeout("timed out")),
+            patch("dexie_manager.time.sleep"),
+        ):
             result = mgr._post_single("offer1to", "tto")
         self.assertIsInstance(result, dict)
         self.assertFalse(result.get("success"))
@@ -158,6 +179,7 @@ class TestDexie5xxRetry(unittest.TestCase):
 
 try:
     from price_engine import PriceEngine, _tibet_cache, _tibet_lock
+
     _PE_SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     PriceEngine = None
@@ -185,6 +207,7 @@ class TestTibetSwap5xxFallback(unittest.TestCase):
 
     def _fail_resp(self, status=500):
         import requests as _req
+
         resp = MagicMock()
         resp.status_code = status
         resp.raise_for_status.side_effect = _req.HTTPError(f"HTTP {status}")
@@ -212,7 +235,9 @@ class TestTibetSwap5xxFallback(unittest.TestCase):
         """5xx must be caught — _get_tibet_pairs never propagates exceptions."""
         engine = self._make_engine()
         try:
-            with patch.object(engine._session, "get", return_value=self._fail_resp(503)):
+            with patch.object(
+                engine._session, "get", return_value=self._fail_resp(503)
+            ):
                 engine._get_tibet_pairs()
         except Exception as exc:
             self.fail(f"_get_tibet_pairs raised: {exc}")
@@ -220,10 +245,12 @@ class TestTibetSwap5xxFallback(unittest.TestCase):
     def test_get_price_returns_none_when_both_sources_fail(self):
         """When Tibet and Dexie both fail, get_price returns None (not crash)."""
         engine = self._make_engine()
-        with patch.object(engine, "_fetch_tibet_price", return_value=None), \
-             patch.object(engine, "_fetch_dexie_price", return_value=None), \
-             patch.object(engine, "_apply_safety_guards", side_effect=lambda p: p), \
-             patch("price_engine.record_price"):
+        with (
+            patch.object(engine, "_fetch_tibet_price", return_value=None),
+            patch.object(engine, "_fetch_dexie_price", return_value=None),
+            patch.object(engine, "_apply_safety_guards", side_effect=lambda p: p),
+            patch("price_engine.record_price"),
+        ):
             result = engine.get_price("a" * 64, cat_decimals=3, ticker_id="TST_XCH")
         self.assertIsNone(result)
 
@@ -232,10 +259,12 @@ class TestTibetSwap5xxFallback(unittest.TestCase):
         engine = self._make_engine()
         dexie_price = Decimal("0.001")
 
-        with patch.object(engine, "_fetch_tibet_price", return_value=None), \
-             patch.object(engine, "_fetch_dexie_price", return_value=dexie_price), \
-             patch.object(engine, "_apply_safety_guards", side_effect=lambda p: p), \
-             patch("price_engine.record_price"):
+        with (
+            patch.object(engine, "_fetch_tibet_price", return_value=None),
+            patch.object(engine, "_fetch_dexie_price", return_value=dexie_price),
+            patch.object(engine, "_apply_safety_guards", side_effect=lambda p: p),
+            patch("price_engine.record_price"),
+        ):
             result = engine.get_price("a" * 64, cat_decimals=3, ticker_id="TST_XCH")
         self.assertEqual(result["mid_price"], dexie_price)
 
@@ -256,6 +285,7 @@ class TestTibetSwap5xxFallback(unittest.TestCase):
 
 try:
     from fill_tracker import FillTracker
+
     _FT_SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     FillTracker = None
@@ -293,8 +323,14 @@ class TestDBInconsistency(unittest.TestCase):
     def test_get_offer_context_uses_cache_when_db_missing(self):
         """Details cache is preferred over DB; missing DB doesn't overwrite good cache."""
         tracker = self._make_tracker()
-        cache = {"good-trade": {"price": "0.001", "tier": "inner",
-                                "size_xch": "1.0", "size_cat": "1000"}}
+        cache = {
+            "good-trade": {
+                "price": "0.001",
+                "tier": "inner",
+                "size_xch": "1.0",
+                "size_cat": "1000",
+            }
+        }
         with patch("database.get_offer", return_value=None):
             ctx = tracker._get_offer_context("good-trade", "buy", cache)
         self.assertEqual(ctx.get("price"), "0.001")
@@ -303,8 +339,7 @@ class TestDBInconsistency(unittest.TestCase):
     def test_get_offer_context_handles_db_exception(self):
         """Exception from get_offer is caught and does not propagate."""
         tracker = self._make_tracker()
-        with patch("database.get_offer",
-                   side_effect=Exception("DB connection lost")):
+        with patch("database.get_offer", side_effect=Exception("DB connection lost")):
             try:
                 ctx = tracker._get_offer_context("bad-trade", "buy", {})
             except Exception as exc:
@@ -322,6 +357,7 @@ class TestDBInconsistency(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 07-08: System clock jumps backward — negative time deltas handled gracefully
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_PE_SKIP is not None, f"price_engine unavailable: {_PE_SKIP}")
 class TestClockJump(unittest.TestCase):
@@ -365,6 +401,7 @@ class TestClockJump(unittest.TestCase):
         """After a clock jump backward, _rate_limited_until appears far in future.
         _post_single must still short-circuit and return an error dict."""
         from dexie_manager import DexieManager
+
         mgr = DexieManager()
         mgr._rate_limited_until = time.time() + 86400  # 24h "in future"
         post_mock = MagicMock()
@@ -376,13 +413,16 @@ class TestClockJump(unittest.TestCase):
     def test_dexie_rate_limit_past_timestamp(self):
         """If clock jumped forward past _rate_limited_until, HTTP calls proceed."""
         from dexie_manager import DexieManager
+
         mgr = DexieManager()
         mgr._rate_limited_until = time.time() - 1  # already expired
         success_resp = MagicMock()
         success_resp.status_code = 200
         success_resp.json.return_value = {"id": "test-id"}
-        with patch("dexie_manager.requests.post", return_value=success_resp), \
-             patch("dexie_manager.update_offer_dexie"):
+        with (
+            patch("dexie_manager.requests.post", return_value=success_resp),
+            patch("dexie_manager.update_offer_dexie"),
+        ):
             result = mgr._post_single("offer1ok", "tok")
         self.assertTrue(result.get("success"))
 
@@ -415,6 +455,7 @@ class TestClockJump(unittest.TestCase):
 # 07-07: Disk space exhausted — write operations degrade gracefully
 # ---------------------------------------------------------------------------
 
+
 class TestDiskFull(unittest.TestCase):
     """Simulates sqlite3.OperationalError: database or disk is full.
 
@@ -432,54 +473,73 @@ class TestDiskFull(unittest.TestCase):
 
     def _disk_full(self):
         import sqlite3
+
         return sqlite3.OperationalError(self._DISK_FULL_ERR)
 
     def test_record_fill_returns_minus_one_on_disk_full(self):
         """record_fill() returns -1 (not raises) when commit fails."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchone.return_value = None
         mock_conn.commit.side_effect = self._disk_full()
 
-        with patch("database.get_connection", return_value=mock_conn), \
-             patch("database.log_event"):
+        with (
+            patch("database.get_connection", return_value=mock_conn),
+            patch("database.log_event"),
+        ):
             result = db.record_fill(
-                "trade1", "buy", Decimal("0.001"), Decimal("1.0"),
-                Decimal("1000"), "a" * 64
+                "trade1",
+                "buy",
+                Decimal("0.001"),
+                Decimal("1.0"),
+                Decimal("1000"),
+                "a" * 64,
             )
         self.assertEqual(result, -1)
 
     def test_record_fill_calls_rollback_on_disk_full(self):
         """record_fill() must call rollback after a failed commit."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchone.return_value = None
         mock_conn.commit.side_effect = self._disk_full()
 
-        with patch("database.get_connection", return_value=mock_conn), \
-             patch("database.log_event"):
+        with (
+            patch("database.get_connection", return_value=mock_conn),
+            patch("database.log_event"),
+        ):
             db.record_fill(
-                "trade2", "sell", Decimal("0.001"), Decimal("1.0"),
-                Decimal("1000"), "a" * 64
+                "trade2",
+                "sell",
+                Decimal("0.001"),
+                Decimal("1.0"),
+                Decimal("1000"),
+                "a" * 64,
             )
         mock_conn.rollback.assert_called()
 
     def test_record_price_returns_false_on_disk_full(self):
         """record_price() returns False (not raises) when commit fails."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.commit.side_effect = self._disk_full()
 
         with patch("database.get_connection", return_value=mock_conn):
             result = db.record_price(
-                "a" * 64, Decimal("0.001"),
-                dexie_price=Decimal("0.001"), tibet_price=None
+                "a" * 64,
+                Decimal("0.001"),
+                dexie_price=Decimal("0.001"),
+                tibet_price=None,
             )
         self.assertFalse(result)
 
     def test_record_price_calls_rollback_on_disk_full(self):
         """record_price() must call rollback to release write lock."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.commit.side_effect = self._disk_full()
 
@@ -490,22 +550,28 @@ class TestDiskFull(unittest.TestCase):
     def test_log_event_returns_false_on_disk_full(self):
         """log_event() returns False (not raises) when commit fails."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.commit.side_effect = self._disk_full()
 
-        with patch("database.get_connection", return_value=mock_conn), \
-             patch("database._sse_callback", None):
+        with (
+            patch("database.get_connection", return_value=mock_conn),
+            patch("database._sse_callback", None),
+        ):
             result = db.log_event("error", "disk_full_test", "test message")
         self.assertFalse(result)
 
     def test_log_event_calls_rollback_on_disk_full(self):
         """log_event() must rollback to prevent permanent write lock."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.commit.side_effect = self._disk_full()
 
-        with patch("database.get_connection", return_value=mock_conn), \
-             patch("database._sse_callback", None):
+        with (
+            patch("database.get_connection", return_value=mock_conn),
+            patch("database._sse_callback", None),
+        ):
             db.log_event("warning", "disk_full_test", "test message")
         mock_conn.rollback.assert_called()
 
@@ -513,12 +579,15 @@ class TestDiskFull(unittest.TestCase):
         """Multiple consecutive write failures must each be swallowed,
         not cascade into an unhandled exception that crashes the thread."""
         import database as db
+
         mock_conn = MagicMock()
         mock_conn.execute.return_value.fetchone.return_value = None
         mock_conn.commit.side_effect = self._disk_full()
 
-        with patch("database.get_connection", return_value=mock_conn), \
-             patch("database.log_event"):
+        with (
+            patch("database.get_connection", return_value=mock_conn),
+            patch("database.log_event"),
+        ):
             try:
                 for _ in range(5):
                     db.record_price("a" * 64, Decimal("0.001"))

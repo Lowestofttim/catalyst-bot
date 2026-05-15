@@ -27,6 +27,7 @@ designed to be cheap on the hot path — one dict lookup + one increment
 under the lock — so call sites can use it without worrying about
 contention.
 """
+
 from __future__ import annotations
 
 import threading
@@ -118,9 +119,7 @@ def get_all_stats() -> Dict[str, object]:
             "total_by_service": dict(_counts),
             "by_endpoint": {s: dict(eps) for s, eps in _endpoint_counts.items()},
             "last_call_ts": last,
-            "last_call_ago_secs": {
-                s: round(now - ts, 1) for s, ts in last.items()
-            },
+            "last_call_ago_secs": {s: round(now - ts, 1) for s, ts in last.items()},
         }
 
 

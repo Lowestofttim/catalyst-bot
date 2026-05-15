@@ -34,14 +34,17 @@ class TestAppUpdateSecurity(unittest.TestCase):
             "version": version,
             "tag": f"v{version}",
             "published_at": "2026-05-04T10:00:00Z",
-            "expires_at": expires_at.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "expires_at": expires_at.replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "release_url": f"https://github.com/Lowestofttim/catalyst-releases/releases/tag/v{version}",
             "release_notes": "Signed manifest update.",
             "platforms": {
                 "windows-x64": {
                     "installer": {
                         "name": installer_name,
-                        "url": installer_url or (
+                        "url": installer_url
+                        or (
                             "https://github.com/Lowestofttim/catalyst-releases/releases/download/"
                             f"v{version}/{installer_name}"
                         ),
@@ -58,8 +61,12 @@ class TestAppUpdateSecurity(unittest.TestCase):
         ).decode("ascii")
 
     def test_official_manifest_url_is_allowed(self):
-        self.assertTrue(app_update.is_allowed_manifest_url(app_update.OFFICIAL_MANIFEST_URL))
-        self.assertFalse(app_update.is_allowed_manifest_url("https://example.invalid/latest.json"))
+        self.assertTrue(
+            app_update.is_allowed_manifest_url(app_update.OFFICIAL_MANIFEST_URL)
+        )
+        self.assertFalse(
+            app_update.is_allowed_manifest_url("https://example.invalid/latest.json")
+        )
         self.assertFalse(
             app_update.is_allowed_manifest_url(
                 "https://api.github.com/repos/catalystxch/catalyst-bot/releases/latest"
@@ -71,7 +78,9 @@ class TestAppUpdateSecurity(unittest.TestCase):
         manifest = self._manifest(version="1.2.6")
         signature = self._signature(private, manifest)
 
-        verified = app_update.verify_signed_manifest(manifest, signature, public_b64=public_b64)
+        verified = app_update.verify_signed_manifest(
+            manifest, signature, public_b64=public_b64
+        )
         info = app_update.build_update_info_from_manifest("1.2.5", verified)
 
         self.assertTrue(info["success"])
@@ -137,7 +146,9 @@ class TestAppUpdateSecurity(unittest.TestCase):
         manifest["version"] = "1.2.7"
 
         with self.assertRaises(ValueError):
-            app_update.verify_signed_manifest(manifest, signature, public_b64=public_b64)
+            app_update.verify_signed_manifest(
+                manifest, signature, public_b64=public_b64
+            )
 
     def test_signed_manifest_rejects_expired_metadata(self):
         private, public_b64 = self._keypair()
@@ -145,7 +156,9 @@ class TestAppUpdateSecurity(unittest.TestCase):
         signature = self._signature(private, manifest)
 
         with self.assertRaises(ValueError):
-            app_update.verify_signed_manifest(manifest, signature, public_b64=public_b64)
+            app_update.verify_signed_manifest(
+                manifest, signature, public_b64=public_b64
+            )
 
     def test_manifest_rejects_download_url_outside_release_channel(self):
         private, public_b64 = self._keypair()
@@ -155,7 +168,9 @@ class TestAppUpdateSecurity(unittest.TestCase):
         )
         signature = self._signature(private, manifest)
 
-        verified = app_update.verify_signed_manifest(manifest, signature, public_b64=public_b64)
+        verified = app_update.verify_signed_manifest(
+            manifest, signature, public_b64=public_b64
+        )
         info = app_update.build_update_info_from_manifest("1.2.5", verified)
 
         self.assertFalse(info["installer_ready"])
@@ -192,11 +207,15 @@ class TestAppUpdateSecurity(unittest.TestCase):
             self.assertFalse(app_update.verify_file_sha256(str(path), "0" * 64))
 
     def test_launch_installer_waits_for_old_app_before_install_and_relaunch(self):
-        with tempfile.TemporaryDirectory() as td, \
-                patch.object(app_update.sys, "platform", "win32"), \
-                patch.object(app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"), \
-                patch.object(app_update.os, "getpid", return_value=4321), \
-                patch.object(app_update.subprocess, "Popen") as popen:
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(app_update.sys, "platform", "win32"),
+            patch.object(
+                app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"
+            ),
+            patch.object(app_update.os, "getpid", return_value=4321),
+            patch.object(app_update.subprocess, "Popen") as popen,
+        ):
             installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
             installer.write_bytes(b"fake installer")
 
@@ -231,9 +250,13 @@ class TestAppUpdateApi(unittest.TestCase):
 
         running_bot = RunningBot()
 
-        with patch.object(self.api_server, "bot", running_bot), \
-                patch("app_update.start_update_install",
-                      return_value={"success": True, "started": True}) as start_install:
+        with (
+            patch.object(self.api_server, "bot", running_bot),
+            patch(
+                "app_update.start_update_install",
+                return_value={"success": True, "started": True},
+            ) as start_install,
+        ):
             resp = self.client.post(
                 "/api/update/install",
                 headers=self.auth,
@@ -248,8 +271,10 @@ class TestAppUpdateApi(unittest.TestCase):
         self.assertTrue(relaunch_intent["resume_existing_offers"])
 
     def test_check_update_includes_release_notes_and_installer_readiness(self):
-        with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
-                patch("app_update.fetch_signed_manifest") as fetch_manifest:
+        with (
+            patch.object(self.api_server, "get_app_version", return_value="1.2.5"),
+            patch("app_update.fetch_signed_manifest") as fetch_manifest,
+        ):
             fetch_manifest.return_value = {
                 "schema": 1,
                 "app": "CATalyst",
@@ -298,9 +323,15 @@ class TestAppUpdateApi(unittest.TestCase):
             "url": "https://github.com/Lowestofttim/catalyst-releases/releases/tag/v1.2.6",
             "release_notes": "New release.",
         }
-        with patch.object(self.api_server, "get_app_version", return_value="1.2.5"), \
-                patch("app_update.get_update_info", return_value=update_info) as get_update_info:
-            resp = self.client.get("/api/check-update?force=1", environ_base=self.loopback)
+        with (
+            patch.object(self.api_server, "get_app_version", return_value="1.2.5"),
+            patch(
+                "app_update.get_update_info", return_value=update_info
+            ) as get_update_info,
+        ):
+            resp = self.client.get(
+                "/api/check-update?force=1", environ_base=self.loopback
+            )
 
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
@@ -326,8 +357,12 @@ class TestAppUpdateBridge(unittest.TestCase):
             "release_notes": "Maintenance update.",
         }
 
-        with patch.object(api_server, "get_app_version", return_value="1.2.26"), \
-                patch("app_update.get_update_info", return_value=update_info) as get_update_info:
+        with (
+            patch.object(api_server, "get_app_version", return_value="1.2.26"),
+            patch(
+                "app_update.get_update_info", return_value=update_info
+            ) as get_update_info,
+        ):
             result = AppBridge().check_update({"force": "1"})
 
         self.assertTrue(result["success"])

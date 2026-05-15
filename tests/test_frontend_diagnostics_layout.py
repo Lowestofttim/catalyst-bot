@@ -14,26 +14,35 @@ def test_dashboard_sse_keeps_advisor_performance_state_fresh():
     assert "_lcDashboardData.performance.uptime_secs = data.uptime_secs;" in html
     assert "_lcDashboardData.performance.open_buys = data.open_buys;" in html
     assert "_lcDashboardData.performance.open_sells = data.open_sells;" in html
-    assert "_lcDashboardData.performance.open_offers = data.open_buys + data.open_sells;" in html
+    assert (
+        "_lcDashboardData.performance.open_offers = data.open_buys + data.open_sells;"
+        in html
+    )
 
 
 def test_recommendations_clear_stale_rotator_cache_when_empty():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
-    assert """if (active.length === 0) {
+    assert (
+        """if (active.length === 0) {
                 _alertActiveCache = [];
                 _alertRotatorIdx = 0;
                 if (_alertRotatorTimer) {
                     clearInterval(_alertRotatorTimer);
                     _alertRotatorTimer = null;
-                }""" in html
+                }"""
+        in html
+    )
 
 
 def test_recommendation_action_row_wraps_inside_guidance_card():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
     assert ".alert-item .alert-content { flex: 1; min-width: 0;" in html
-    assert ".alert-item .alert-msg { color: var(--text-secondary); font-size: 10px; overflow-wrap: anywhere;" in html
+    assert (
+        ".alert-item .alert-msg { color: var(--text-secondary); font-size: 10px; overflow-wrap: anywhere;"
+        in html
+    )
     assert ".alert-actions-row" in html
     assert "flex-wrap: wrap" in html
     assert "max-width: 100%" in html
@@ -53,7 +62,9 @@ def test_update_badge_is_compact_sidebar_control():
 def test_data_reset_success_refreshes_visible_stats():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
-    assert "async function refreshAfterDataReset({ clearPnlCharts = true } = {})" in html
+    assert (
+        "async function refreshAfterDataReset({ clearPnlCharts = true } = {})" in html
+    )
     assert "await refreshAfterDataReset();" in html
     assert "await refreshAfterDataReset({ clearPnlCharts });" in html
     assert "fetchDashboard()" in html
@@ -67,7 +78,10 @@ def test_data_reset_success_refreshes_visible_stats():
 def test_offer_history_reset_preserves_pnl_chart_history():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
-    assert "async function _runReset(endpoint, label, successMsgBuilder, { clearPnlCharts = true } = {})" in html
+    assert (
+        "async function _runReset(endpoint, label, successMsgBuilder, { clearPnlCharts = true } = {})"
+        in html
+    )
     assert "await _runReset('reset/offer-history', 'Clear offer history'," in html
     assert "{ clearPnlCharts: false });" in html
 
@@ -204,7 +218,10 @@ def test_running_settings_restart_warning_is_setup_only():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
     assert "function updateSettingsRestartBannerVisibility()" in html
-    assert "const setupActive = !!(setupView && setupView.classList.contains('is-active'));" in html
+    assert (
+        "const setupActive = !!(setupView && setupView.classList.contains('is-active'));"
+        in html
+    )
     assert "isRunning && setupActive" in html
     assert "try { updateSettingsRestartBannerVisibility(); } catch (_) {}" in html
     assert "banner.classList.toggle('is-visible', isRunning);" not in html

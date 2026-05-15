@@ -22,6 +22,7 @@ def api_superlog_stats():
     """Get superlog statistics — file size, level, error dump count."""
     try:
         from super_log import get_log_stats
+
         return jsonify(get_log_stats())
     except Exception:
         return api_server._api_exception(request.path)
@@ -37,6 +38,7 @@ def api_superlog_level():
     try:
         data = request.get_json(force=True) or {}
         from super_log import set_file_level, set_terminal_level, get_log_stats
+
         if "file_level" in data:
             set_file_level(data["file_level"])
         if "terminal_level" in data:
@@ -56,6 +58,7 @@ def api_superlog_archive():
     """
     try:
         from super_log import get_archive_summary
+
         last_n = request.args.get("last", 10, type=int)
         return jsonify(get_archive_summary(last_n=min(last_n, 100)))
     except Exception:
@@ -67,11 +70,15 @@ def api_superlog_download():
     """Download the current superlog file directly."""
     try:
         from super_log import get_log_path
+
         log_path = get_log_path()
         if log_path and os.path.exists(log_path):
-            return send_file(log_path, mimetype="text/plain",
-                             as_attachment=True,
-                             download_name=os.path.basename(log_path))
+            return send_file(
+                log_path,
+                mimetype="text/plain",
+                as_attachment=True,
+                download_name=os.path.basename(log_path),
+            )
         return jsonify({"error": "No superlog file found"}), 404
     except Exception:
         return api_server._api_exception(request.path)

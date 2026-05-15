@@ -35,6 +35,7 @@ def _get_api_server():
 
     try:
         import api_server as _api
+
         return _api, None
     except (ImportError, ModuleNotFoundError) as exc:
         return None, exc
@@ -78,9 +79,10 @@ class SessionManagementTests(unittest.TestCase):
 
     def test_fresh_start_flag_is_written_on_api_call(self):
         """Calling /api/session/fresh-start must create the flag file on disk."""
-        with patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path), \
-             patch.object(_api_server, "_reset_fresh_run_session",
-                          return_value={}):
+        with (
+            patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path),
+            patch.object(_api_server, "_reset_fresh_run_session", return_value={}),
+        ):
             resp = self._client.post(
                 "/api/session/fresh-start",
                 headers={"X-Bot-Local-Token": _api_server._LOCAL_API_TOKEN},
@@ -150,10 +152,13 @@ class SessionManagementTests(unittest.TestCase):
         # Flag is absent (setUp ensures this)
         fake_offer = {"trade_id": "abc", "status": "open"}
 
-        with patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path), \
-             patch("wallet.get_all_offers", return_value=[fake_offer]), \
-             patch("wallet.classify_offers_from_list",
-                   return_value=([fake_offer], [], [])):
+        with (
+            patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path),
+            patch("wallet.get_all_offers", return_value=[fake_offer]),
+            patch(
+                "wallet.classify_offers_from_list", return_value=([fake_offer], [], [])
+            ),
+        ):
             resp = self._client.get(
                 "/api/check-resume",
                 headers={"X-Bot-Local-Token": _api_server._LOCAL_API_TOKEN},
@@ -221,8 +226,10 @@ class SessionManagementTests(unittest.TestCase):
         # Build a minimal fake bot with _loop_count > 0
         fake_bot = _types.SimpleNamespace(_loop_count=1)
 
-        with patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path), \
-             patch.object(_api_server, "bot", fake_bot):
+        with (
+            patch.object(_api_server, "_FRESH_START_FLAG", self._flag_path),
+            patch.object(_api_server, "bot", fake_bot),
+        ):
             resp = self._client.get(
                 "/api/check-resume",
                 headers={"X-Bot-Local-Token": _api_server._LOCAL_API_TOKEN},
@@ -231,8 +238,9 @@ class SessionManagementTests(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
-        self.assertFalse(body.get("can_resume"),
-                         "can_resume must be False when bot is running")
+        self.assertFalse(
+            body.get("can_resume"), "can_resume must be False when bot is running"
+        )
         self.assertEqual(body.get("reason"), "bot_already_running")
 
 

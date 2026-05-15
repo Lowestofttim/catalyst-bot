@@ -32,9 +32,9 @@ _tibet_cache = {
     "pairs": [],
     "fetched_at": 0,
     "cache_ttl": 120,  # 2 minutes — reduced from 30min so AMM drift is caught sooner
-                       # AMMMonitor injects fresh reserves every AMM_POLL_INTERVAL_SECS
-                       # and resets fetched_at, so the effective refresh rate is
-                       # whichever is shorter: this TTL or the AMM poll interval.
+    # AMMMonitor injects fresh reserves every AMM_POLL_INTERVAL_SECS
+    # and resets fetched_at, so the effective refresh rate is
+    # whichever is shorter: this TTL or the AMM poll interval.
 }
 _tibet_lock = threading.Lock()
 
@@ -59,7 +59,9 @@ class PriceEngine:
         self._last_dexie_price: Optional[Decimal] = None
         self._last_tibet_price: Optional[Decimal] = None
         self._last_price_time: float = 0
-        self._last_tibet_price_time: float = 0   # Timestamp of last successful Tibet fetch
+        self._last_tibet_price_time: float = (
+            0  # Timestamp of last successful Tibet fetch
+        )
         self._session = requests.Session()
         self._session.headers.update({"Content-Type": "application/json"})
 
@@ -108,8 +110,9 @@ class PriceEngine:
     # Public API
     # -------------------------------------------------------------------
 
-    def get_price(self, cat_asset_id: str = None, cat_decimals: int = None,
-                  ticker_id: str = None) -> Optional[Dict]:
+    def get_price(
+        self, cat_asset_id: str = None, cat_decimals: int = None, ticker_id: str = None
+    ) -> Optional[Dict]:
         """Get the current mid price using the configured strategy.
 
         Args:
@@ -139,10 +142,14 @@ class PriceEngine:
         mid_price = None
         strategy_used = strategy
 
-        if strategy == "dexie_only" or (strategy != "tibet_only" and tibet_price is None):
+        if strategy == "dexie_only" or (
+            strategy != "tibet_only" and tibet_price is None
+        ):
             mid_price = dexie_price
             strategy_used = "dexie_only"
-        elif strategy == "tibet_only" or (strategy != "dexie_only" and dexie_price is None):
+        elif strategy == "tibet_only" or (
+            strategy != "dexie_only" and dexie_price is None
+        ):
             mid_price = tibet_price
             strategy_used = "tibet_only"
         elif strategy == "average" and dexie_price and tibet_price:
@@ -162,19 +169,27 @@ class PriceEngine:
             return None
 
         # Log strategy on first call and whenever it changes (detect flip-flops)
-        _prev_strategy = getattr(self, '_last_strategy_used', None)
+        _prev_strategy = getattr(self, "_last_strategy_used", None)
         if _prev_strategy != strategy_used:
-            _weight_info = f" (Tibet={cfg.TIBET_WEIGHT})" if strategy_used == "weighted" else ""
+            _weight_info = (
+                f" (Tibet={cfg.TIBET_WEIGHT})" if strategy_used == "weighted" else ""
+            )
             if _prev_strategy is None:
-                log_event("info", "price_strategy",
-                          f"Pricing strategy: {strategy_used}{_weight_info} — "
-                          f"Dexie={dexie_price}, Tibet={tibet_price}, "
-                          f"Mid={mid_price:.8f}")
+                log_event(
+                    "info",
+                    "price_strategy",
+                    f"Pricing strategy: {strategy_used}{_weight_info} — "
+                    f"Dexie={dexie_price}, Tibet={tibet_price}, "
+                    f"Mid={mid_price:.8f}",
+                )
             else:
-                log_event("warning", "price_strategy",
-                          f"Pricing strategy changed: {_prev_strategy} → {strategy_used}{_weight_info} — "
-                          f"Dexie={dexie_price}, Tibet={tibet_price}, "
-                          f"Mid={mid_price:.8f}")
+                log_event(
+                    "warning",
+                    "price_strategy",
+                    f"Pricing strategy changed: {_prev_strategy} → {strategy_used}{_weight_info} — "
+                    f"Dexie={dexie_price}, Tibet={tibet_price}, "
+                    f"Mid={mid_price:.8f}",
+                )
             self._last_strategy_used = strategy_used
 
         # Apply safety guards
@@ -186,7 +201,9 @@ class PriceEngine:
         arb_direction = None
         arb_gap_bps = Decimal("0")
         if dexie_price and tibet_price and dexie_price > 0:
-            arb_gap_bps = abs(dexie_price - tibet_price) / dexie_price * Decimal("10000")
+            arb_gap_bps = (
+                abs(dexie_price - tibet_price) / dexie_price * Decimal("10000")
+            )
             if arb_gap_bps > cfg.ARB_ALERT_THRESHOLD_BPS:
                 if dexie_price < tibet_price:
                     arb_direction = "BUY_DEXIE_SELL_TIBET"
@@ -211,7 +228,7 @@ class PriceEngine:
             combined_price=mid_price,
             dexie_price=dexie_price,
             tibet_price=tibet_price,
-            strategy_used=strategy_used
+            strategy_used=strategy_used,
         )
 
         result = {
@@ -267,7 +284,8 @@ class PriceEngine:
                 # per minute even if get_volatility is called every cycle.
                 self._volatility_query_warn_at = now
                 log_event(
-                    "warning", "volatility_query_failed",
+                    "warning",
+                    "volatility_query_failed",
                     f"price_history query for volatility failed: {e}. "
                     f"Returning 0 (dynamic spread will skip the volatility "
                     f"adjustment until the DB recovers). This warning is "
@@ -321,7 +339,9 @@ class PriceEngine:
         # Raw token_reserve is in token mojos — scale down to display units
         # so price = xch_reserve / token_reserve is in XCH-per-token.
         token_reserve_mojos = Decimal(str(pair.get("token_reserve", 0)))
-        token_reserve = token_reserve_mojos / cat_scale if cat_scale > 0 else token_reserve_mojos
+        token_reserve = (
+            token_reserve_mojos / cat_scale if cat_scale > 0 else token_reserve_mojos
+        )
 
         price = xch_reserve / token_reserve if token_reserve > 0 else Decimal("0")
 
@@ -355,8 +375,11 @@ class PriceEngine:
             url = f"{cfg.DEXIE_API_BASE}/v2/prices/tickers"
             resp = self._session.get(url, params={"ticker_id": ticker_id}, timeout=10)
             if resp.status_code == 429:
-                log_event("warning", "dexie_rate_limited",
-                          "Dexie price API returned 429 — skipping this cycle")
+                log_event(
+                    "warning",
+                    "dexie_rate_limited",
+                    "Dexie price API returned 429 — skipping this cycle",
+                )
                 return None
             resp.raise_for_status()
             data = resp.json()
@@ -371,9 +394,12 @@ class PriceEngine:
             returned_tid = str(ticker.get("ticker_id", "")).lower().strip()
             expected_tid = str(ticker_id).lower().strip()
             if returned_tid and expected_tid and returned_tid != expected_tid:
-                log_event("warning", "dexie_ticker_mismatch",
-                          f"Dexie returned ticker '{returned_tid}' but we asked "
-                          f"for '{expected_tid}' — rejecting")
+                log_event(
+                    "warning",
+                    "dexie_ticker_mismatch",
+                    f"Dexie returned ticker '{returned_tid}' but we asked "
+                    f"for '{expected_tid}' — rejecting",
+                )
                 return None
 
             # Prefer bid/ask midpoint (real market price) over last_price
@@ -401,18 +427,25 @@ class PriceEngine:
                     else:
                         self._last_crossed_signature = sig
                         self._crossed_repeats = 1
-                    cooldown = (self._stuck_cooldown_secs
-                                if self._crossed_repeats >= 2
-                                else self._warn_cooldown_secs)
+                    cooldown = (
+                        self._stuck_cooldown_secs
+                        if self._crossed_repeats >= 2
+                        else self._warn_cooldown_secs
+                    )
                     if _now - self._last_crossed_warn >= cooldown:
-                        suffix = (f"appears stuck on these values; "
-                                   f"suppressed for {int(cooldown // 60)}m"
-                                   if self._crossed_repeats >= 2
-                                   else f"suppressed for {self._warn_cooldown_secs}s")
-                        log_event("info", "dexie_crossed_market",
-                                  f"Dexie ticker returned crossed bid/ask "
-                                  f"(bid={bid_d}, ask={ask_d}) — rejecting "
-                                  f"Dexie ticker for this cycle ({suffix})")
+                        suffix = (
+                            f"appears stuck on these values; "
+                            f"suppressed for {int(cooldown // 60)}m"
+                            if self._crossed_repeats >= 2
+                            else f"suppressed for {self._warn_cooldown_secs}s"
+                        )
+                        log_event(
+                            "info",
+                            "dexie_crossed_market",
+                            f"Dexie ticker returned crossed bid/ask "
+                            f"(bid={bid_d}, ask={ask_d}) — rejecting "
+                            f"Dexie ticker for this cycle ({suffix})",
+                        )
                         self._last_crossed_warn = _now
                     _logged_ticker_problem = True
             except InvalidOperation:
@@ -435,18 +468,24 @@ class PriceEngine:
                 else:
                     self._last_empty_signature = sig
                     self._empty_repeats = 1
-                cooldown = (self._stuck_cooldown_secs
-                            if self._empty_repeats >= 2
-                            else self._warn_cooldown_secs)
+                cooldown = (
+                    self._stuck_cooldown_secs
+                    if self._empty_repeats >= 2
+                    else self._warn_cooldown_secs
+                )
                 if _now - self._last_empty_warn >= cooldown:
-                    suffix = (f"appears stuck; suppressed for "
-                              f"{int(cooldown // 60)}m"
-                              if self._empty_repeats >= 2
-                              else f"suppressed for {self._warn_cooldown_secs}s")
-                    log_event("info", "dexie_ticker_unusable",
-                              f"Dexie ticker bid/ask unavailable "
-                              f"(thin/illiquid pair). Rejecting historical "
-                              f"ticker fields for trading. ({suffix})")
+                    suffix = (
+                        f"appears stuck; suppressed for {int(cooldown // 60)}m"
+                        if self._empty_repeats >= 2
+                        else f"suppressed for {self._warn_cooldown_secs}s"
+                    )
+                    log_event(
+                        "info",
+                        "dexie_ticker_unusable",
+                        f"Dexie ticker bid/ask unavailable "
+                        f"(thin/illiquid pair). Rejecting historical "
+                        f"ticker fields for trading. ({suffix})",
+                    )
                     self._last_empty_warn = _now
 
             return None
@@ -457,8 +496,11 @@ class PriceEngine:
         except (ValueError, KeyError, TypeError) as e:
             # Catches JSONDecodeError (subclass of ValueError), missing keys,
             # or unexpected response shapes from schema changes.
-            log_event("warning", "dexie_parse_error",
-                      f"Dexie returned unparseable response: {e}")
+            log_event(
+                "warning",
+                "dexie_parse_error",
+                f"Dexie returned unparseable response: {e}",
+            )
             return None
 
     # -------------------------------------------------------------------
@@ -523,7 +565,10 @@ class PriceEngine:
         """Fetch all TibetSwap pairs (cached for 30 minutes, thread-safe)."""
         with _tibet_lock:
             now = time.time()
-            if _tibet_cache["pairs"] and (now - _tibet_cache["fetched_at"]) < _tibet_cache["cache_ttl"]:
+            if (
+                _tibet_cache["pairs"]
+                and (now - _tibet_cache["fetched_at"]) < _tibet_cache["cache_ttl"]
+            ):
                 return _tibet_cache["pairs"]
             # Mark as fetching to prevent duplicate requests
             stale_pairs = list(_tibet_cache.get("pairs", []))
@@ -532,11 +577,15 @@ class PriceEngine:
         try:
             self._tibet_price_fetches += 1
             url = f"{cfg.TIBET_API_BASE}/pairs"
-            resp = self._session.get(url, params={"skip": 0, "limit": 200},
-                                      timeout=cfg.TIBET_TIMEOUT)
+            resp = self._session.get(
+                url, params={"skip": 0, "limit": 200}, timeout=cfg.TIBET_TIMEOUT
+            )
             if resp.status_code == 429:
-                log_event("warning", "tibet_rate_limited",
-                          "TibetSwap returned 429 — will use cached price if available")
+                log_event(
+                    "warning",
+                    "tibet_rate_limited",
+                    "TibetSwap returned 429 — will use cached price if available",
+                )
                 # Fall through to stale cache logic below
                 raise requests.RequestException("HTTP 429 rate limited")
             resp.raise_for_status()
@@ -551,8 +600,11 @@ class PriceEngine:
         except requests.RequestException as e:
             log_event("warning", "tibet_error", f"TibetSwap fetch failed: {e}")
         except (ValueError, KeyError, TypeError) as e:
-            log_event("warning", "tibet_parse_error",
-                      f"TibetSwap returned unparseable response: {e}")
+            log_event(
+                "warning",
+                "tibet_parse_error",
+                f"TibetSwap returned unparseable response: {e}",
+            )
 
         # Return stale cache only if within the maximum staleness bound.
         # The ceiling is capped by PRICE_HARD_PAUSE_SECS (default 120s) so
@@ -567,14 +619,20 @@ class PriceEngine:
         )
         stale_age = time.time() - _tibet_cache["fetched_at"]
         if stale_pairs and stale_age <= max_stale_secs:
-            log_event("warning", "tibet_stale_cache",
-                      f"TibetSwap API error — using {stale_age:.0f}s old cached price "
-                      f"(max allowed: {max_stale_secs}s)")
+            log_event(
+                "warning",
+                "tibet_stale_cache",
+                f"TibetSwap API error — using {stale_age:.0f}s old cached price "
+                f"(max allowed: {max_stale_secs}s)",
+            )
             return stale_pairs
         elif stale_pairs:
-            log_event("warning", "tibet_cache_expired",
-                      f"TibetSwap API error AND cache is {stale_age:.0f}s old "
-                      f"(> {max_stale_secs}s max) — refusing to return stale price")
+            log_event(
+                "warning",
+                "tibet_cache_expired",
+                f"TibetSwap API error AND cache is {stale_age:.0f}s old "
+                f"(> {max_stale_secs}s max) — refusing to return stale price",
+            )
         return []
 
     def invalidate_tibet_cache(self):
@@ -582,9 +640,14 @@ class PriceEngine:
         with _tibet_lock:
             _tibet_cache["fetched_at"] = 0
 
-    def inject_tibet_reserves(self, pair_id: str = None, asset_id: str = None,
-                              xch_reserve=None, token_reserve=None,
-                              fetched_at: float = None) -> bool:
+    def inject_tibet_reserves(
+        self,
+        pair_id: str = None,
+        asset_id: str = None,
+        xch_reserve=None,
+        token_reserve=None,
+        fetched_at: float = None,
+    ) -> bool:
         """Inject freshly observed Tibet reserves into the pair cache.
 
         Confirmed reserve watchers already know the post-swap reserves.  Push
@@ -652,9 +715,12 @@ class PriceEngine:
             _tibet_price = self._last_tibet_price
             _tibet_ts = self._last_tibet_price_time
         tibet_age = time.time() - _tibet_ts
-        if (_tibet_price and _tibet_price > 0
-                and _tibet_ts > 0
-                and tibet_age < max_amm_cache_age):
+        if (
+            _tibet_price
+            and _tibet_price > 0
+            and _tibet_ts > 0
+            and tibet_age < max_amm_cache_age
+        ):
             return _tibet_price
 
         # Otherwise fetch fresh
@@ -666,8 +732,12 @@ class PriceEngine:
     # TibetSwap Quote-Based Slippage Estimation (NEW — ecosystem upgrade)
     # -------------------------------------------------------------------
 
-    def get_tibet_quote(self, asset_id: str = None, amount_xch: Decimal = Decimal("0.01"),
-                        side: str = "buy") -> Optional[Dict]:
+    def get_tibet_quote(
+        self,
+        asset_id: str = None,
+        amount_xch: Decimal = Decimal("0.01"),
+        side: str = "buy",
+    ) -> Optional[Dict]:
         """Get a swap quote from TibetSwap to estimate slippage.
 
         TibetSwap's /quote endpoint simulates a swap and returns the
@@ -706,7 +776,9 @@ class PriceEngine:
             url = f"{cfg.TIBET_API_BASE}/quote"
             params = {
                 "pair_id": pair_id,
-                "amount_in": str(int(amount_xch * Decimal("1000000000000"))),  # Convert to mojos
+                "amount_in": str(
+                    int(amount_xch * Decimal("1000000000000"))
+                ),  # Convert to mojos
                 "xch_is_input": "true" if side == "buy" else "false",
             }
 
@@ -721,8 +793,9 @@ class PriceEngine:
         # Fallback: estimate from reserves using constant product formula
         return self._estimate_slippage_from_reserves(pair, amount_xch, side)
 
-    def _parse_tibet_quote(self, data: Dict, amount_xch: Decimal,
-                           side: str, pair: Dict) -> Optional[Dict]:
+    def _parse_tibet_quote(
+        self, data: Dict, amount_xch: Decimal, side: str, pair: Dict
+    ) -> Optional[Dict]:
         """Parse a TibetSwap quote response."""
         try:
             price_impact = Decimal(str(data.get("price_impact", "0")))
@@ -734,7 +807,9 @@ class PriceEngine:
             decimals = cfg.CAT_DECIMALS
             if side == "buy" and amount_out > 0:
                 cat_amount = amount_out / (Decimal(10) ** Decimal(decimals))
-                effective_price = amount_xch / cat_amount if cat_amount > 0 else Decimal("0")
+                effective_price = (
+                    amount_xch / cat_amount if cat_amount > 0 else Decimal("0")
+                )
             else:
                 effective_price = Decimal("0")
 
@@ -754,8 +829,9 @@ class PriceEngine:
         except (InvalidOperation, ZeroDivisionError):
             return None
 
-    def _estimate_slippage_from_reserves(self, pair: Dict, amount_xch: Decimal,
-                                          side: str) -> Optional[Dict]:
+    def _estimate_slippage_from_reserves(
+        self, pair: Dict, amount_xch: Decimal, side: str
+    ) -> Optional[Dict]:
         """Estimate slippage using the constant product formula (x * y = k).
 
         This is a mathematical estimation when the /quote endpoint isn't available.
@@ -796,7 +872,11 @@ class PriceEngine:
                 # Spot price vs effective price
                 spot_price = xch_reserve / token_reserve_actual
                 effective_price = amount_xch / cat_out
-                slippage = (effective_price - spot_price) / spot_price if spot_price > 0 else Decimal("0")
+                slippage = (
+                    (effective_price - spot_price) / spot_price
+                    if spot_price > 0
+                    else Decimal("0")
+                )
 
             else:
                 # Selling CAT for XCH
@@ -812,8 +892,14 @@ class PriceEngine:
                 new_xch = k / new_cat
                 xch_out = xch_reserve - new_xch
 
-                effective_price = xch_out / cat_amount if cat_amount > 0 else Decimal("0")
-                slippage = (spot_price - effective_price) / spot_price if spot_price > 0 else Decimal("0")
+                effective_price = (
+                    xch_out / cat_amount if cat_amount > 0 else Decimal("0")
+                )
+                slippage = (
+                    (spot_price - effective_price) / spot_price
+                    if spot_price > 0
+                    else Decimal("0")
+                )
 
             slippage_bps = abs(slippage) * Decimal("10000")
 
@@ -873,10 +959,13 @@ class PriceEngine:
             self._reference_price_time = time.time()
             dyn_min, dyn_max = self.get_dynamic_limits()
             if dyn_min and dyn_max:
-                log_event("info", "dynamic_limits_init",
-                          f"Dynamic price limits initialised: "
-                          f"{dyn_min:.10f} — {dyn_max:.10f} "
-                          f"(ref: {price:.10f}, band: ±{cfg.DYNAMIC_LIMIT_PCT}%)")
+                log_event(
+                    "info",
+                    "dynamic_limits_init",
+                    f"Dynamic price limits initialised: "
+                    f"{dyn_min:.10f} — {dyn_max:.10f} "
+                    f"(ref: {price:.10f}, band: ±{cfg.DYNAMIC_LIMIT_PCT}%)",
+                )
         else:
             # EMA update: ref = ref × (1 - α) + price × α
             # Fast catch-up: if price has moved more than half the dynamic
@@ -892,8 +981,7 @@ class PriceEngine:
                 if deviation > half_band * Decimal("0.5"):
                     alpha = min(self._ema_alpha * Decimal("5"), Decimal("0.10"))
             self._reference_price = (
-                self._reference_price * (Decimal("1") - alpha) +
-                price * alpha
+                self._reference_price * (Decimal("1") - alpha) + price * alpha
             )
             self._reference_price_time = time.time()
 
@@ -946,10 +1034,13 @@ class PriceEngine:
         # --- Dynamic limits (primary protection) ---
         dyn_min, dyn_max = self.get_dynamic_limits()
         if dyn_min is not None and price < dyn_min:
-            if now - getattr(self, '_last_dynmin_warn', 0) >= 60:
-                log_event("warning", "price_guard",
-                          f"Price {price:.10f} below dynamic minimum {dyn_min:.10f} "
-                          f"(ref: {self._reference_price:.10f}, band: ±{cfg.DYNAMIC_LIMIT_PCT}%)")
+            if now - getattr(self, "_last_dynmin_warn", 0) >= 60:
+                log_event(
+                    "warning",
+                    "price_guard",
+                    f"Price {price:.10f} below dynamic minimum {dyn_min:.10f} "
+                    f"(ref: {self._reference_price:.10f}, band: ±{cfg.DYNAMIC_LIMIT_PCT}%)",
+                )
                 self._last_dynmin_warn = now
             # Nudge reference EMA very slowly toward the band edge (NOT the
             # rejected price) so a genuine sustained large move can eventually
@@ -959,34 +1050,41 @@ class PriceEngine:
             slow_alpha = getattr(cfg, "PRICE_LIMIT_NUDGE_ALPHA", Decimal("0.02"))
             nudge_target = dyn_min  # clamp to band edge
             self._reference_price = (
-                (Decimal("1") - slow_alpha) * self._reference_price
-                + slow_alpha * nudge_target
+                Decimal("1") - slow_alpha
+            ) * self._reference_price + slow_alpha * nudge_target
+            log_event(
+                "warning",
+                "price_limit_nudge",
+                f"Price {price:.10f} outside dynamic limits — rejected but nudging "
+                f"reference EMA toward band edge {nudge_target:.10f} (alpha={slow_alpha})",
             )
-            log_event("warning", "price_limit_nudge",
-                      f"Price {price:.10f} outside dynamic limits — rejected but nudging "
-                      f"reference EMA toward band edge {nudge_target:.10f} (alpha={slow_alpha})")
             self._last_rail_breach = "below"
             self._last_rail_breach_price = price
             self._last_rail_breach_kind = "dyn_min"
             return None
 
         if dyn_max is not None and price > dyn_max:
-            if now - getattr(self, '_last_dynmax_warn', 0) >= 60:
-                log_event("warning", "price_guard",
-                          f"Price {price:.10f} above dynamic maximum {dyn_max:.10f} "
-                          f"(ref: {self._reference_price:.10f}, band: ±{cfg.DYNAMIC_LIMIT_PCT}%)")
+            if now - getattr(self, "_last_dynmax_warn", 0) >= 60:
+                log_event(
+                    "warning",
+                    "price_guard",
+                    f"Price {price:.10f} above dynamic maximum {dyn_max:.10f} "
+                    f"(ref: {self._reference_price:.10f}, band: ±{cfg.DYNAMIC_LIMIT_PCT}%)",
+                )
                 self._last_dynmax_warn = now
             # Nudge toward band edge (same rationale — clamp to dyn_max, not the
             # rejected price, to prevent slow-burn reference manipulation).
             slow_alpha = getattr(cfg, "PRICE_LIMIT_NUDGE_ALPHA", Decimal("0.02"))
             nudge_target = dyn_max  # clamp to band edge
             self._reference_price = (
-                (Decimal("1") - slow_alpha) * self._reference_price
-                + slow_alpha * nudge_target
+                Decimal("1") - slow_alpha
+            ) * self._reference_price + slow_alpha * nudge_target
+            log_event(
+                "warning",
+                "price_limit_nudge",
+                f"Price {price:.10f} outside dynamic limits — rejected but nudging "
+                f"reference EMA toward band edge {nudge_target:.10f} (alpha={slow_alpha})",
             )
-            log_event("warning", "price_limit_nudge",
-                      f"Price {price:.10f} outside dynamic limits — rejected but nudging "
-                      f"reference EMA toward band edge {nudge_target:.10f} (alpha={slow_alpha})")
             self._last_rail_breach = "above"
             self._last_rail_breach_price = price
             self._last_rail_breach_kind = "dyn_max"
@@ -994,9 +1092,12 @@ class PriceEngine:
 
         # --- Hard limits (absolute backstop from .env) ---
         if cfg.HARD_MIN_PRICE_XCH > 0 and price < cfg.HARD_MIN_PRICE_XCH:
-            if now - getattr(self, '_last_min_warn', 0) >= 60:
-                log_event("warning", "price_guard",
-                          f"Price {price:.10f} below hard minimum {cfg.HARD_MIN_PRICE_XCH}")
+            if now - getattr(self, "_last_min_warn", 0) >= 60:
+                log_event(
+                    "warning",
+                    "price_guard",
+                    f"Price {price:.10f} below hard minimum {cfg.HARD_MIN_PRICE_XCH}",
+                )
                 self._last_min_warn = now
             self._last_rail_breach = "below"
             self._last_rail_breach_price = price
@@ -1004,9 +1105,12 @@ class PriceEngine:
             return None
 
         if cfg.HARD_MAX_PRICE_XCH > 0 and price > cfg.HARD_MAX_PRICE_XCH:
-            if now - getattr(self, '_last_max_warn', 0) >= 60:
-                log_event("warning", "price_guard",
-                          f"Price {price:.10f} above hard maximum {cfg.HARD_MAX_PRICE_XCH}")
+            if now - getattr(self, "_last_max_warn", 0) >= 60:
+                log_event(
+                    "warning",
+                    "price_guard",
+                    f"Price {price:.10f} above hard maximum {cfg.HARD_MAX_PRICE_XCH}",
+                )
                 self._last_max_warn = now
             self._last_rail_breach = "above"
             self._last_rail_breach_price = price
@@ -1014,13 +1118,19 @@ class PriceEngine:
             return None
 
         # --- Step-change guard (reject sudden jumps) ---
-        if (cfg.MAX_STEP_CHANGE_FRACTION > 0 and
-                self._last_mid_price is not None and self._last_mid_price > 0):
+        if (
+            cfg.MAX_STEP_CHANGE_FRACTION > 0
+            and self._last_mid_price is not None
+            and self._last_mid_price > 0
+        ):
             change = abs(price - self._last_mid_price) / self._last_mid_price
             if change > cfg.MAX_STEP_CHANGE_FRACTION:
-                if now - getattr(self, '_last_step_warn', 0) >= 60:
-                    log_event("warning", "price_guard",
-                              f"Price step too large: {change:.4f} > {cfg.MAX_STEP_CHANGE_FRACTION}")
+                if now - getattr(self, "_last_step_warn", 0) >= 60:
+                    log_event(
+                        "warning",
+                        "price_guard",
+                        f"Price step too large: {change:.4f} > {cfg.MAX_STEP_CHANGE_FRACTION}",
+                    )
                     self._last_step_warn = now
                 # Step rejection direction = sign of the move from last mid
                 self._last_rail_breach = (
@@ -1048,4 +1158,3 @@ def _decimal_sqrt(value: Decimal, precision: int = 20) -> Decimal:
     for _ in range(precision):
         x = (x + value / x) / Decimal("2")
     return x
-

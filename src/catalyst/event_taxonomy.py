@@ -22,20 +22,22 @@ try:
     from enum import StrEnum
 except ImportError:
     from enum import Enum
+
     class StrEnum(str, Enum):
         pass
 
 
 class EventCategory(StrEnum):
     """Canonical event categories."""
-    LIFECYCLE = "lifecycle"   # bot start/stop/startup sync
-    OFFER = "offer"           # offer create/cancel/fill/requote/refresh
-    PRICING = "pricing"       # price fetch/validation/limits/arb
-    WALLET = "wallet"         # wallet sync/health/address
-    EXCHANGE = "exchange"     # dexie/splash posting
-    RISK = "risk"             # circuit breakers/recovery/guards
-    SYSTEM = "system"         # db/config/monitor/diagnostics
-    COIN = "coin"             # coin prep/topup/reconcile/split
+
+    LIFECYCLE = "lifecycle"  # bot start/stop/startup sync
+    OFFER = "offer"  # offer create/cancel/fill/requote/refresh
+    PRICING = "pricing"  # price fetch/validation/limits/arb
+    WALLET = "wallet"  # wallet sync/health/address
+    EXCHANGE = "exchange"  # dexie/splash posting
+    RISK = "risk"  # circuit breakers/recovery/guards
+    SYSTEM = "system"  # db/config/monitor/diagnostics
+    COIN = "coin"  # coin prep/topup/reconcile/split
 
 
 # Mapping from existing event_type strings to canonical category.
@@ -87,7 +89,6 @@ _EVENT_CATEGORY_MAP = {
     "daemon_stop": EventCategory.LIFECYCLE,
     "fresh_start_cleanup_failed": EventCategory.LIFECYCLE,
     "session_fresh_start_failed": EventCategory.LIFECYCLE,
-
     # ---- OFFER ----
     "offer_created": EventCategory.OFFER,
     "offer_create_failed": EventCategory.OFFER,
@@ -220,7 +221,6 @@ _EVENT_CATEGORY_MAP = {
     "spacescan_phantom_detected": EventCategory.OFFER,
     "sage_fill_backfill": EventCategory.OFFER,
     "offer_lifecycle_transition": EventCategory.OFFER,
-
     # ---- PRICING ----
     "price_lookup": EventCategory.PRICING,
     "price_found": EventCategory.PRICING,
@@ -246,7 +246,6 @@ _EVENT_CATEGORY_MAP = {
     "orderbook_refresh": EventCategory.PRICING,
     "balance_discrepancy_xch": EventCategory.PRICING,
     "balance_discrepancy_cat": EventCategory.PRICING,
-
     # ---- WALLET ----
     "wallet_sync": EventCategory.WALLET,
     "wallet_sync_live_again": EventCategory.WALLET,
@@ -274,7 +273,6 @@ _EVENT_CATEGORY_MAP = {
     "cat_mapping_mismatch": EventCategory.WALLET,
     "cat_selected": EventCategory.WALLET,
     "rpc_error_in_coins": EventCategory.WALLET,
-
     # ---- EXCHANGE ----
     "dexie_recovery": EventCategory.EXCHANGE,
     "dexie_repost": EventCategory.EXCHANGE,
@@ -339,7 +337,6 @@ _EVENT_CATEGORY_MAP = {
     "splash_recovered": EventCategory.EXCHANGE,
     "splash_fingerprints_cleared": EventCategory.EXCHANGE,
     "repost_error": EventCategory.EXCHANGE,
-
     # ---- RISK ----
     "circuit_breaker": EventCategory.RISK,
     "circuit_breaker_tripped": EventCategory.RISK,
@@ -409,7 +406,6 @@ _EVENT_CATEGORY_MAP = {
     "collateral_advisory": EventCategory.RISK,
     "advisory_failed": EventCategory.RISK,
     "position_inherited": EventCategory.RISK,
-
     # ---- SYSTEM ----
     "db_cleanup_start": EventCategory.SYSTEM,
     "db_cleanup_done": EventCategory.SYSTEM,
@@ -449,7 +445,6 @@ _EVENT_CATEGORY_MAP = {
     "spacescan_setup": EventCategory.SYSTEM,
     "spacescan_timeout": EventCategory.SYSTEM,
     "spacescan_verify_failed": EventCategory.SYSTEM,
-
     # ---- COIN ----
     "coin_watcher_started": EventCategory.COIN,
     "coin_watcher_baseline": EventCategory.COIN,
@@ -542,9 +537,9 @@ _EVENT_CATEGORY_MAP = {
     "topup_no_action": EventCategory.COIN,
     "topup_inventory": EventCategory.COIN,
     "topup_inventory_changed": EventCategory.COIN,
-    "topup_coins_locked": EventCategory.COIN,      # kept for backward compat
-    "topup_split_blocked": EventCategory.COIN,     # tier low but reserve guard refused
-    "topup_tiers_adequate": EventCategory.COIN,    # all tiers above threshold (normal)
+    "topup_coins_locked": EventCategory.COIN,  # kept for backward compat
+    "topup_split_blocked": EventCategory.COIN,  # tier low but reserve guard refused
+    "topup_tiers_adequate": EventCategory.COIN,  # all tiers above threshold (normal)
     "topup_deferred_offer_rebuild_priority": EventCategory.COIN,
     "topup_waiting_for_source": EventCategory.COIN,
     "topup_backoff_reset": EventCategory.COIN,
@@ -586,7 +581,6 @@ _EVENT_CATEGORY_MAP = {
     "reservation_released": EventCategory.COIN,
     "reservation_expired": EventCategory.COIN,
     "reservation_release_error": EventCategory.COIN,
-
     # ---- Cycle step events (LIFECYCLE) ----
     "step1b_intel": EventCategory.LIFECYCLE,
     "step2_breakers": EventCategory.LIFECYCLE,
@@ -600,7 +594,6 @@ _EVENT_CATEGORY_MAP = {
     "step10_create": EventCategory.LIFECYCLE,
     "step12_coins": EventCategory.LIFECYCLE,
     "step15_gui": EventCategory.LIFECYCLE,
-
     # ---- Watcher events ----
     "watcher_started": EventCategory.WALLET,
     "watcher_disabled": EventCategory.WALLET,

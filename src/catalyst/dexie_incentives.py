@@ -76,13 +76,19 @@ def fetch_incentives(force: bool = False) -> Dict[str, Any]:
             with _cache_lock:
                 if _cache.get("data"):
                     return _cache["data"]
-            return {"success": False, "incentives": [], "fetched_at": now,
-                    "error": f"HTTP {resp.status_code}"}
+            return {
+                "success": False,
+                "incentives": [],
+                "fetched_at": now,
+                "error": f"HTTP {resp.status_code}",
+            }
         body = resp.json() or {}
         incentives = body.get("incentives") or []
-        result = {"success": bool(body.get("success", True)),
-                  "incentives": incentives,
-                  "fetched_at": now}
+        result = {
+            "success": bool(body.get("success", True)),
+            "incentives": incentives,
+            "fetched_at": now,
+        }
         with _cache_lock:
             _cache["data"] = result
             _cache["fetched_at"] = now
@@ -91,8 +97,7 @@ def fetch_incentives(force: bool = False) -> Dict[str, Any]:
         with _cache_lock:
             if _cache.get("data"):
                 return _cache["data"]
-        return {"success": False, "incentives": [], "fetched_at": now,
-                "error": str(e)}
+        return {"success": False, "incentives": [], "fetched_at": now, "error": str(e)}
 
 
 def _entry_direction(entry: Dict[str, Any]) -> str:

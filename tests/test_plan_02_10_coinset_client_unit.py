@@ -14,6 +14,7 @@ from unittest.mock import patch, MagicMock
 try:
     import coinset_client as _cc_mod
     from coinset_client import CoinsetClient
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -55,6 +56,7 @@ class _CC(unittest.TestCase):
 # Static helper: _extract_puzzle_hashes
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"coinset_client unavailable: {_SKIP}")
 class TestExtractPuzzleHashes(unittest.TestCase):
     def test_none_returns_empty(self):
@@ -66,8 +68,12 @@ class TestExtractPuzzleHashes(unittest.TestCase):
         self.assertEqual(len(result), 0)
 
     def test_coin_records_format(self):
-        rpc = {"coin_records": [{"coin": {"puzzle_hash": "0xabc"}},
-                                 {"coin": {"puzzle_hash": "0xdef"}}]}
+        rpc = {
+            "coin_records": [
+                {"coin": {"puzzle_hash": "0xabc"}},
+                {"coin": {"puzzle_hash": "0xdef"}},
+            ]
+        }
         result = CoinsetClient._extract_puzzle_hashes(rpc)
         self.assertIn("0xabc", result)
         self.assertIn("0xdef", result)
@@ -78,8 +84,12 @@ class TestExtractPuzzleHashes(unittest.TestCase):
         self.assertIn("0x123", result)
 
     def test_deduplication(self):
-        rpc = {"coin_records": [{"coin": {"puzzle_hash": "0xaaa"}},
-                                 {"coin": {"puzzle_hash": "0xaaa"}}]}
+        rpc = {
+            "coin_records": [
+                {"coin": {"puzzle_hash": "0xaaa"}},
+                {"coin": {"puzzle_hash": "0xaaa"}},
+            ]
+        }
         result = CoinsetClient._extract_puzzle_hashes(rpc)
         self.assertEqual(len(result), 1)
 
@@ -92,6 +102,7 @@ class TestExtractPuzzleHashes(unittest.TestCase):
 # ===========================================================================
 # Static helper: _format_as_wallet_response
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"coinset_client unavailable: {_SKIP}")
 class TestFormatAsWalletResponse(unittest.TestCase):
@@ -119,6 +130,7 @@ class TestFormatAsWalletResponse(unittest.TestCase):
 # ===========================================================================
 # Stats and counter helpers
 # ===========================================================================
+
 
 class TestStatsAndCounters(_CC):
     def test_initial_stats_all_zero(self):
@@ -177,6 +189,7 @@ class TestStatsAndCounters(_CC):
 # Guard clause paths (no network)
 # ===========================================================================
 
+
 class TestGuardClauses(_CC):
     def test_verify_coin_spent_disabled_returns_none(self):
         with patch.object(_cc_mod, "cfg", _FAKE_CFG_DISABLED):
@@ -218,6 +231,7 @@ class TestGuardClauses(_CC):
 # verify_coin_spent_on_chain — decision tree (via mocked get_coin_by_name)
 # ===========================================================================
 
+
 class TestVerifyCoinSpentOnChain(_CC):
     def _mock_gcbn(self, return_value):
         return patch.object(self._client, "get_coin_by_name", return_value=return_value)
@@ -239,9 +253,11 @@ class TestVerifyCoinSpentOnChain(_CC):
 
     def test_0x_prefix_stripped_and_readded(self):
         calls = []
+
         def capture_name(name):
             calls.append(name)
             return None
+
         with patch.object(self._client, "get_coin_by_name", side_effect=capture_name):
             self._client.verify_coin_spent_on_chain("0xABCDEF")
         # Should call get_coin_by_name("0x" + normalised)
@@ -253,17 +269,22 @@ class TestVerifyCoinSpentOnChain(_CC):
 # get_spendable_coins — guard paths (via mocked internals)
 # ===========================================================================
 
+
 class TestGetSpendableCoins(_CC):
     def test_not_initialized_calls_fallback(self):
         self._client._initialized = False
-        with patch.object(self._client, "_fallback_wallet_rpc", return_value=None) as mock_fb:
+        with patch.object(
+            self._client, "_fallback_wallet_rpc", return_value=None
+        ) as mock_fb:
             self._client.get_spendable_coins(1)
         mock_fb.assert_called_once()
 
     def test_missing_wallet_id_calls_fallback(self):
         self._client._initialized = True
         self._client._puzzle_hashes = {99: {"0xaaa"}}  # wallet 1 not present
-        with patch.object(self._client, "_fallback_wallet_rpc", return_value=None) as mock_fb:
+        with patch.object(
+            self._client, "_fallback_wallet_rpc", return_value=None
+        ) as mock_fb:
             self._client.get_spendable_coins(1)
         mock_fb.assert_called_once()
 
@@ -280,8 +301,12 @@ class TestGetSpendableCoins(_CC):
     def test_coinset_failure_falls_back(self):
         self._client._initialized = True
         self._client._puzzle_hashes = {1: {"0xaaa"}}
-        with patch.object(self._client, "_query_coinset", side_effect=Exception("timeout")):
-            with patch.object(self._client, "_fallback_wallet_rpc", return_value={"fallback": True}) as mock_fb:
+        with patch.object(
+            self._client, "_query_coinset", side_effect=Exception("timeout")
+        ):
+            with patch.object(
+                self._client, "_fallback_wallet_rpc", return_value={"fallback": True}
+            ) as mock_fb:
                 result = self._client.get_spendable_coins(1)
         mock_fb.assert_called_once()
         self.assertEqual(result, {"fallback": True})

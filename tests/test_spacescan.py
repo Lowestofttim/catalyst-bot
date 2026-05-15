@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from config import cfg
+
     CONFIG_LOADED = True
 except Exception as e:
     CONFIG_LOADED = False
@@ -39,10 +40,12 @@ except Exception as e:
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def get_base_url():
     if CONFIG_LOADED and cfg.SPACESCAN_API_KEY:
         return getattr(cfg, "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
     return "https://api.spacescan.io"
+
 
 def get_headers():
     headers = {"Accept": "application/json"}
@@ -50,20 +53,24 @@ def get_headers():
         headers["x-api-key"] = cfg.SPACESCAN_API_KEY
     return headers
 
+
 def get_api_key():
     if CONFIG_LOADED:
         return cfg.SPACESCAN_API_KEY or ""
     return os.environ.get("SPACESCAN_API_KEY", "")
+
 
 def get_wallet_address():
     if CONFIG_LOADED:
         return getattr(cfg, "WALLET_ADDRESS", "")
     return ""
 
+
 def get_cat_asset_id():
     if CONFIG_LOADED:
         return getattr(cfg, "CAT_ASSET_ID", "")
     return ""
+
 
 def timed_request(url, headers, timeout=15):
     """Make a GET request and return (response, elapsed_ms) or (None, elapsed_ms)."""
@@ -90,6 +97,7 @@ PASS = "PASS"
 FAIL = "FAIL"
 WARN = "WARN"
 SKIP = "SKIP"
+
 
 def test(name, status, detail=""):
     results.append((name, status, detail))
@@ -143,7 +151,11 @@ else:
     elif resp and resp.status_code == 403:
         test("API key valid", FAIL, "403 Forbidden -- key lacks required permissions")
     else:
-        test("API key valid", WARN, f"Unexpected response: HTTP {resp.status_code if resp else 'None'}")
+        test(
+            "API key valid",
+            WARN,
+            f"Unexpected response: HTTP {resp.status_code if resp else 'None'}",
+        )
 print()
 
 
@@ -162,10 +174,16 @@ elif resp.status_code == 200:
         has_status = "status" in data
         has_coin = "coin" in data
         test("coin/info HTTP", PASS, f"200 OK ({ms:.0f}ms)")
-        test("coin/info has 'status'", PASS if has_status else FAIL,
-             f"status={data.get('status')}")
-        test("coin/info has 'coin'", PASS if has_coin else WARN,
-             f"keys: {list(data.keys())[:5]}")
+        test(
+            "coin/info has 'status'",
+            PASS if has_status else FAIL,
+            f"status={data.get('status')}",
+        )
+        test(
+            "coin/info has 'coin'",
+            PASS if has_coin else WARN,
+            f"keys: {list(data.keys())[:5]}",
+        )
 
         if has_coin:
             coin = data["coin"]
@@ -175,8 +193,11 @@ elif resp.status_code == 200:
             if not missing:
                 test("coin/info format", PASS, "All expected fields present")
             else:
-                test("coin/info format", WARN,
-                     f"Missing: {missing}. Got: {list(coin.keys())[:8]}")
+                test(
+                    "coin/info format",
+                    WARN,
+                    f"Missing: {missing}. Got: {list(coin.keys())[:8]}",
+                )
     except json.JSONDecodeError:
         test("coin/info response", FAIL, "Not valid JSON")
 elif resp.status_code == 404:
@@ -188,6 +209,7 @@ else:
 if CONFIG_LOADED:
     try:
         from database import get_connection
+
         conn = get_connection()
         row = conn.execute(
             "SELECT coin_id FROM coins WHERE coin_id IS NOT NULL AND coin_id != '' LIMIT 1"
@@ -204,15 +226,29 @@ if CONFIG_LOADED:
                 if data2.get("status") == "success" and data2.get("coin"):
                     coin2 = data2["coin"]
                     spent = coin2.get("spent_block")
-                    is_spent = spent is not None and spent != "" and spent != 0 and str(spent) != "0"
-                    test("coin/info REAL coin", PASS,
-                         f"{real_coin[:20]}... spent={is_spent} ({ms2:.0f}ms)")
+                    is_spent = (
+                        spent is not None
+                        and spent != ""
+                        and spent != 0
+                        and str(spent) != "0"
+                    )
+                    test(
+                        "coin/info REAL coin",
+                        PASS,
+                        f"{real_coin[:20]}... spent={is_spent} ({ms2:.0f}ms)",
+                    )
                 else:
-                    test("coin/info REAL coin", WARN,
-                         f"status={data2.get('status')} ({ms2:.0f}ms)")
+                    test(
+                        "coin/info REAL coin",
+                        WARN,
+                        f"status={data2.get('status')} ({ms2:.0f}ms)",
+                    )
             elif resp2:
-                test("coin/info REAL coin", FAIL,
-                     f"HTTP {resp2.status_code} ({ms2:.0f}ms)")
+                test(
+                    "coin/info REAL coin",
+                    FAIL,
+                    f"HTTP {resp2.status_code} ({ms2:.0f}ms)",
+                )
             else:
                 test("coin/info REAL coin", FAIL, f"Timeout ({ms2:.0f}ms)")
         else:
@@ -228,7 +264,9 @@ print("--- Test 4: /address/xch-balance ---")
 wallet_addr = get_wallet_address()
 # Use the Chia null address as a throwaway fallback so we don't
 # disclose any real address to Spacescan during testing.
-test_addr = wallet_addr or "xch1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs0wd5zg"
+test_addr = (
+    wallet_addr or "xch1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs0wd5zg"
+)
 addr_source = "from config" if wallet_addr else "null address fallback"
 
 time.sleep(2)
@@ -242,9 +280,15 @@ elif resp.status_code == 200:
             balance = data["xch"]
             test("xch-balance", PASS, f"{balance} XCH ({addr_source}, {ms:.0f}ms)")
         elif data.get("status") == "success":
-            test("xch-balance", WARN, f"Success but no 'xch' key. Keys: {list(data.keys())[:5]}")
+            test(
+                "xch-balance",
+                WARN,
+                f"Success but no 'xch' key. Keys: {list(data.keys())[:5]}",
+            )
         else:
-            test("xch-balance", WARN, f"Unexpected format. Keys: {list(data.keys())[:5]}")
+            test(
+                "xch-balance", WARN, f"Unexpected format. Keys: {list(data.keys())[:5]}"
+            )
     except json.JSONDecodeError:
         test("xch-balance", FAIL, "Not valid JSON")
 else:
@@ -270,10 +314,17 @@ elif resp.status_code == 200:
             cat_id = get_cat_asset_id()
             if cat_id and balances:
                 found = any(t.get("asset_id") == cat_id for t in balances)
-                test("Our CAT found", PASS if found else WARN,
-                     f"{cat_id[:16]}... {'found' if found else 'not in list'}")
+                test(
+                    "Our CAT found",
+                    PASS if found else WARN,
+                    f"{cat_id[:16]}... {'found' if found else 'not in list'}",
+                )
         else:
-            test("token-balance format", WARN, f"Expected list, got {type(balances).__name__}")
+            test(
+                "token-balance format",
+                WARN,
+                f"Expected list, got {type(balances).__name__}",
+            )
     except json.JSONDecodeError:
         test("token-balance", FAIL, "Not valid JSON")
 else:
@@ -297,20 +348,37 @@ min_t = min(times)
 if avg < 2000:
     test("Avg response time", PASS, f"{avg:.0f}ms (min={min_t:.0f}, max={max_t:.0f})")
 elif avg < 5000:
-    test("Avg response time", WARN, f"{avg:.0f}ms -- slow (min={min_t:.0f}, max={max_t:.0f})")
+    test(
+        "Avg response time",
+        WARN,
+        f"{avg:.0f}ms -- slow (min={min_t:.0f}, max={max_t:.0f})",
+    )
 else:
-    test("Avg response time", FAIL, f"{avg:.0f}ms -- very slow (min={min_t:.0f}, max={max_t:.0f})")
+    test(
+        "Avg response time",
+        FAIL,
+        f"{avg:.0f}ms -- very slow (min={min_t:.0f}, max={max_t:.0f})",
+    )
 
 bot_timeout = getattr(cfg, "SPACESCAN_TIMEOUT", 10) * 1000 if CONFIG_LOADED else 10000
 if max_t > bot_timeout:
-    test("Timeout risk", FAIL,
-         f"Slowest ({max_t:.0f}ms) exceeds bot timeout ({bot_timeout:.0f}ms)")
+    test(
+        "Timeout risk",
+        FAIL,
+        f"Slowest ({max_t:.0f}ms) exceeds bot timeout ({bot_timeout:.0f}ms)",
+    )
 elif max_t > bot_timeout * 0.7:
-    test("Timeout risk", WARN,
-         f"Slowest ({max_t:.0f}ms) is {max_t/bot_timeout*100:.0f}% of timeout ({bot_timeout:.0f}ms)")
+    test(
+        "Timeout risk",
+        WARN,
+        f"Slowest ({max_t:.0f}ms) is {max_t / bot_timeout * 100:.0f}% of timeout ({bot_timeout:.0f}ms)",
+    )
 else:
-    test("Timeout risk", PASS,
-         f"All within timeout ({max_t:.0f}ms < {bot_timeout:.0f}ms)")
+    test(
+        "Timeout risk",
+        PASS,
+        f"All within timeout ({max_t:.0f}ms < {bot_timeout:.0f}ms)",
+    )
 print()
 
 
@@ -319,20 +387,30 @@ print("--- Test 7: Bot Config ---")
 
 if CONFIG_LOADED:
     enabled = getattr(cfg, "SPACESCAN_ENABLED", True)
-    test("SPACESCAN_ENABLED", PASS if enabled else WARN,
-         f"{'enabled' if enabled else 'DISABLED -- fills not verified!'}")
+    test(
+        "SPACESCAN_ENABLED",
+        PASS if enabled else WARN,
+        f"{'enabled' if enabled else 'DISABLED -- fills not verified!'}",
+    )
 
     timeout = getattr(cfg, "SPACESCAN_TIMEOUT", 10)
     if timeout >= 15:
         test("SPACESCAN_TIMEOUT", PASS, f"{timeout}s")
     elif timeout >= 10:
-        test("SPACESCAN_TIMEOUT", WARN, f"{timeout}s -- increase to 15-20s if timeouts frequent")
+        test(
+            "SPACESCAN_TIMEOUT",
+            WARN,
+            f"{timeout}s -- increase to 15-20s if timeouts frequent",
+        )
     else:
         test("SPACESCAN_TIMEOUT", FAIL, f"{timeout}s -- too low, increase to 15+")
 
     key = cfg.SPACESCAN_API_KEY or ""
-    test("API key", PASS if key else WARN,
-         f"{'Pro key set' if key else 'No key -- Free tier'}")
+    test(
+        "API key",
+        PASS if key else WARN,
+        f"{'Pro key set' if key else 'No key -- Free tier'}",
+    )
 else:
     test("Bot config", SKIP, "Could not load config.py")
 print()
@@ -349,7 +427,9 @@ warns = sum(1 for _, s, _ in results if s == WARN)
 skips = sum(1 for _, s, _ in results if s == SKIP)
 total = len(results)
 
-print(f"  RESULTS: {passes} passed, {fails} failed, {warns} warnings, {skips} skipped / {total} total")
+print(
+    f"  RESULTS: {passes} passed, {fails} failed, {warns} warnings, {skips} skipped / {total} total"
+)
 
 if fails > 0:
     print()
@@ -371,5 +451,7 @@ if fails == 0:
 elif fails <= 2:
     print("  Some endpoints have issues -- check failures above.")
 else:
-    print("  Multiple Spacescan endpoints failing -- fills cannot be verified reliably.")
+    print(
+        "  Multiple Spacescan endpoints failing -- fills cannot be verified reliably."
+    )
 print("=" * 70)

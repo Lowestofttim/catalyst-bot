@@ -19,24 +19,26 @@ class _FakeOfferManager:
         return trade_id in self.cancelled
 
     def get_recently_created_ids_by_side(self):
-        return {
-            side: set(ids)
-            for side, ids in self.recently_created.items()
-        }
+        return {side: set(ids) for side, ids in self.recently_created.items()}
 
     def forget_recently_created(self, trade_id):
         self.forgot_recently_created.append(trade_id)
 
 
-_MODS_TO_RESTORE = ("fill_tracker", "spacescan", "wallet_sage", "wallet",
-                    "database", "config", "dexie_manager")
+_MODS_TO_RESTORE = (
+    "fill_tracker",
+    "spacescan",
+    "wallet_sage",
+    "wallet",
+    "database",
+    "config",
+    "dexie_manager",
+)
 
 
 class FillTrackerVerificationTests(unittest.TestCase):
     def setUp(self):
-        self._saved_modules = {
-            name: sys.modules.get(name) for name in _MODS_TO_RESTORE
-        }
+        self._saved_modules = {name: sys.modules.get(name) for name in _MODS_TO_RESTORE}
         self.logged = []
         self.recorded = []
         self.status_updates = []
@@ -130,8 +132,9 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(self.recorded, [])
         self.assertNotIn((trade_id, "cancelled"), self.status_updates)
         self.assertIn(trade_id, tracker._pending_reverify)
-        self.assertTrue(any(evt == "fill_verify_pending"
-                            for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "fill_verify_pending" for _, evt, _, _ in self.logged)
+        )
 
     def test_verified_spacescan_result_records_fill(self):
         self.fake_spacescan.verify_fill = lambda coin_id, our_address: True
@@ -164,7 +167,9 @@ class FillTrackerVerificationTests(unittest.TestCase):
 
         self.assertEqual(result["buy_fills"], [])
         self.assertEqual(self.recorded, [])
-        self.assertTrue(any(evt == "spacescan_disabled" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "spacescan_disabled" for _, evt, _, _ in self.logged)
+        )
 
     def test_wallet_cancelled_status_blocks_fill_recording(self):
         self.fake_wallet_sage.rpc = lambda *args, **kwargs: {"status": "CANCELLED"}
@@ -179,8 +184,12 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(result["sell_fills"], [])
         self.assertEqual(self.recorded, [])
         self.assertIn((trade_id, "cancelled"), self.status_updates)
-        self.assertTrue(any(evt == "fill_wallet_closed_nonfill" for _, evt, _, _ in self.logged))
-        self.assertTrue(any(evt == "offer_closed_nonfill" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "fill_wallet_closed_nonfill" for _, evt, _, _ in self.logged)
+        )
+        self.assertTrue(
+            any(evt == "offer_closed_nonfill" for _, evt, _, _ in self.logged)
+        )
 
     def test_wallet_pending_cancel_stays_open_for_reconcile(self):
         self.fake_wallet_sage.rpc = lambda *args, **kwargs: {"status": "PENDING_CANCEL"}
@@ -188,7 +197,9 @@ class FillTrackerVerificationTests(unittest.TestCase):
 
         def _spacescan_should_not_run(*args, **kwargs):
             spacescan_calls.append((args, kwargs))
-            self.fail("Pending-cancel offers are still fillable; leave them for cancel reconcile")
+            self.fail(
+                "Pending-cancel offers are still fillable; leave them for cancel reconcile"
+            )
 
         self.fake_spacescan.verify_fill = _spacescan_should_not_run
         tracker = self.fill_tracker.FillTracker()
@@ -203,7 +214,9 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(self.status_updates, [])
         self.assertEqual(self.lifecycle_updates, [])
         self.assertEqual(spacescan_calls, [])
-        self.assertTrue(any(evt == "fill_wallet_still_open" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "fill_wallet_still_open" for _, evt, _, _ in self.logged)
+        )
 
     def test_dexie_still_open_blocks_fill_recording(self):
         self.db_offer = {"coin_id": "0xcoin123", "dexie_id": "dexie-open"}
@@ -224,7 +237,9 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(self.recorded, [])
         self.assertEqual(self.status_updates, [])
         self.assertEqual(self.lifecycle_updates, [])
-        self.assertTrue(any(evt == "fill_dexie_still_open" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "fill_dexie_still_open" for _, evt, _, _ in self.logged)
+        )
 
     def test_dexie_trade_mismatch_defers_to_spacescan(self):
         # New policy: Spacescan is the golden gate. A Dexie trade_id mismatch
@@ -247,10 +262,12 @@ class FillTrackerVerificationTests(unittest.TestCase):
         result = tracker.detect_fills(set(), set(), {})
 
         self.assertEqual(result["sell_fills"], [fill_detail])
-        self.assertTrue(any(evt == "fill_dexie_trade_mismatch_defer"
-                            for _, evt, _, _ in self.logged))
-        self.assertTrue(any(evt == "fill_verified"
-                            for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(
+                evt == "fill_dexie_trade_mismatch_defer" for _, evt, _, _ in self.logged
+            )
+        )
+        self.assertTrue(any(evt == "fill_verified" for _, evt, _, _ in self.logged))
 
     def test_bot_cancelled_dexie_cancel_skips_spacescan(self):
         self.db_offer = {
@@ -283,8 +300,9 @@ class FillTrackerVerificationTests(unittest.TestCase):
         self.assertEqual(self.recorded, [])
         self.assertEqual(spacescan_calls, [])
         self.assertIn((trade_id, "cancelled"), self.status_updates)
-        self.assertTrue(any(evt == "offer_closed_nonfill"
-                            for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "offer_closed_nonfill" for _, evt, _, _ in self.logged)
+        )
 
     def test_bot_cancelled_dexie_fill_records_without_spacescan(self):
         self.db_offer = {
@@ -317,10 +335,15 @@ class FillTrackerVerificationTests(unittest.TestCase):
 
         self.assertEqual(result["sell_fills"], [fill_detail])
         self.assertEqual(spacescan_calls, [])
-        self.assertTrue(any(evt == "fill_beat_cancel_dexie"
-                            for _, evt, _, _ in self.logged))
-        self.assertTrue(any(level == "info" and evt == "fill_beat_cancel_dexie"
-                            for level, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "fill_beat_cancel_dexie" for _, evt, _, _ in self.logged)
+        )
+        self.assertTrue(
+            any(
+                level == "info" and evt == "fill_beat_cancel_dexie"
+                for level, evt, _, _ in self.logged
+            )
+        )
 
     def test_recently_created_offer_missing_from_wallet_snapshot_can_record_fill(self):
         self.db_offer = {
@@ -336,9 +359,7 @@ class FillTrackerVerificationTests(unittest.TestCase):
             "involved_coins": ["0xcoin123"],
         }
         fill_detail = {"trade_id": trade_id, "side": "buy", "price": "0.1"}
-        manager = _FakeOfferManager(
-            recently_created={"buy": {trade_id}, "sell": set()}
-        )
+        manager = _FakeOfferManager(recently_created={"buy": {trade_id}, "sell": set()})
 
         tracker = self.fill_tracker.FillTracker(offer_manager=manager)
         tracker._record_fill = lambda trade_id, side, details_cache: fill_detail
@@ -371,9 +392,7 @@ class FillTrackerVerificationTests(unittest.TestCase):
         older_trade_id = "trade-already-baselined"
         self.fake_spacescan.verify_fill = lambda coin_id, our_address: True
         fill_detail = {"trade_id": trade_id, "side": "buy", "price": "0.1"}
-        manager = _FakeOfferManager(
-            recently_created={"buy": {trade_id}, "sell": set()}
-        )
+        manager = _FakeOfferManager(recently_created={"buy": {trade_id}, "sell": set()})
         record_calls = []
 
         def _record_once(trade_id_arg, side, details_cache):

@@ -1,6 +1,8 @@
 """Tests for the coin FSM validator (non-blocking observer)."""
+
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from coin_fsm import CoinState, validate_transition, is_terminal
@@ -16,21 +18,29 @@ class TestBasicTransitions:
         assert ok is True
 
     def test_tier_spare_locks_into_tier_active(self):
-        ok, _ = validate_transition(_s("free", "tier_spare"), _s("locked", "tier_active"))
+        ok, _ = validate_transition(
+            _s("free", "tier_spare"), _s("locked", "tier_active")
+        )
         assert ok is True
 
     def test_tier_active_cancels_back_to_free(self):
-        ok, _ = validate_transition(_s("locked", "tier_active"), _s("free", "tier_spare"))
+        ok, _ = validate_transition(
+            _s("locked", "tier_active"), _s("free", "tier_spare")
+        )
         assert ok is True
 
     def test_tier_active_fills_to_spent(self):
-        ok, _ = validate_transition(_s("locked", "tier_active"), _s("spent", "tier_active"))
+        ok, _ = validate_transition(
+            _s("locked", "tier_active"), _s("spent", "tier_active")
+        )
         assert ok is True
 
 
 class TestSpentIsTerminal:
     def test_spent_cannot_become_free(self):
-        ok, reason = validate_transition(_s("spent", "tier_active"), _s("free", "tier_spare"))
+        ok, reason = validate_transition(
+            _s("spent", "tier_active"), _s("free", "tier_spare")
+        )
         assert ok is False
         assert "terminal" in reason.lower()
 
@@ -58,7 +68,9 @@ class TestIdentity:
 
 class TestBadValues:
     def test_unknown_status_rejected(self):
-        ok, reason = validate_transition(_s("nonsense", "tier_spare"), _s("free", "tier_spare"))
+        ok, reason = validate_transition(
+            _s("nonsense", "tier_spare"), _s("free", "tier_spare")
+        )
         assert ok is False
         assert "unknown" in reason.lower()
 

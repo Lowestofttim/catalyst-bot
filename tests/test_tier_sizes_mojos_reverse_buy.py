@@ -22,6 +22,7 @@ After the 2026-04-19 fix: storage stays position-indexed (matches Smart
 Defaults' write), ``get_buy_tier_size_xch`` returns position directly, and
 ``get_tier_sizes_mojos_from_cfg`` applies the position→bucket flip itself.
 """
+
 import os
 import sys
 import types
@@ -39,12 +40,12 @@ class _StubCfg:
         # largest (far from mid). Smart Defaults + handleReverseLadderToggle
         # both write storage this way.
         if reversed_buy:
-            self.BUY_INNER_SIZE_XCH = Decimal("0.29")     # inner pos = small
+            self.BUY_INNER_SIZE_XCH = Decimal("0.29")  # inner pos = small
             self.BUY_MID_SIZE_XCH = Decimal("0.6379")
             self.BUY_OUTER_SIZE_XCH = Decimal("1.1598")
-            self.BUY_EXTREME_SIZE_XCH = Decimal("2.0876") # extreme pos = large
+            self.BUY_EXTREME_SIZE_XCH = Decimal("2.0876")  # extreme pos = large
         else:
-            self.BUY_INNER_SIZE_XCH = Decimal("2.0876")   # inner pos = large (normal)
+            self.BUY_INNER_SIZE_XCH = Decimal("2.0876")  # inner pos = large (normal)
             self.BUY_MID_SIZE_XCH = Decimal("1.1598")
             self.BUY_OUTER_SIZE_XCH = Decimal("0.6379")
             self.BUY_EXTREME_SIZE_XCH = Decimal("0.29")
@@ -73,17 +74,30 @@ def _ensure_stubs():
         sys.modules["dotenv"] = d
     if "requests" not in sys.modules:
         r = types.ModuleType("requests")
+
         class _Resp:
             status_code = 200
-            def json(self): return {}
-            def raise_for_status(self): pass
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
         class _Session:
             headers = {}
-            def get(self, *a, **kw): return _Resp()
-            def mount(self, *a, **kw): pass
+
+            def get(self, *a, **kw):
+                return _Resp()
+
+            def mount(self, *a, **kw):
+                pass
+
         r.get = lambda *a, **kw: _Resp()
         r.Session = _Session
-        r.exceptions = types.SimpleNamespace(Timeout=Exception, ConnectionError=Exception)
+        r.exceptions = types.SimpleNamespace(
+            Timeout=Exception, ConnectionError=Exception
+        )
         a = types.ModuleType("requests.adapters")
         a.HTTPAdapter = object
         r.adapters = a
@@ -95,6 +109,7 @@ def _ensure_stubs():
         u.exceptions = types.SimpleNamespace(InsecureRequestWarning=Warning)
         u.disable_warnings = lambda *a, **kw: None
         sys.modules["urllib3"] = u
+
 
 _ensure_stubs()
 
@@ -114,12 +129,14 @@ class TierSizesReverseBuyTests(unittest.TestCase):
     def setUp(self):
         import config
         import coin_manager
+
         self._real_cfg = config.cfg
-        self._real_cm_cfg = getattr(coin_manager, 'cfg', None)
+        self._real_cm_cfg = getattr(coin_manager, "cfg", None)
 
     def tearDown(self):
         import config
         import coin_manager
+
         config.cfg = self._real_cfg
         if self._real_cm_cfg is not None:
             coin_manager.cfg = self._real_cm_cfg
@@ -127,12 +144,14 @@ class TierSizesReverseBuyTests(unittest.TestCase):
     def _patch_cfg(self, stub):
         import config
         import coin_manager
+
         config.cfg = stub
         coin_manager.cfg = stub
 
     def test_non_reverse_returns_position_equals_size_indexed(self):
         """Non-reverse: position and size are the same thing (inner=biggest)."""
         from coin_manager import get_tier_sizes_mojos_from_cfg
+
         self._patch_cfg(_StubCfg(reversed_buy=False))
         sizes = get_tier_sizes_mojos_from_cfg(is_cat=False)
         # Inner key holds the largest size (BUY_INNER_SIZE_XCH = 2.0876)
@@ -151,15 +170,18 @@ class TierSizesReverseBuyTests(unittest.TestCase):
         (smallest bucket). Matches coin_size_tier_for_slot_position semantics.
         """
         from coin_manager import get_tier_sizes_mojos_from_cfg
+
         self._patch_cfg(_StubCfg(reversed_buy=True))
         sizes = get_tier_sizes_mojos_from_cfg(is_cat=False)
         self.assertEqual(
-            sizes["inner"], int(Decimal("2.0876") * 10**12),
+            sizes["inner"],
+            int(Decimal("2.0876") * 10**12),
             "Inner bucket key must hold the LARGEST size (= pos-extreme size "
             "under reverse-buy). Otherwise F70 labels coins incorrectly.",
         )
         self.assertEqual(
-            sizes["extreme"], int(Decimal("0.29") * 10**12),
+            sizes["extreme"],
+            int(Decimal("0.29") * 10**12),
             "Extreme bucket key must hold the SMALLEST size (= pos-inner "
             "size under reverse-buy).",
         )
@@ -172,14 +194,16 @@ class TierSizesReverseBuyTests(unittest.TestCase):
         from coin_manager import get_tier_sizes_mojos_from_cfg
 
         self._patch_cfg(_StubCfg(reversed_buy=True))
-        with patch.object(coin_manager.CoinManager, "_resolve_fingerprint",
-                          return_value="123456789"):
+        with patch.object(
+            coin_manager.CoinManager, "_resolve_fingerprint", return_value="123456789"
+        ):
             manager = coin_manager.CoinManager()
 
         expected = get_tier_sizes_mojos_from_cfg(is_cat=False)
         self.assertEqual(manager._get_tier_sizes_mojos(is_cat=False), expected)
         self.assertEqual(
-            expected["extreme"], int(Decimal("0.29") * 10**12),
+            expected["extreme"],
+            int(Decimal("0.29") * 10**12),
             "Floor-nearest reversed-buy topup must create extreme-bucket "
             "coins, not the larger extreme-position size.",
         )
@@ -187,11 +211,12 @@ class TierSizesReverseBuyTests(unittest.TestCase):
     def test_reverse_buy_cat_path_unchanged(self):
         """Sell side should be unaffected by reverse-buy."""
         from coin_manager import get_tier_sizes_mojos_from_cfg
+
         self._patch_cfg(_StubCfg(reversed_buy=True))
         # CAT path needs a price — patch api_server.bot to None so we hit
         # the fallback (XCH sizes used directly)
-        with patch.dict(sys.modules, {'api_server': types.ModuleType('api_server')}):
-            sys.modules['api_server'].bot = None
+        with patch.dict(sys.modules, {"api_server": types.ModuleType("api_server")}):
+            sys.modules["api_server"].bot = None
             sizes = get_tier_sizes_mojos_from_cfg(is_cat=True)
         # Sell side is never flipped — these should be SELL_*_SIZE_XCH
         # values (non-flipped). They get scaled to CAT mojos via price

@@ -58,10 +58,12 @@ class AMMMonitor:
 
         # HTTP session (reused across polls)
         self._session = requests.Session()
-        self._session.headers.update({
-            "User-Agent": "CATalyst/4.0",
-            "Accept": "application/json",
-        })
+        self._session.headers.update(
+            {
+                "User-Agent": "CATalyst/4.0",
+                "Accept": "application/json",
+            }
+        )
 
         # Health tracking
         self._consecutive_failures = 0
@@ -96,8 +98,11 @@ class AMMMonitor:
             daemon=True,
         )
         self._thread.start()
-        log_event("info", "amm_monitor_start",
-                  "AMM Monitor started — polling TibetSwap reserves")
+        log_event(
+            "info",
+            "amm_monitor_start",
+            "AMM Monitor started — polling TibetSwap reserves",
+        )
 
     def stop(self) -> None:
         """Signal background thread to stop and wait for it."""
@@ -126,8 +131,9 @@ class AMMMonitor:
         with self._lock:
             return self._state is not None and self._state.get("available", False)
 
-    def notify_quoted_price(self, buy_price: Optional[Decimal],
-                            sell_price: Optional[Decimal]) -> None:
+    def notify_quoted_price(
+        self, buy_price: Optional[Decimal], sell_price: Optional[Decimal]
+    ) -> None:
         """Called by bot_loop after posting offers — records the last quoted price
         so drift detection knows what we're comparing against."""
         with self._lock:
@@ -197,6 +203,7 @@ class AMMMonitor:
         sweep_score = 0.0
         try:
             from dynamic_amm_buffer import _get_buffer_instance
+
             count = _get_buffer_instance().sweep_count_in_window()
             # Score: 0 sweeps→0, 1→0.33, 2→0.55, 3→0.70, 4→0.80, 5+→saturate
             sweep_score = min(1.0, 1.0 - (1.0 / (1.0 + count * 0.5)))
@@ -208,9 +215,12 @@ class AMMMonitor:
     def get_arb_pressure_label(self) -> str:
         """Human-readable arb pressure level."""
         score = self.get_arb_pressure()
-        if score < 0.3:  return "low"
-        if score < 0.6:  return "moderate"
-        if score < 0.9:  return "high"
+        if score < 0.3:
+            return "low"
+        if score < 0.6:
+            return "moderate"
+        if score < 0.9:
+            return "high"
         return "critical"
 
     def check_amm_buffer(self, offer_price: Decimal, side: str):
@@ -227,6 +237,7 @@ class AMMMonitor:
                      → we're willing to accept LESS than the AMM → instant arb
         """
         from config import cfg
+
         if not getattr(cfg, "ENABLE_AMM_BUFFER", False):
             return True
 
@@ -245,6 +256,7 @@ class AMMMonitor:
             # Widen buffer after recent sweep activity (Tier 3: dynamic buffer)
             try:
                 from dynamic_amm_buffer import get_buffer as _dyn_buf
+
                 buffer_bps = _dyn_buf(base_bps)
             except Exception:
                 buffer_bps = base_bps
@@ -260,13 +272,21 @@ class AMMMonitor:
                 within_buffer = offer_price <= threshold
 
             if within_buffer:
-                distance_bps = abs(offer_price - amm_price) / amm_price * Decimal("10000")
-                log_event("debug", "amm_buffer_guard",
-                          f"AMM buffer: {side} offer {offer_price:.8f} is {_bps_to_pct(distance_bps)} "
-                          f"from AMM {amm_price:.8f} (buffer={_bps_to_pct(buffer_bps)}) — SKIPPED",
-                          data={"side": side, "offer_price": str(offer_price),
-                                "amm_price": str(amm_price),
-                                "distance_bps": str(distance_bps.quantize(Decimal("0.1")))})
+                distance_bps = (
+                    abs(offer_price - amm_price) / amm_price * Decimal("10000")
+                )
+                log_event(
+                    "debug",
+                    "amm_buffer_guard",
+                    f"AMM buffer: {side} offer {offer_price:.8f} is {_bps_to_pct(distance_bps)} "
+                    f"from AMM {amm_price:.8f} (buffer={_bps_to_pct(buffer_bps)}) — SKIPPED",
+                    data={
+                        "side": side,
+                        "offer_price": str(offer_price),
+                        "amm_price": str(amm_price),
+                        "distance_bps": str(distance_bps.quantize(Decimal("0.1"))),
+                    },
+                )
                 return False
 
             return True
@@ -285,22 +305,33 @@ class AMMMonitor:
         dyn_buffer_state: dict = {}
         try:
             from dynamic_amm_buffer import get_state as _dyn_state
+
             dyn_buffer_state = _dyn_state()
         except Exception:
             pass
 
         return {
             "available": state.get("available", False),
-            "amm_price": str(state.get("amm_price", "")) if state.get("amm_price") else None,
-            "xch_reserve": str(state.get("xch_reserve", "")) if state.get("xch_reserve") else None,
-            "token_reserve": str(state.get("token_reserve", "")) if state.get("token_reserve") else None,
+            "amm_price": str(state.get("amm_price", ""))
+            if state.get("amm_price")
+            else None,
+            "xch_reserve": str(state.get("xch_reserve", ""))
+            if state.get("xch_reserve")
+            else None,
+            "token_reserve": str(state.get("token_reserve", ""))
+            if state.get("token_reserve")
+            else None,
             "fetched_at": state.get("fetched_at", 0),
             "pair_id": state.get("pair_id", ""),
             "total_polls": self._total_polls,
             "failed_polls": self._failed_polls,
             "consecutive_failures": self._consecutive_failures,
-            "last_success_ago_secs": round(time.time() - self._last_success_at, 1) if self._last_success_at else None,
-            "drift_bps": str(drift.quantize(Decimal("0.1"))) if drift is not None else None,
+            "last_success_ago_secs": round(time.time() - self._last_success_at, 1)
+            if self._last_success_at
+            else None,
+            "drift_bps": str(drift.quantize(Decimal("0.1")))
+            if drift is not None
+            else None,
             "arb_pressure": arb_pressure,
             "arb_pressure_label": self.get_arb_pressure_label(),
             "dynamic_buffer": dyn_buffer_state,
@@ -321,8 +352,9 @@ class AMMMonitor:
             try:
                 self._do_poll()
             except Exception as e:
-                log_event("debug", "amm_monitor_poll_error",
-                          f"AMM Monitor poll error: {e}")
+                log_event(
+                    "debug", "amm_monitor_poll_error", f"AMM Monitor poll error: {e}"
+                )
 
             interval = int(getattr(cfg, "AMM_POLL_INTERVAL_SECS", 30))
             self._stop_event.wait(timeout=interval)
@@ -342,8 +374,11 @@ class AMMMonitor:
             self._consecutive_failures += 1
             self._failed_polls += 1
             if self._consecutive_failures == 3:
-                log_event("warning", "amm_monitor_unhealthy",
-                          "AMM Monitor: 3 consecutive failures — TibetSwap API may be down")
+                log_event(
+                    "warning",
+                    "amm_monitor_unhealthy",
+                    "AMM Monitor: 3 consecutive failures — TibetSwap API may be down",
+                )
             return
 
         # Success
@@ -371,12 +406,17 @@ class AMMMonitor:
             )
             self._last_drift_bucket = current_bucket
             if should_log:
-                log_event("info", "amm_drift_detected",
-                          f"AMM price drifted {_bps_to_pct(drift_bps)} from last quoted mid "
-                          f"— invalidating Tibet cache for fresh requote",
-                          data={"drift_bps": str(drift_bps.quantize(Decimal("0.1"))),
-                                "threshold_bps": str(drift_threshold),
-                                "amm_price": str(state.get("amm_price", ""))})
+                log_event(
+                    "info",
+                    "amm_drift_detected",
+                    f"AMM price drifted {_bps_to_pct(drift_bps)} from last quoted mid "
+                    f"— invalidating Tibet cache for fresh requote",
+                    data={
+                        "drift_bps": str(drift_bps.quantize(Decimal("0.1"))),
+                        "threshold_bps": str(drift_threshold),
+                        "amm_price": str(state.get("amm_price", "")),
+                    },
+                )
             if self._price_engine is not None:
                 try:
                     self._price_engine.invalidate_tibet_cache()
@@ -403,19 +443,24 @@ class AMMMonitor:
         endpoints to worry about.
         """
         from config import cfg
+
         base = getattr(cfg, "TIBET_API_BASE", "https://api.v2.tibetswap.io")
         timeout = int(getattr(cfg, "TIBET_TIMEOUT", 10))
         decimals = int(getattr(cfg, "CAT_DECIMALS", 3))
 
         url = f"{base.rstrip('/')}/pairs"
         try:
-            resp = self._session.get(url, params={"skip": 0, "limit": 2000},
-                                     timeout=timeout)
+            resp = self._session.get(
+                url, params={"skip": 0, "limit": 2000}, timeout=timeout
+            )
             resp.raise_for_status()
             all_pairs = resp.json()
         except Exception as e:
-            log_event("debug", "amm_monitor_fetch_error",
-                      f"AMM Monitor fetch failed for pair {pair_id[:16]}...: {e}")
+            log_event(
+                "debug",
+                "amm_monitor_fetch_error",
+                f"AMM Monitor fetch failed for pair {pair_id[:16]}...: {e}",
+            )
             return None
 
         if not isinstance(all_pairs, list):
@@ -431,7 +476,11 @@ class AMMMonitor:
         target = _norm(pair_id)
         data = None
         for entry in all_pairs:
-            if isinstance(entry, dict) and _norm(entry.get("launcher_id") or entry.get("pair_id") or "") == target:
+            if (
+                isinstance(entry, dict)
+                and _norm(entry.get("launcher_id") or entry.get("pair_id") or "")
+                == target
+            ):
                 data = entry
                 break
         if not isinstance(data, dict):
@@ -447,7 +496,9 @@ class AMMMonitor:
 
             # Convert to human units
             xch_reserve = xch_reserve_mojos / Decimal("1000000000000")
-            token_reserve = token_reserve_mojos / (Decimal(10) ** Decimal(str(decimals)))
+            token_reserve = token_reserve_mojos / (
+                Decimal(10) ** Decimal(str(decimals))
+            )
 
             amm_price = xch_reserve / token_reserve
 
@@ -466,8 +517,11 @@ class AMMMonitor:
                 "_raw_token_reserve": int(token_reserve_mojos),
             }
         except (InvalidOperation, ZeroDivisionError, TypeError) as e:
-            log_event("debug", "amm_monitor_parse_error",
-                      f"AMM Monitor failed to parse pair data: {e}")
+            log_event(
+                "debug",
+                "amm_monitor_parse_error",
+                f"AMM Monitor failed to parse pair data: {e}",
+            )
             return None
 
     def _compute_drift_vs_old_state(self, new_state: Dict) -> Optional[Decimal]:
@@ -502,6 +556,7 @@ class AMMMonitor:
         """
         try:
             import price_engine as _pe
+
             raw_xch = state.get("_raw_xch_reserve")
             raw_token = state.get("_raw_token_reserve")
             if raw_xch is None or raw_token is None:
@@ -521,10 +576,15 @@ class AMMMonitor:
                     # Refresh the cache timestamp so it won't be re-fetched
                     # for another AMM_POLL_INTERVAL_SECS
                     _pe._tibet_cache["fetched_at"] = time.time()
-                    log_event("debug", "amm_cache_injected",
-                              f"Injected fresh AMM reserves into Tibet cache "
-                              f"(xch={raw_xch}, token={raw_token})")
+                    log_event(
+                        "debug",
+                        "amm_cache_injected",
+                        f"Injected fresh AMM reserves into Tibet cache "
+                        f"(xch={raw_xch}, token={raw_token})",
+                    )
         except Exception as e:
-            log_event("debug", "amm_cache_inject_error",
-                      f"AMM cache injection failed (non-critical): {e}")
-
+            log_event(
+                "debug",
+                "amm_cache_inject_error",
+                f"AMM cache injection failed (non-critical): {e}",
+            )

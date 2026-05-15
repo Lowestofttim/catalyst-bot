@@ -23,14 +23,22 @@ from sweep_coordinator import SweepEntry, SweepEvent
 # Stage enum
 # ---------------------------------------------------------------------------
 
-class TestStageEnum(unittest.TestCase):
 
+class TestStageEnum(unittest.TestCase):
     def test_all_members(self):
         names = {m.name for m in Stage}
-        self.assertEqual(names, {
-            "CANCELLING", "WAITING_FOR_CONFIRMATION", "CHECKING_COINS",
-            "RESHAPING", "REBUILDING", "COMPLETE", "HALTED",
-        })
+        self.assertEqual(
+            names,
+            {
+                "CANCELLING",
+                "WAITING_FOR_CONFIRMATION",
+                "CHECKING_COINS",
+                "RESHAPING",
+                "REBUILDING",
+                "COMPLETE",
+                "HALTED",
+            },
+        )
 
     def test_string_values(self):
         self.assertEqual(Stage.CANCELLING.value, "cancelling")
@@ -42,15 +50,22 @@ class TestStageEnum(unittest.TestCase):
 # HaltReason enum
 # ---------------------------------------------------------------------------
 
-class TestHaltReasonEnum(unittest.TestCase):
 
+class TestHaltReasonEnum(unittest.TestCase):
     def test_all_members(self):
         names = {m.name for m in HaltReason}
-        self.assertEqual(names, {
-            "USER_ABORTED", "TIMEOUT_CONFIRMATION", "TIMEOUT_RESHAPE",
-            "POSITION_GUARD_BLOCKED", "NO_TIER_COINS_POSSIBLE",
-            "CANCEL_REJECTED", "INTERNAL_ERROR",
-        })
+        self.assertEqual(
+            names,
+            {
+                "USER_ABORTED",
+                "TIMEOUT_CONFIRMATION",
+                "TIMEOUT_RESHAPE",
+                "POSITION_GUARD_BLOCKED",
+                "NO_TIER_COINS_POSSIBLE",
+                "CANCEL_REJECTED",
+                "INTERNAL_ERROR",
+            },
+        )
 
     def test_string_values(self):
         self.assertEqual(HaltReason.USER_ABORTED.value, "user_aborted")
@@ -61,18 +76,23 @@ class TestHaltReasonEnum(unittest.TestCase):
 # Pipeline constants
 # ---------------------------------------------------------------------------
 
-class TestPipelineConstants(unittest.TestCase):
 
+class TestPipelineConstants(unittest.TestCase):
     def test_p1_pipeline_stages(self):
-        self.assertEqual(P1_PIPELINE, (Stage.CANCELLING, Stage.WAITING_FOR_CONFIRMATION))
+        self.assertEqual(
+            P1_PIPELINE, (Stage.CANCELLING, Stage.WAITING_FOR_CONFIRMATION)
+        )
 
     def test_p2_pipeline_stages(self):
-        self.assertEqual(P2_PIPELINE, (
-            Stage.CANCELLING,
-            Stage.WAITING_FOR_CONFIRMATION,
-            Stage.CHECKING_COINS,
-            Stage.REBUILDING,
-        ))
+        self.assertEqual(
+            P2_PIPELINE,
+            (
+                Stage.CANCELLING,
+                Stage.WAITING_FOR_CONFIRMATION,
+                Stage.CHECKING_COINS,
+                Stage.REBUILDING,
+            ),
+        )
 
     def test_active_pipeline_is_p2(self):
         self.assertIs(ACTIVE_PIPELINE, P2_PIPELINE)
@@ -82,8 +102,8 @@ class TestPipelineConstants(unittest.TestCase):
 # FlowState.is_terminal
 # ---------------------------------------------------------------------------
 
-class TestFlowStateIsTerminal(unittest.TestCase):
 
+class TestFlowStateIsTerminal(unittest.TestCase):
     def _make(self, stage):
         return FlowState(flow_id="f1", side="buy", trade_ids=[], stage=stage)
 
@@ -94,8 +114,13 @@ class TestFlowStateIsTerminal(unittest.TestCase):
         self.assertTrue(self._make(Stage.HALTED).is_terminal())
 
     def test_running_stages_not_terminal(self):
-        for stage in (Stage.CANCELLING, Stage.WAITING_FOR_CONFIRMATION,
-                      Stage.CHECKING_COINS, Stage.REBUILDING, Stage.RESHAPING):
+        for stage in (
+            Stage.CANCELLING,
+            Stage.WAITING_FOR_CONFIRMATION,
+            Stage.CHECKING_COINS,
+            Stage.REBUILDING,
+            Stage.RESHAPING,
+        ):
             # subTest kwargs are serialized by pytest-xdist on pytest>=9;
             # pass the enum name (string) not the enum itself.
             with self.subTest(stage=stage.name):
@@ -106,8 +131,8 @@ class TestFlowStateIsTerminal(unittest.TestCase):
 # FlowState.status property
 # ---------------------------------------------------------------------------
 
-class TestFlowStateStatus(unittest.TestCase):
 
+class TestFlowStateStatus(unittest.TestCase):
     def _make(self, stage=Stage.CANCELLING, halt_reason=None):
         fs = FlowState(flow_id="f1", side="sell", trade_ids=[], stage=stage)
         fs.halt_reason = halt_reason
@@ -133,8 +158,8 @@ class TestFlowStateStatus(unittest.TestCase):
 # FlowState.to_dict
 # ---------------------------------------------------------------------------
 
-class TestFlowStateToDict(unittest.TestCase):
 
+class TestFlowStateToDict(unittest.TestCase):
     def _make(self, **kw):
         defaults = dict(flow_id="f42", side="buy", trade_ids=["t1", "t2"])
         defaults.update(kw)
@@ -142,9 +167,18 @@ class TestFlowStateToDict(unittest.TestCase):
 
     def test_required_keys_present(self):
         d = self._make().to_dict()
-        for key in ("flow_id", "side", "stage", "status", "detail",
-                    "elapsed_ms", "pipeline", "stages_completed",
-                    "halt_reason", "summary"):
+        for key in (
+            "flow_id",
+            "side",
+            "stage",
+            "status",
+            "detail",
+            "elapsed_ms",
+            "pipeline",
+            "stages_completed",
+            "halt_reason",
+            "summary",
+        ):
             self.assertIn(key, d)
 
     def test_pipeline_uses_active_by_default(self):
@@ -186,24 +220,31 @@ class TestFlowStateToDict(unittest.TestCase):
 # SweepEntry dataclass
 # ---------------------------------------------------------------------------
 
-class TestSweepEntry(unittest.TestCase):
 
+class TestSweepEntry(unittest.TestCase):
     def test_construction(self):
-        e = SweepEntry(fill_id=1, trade_id="t1", classification="DEXIE_COMBINED",
-                       spent_block_index=42)
+        e = SweepEntry(
+            fill_id=1,
+            trade_id="t1",
+            classification="DEXIE_COMBINED",
+            spent_block_index=42,
+        )
         self.assertEqual(e.fill_id, 1)
         self.assertEqual(e.trade_id, "t1")
         self.assertEqual(e.spent_block_index, 42)
 
     def test_optional_fields_default_none(self):
-        e = SweepEntry(fill_id=2, trade_id="t2", classification="UNKNOWN",
-                       spent_block_index=10)
+        e = SweepEntry(
+            fill_id=2, trade_id="t2", classification="UNKNOWN", spent_block_index=10
+        )
         self.assertIsNone(e.taker_puzzle_hash)
         self.assertIsNone(e.side)
 
     def test_added_at_defaults_monotonic(self):
         before = time.monotonic()
-        e = SweepEntry(fill_id=3, trade_id="t3", classification="x", spent_block_index=0)
+        e = SweepEntry(
+            fill_id=3, trade_id="t3", classification="x", spent_block_index=0
+        )
         after = time.monotonic()
         self.assertGreaterEqual(e.added_at, before)
         self.assertLessEqual(e.added_at, after)
@@ -213,25 +254,30 @@ class TestSweepEntry(unittest.TestCase):
 # SweepEvent.fill_count
 # ---------------------------------------------------------------------------
 
+
 def _make_entry(trade_id="t1", block=100):
-    return SweepEntry(fill_id=1, trade_id=trade_id, classification="x",
-                      spent_block_index=block)
+    return SweepEntry(
+        fill_id=1, trade_id=trade_id, classification="x", spent_block_index=block
+    )
 
 
 class TestSweepEventFillCount(unittest.TestCase):
-
     def test_empty_fills(self):
         ev = SweepEvent(sweep_group_id="g1", spent_block_index=100, fills=[])
         self.assertEqual(ev.fill_count, 0)
 
     def test_single_fill(self):
-        ev = SweepEvent(sweep_group_id="g1", spent_block_index=100,
-                        fills=[_make_entry()])
+        ev = SweepEvent(
+            sweep_group_id="g1", spent_block_index=100, fills=[_make_entry()]
+        )
         self.assertEqual(ev.fill_count, 1)
 
     def test_multiple_fills(self):
-        ev = SweepEvent(sweep_group_id="g1", spent_block_index=100,
-                        fills=[_make_entry("t1"), _make_entry("t2"), _make_entry("t3")])
+        ev = SweepEvent(
+            sweep_group_id="g1",
+            spent_block_index=100,
+            fills=[_make_entry("t1"), _make_entry("t2"), _make_entry("t3")],
+        )
         self.assertEqual(ev.fill_count, 3)
 
 
@@ -239,15 +285,18 @@ class TestSweepEventFillCount(unittest.TestCase):
 # SweepEvent.trade_ids
 # ---------------------------------------------------------------------------
 
-class TestSweepEventTradeIds(unittest.TestCase):
 
+class TestSweepEventTradeIds(unittest.TestCase):
     def test_empty_returns_empty_list(self):
         ev = SweepEvent(sweep_group_id="g1", spent_block_index=100, fills=[])
         self.assertEqual(ev.trade_ids, [])
 
     def test_returns_trade_ids_in_order(self):
-        ev = SweepEvent(sweep_group_id="g1", spent_block_index=100,
-                        fills=[_make_entry("alpha"), _make_entry("beta")])
+        ev = SweepEvent(
+            sweep_group_id="g1",
+            spent_block_index=100,
+            fills=[_make_entry("alpha"), _make_entry("beta")],
+        )
         self.assertEqual(ev.trade_ids, ["alpha", "beta"])
 
 
@@ -255,16 +304,20 @@ class TestSweepEventTradeIds(unittest.TestCase):
 # SweepEvent.__str__
 # ---------------------------------------------------------------------------
 
-class TestSweepEventStr(unittest.TestCase):
 
+class TestSweepEventStr(unittest.TestCase):
     def test_contains_block_index(self):
-        ev = SweepEvent(sweep_group_id="grp1", spent_block_index=999,
-                        fills=[_make_entry()])
+        ev = SweepEvent(
+            sweep_group_id="grp1", spent_block_index=999, fills=[_make_entry()]
+        )
         self.assertIn("999", str(ev))
 
     def test_contains_fill_count(self):
-        ev = SweepEvent(sweep_group_id="grp1", spent_block_index=5,
-                        fills=[_make_entry("a"), _make_entry("b")])
+        ev = SweepEvent(
+            sweep_group_id="grp1",
+            spent_block_index=5,
+            fills=[_make_entry("a"), _make_entry("b")],
+        )
         self.assertIn("2", str(ev))
 
     def test_contains_group_id(self):

@@ -92,9 +92,19 @@ class _FakeDexieManager:
 
 
 class _FakeBot:
-    def __init__(self, *, wallet_buys=30, wallet_sells=30, fresh=True,
-                 market_snapshot=None, coin_status=None, free_counts=None,
-                 queue_size=0, sweep_protection=None, adaptive_targets=None):
+    def __init__(
+        self,
+        *,
+        wallet_buys=30,
+        wallet_sells=30,
+        fresh=True,
+        market_snapshot=None,
+        coin_status=None,
+        free_counts=None,
+        queue_size=0,
+        sweep_protection=None,
+        adaptive_targets=None,
+    ):
         self._startup_complete = _FakeEvent()
         self._running = True
         self._bot_state = {"open_buys": wallet_buys, "open_sells": wallet_sells}
@@ -108,7 +118,9 @@ class _FakeBot:
         self._sweep_protection = sweep_protection or {}
         self.offer_manager = _FakeOfferManager(fresh=fresh)
         self.market_intel = _FakeMarketIntel(snapshot=market_snapshot)
-        self.coin_manager = _FakeCoinManager(status=coin_status, free_counts=free_counts)
+        self.coin_manager = _FakeCoinManager(
+            status=coin_status, free_counts=free_counts
+        )
         self.dexie_manager = _FakeDexieManager(queue_size=queue_size)
         self.alerts = []
         self.cleared = []
@@ -121,8 +133,12 @@ class _FakeBot:
     def _clear_alert(self, alert_id):
         self.cleared.append(alert_id)
 
-    def _get_adaptive_offer_targets(self, mid_price, current_buy_count=0, current_sell_count=0):
-        self.adaptive_target_calls.append((mid_price, current_buy_count, current_sell_count))
+    def _get_adaptive_offer_targets(
+        self, mid_price, current_buy_count=0, current_sell_count=0
+    ):
+        self.adaptive_target_calls.append(
+            (mid_price, current_buy_count, current_sell_count)
+        )
         if self._adaptive_targets is not None:
             return dict(self._adaptive_targets)
         return {"buy": 24, "sell": 24}
@@ -177,10 +193,14 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(30, 30)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(30, 30)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+        ):
             monitor._run_once()
             monitor._run_once()
 
@@ -188,7 +208,12 @@ class RuntimeMonitorTests(unittest.TestCase):
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertIn("dexie_visibility_gap", active_codes)
         self.assertEqual(state["status"], "warning")
-        self.assertTrue(any(call.args[1] == "bot_health_dexie_gap" for call in log_event_mock.call_args_list))
+        self.assertTrue(
+            any(
+                call.args[1] == "bot_health_dexie_gap"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_ignores_dexie_visibility_gap_when_orderbook_side_is_truncated(self):
         bot = _FakeBot(
@@ -204,43 +229,58 @@ class RuntimeMonitorTests(unittest.TestCase):
                 "our_sell_count": 40,
                 "our_best_bid": "0.00011990",
                 "our_best_ask": "0.00012110",
-            }
+            },
         )
         monitor = RuntimeMonitor(bot)
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(40, 40)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(40, 40)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+        ):
             monitor._run_once()
             monitor._run_once()
 
         state = monitor.get_state()
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertNotIn("dexie_visibility_gap", active_codes)
-        self.assertFalse(any(call.args[1] == "bot_health_dexie_gap" for call in log_event_mock.call_args_list))
+        self.assertFalse(
+            any(
+                call.args[1] == "bot_health_dexie_gap"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_flags_db_wallet_divergence_when_wallet_excess_persists(self):
         bot = _FakeBot(wallet_buys=25, wallet_sells=24)
         monitor = RuntimeMonitor(bot)
         monitor.reset_session()
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(19, 24)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(19, 24)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+        ):
             for _ in range(4):
                 monitor._run_once()
 
         state = monitor.get_state()
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertIn("db_wallet_divergence", active_codes)
-        self.assertTrue(any(
-            call.args[1] == "bot_health_db_wallet_gap"
-            for call in log_event_mock.call_args_list
-        ))
+        self.assertTrue(
+            any(
+                call.args[1] == "bot_health_db_wallet_gap"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_flags_book_under_target_when_all_live_views_agree_below_target(self):
         bot = _FakeBot(
@@ -259,14 +299,18 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(11, 19)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
-             patch("runtime_monitor.cfg.ENABLE_BUY", True), \
-             patch("runtime_monitor.cfg.ENABLE_SELL", True), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(11, 19)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+            patch("runtime_monitor.cfg.ENABLE_BUY", True),
+            patch("runtime_monitor.cfg.ENABLE_SELL", True),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24),
+        ):
             monitor._run_once()
             monitor._run_once()
 
@@ -274,10 +318,12 @@ class RuntimeMonitorTests(unittest.TestCase):
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertIn("book_under_target", active_codes)
         self.assertEqual(state["status"], "warning")
-        self.assertTrue(any(
-            call.args[1] == "bot_health_book_under_target"
-            for call in log_event_mock.call_args_list
-        ))
+        self.assertTrue(
+            any(
+                call.args[1] == "bot_health_book_under_target"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_uses_adaptive_targets_when_db_only_rows_mask_wallet_shortfall(self):
         bot = _FakeBot(
@@ -297,14 +343,18 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
-             patch("runtime_monitor.cfg.ENABLE_BUY", True), \
-             patch("runtime_monitor.cfg.ENABLE_SELL", True), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+            patch("runtime_monitor.cfg.ENABLE_BUY", True),
+            patch("runtime_monitor.cfg.ENABLE_SELL", True),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24),
+        ):
             monitor._run_once()
             monitor._run_once()
 
@@ -315,10 +365,12 @@ class RuntimeMonitorTests(unittest.TestCase):
         self.assertEqual(state["market"]["sell_target"], 20)
         self.assertEqual(state["market"]["full_sell_target"], 24)
         self.assertTrue(bot.adaptive_target_calls)
-        self.assertFalse(any(
-            call.args[1] == "bot_health_book_under_target"
-            for call in log_event_mock.call_args_list
-        ))
+        self.assertFalse(
+            any(
+                call.args[1] == "bot_health_book_under_target"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_suppresses_book_under_target_during_sweep_protection(self):
         bot = _FakeBot(
@@ -338,25 +390,35 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(21, 24)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
-             patch("runtime_monitor.cfg.ENABLE_BUY", True), \
-             patch("runtime_monitor.cfg.ENABLE_SELL", True), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(21, 24)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+            patch("runtime_monitor.cfg.ENABLE_BUY", True),
+            patch("runtime_monitor.cfg.ENABLE_SELL", True),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24),
+        ):
             monitor._run_once()
             monitor._run_once()
 
-        active_codes = {item["code"] for item in monitor.get_state()["active_conditions"]}
+        active_codes = {
+            item["code"] for item in monitor.get_state()["active_conditions"]
+        }
         self.assertNotIn("book_under_target", active_codes)
-        self.assertFalse(any(
-            call.args[1] == "bot_health_book_under_target"
-            for call in log_event_mock.call_args_list
-        ))
+        self.assertFalse(
+            any(
+                call.args[1] == "bot_health_book_under_target"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
-    def test_suppresses_book_under_target_while_topup_is_rebuilding_missing_offers(self):
+    def test_suppresses_book_under_target_while_topup_is_rebuilding_missing_offers(
+        self,
+    ):
         bot = _FakeBot(
             wallet_buys=24,
             wallet_sells=20,
@@ -380,14 +442,18 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
-             patch("runtime_monitor.cfg.ENABLE_BUY", True), \
-             patch("runtime_monitor.cfg.ENABLE_SELL", True), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+            patch("runtime_monitor.cfg.ENABLE_BUY", True),
+            patch("runtime_monitor.cfg.ENABLE_SELL", True),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24),
+        ):
             monitor._run_once()
             monitor._run_once()
 
@@ -396,10 +462,12 @@ class RuntimeMonitorTests(unittest.TestCase):
         self.assertNotIn("book_under_target", active_codes)
         self.assertEqual(state["market"]["verified_sell_visible"], 20)
         self.assertEqual(state["market"]["sell_target"], 24)
-        self.assertFalse(any(
-            call.args[1] == "bot_health_book_under_target"
-            for call in log_event_mock.call_args_list
-        ))
+        self.assertFalse(
+            any(
+                call.args[1] == "bot_health_book_under_target"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_book_under_target_recovery_close_message_does_not_claim_full_target(self):
         bot = _FakeBot(
@@ -425,21 +493,26 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor.reset_session()
         monitor._last_post_activity_at = time.time() - 600
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
-             patch("runtime_monitor.cfg.ENABLE_BUY", True), \
-             patch("runtime_monitor.cfg.ENABLE_SELL", True), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24), \
-             patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(24, 24)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+            patch("runtime_monitor.cfg.ENABLE_BUY", True),
+            patch("runtime_monitor.cfg.ENABLE_SELL", True),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_BUY_OFFERS", 24),
+            patch("runtime_monitor.cfg.MAX_ACTIVE_SELL_OFFERS", 24),
+        ):
             monitor._run_once()
             monitor._run_once()
             bot.coin_manager._status["topup_running"] = True
             monitor._run_once()
 
         close_calls = [
-            call for call in log_event_mock.call_args_list
+            call
+            for call in log_event_mock.call_args_list
             if call.args[1] == "bot_health_book_under_target_ok"
         ]
         self.assertTrue(close_calls)
@@ -452,20 +525,26 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor = RuntimeMonitor(bot)
         monitor.reset_session()
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(19, 24)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(19, 24)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+        ):
             for _ in range(4):
                 monitor._run_once()
 
         state = monitor.get_state()
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertNotIn("db_wallet_divergence", active_codes)
-        self.assertFalse(any(
-            call.args[1] == "bot_health_db_wallet_gap"
-            for call in log_event_mock.call_args_list
-        ))
+        self.assertFalse(
+            any(
+                call.args[1] == "bot_health_db_wallet_gap"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_flags_topup_lag_when_coin_headroom_does_not_improve(self):
         bot = _FakeBot(
@@ -488,16 +567,25 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor._topup_started_at = time.time() - 1200
         monitor._topup_baseline = {"xch_free": 5, "cat_free": 5}
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(30, 30)), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(30, 30)
+            ),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+        ):
             monitor._run_once()
 
         state = monitor.get_state()
         active_codes = {item["code"] for item in state["active_conditions"]}
         self.assertIn("topup_lag", active_codes)
-        self.assertTrue(any(call.args[1] == "bot_health_topup_lag" for call in log_event_mock.call_args_list))
+        self.assertTrue(
+            any(
+                call.args[1] == "bot_health_topup_lag"
+                for call in log_event_mock.call_args_list
+            )
+        )
 
     def test_flags_ladder_shape_drift_when_totals_are_full_but_extremes_missing(self):
         bot = _FakeBot(wallet_buys=30, wallet_sells=30)
@@ -510,15 +598,17 @@ class RuntimeMonitorTests(unittest.TestCase):
             sell_tiers={"inner": 6, "mid": 17, "outer": 7},
         )
 
-        with patch("runtime_monitor.get_events_since", return_value=[]), \
-             patch("runtime_monitor.get_open_offers", return_value=skewed_rows), \
-             patch("runtime_monitor.log_event") as log_event_mock, \
-             patch.object(monitor, "_resolve_superlog_path", return_value=""), \
-             patch("runtime_monitor.cfg.TIER_ENABLED", True), \
-             patch("runtime_monitor.cfg.INNER_TIER_COUNT", 6), \
-             patch("runtime_monitor.cfg.MID_TIER_COUNT", 12), \
-             patch("runtime_monitor.cfg.OUTER_TIER_COUNT", 6), \
-             patch("runtime_monitor.cfg.EXTREME_TIER_COUNT", 6):
+        with (
+            patch("runtime_monitor.get_events_since", return_value=[]),
+            patch("runtime_monitor.get_open_offers", return_value=skewed_rows),
+            patch("runtime_monitor.log_event") as log_event_mock,
+            patch.object(monitor, "_resolve_superlog_path", return_value=""),
+            patch("runtime_monitor.cfg.TIER_ENABLED", True),
+            patch("runtime_monitor.cfg.INNER_TIER_COUNT", 6),
+            patch("runtime_monitor.cfg.MID_TIER_COUNT", 12),
+            patch("runtime_monitor.cfg.OUTER_TIER_COUNT", 6),
+            patch("runtime_monitor.cfg.EXTREME_TIER_COUNT", 6),
+        ):
             monitor._run_once()
             monitor._run_once()
 
@@ -532,7 +622,9 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor = RuntimeMonitor(bot)
         monitor.reset_session()
 
-        with tempfile.NamedTemporaryFile("w+", delete=False, encoding="utf-8") as handle:
+        with tempfile.NamedTemporaryFile(
+            "w+", delete=False, encoding="utf-8"
+        ) as handle:
             tmp_path = handle.name
 
         try:
@@ -553,14 +645,19 @@ class RuntimeMonitorTests(unittest.TestCase):
                     )
                 monitor._ingest_superlog()
 
-            with patch("runtime_monitor.get_open_offers", return_value=_open_offer_rows(30, 30)):
+            with patch(
+                "runtime_monitor.get_open_offers", return_value=_open_offer_rows(30, 30)
+            ):
                 snapshot = monitor._collect_snapshot()
             with patch("runtime_monitor.log_event"):
                 active = monitor._evaluate(snapshot)
 
             active_codes = {item["code"] for item in active}
             self.assertIn("slow_runtime", active_codes)
-            self.assertEqual(snapshot["performance"]["active_methods"][0]["method"], "sync_from_wallet")
+            self.assertEqual(
+                snapshot["performance"]["active_methods"][0]["method"],
+                "sync_from_wallet",
+            )
         finally:
             os.remove(tmp_path)
 
@@ -569,30 +666,36 @@ class RuntimeMonitorTests(unittest.TestCase):
         monitor = RuntimeMonitor(bot)
         monitor.reset_session()
 
-        monitor._handle_event({
-            "timestamp": "2026-04-30T19:20:20+00:00",
-            "event_type": "offer_closed_nonfill",
-            "event_category": "offer",
-            "severity": "info",
-            "message": "BUY offer retired after Dexie confirmed cancel",
-        })
-        monitor._handle_event({
-            "timestamp": "2026-04-30T19:20:21+00:00",
-            "event_type": "fill_dexie_still_open",
-            "event_category": "offer",
-            "severity": "info",
-            "message": "Dexie still shows offer OPEN; not a fill",
-        })
+        monitor._handle_event(
+            {
+                "timestamp": "2026-04-30T19:20:20+00:00",
+                "event_type": "offer_closed_nonfill",
+                "event_category": "offer",
+                "severity": "info",
+                "message": "BUY offer retired after Dexie confirmed cancel",
+            }
+        )
+        monitor._handle_event(
+            {
+                "timestamp": "2026-04-30T19:20:21+00:00",
+                "event_type": "fill_dexie_still_open",
+                "event_category": "offer",
+                "severity": "info",
+                "message": "Dexie still shows offer OPEN; not a fill",
+            }
+        )
 
         self.assertEqual(monitor._last_fill_activity_at, 0.0)
 
-        monitor._handle_event({
-            "timestamp": "2026-04-30T19:20:22+00:00",
-            "event_type": "offer_filled",
-            "event_category": "offer",
-            "severity": "info",
-            "message": "BUY offer filled",
-        })
+        monitor._handle_event(
+            {
+                "timestamp": "2026-04-30T19:20:22+00:00",
+                "event_type": "offer_filled",
+                "event_category": "offer",
+                "severity": "info",
+                "message": "BUY offer filled",
+            }
+        )
 
         self.assertGreater(monitor._last_fill_activity_at, 0.0)
 

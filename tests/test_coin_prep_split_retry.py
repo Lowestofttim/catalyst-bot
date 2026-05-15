@@ -146,13 +146,23 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
         )
 
     def test_worker_uses_120s_split_confirmation_timeout(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
         self.assertIn("_poll_all_splits(pending_splits, timeout_s=120)", source)
         self.assertIn("grace_extension_s = 60", source)
         self.assertIn("should_extend_pending_consumed_split_grace(", source)
 
     def test_worker_aborts_instead_of_proceeding_cautiously_after_split_timeout(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
         # The abort message references whichever timeout the call site uses.
         # The function default is 120s but the caller passes 300s explicitly;
         # the message in the source should mention an abort (not "cautiously").
@@ -161,11 +171,17 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
             or "Split confirmation failed within 300s" in source,
             "Expected 'Split confirmation failed within Xs' abort message not found",
         )
-        self.assertNotIn("split not confirmed after {timeout_s}s — proceeding cautiously", source)
-
+        self.assertNotIn(
+            "split not confirmed after {timeout_s}s — proceeding cautiously", source
+        )
 
     def test_worker_uses_transaction_builder_for_sage_cat_splits(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
         self.assertIn("sage_topup_split", source)
         self.assertIn("if is_cat:", source)
         self.assertIn("amount_per_coin = pool_mojos // count", source)
@@ -189,18 +205,33 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
         )
 
     def test_worker_serializes_fee_paid_sage_cat_splits(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
         self.assertIn("should_wait_for_pending_fee_inputs_before_split(", source)
         self.assertIn("CAT {tier_name} fee-input-ready", source)
 
     def test_worker_prefunds_dedicated_cat_split_fee_inputs(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
         self.assertIn("_prepare_cat_split_fee_coins", source)
         self.assertIn("fee_coin_id=fee_coin_id", source)
         self.assertIn("has_dedicated_fee_coin=bool(fee_coin_id)", source)
 
     def test_worker_distinguishes_pending_output_high_water_from_durable_split(self):
-        source = (Path(__file__).resolve().parent.parent / "src" / "catalyst" / "coin_prep_worker.py").read_text(encoding="utf-8")
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
         self.assertIn("pool_consumed_seen", source)
         self.assertIn("durable_high_water_complete", source)
         self.assertIn("owned_output_high_water_is_durable", source)

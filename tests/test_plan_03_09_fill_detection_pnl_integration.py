@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import database as _db
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _db = None
@@ -26,6 +27,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Temp-DB base class (same pattern as test_plan_02_30)
 # ---------------------------------------------------------------------------
+
 
 class _TempDB(unittest.TestCase):
     def setUp(self):
@@ -61,12 +63,26 @@ class _TempDB(unittest.TestCase):
         except OSError:
             pass
 
-    def _add_offer(self, trade_id, side, price, size_xch=Decimal("0.1"),
-                   size_cat=Decimal("100"), asset="testcat"):
+    def _add_offer(
+        self,
+        trade_id,
+        side,
+        price,
+        size_xch=Decimal("0.1"),
+        size_cat=Decimal("100"),
+        asset="testcat",
+    ):
         return _db.add_offer(trade_id, side, price, size_xch, size_cat, asset)
 
-    def _record_fill(self, trade_id, side, price, size_xch=Decimal("0.1"),
-                     size_cat=Decimal("100"), asset="testcat"):
+    def _record_fill(
+        self,
+        trade_id,
+        side,
+        price,
+        size_xch=Decimal("0.1"),
+        size_cat=Decimal("100"),
+        asset="testcat",
+    ):
         return _db.record_fill(trade_id, side, price, size_xch, size_cat, asset)
 
 
@@ -74,9 +90,9 @@ class _TempDB(unittest.TestCase):
 # 1. record_fill stores fills correctly
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestRecordFill(_TempDB):
-
     def test_fill_stored_and_retrievable(self):
         self._add_offer("tid-buy-1", "buy", Decimal("0.001"))
         fid = self._record_fill("tid-buy-1", "buy", Decimal("0.001"))
@@ -115,9 +131,9 @@ class TestRecordFill(_TempDB):
 # 2. get_unmatched_fills — only returns unmatched verified fills
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestGetUnmatchedFills(_TempDB):
-
     def test_fresh_fills_are_unmatched(self):
         self._add_offer("b1", "buy", Decimal("0.001"))
         self._add_offer("b2", "buy", Decimal("0.001"))
@@ -139,11 +155,13 @@ class TestGetUnmatchedFills(_TempDB):
 
     def test_filters_by_asset_id(self):
         self._add_offer("ba", "buy", Decimal("0.001"), asset="assetA")
-        _db.record_fill("ba", "buy", Decimal("0.001"), Decimal("0.1"),
-                        Decimal("100"), "assetA")
+        _db.record_fill(
+            "ba", "buy", Decimal("0.001"), Decimal("0.1"), Decimal("100"), "assetA"
+        )
         self._add_offer("bb", "buy", Decimal("0.001"), asset="assetB")
-        _db.record_fill("bb", "buy", Decimal("0.001"), Decimal("0.1"),
-                        Decimal("100"), "assetB")
+        _db.record_fill(
+            "bb", "buy", Decimal("0.001"), Decimal("0.1"), Decimal("100"), "assetB"
+        )
         ua = _db.get_unmatched_fills("assetA", "buy")
         ub = _db.get_unmatched_fills("assetB", "buy")
         self.assertEqual(len(ua), 1)
@@ -155,9 +173,9 @@ class TestGetUnmatchedFills(_TempDB):
 # 3. match_round_trip — links buy and sell fills, stores PnL
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestMatchRoundTrip(_TempDB):
-
     def _pair(self, buy_price=Decimal("0.001"), sell_price=Decimal("0.0011")):
         self._add_offer("b", "buy", buy_price)
         self._add_offer("s", "sell", sell_price)
@@ -175,8 +193,11 @@ class TestMatchRoundTrip(_TempDB):
         pnl = Decimal("0.000100")
         _db.match_round_trip(bid, sid, pnl)
         fills = _db.get_fills(cat_asset_id="testcat", include_legacy=True)
-        pnls = {f["fill_id"]: Decimal(str(f["pnl_xch"])) for f in fills
-                if f.get("pnl_xch") is not None}
+        pnls = {
+            f["fill_id"]: Decimal(str(f["pnl_xch"]))
+            for f in fills
+            if f.get("pnl_xch") is not None
+        }
         self.assertAlmostEqual(float(pnls[bid]), float(pnl))
         self.assertAlmostEqual(float(pnls[sid]), float(pnl))
 
@@ -199,21 +220,42 @@ class TestMatchRoundTrip(_TempDB):
 # 4. Full PnL round-trip integration flow
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestPnLRoundTripFlow(_TempDB):
     """End-to-end: ladder fill → PnL match → net position update."""
 
     def test_buy_then_sell_round_trip(self):
         # Simulate: bot bought 100 CAT @ 0.001 XCH, then sold 100 CAT @ 0.0011 XCH
-        self._add_offer("buy-1", "buy", Decimal("0.001"),
-                        size_xch=Decimal("0.1"), size_cat=Decimal("100"))
-        self._add_offer("sell-1", "sell", Decimal("0.0011"),
-                        size_xch=Decimal("0.11"), size_cat=Decimal("100"))
+        self._add_offer(
+            "buy-1",
+            "buy",
+            Decimal("0.001"),
+            size_xch=Decimal("0.1"),
+            size_cat=Decimal("100"),
+        )
+        self._add_offer(
+            "sell-1",
+            "sell",
+            Decimal("0.0011"),
+            size_xch=Decimal("0.11"),
+            size_cat=Decimal("100"),
+        )
 
-        buy_id = self._record_fill("buy-1", "buy", Decimal("0.001"),
-                                   size_xch=Decimal("0.1"), size_cat=Decimal("100"))
-        sell_id = self._record_fill("sell-1", "sell", Decimal("0.0011"),
-                                    size_xch=Decimal("0.11"), size_cat=Decimal("100"))
+        buy_id = self._record_fill(
+            "buy-1",
+            "buy",
+            Decimal("0.001"),
+            size_xch=Decimal("0.1"),
+            size_cat=Decimal("100"),
+        )
+        sell_id = self._record_fill(
+            "sell-1",
+            "sell",
+            Decimal("0.0011"),
+            size_xch=Decimal("0.11"),
+            size_cat=Decimal("100"),
+        )
 
         # Expected PnL: (sell_price - buy_price) * size_cat = 0.0001 * 100 = 0.01 XCH
         pnl = (Decimal("0.0011") - Decimal("0.001")) * Decimal("100")
@@ -230,10 +272,20 @@ class TestPnLRoundTripFlow(_TempDB):
     def test_net_position_after_unmatched_buys(self):
         for i in range(3):
             tid = f"buy-{i}"
-            self._add_offer(tid, "buy", Decimal("0.001"),
-                            size_xch=Decimal("0.1"), size_cat=Decimal("100"))
-            self._record_fill(tid, "buy", Decimal("0.001"),
-                              size_xch=Decimal("0.1"), size_cat=Decimal("100"))
+            self._add_offer(
+                tid,
+                "buy",
+                Decimal("0.001"),
+                size_xch=Decimal("0.1"),
+                size_cat=Decimal("100"),
+            )
+            self._record_fill(
+                tid,
+                "buy",
+                Decimal("0.001"),
+                size_xch=Decimal("0.1"),
+                size_cat=Decimal("100"),
+            )
 
         net = _db.get_net_position("testcat")
         self.assertEqual(net, Decimal("300"))  # 3 × 100 CAT
@@ -271,24 +323,20 @@ class TestPnLRoundTripFlow(_TempDB):
 # 5. get_net_position semantics
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"database unavailable: {_SKIP}")
 class TestNetPosition(_TempDB):
-
     def test_empty_fills_returns_zero(self):
         self.assertEqual(_db.get_net_position("testcat"), Decimal("0"))
 
     def test_buys_give_positive_position(self):
-        self._add_offer("b", "buy", Decimal("0.001"),
-                        size_cat=Decimal("500"))
-        self._record_fill("b", "buy", Decimal("0.001"),
-                          size_cat=Decimal("500"))
+        self._add_offer("b", "buy", Decimal("0.001"), size_cat=Decimal("500"))
+        self._record_fill("b", "buy", Decimal("0.001"), size_cat=Decimal("500"))
         self.assertEqual(_db.get_net_position("testcat"), Decimal("500"))
 
     def test_sells_give_negative_position(self):
-        self._add_offer("s", "sell", Decimal("0.001"),
-                        size_cat=Decimal("200"))
-        self._record_fill("s", "sell", Decimal("0.001"),
-                          size_cat=Decimal("200"))
+        self._add_offer("s", "sell", Decimal("0.001"), size_cat=Decimal("200"))
+        self._record_fill("s", "sell", Decimal("0.001"), size_cat=Decimal("200"))
         self.assertEqual(_db.get_net_position("testcat"), Decimal("-200"))
 
     def test_net_zero_after_equal_buys_and_sells(self):
@@ -299,14 +347,18 @@ class TestNetPosition(_TempDB):
         self.assertEqual(_db.get_net_position("testcat"), Decimal("0"))
 
     def test_different_assets_isolated(self):
-        self._add_offer("ba", "buy", Decimal("0.001"),
-                        size_cat=Decimal("100"), asset="catA")
-        _db.record_fill("ba", "buy", Decimal("0.001"),
-                        Decimal("0.1"), Decimal("100"), "catA")
-        self._add_offer("bb", "buy", Decimal("0.001"),
-                        size_cat=Decimal("200"), asset="catB")
-        _db.record_fill("bb", "buy", Decimal("0.001"),
-                        Decimal("0.2"), Decimal("200"), "catB")
+        self._add_offer(
+            "ba", "buy", Decimal("0.001"), size_cat=Decimal("100"), asset="catA"
+        )
+        _db.record_fill(
+            "ba", "buy", Decimal("0.001"), Decimal("0.1"), Decimal("100"), "catA"
+        )
+        self._add_offer(
+            "bb", "buy", Decimal("0.001"), size_cat=Decimal("200"), asset="catB"
+        )
+        _db.record_fill(
+            "bb", "buy", Decimal("0.001"), Decimal("0.2"), Decimal("200"), "catB"
+        )
         self.assertEqual(_db.get_net_position("catA"), Decimal("100"))
         self.assertEqual(_db.get_net_position("catB"), Decimal("200"))
 

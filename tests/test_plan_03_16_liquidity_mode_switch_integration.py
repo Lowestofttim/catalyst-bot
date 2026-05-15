@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import config as _cfg_mod
     from config import Config
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     Config = None
@@ -28,6 +29,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _write_env(path: str, **kwargs):
     with open(path, "w", encoding="utf-8") as fh:
         for k, v in kwargs.items():
@@ -37,6 +39,7 @@ def _write_env(path: str, **kwargs):
 # ---------------------------------------------------------------------------
 # Base — isolates LIQUIDITY_MODE (and raw enable flags) from the real .env
 # ---------------------------------------------------------------------------
+
 
 class _TempEnv(unittest.TestCase):
     _ENV_KEYS = ("LIQUIDITY_MODE", "ENABLE_BUY", "ENABLE_SELL")
@@ -79,11 +82,13 @@ class _TempEnv(unittest.TestCase):
 # 1. Initial load — LIQUIDITY_MODE drives derived enable flags
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestLiquidityModeInitialLoad(_TempEnv):
-
     def test_two_sided_enables_both(self):
-        cfg = self._make_config(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        cfg = self._make_config(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
         self.assertTrue(cfg.ENABLE_BUY)
         self.assertTrue(cfg.ENABLE_SELL)
 
@@ -120,9 +125,9 @@ class TestLiquidityModeInitialLoad(_TempEnv):
 # 2. is_single_sided()
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestLiquidityModeSingleSided(_TempEnv):
-
     def test_two_sided_not_single_sided(self):
         cfg = self._make_config(LIQUIDITY_MODE="two_sided")
         self.assertFalse(cfg.is_single_sided())
@@ -140,11 +145,13 @@ class TestLiquidityModeSingleSided(_TempEnv):
 # 3. Switch cycle — reload() picks up .env changes for LIQUIDITY_MODE
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestLiquidityModeSwitchCycle(_TempEnv):
-
     def test_reload_two_to_buy(self):
-        cfg = self._make_config(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        cfg = self._make_config(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
         self.assertEqual(cfg.active_side(), "both")
         self._update_env(LIQUIDITY_MODE="buy_only")
         cfg.reload()
@@ -152,7 +159,9 @@ class TestLiquidityModeSwitchCycle(_TempEnv):
         self.assertFalse(cfg.ENABLE_SELL)
 
     def test_reload_two_to_sell(self):
-        cfg = self._make_config(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        cfg = self._make_config(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
         self.assertEqual(cfg.active_side(), "both")
         self._update_env(LIQUIDITY_MODE="sell_only")
         cfg.reload()
@@ -171,14 +180,18 @@ class TestLiquidityModeSwitchCycle(_TempEnv):
     def test_reload_sell_to_two(self):
         cfg = self._make_config(LIQUIDITY_MODE="sell_only")
         self.assertEqual(cfg.active_side(), "sell")
-        self._update_env(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        self._update_env(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
         cfg.reload()
         self.assertEqual(cfg.active_side(), "both")
         self.assertTrue(cfg.ENABLE_BUY)
         self.assertTrue(cfg.ENABLE_SELL)
 
     def test_full_cycle_two_buy_sell_two(self):
-        cfg = self._make_config(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        cfg = self._make_config(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
 
         self._update_env(LIQUIDITY_MODE="buy_only")
         cfg.reload()
@@ -190,7 +203,9 @@ class TestLiquidityModeSwitchCycle(_TempEnv):
         self.assertEqual(cfg.active_side(), "sell")
         self.assertFalse(cfg.ENABLE_BUY)
 
-        self._update_env(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        self._update_env(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
         cfg.reload()
         self.assertEqual(cfg.active_side(), "both")
         self.assertTrue(cfg.ENABLE_BUY)
@@ -198,7 +213,9 @@ class TestLiquidityModeSwitchCycle(_TempEnv):
 
     def test_update_method_switches_mode(self):
         """Config.update() writes .env + reloads in one call."""
-        cfg = self._make_config(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
+        cfg = self._make_config(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
         self.assertEqual(cfg.active_side(), "both")
         result = cfg.update("LIQUIDITY_MODE", "buy_only")
         self.assertTrue(result)
@@ -206,20 +223,28 @@ class TestLiquidityModeSwitchCycle(_TempEnv):
         self.assertFalse(cfg.ENABLE_SELL)
 
     def test_update_all_three_modes_in_sequence(self):
-        cfg = self._make_config(LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true")
-        for mode, expected_side in [("buy_only", "buy"), ("sell_only", "sell"), ("two_sided", "both")]:
+        cfg = self._make_config(
+            LIQUIDITY_MODE="two_sided", ENABLE_BUY="true", ENABLE_SELL="true"
+        )
+        for mode, expected_side in [
+            ("buy_only", "buy"),
+            ("sell_only", "sell"),
+            ("two_sided", "both"),
+        ]:
             result = cfg.update("LIQUIDITY_MODE", mode)
             self.assertTrue(result, f"update to {mode} failed")
-            self.assertEqual(cfg.active_side(), expected_side, f"after switching to {mode}")
+            self.assertEqual(
+                cfg.active_side(), expected_side, f"after switching to {mode}"
+            )
 
 
 # ---------------------------------------------------------------------------
 # 4. Mode-consistent LIQUIDITY_MODE field value
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"config unavailable: {_SKIP}")
 class TestLiquidityModeFieldConsistency(_TempEnv):
-
     def test_liquidity_mode_field_matches_active_side(self):
         """LIQUIDITY_MODE attribute is consistent with active_side() output."""
         for mode, expected_side in [

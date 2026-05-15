@@ -45,10 +45,11 @@ DEXIE_STATUS_EXPIRED = 6
 @dataclass(frozen=True, slots=True)
 class HealthCheck:
     """A single runtime health check result."""
+
     name: str
-    category: str       # "offers", "coins", "position", "wallet"
-    status: str         # "pass", "warn", "fail"
-    severity: str       # "info", "warning", "error"
+    category: str  # "offers", "coins", "position", "wallet"
+    status: str  # "pass", "warn", "fail"
+    severity: str  # "info", "warning", "error"
     message: str
     anomaly_count: int = 0
     repaired_count: int = 0
@@ -58,6 +59,7 @@ class HealthCheck:
 @dataclass
 class HealthReport:
     """Complete runtime-health report."""
+
     checks: List[HealthCheck] = field(default_factory=list)
     timestamp: float = 0.0
     duration_ms: float = 0.0
@@ -77,8 +79,10 @@ class HealthReport:
 
     @property
     def summary(self) -> str:
-        return (f"{len(self.checks)} checks, {self.anomalies} anomalies, "
-                f"{self.repaired} repaired")
+        return (
+            f"{len(self.checks)} checks, {self.anomalies} anomalies, "
+            f"{self.repaired} repaired"
+        )
 
     @property
     def repaired_check_names(self) -> List[str]:
@@ -122,6 +126,7 @@ class HealthReport:
 
 # ── Dexie API helpers ──────────────────────────────────────────────────
 
+
 def _dexie_get_offer(dexie_id: str, timeout: float = 10.0) -> Optional[dict]:
     """Fetch a single offer from Dexie. Returns the offer dict or None."""
     if not dexie_id:
@@ -131,6 +136,7 @@ def _dexie_get_offer(dexie_id: str, timeout: float = 10.0) -> Optional[dict]:
     try:
         try:
             from api_call_tracker import record as _t
+
             _t("dexie", "/v1/offers/{id}")
         except Exception:
             pass
@@ -181,12 +187,18 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
         the single-offer path with a priority fee (no aggregate-sig bug)
     """
     from database import (
-        get_open_offers, update_offer_status, transition_offer, mark_cancel_attempted,
+        get_open_offers,
+        update_offer_status,
+        transition_offer,
+        mark_cancel_attempted,
     )
 
     pending = get_open_offers(include_pending_cancel=True)
-    pending = [o for o in pending
-               if (o.get("lifecycle_state") or "") in ("cancel_requested", "cancel_sent")]
+    pending = [
+        o
+        for o in pending
+        if (o.get("lifecycle_state") or "") in ("cancel_requested", "cancel_sent")
+    ]
 
     if not pending:
         return HealthCheck(
@@ -198,10 +210,10 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
         )
 
     now = time.time()
-    truly_zombie = []        # Dexie ACTIVE, ready for retry
+    truly_zombie = []  # Dexie ACTIVE, ready for retry
     confirmed_cancelled = []  # Dexie CANCELLED/EXPIRED, just update DB
-    suspected_fills = []     # Dexie COMPLETED — needs fill flow
-    unreachable = []         # Dexie didn't answer — try again later
+    suspected_fills = []  # Dexie COMPLETED — needs fill flow
+    unreachable = []  # Dexie didn't answer — try again later
 
     for off in pending:
         dexie_id = off.get("dexie_id")
@@ -243,9 +255,11 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
                 slog("BOT_HEALTH", msg, level="info")
                 repaired += 1
             except Exception as e:
-                slog("BOT_HEALTH",
-                     f"Failed to mark confirmed-cancelled tid={tid[:16]}...: {e}",
-                     level="warn")
+                slog(
+                    "BOT_HEALTH",
+                    f"Failed to mark confirmed-cancelled tid={tid[:16]}...: {e}",
+                    level="warn",
+                )
 
     # --- Repair A: re-cancel zombies (with backoff) ---
     if auto_repair and truly_zombie:
@@ -253,9 +267,11 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
             from wallet import cancel_offer
             from wallet_sage import get_effective_transaction_fee_mojos
         except Exception as imp_err:
-            slog("BOT_HEALTH",
-                 f"Cannot import cancel_offer for retry: {imp_err}",
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"Cannot import cancel_offer for retry: {imp_err}",
+                level="warn",
+            )
             cancel_offer = None
 
             def get_effective_transaction_fee_mojos():
@@ -289,8 +305,10 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
                 result = cancel_offer(tid, secure=True, timeout=20, fee_mojos=fee)
                 if result and result.get("success"):
                     method = (result.get("method") or "").strip()
-                    msg = (f"re_cancelled tid={tid[:16]}... "
-                           f"(dexie still ACTIVE after {int(age)}s, retry method={method})")
+                    msg = (
+                        f"re_cancelled tid={tid[:16]}... "
+                        f"(dexie still ACTIVE after {int(age)}s, retry method={method})"
+                    )
                     repair_log.append(msg)
                     slog("BOT_HEALTH", msg, level="info")
                     try:
@@ -300,13 +318,17 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
                     repaired += 1
                 else:
                     err = (result or {}).get("error") or "unknown"
-                    slog("BOT_HEALTH",
-                         f"Re-cancel RPC failed for tid={tid[:16]}...: {err}",
-                         level="warn")
+                    slog(
+                        "BOT_HEALTH",
+                        f"Re-cancel RPC failed for tid={tid[:16]}...: {err}",
+                        level="warn",
+                    )
             except Exception as e:
-                slog("BOT_HEALTH",
-                     f"Re-cancel exception for tid={tid[:16]}...: {e}",
-                     level="warn")
+                slog(
+                    "BOT_HEALTH",
+                    f"Re-cancel exception for tid={tid[:16]}...: {e}",
+                    level="warn",
+                )
 
     # --- C: suspected fills — attempt Spacescan-verified recovery ---
     # A pending-cancel row with Dexie status COMPLETED means the offer
@@ -344,10 +366,12 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
                     try:
                         verdict = _spacescan_verify(_c, our_address)
                     except Exception as _sve:
-                        slog("BOT_HEALTH",
-                             f"Spacescan verify raised for tid={tid[:16]}... "
-                             f"coin={_c[:16]}...: {_sve}",
-                             level="debug")
+                        slog(
+                            "BOT_HEALTH",
+                            f"Spacescan verify raised for tid={tid[:16]}... "
+                            f"coin={_c[:16]}...: {_sve}",
+                            level="debug",
+                        )
                         verdict = None
                     if verdict is not None:
                         break
@@ -359,37 +383,54 @@ def check_pending_cancels(auto_repair: bool = True) -> HealthCheck:
                         transition_offer(tid, "fill_verified")
                     except Exception:
                         pass
-                    msg = (f"recovered_fill tid={tid[:16]}... — Dexie COMPLETED + "
-                           f"Spacescan confirmed on-chain spend")
+                    msg = (
+                        f"recovered_fill tid={tid[:16]}... — Dexie COMPLETED + "
+                        f"Spacescan confirmed on-chain spend"
+                    )
                     repair_log.append(msg)
-                    slog("BOT_HEALTH", msg, level="info",
-                         data={"trade_id": tid, "dexie_id": off.get("dexie_id"),
-                               "source": "bot_health.suspected_fill_recovery"})
+                    slog(
+                        "BOT_HEALTH",
+                        msg,
+                        level="info",
+                        data={
+                            "trade_id": tid,
+                            "dexie_id": off.get("dexie_id"),
+                            "source": "bot_health.suspected_fill_recovery",
+                        },
+                    )
                     repaired += 1
                 except Exception as e:
-                    slog("BOT_HEALTH",
-                         f"Failed to commit recovered fill for tid={tid[:16]}...: {e}",
-                         level="warn")
+                    slog(
+                        "BOT_HEALTH",
+                        f"Failed to commit recovered fill for tid={tid[:16]}...: {e}",
+                        level="warn",
+                    )
             else:
                 verdict_str = verdict if verdict is not None else "unavailable"
-                slog("BOT_HEALTH",
-                     f"Offer tid={tid[:16]}... pending-cancel but Dexie reports "
-                     f"COMPLETED. Spacescan verdict={verdict_str}. Leaving for "
-                     f"next cycle; fill_tracker will retry and operator is notified.",
-                     data={"trade_id": tid, "dexie_id": off.get("dexie_id"),
-                           "spacescan_verdict": verdict_str},
-                     level="warn")
+                slog(
+                    "BOT_HEALTH",
+                    f"Offer tid={tid[:16]}... pending-cancel but Dexie reports "
+                    f"COMPLETED. Spacescan verdict={verdict_str}. Leaving for "
+                    f"next cycle; fill_tracker will retry and operator is notified.",
+                    data={
+                        "trade_id": tid,
+                        "dexie_id": off.get("dexie_id"),
+                        "spacescan_verdict": verdict_str,
+                    },
+                    level="warn",
+                )
     else:
         for off, _dexie_off in suspected_fills:
             tid = off.get("trade_id")
-            slog("BOT_HEALTH",
-                 f"Offer tid={tid[:16]}... pending-cancel but Dexie reports "
-                 f"COMPLETED (auto-repair disabled — operator review required).",
-                 data={"trade_id": tid, "dexie_id": off.get("dexie_id")},
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"Offer tid={tid[:16]}... pending-cancel but Dexie reports "
+                f"COMPLETED (auto-repair disabled — operator review required).",
+                data={"trade_id": tid, "dexie_id": off.get("dexie_id")},
+                level="warn",
+            )
 
-    anomaly_count = (len(truly_zombie) + len(confirmed_cancelled)
-                     + len(suspected_fills))
+    anomaly_count = len(truly_zombie) + len(confirmed_cancelled) + len(suspected_fills)
 
     # Build status
     if truly_zombie and not auto_repair:
@@ -511,23 +552,29 @@ def check_orphan_locks(auto_repair: bool = True) -> HealthCheck:
             cid = o["coin_id"]
             try:
                 if free_coin(cid):
-                    msg = (f"freed_orphan_lock coin={cid[:18]}... "
-                           f"wt={o['wallet_type']} amt={o['amount_mojos']:,} "
-                           f"prior_trade={(o.get('trade_id') or 'none')[:16]}")
+                    msg = (
+                        f"freed_orphan_lock coin={cid[:18]}... "
+                        f"wt={o['wallet_type']} amt={o['amount_mojos']:,} "
+                        f"prior_trade={(o.get('trade_id') or 'none')[:16]}"
+                    )
                     repair_log.append(msg)
                     slog("BOT_HEALTH", msg, level="info")
                     repaired += 1
             except Exception as e:
-                slog("BOT_HEALTH",
-                     f"Failed to free orphan lock {cid[:18]}...: {e}",
-                     level="warn")
+                slog(
+                    "BOT_HEALTH",
+                    f"Failed to free orphan lock {cid[:18]}...: {e}",
+                    level="warn",
+                )
 
     if not actionable and too_fresh:
         return HealthCheck(
-            name="orphan_locks", category="coins", status="pass",
+            name="orphan_locks",
+            category="coins",
+            status="pass",
             severity="info",
             message=f"{too_fresh} recent orphan locks (within "
-                    f"{_ORPHAN_LOCK_AGE_SECS}s grace) — likely in-flight reconcile.",
+            f"{_ORPHAN_LOCK_AGE_SECS}s grace) — likely in-flight reconcile.",
             anomaly_count=0,
         )
 
@@ -536,8 +583,7 @@ def check_orphan_locks(auto_repair: bool = True) -> HealthCheck:
         category="coins",
         status="warn" if (actionable and not auto_repair) else "pass",
         severity="warning" if (actionable and not auto_repair) else "info",
-        message=(f"{len(actionable)} orphan locks "
-                 f"({too_fresh} too fresh to act on)"),
+        message=(f"{len(actionable)} orphan locks ({too_fresh} too fresh to act on)"),
         anomaly_count=len(actionable),
         repaired_count=repaired,
         repair_log=repair_log,
@@ -594,9 +640,11 @@ def check_stale_dexie_posts(auto_repair: bool = True) -> HealthCheck:
         try:
             from dexie_manager import queue_post
         except Exception as e:
-            slog("BOT_HEALTH",
-                 f"dexie_manager unavailable for re-queue: {e}",
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"dexie_manager unavailable for re-queue: {e}",
+                level="warn",
+            )
             queue_post = None
 
         if queue_post:
@@ -605,15 +653,19 @@ def check_stale_dexie_posts(auto_repair: bool = True) -> HealthCheck:
                 bech = off.get("offer_bech32")
                 try:
                     queue_post(bech, tid)
-                    msg = (f"requeued_dexie_post tid={tid[:16]}... "
-                           f"side={off['side']} tier={off['tier']}")
+                    msg = (
+                        f"requeued_dexie_post tid={tid[:16]}... "
+                        f"side={off['side']} tier={off['tier']}"
+                    )
                     repair_log.append(msg)
                     slog("BOT_HEALTH", msg, level="info")
                     repaired += 1
                 except Exception as e:
-                    slog("BOT_HEALTH",
-                         f"Failed to re-queue Dexie post for {tid[:16]}...: {e}",
-                         level="warn")
+                    slog(
+                        "BOT_HEALTH",
+                        f"Failed to re-queue Dexie post for {tid[:16]}...: {e}",
+                        level="warn",
+                    )
 
     return HealthCheck(
         name="stale_dexie_posts",
@@ -621,7 +673,7 @@ def check_stale_dexie_posts(auto_repair: bool = True) -> HealthCheck:
         status="warn" if (stale and not auto_repair) else "pass",
         severity="warning" if (stale and not auto_repair) else "info",
         message=f"{len(stale)} offers older than {_DEXIE_POST_STALE_SECS}s "
-                f"with no Dexie post.",
+        f"with no Dexie post.",
         anomaly_count=len(stale),
         repaired_count=repaired,
         repair_log=repair_log,
@@ -677,7 +729,9 @@ def check_ladder_overbuild(auto_repair: bool = True) -> HealthCheck:
 
     try:
         max_buy = _effective_cap("BUY", int(getattr(_cfg, "MAX_ACTIVE_BUY", 12) or 12))
-        max_sell = _effective_cap("SELL", int(getattr(_cfg, "MAX_ACTIVE_SELL", 12) or 12))
+        max_sell = _effective_cap(
+            "SELL", int(getattr(_cfg, "MAX_ACTIVE_SELL", 12) or 12)
+        )
     except Exception:
         max_buy = max_sell = 12
 
@@ -729,10 +783,13 @@ def check_ladder_overbuild(auto_repair: bool = True) -> HealthCheck:
         category="offers",
         status="warn",
         severity="warning",
-        message=("Ladder over-built: " + ", ".join(parts)
-                 + ". pending_cancels verifier will re-cancel zombies — "
-                 + "monitor for recovery within ~5 min. If persistent, the "
-                 + "requote machinery is creating faster than cancels confirm."),
+        message=(
+            "Ladder over-built: "
+            + ", ".join(parts)
+            + ". pending_cancels verifier will re-cancel zombies — "
+            + "monitor for recovery within ~5 min. If persistent, the "
+            + "requote machinery is creating faster than cancels confirm."
+        ),
         anomaly_count=int(buy_overbuild) + int(sell_overbuild),
     )
 
@@ -744,12 +801,15 @@ def check_ladder_overbuild(auto_repair: bool = True) -> HealthCheck:
 # jitter. Above it, we clamp the stored spent counter down to observed
 # reality. Sized well below a single tier-split (~0.6 XCH / 4800 CAT) so a
 # drift big enough to block a real refill is always caught.
-_BUDGET_DRIFT_TOLERANCE_XCH_MOJOS = int(Decimal("0.1") * Decimal("1000000000000"))  # 0.1 XCH
+_BUDGET_DRIFT_TOLERANCE_XCH_MOJOS = int(
+    Decimal("0.1") * Decimal("1000000000000")
+)  # 0.1 XCH
 
 
 def _reserve_mojos(wallet_type: str) -> int:
     """Sum mojos across all coins currently designated 'reserve'."""
     from database import get_reserve_coins
+
     total = 0
     try:
         for r in get_reserve_coins(wallet_type) or []:
@@ -783,7 +843,7 @@ def check_topup_budget_drift(auto_repair: bool = True) -> HealthCheck:
     from database import get_setting, set_setting
     from config import cfg
 
-    findings = []   # one entry per (wallet_type, asset) that drifted
+    findings = []  # one entry per (wallet_type, asset) that drifted
     repair_log = []
     repaired = 0
 
@@ -855,34 +915,42 @@ def check_topup_budget_drift(auto_repair: bool = True) -> HealthCheck:
 
             # Drifted upward — stored counter exceeds what reality supports.
             # Build a human-readable summary before any repair.
-            msg = (f"{spec['label']} spent counter "
-                   f"{spent_mojos / display_scale:.4f} > observed "
-                   f"{observed_spent / display_scale:.4f} "
-                   f"(reserve={reserve_mojos / display_scale:.4f} "
-                   f"of budget {budget_mojos / display_scale:.4f}); "
-                   f"drift={drift / display_scale:.4f} {spec['unit']}")
+            msg = (
+                f"{spec['label']} spent counter "
+                f"{spent_mojos / display_scale:.4f} > observed "
+                f"{observed_spent / display_scale:.4f} "
+                f"(reserve={reserve_mojos / display_scale:.4f} "
+                f"of budget {budget_mojos / display_scale:.4f}); "
+                f"drift={drift / display_scale:.4f} {spec['unit']}"
+            )
             findings.append(msg)
 
             if auto_repair:
                 try:
                     set_setting(spec["spent_key"], str(observed_spent))
                     repair_log.append(msg + " — clamped to observed.")
-                    slog("BOT_HEALTH",
-                         f"topup_budget_drift_healed {spec['label']}: "
-                         f"{spent_mojos / display_scale:.4f} → "
-                         f"{observed_spent / display_scale:.4f} "
-                         f"{spec['unit']} (drift {drift / display_scale:.4f})",
-                         level="info")
+                    slog(
+                        "BOT_HEALTH",
+                        f"topup_budget_drift_healed {spec['label']}: "
+                        f"{spent_mojos / display_scale:.4f} → "
+                        f"{observed_spent / display_scale:.4f} "
+                        f"{spec['unit']} (drift {drift / display_scale:.4f})",
+                        level="info",
+                    )
                     repaired += 1
                 except Exception as e:
-                    slog("BOT_HEALTH",
-                         f"Failed to heal {spec['label']} budget drift: {e}",
-                         level="warn")
+                    slog(
+                        "BOT_HEALTH",
+                        f"Failed to heal {spec['label']} budget drift: {e}",
+                        level="warn",
+                    )
 
         except Exception as e:
-            slog("BOT_HEALTH",
-                 f"topup_budget_drift check error on {spec['label']}: {e}",
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"topup_budget_drift check error on {spec['label']}: {e}",
+                level="warn",
+            )
 
     if not findings:
         return HealthCheck(
@@ -962,12 +1030,15 @@ def _cat_tier_reserve_shortage() -> Optional[dict]:
         tier_size_mojos = get_tier_sizes_mojos_from_cfg(is_cat=True)
         spare_counts = get_tier_spare_counts("cat")
         reserve_coins = [
-            c for c in get_free_coins("cat")
+            c
+            for c in get_free_coins("cat")
             if str(c.get("designation") or "").lower() == "reserve"
         ]
         reserve_mojos = sum(int(c.get("amount_mojos") or 0) for c in reserve_coins)
     except Exception as e:
-        slog("BOT_HEALTH", f"CAT tier funds advisory inventory error: {e}", level="debug")
+        slog(
+            "BOT_HEALTH", f"CAT tier funds advisory inventory error: {e}", level="debug"
+        )
         return None
 
     for tier in ("inner", "mid", "outer", "extreme"):
@@ -1044,17 +1115,20 @@ def check_funds_advisory(auto_repair: bool = True) -> HealthCheck:
     except Exception:
         events_bus = None
 
-    def _emit_alert(alert_id: str, title: str, message: str,
-                    severity: str = "warning") -> None:
+    def _emit_alert(
+        alert_id: str, title: str, message: str, severity: str = "warning"
+    ) -> None:
         alerts_raised.append(alert_id)
         if events_bus is None or not auto_repair:
             return
         try:
             events_bus.alert(alert_id, severity, title, message)
         except Exception as e:
-            slog("BOT_HEALTH",
-                 f"Failed to emit funds advisory alert {alert_id}: {e}",
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"Failed to emit funds advisory alert {alert_id}: {e}",
+                level="warn",
+            )
 
     def _clear_alert(alert_id: str) -> None:
         alerts_cleared.append(alert_id)
@@ -1071,6 +1145,7 @@ def check_funds_advisory(auto_repair: bool = True) -> HealthCheck:
     try:
         from wallet_sage import get_wallet_balance as _sage_balance
         from wallet import get_wallet_type as _wt
+
         if _wt() == "sage":
             raw = _sage_balance(int(getattr(cfg, "WALLET_ID_XCH", 1) or 1)) or {}
             wb = raw.get("wallet_balance") or {}
@@ -1085,11 +1160,13 @@ def check_funds_advisory(auto_repair: bool = True) -> HealthCheck:
             )
             # Smallest tier size — use the sell side for a conservative floor,
             # falling back to INNER_SIZE_XCH then to a 0.1 XCH default.
-            inner_size_xch = Decimal(str(
-                getattr(cfg, "SELL_INNER_SIZE_XCH", 0)
-                or getattr(cfg, "INNER_SIZE_XCH", 0)
-                or "0.1"
-            ))
+            inner_size_xch = Decimal(
+                str(
+                    getattr(cfg, "SELL_INNER_SIZE_XCH", 0)
+                    or getattr(cfg, "INNER_SIZE_XCH", 0)
+                    or "0.1"
+                )
+            )
             inner_size_mojos = int(inner_size_xch * Decimal("1000000000000"))
             min_operating_mojos = (
                 _FUNDS_ADVISORY_TIER_BUFFER * inner_size_mojos
@@ -1139,6 +1216,7 @@ def check_funds_advisory(auto_repair: bool = True) -> HealthCheck:
     try:
         from wallet_sage import get_wallet_balance as _sage_balance
         from wallet import get_wallet_type as _wt
+
         if _wt() == "sage":
             raw = _sage_balance(int(getattr(cfg, "CAT_WALLET_ID", 2) or 2)) or {}
             wb = raw.get("wallet_balance") or {}
@@ -1194,11 +1272,13 @@ def check_funds_advisory(auto_repair: bool = True) -> HealthCheck:
             # CAT inner tier size in CAT units. We size the CAT floor as
             # N × inner-CAT-per-offer — no fee headroom on CAT (fees are
             # paid in XCH by the cat_wallet under the hood).
-            cat_inner_xch = Decimal(str(
-                getattr(cfg, "SELL_INNER_SIZE_XCH", 0)
-                or getattr(cfg, "INNER_SIZE_XCH", 0)
-                or "0"
-            ))
+            cat_inner_xch = Decimal(
+                str(
+                    getattr(cfg, "SELL_INNER_SIZE_XCH", 0)
+                    or getattr(cfg, "INNER_SIZE_XCH", 0)
+                    or "0"
+                )
+            )
             # Approximate CAT size per offer: inner_xch / current_price.
             # We don't have a fresh live price in bot_health, so fall back
             # to 10% of the user's configured CAT_RESERVE when no better
@@ -1208,11 +1288,11 @@ def check_funds_advisory(auto_repair: bool = True) -> HealthCheck:
             except Exception:
                 price_xch = Decimal("0")
             if price_xch > 0 and cat_inner_xch > 0:
-                inner_size_cat = (cat_inner_xch / price_xch)
+                inner_size_cat = cat_inner_xch / price_xch
             else:
-                inner_size_cat = Decimal(str(
-                    getattr(cfg, "CAT_RESERVE", 0) or 0
-                )) * Decimal("0.1")
+                inner_size_cat = Decimal(
+                    str(getattr(cfg, "CAT_RESERVE", 0) or 0)
+                ) * Decimal("0.1")
             inner_size_mojos = int(inner_size_cat * scale)
             if inner_size_mojos <= 0:
                 # No meaningful CAT tier size signal available (e.g. fresh
@@ -1336,6 +1416,7 @@ def check_splash_daemon(auto_repair: bool = True) -> HealthCheck:
     # means Splash management is off entirely — skip the check.
     try:
         import api_server
+
         bot = getattr(api_server, "bot", None)
     except Exception:
         bot = None
@@ -1378,6 +1459,7 @@ def check_splash_daemon(auto_repair: bool = True) -> HealthCheck:
     delivered_total = 0
     try:
         from database import get_splash_incoming_stats
+
         asset_id = str(getattr(cfg, "CAT_ASSET_ID", "") or "").strip().lower()
         stats = get_splash_incoming_stats(asset_id=asset_id) or {}
         delivered_total = int(stats.get("total", 0) or 0)
@@ -1428,12 +1510,14 @@ def check_splash_daemon(auto_repair: bool = True) -> HealthCheck:
 
     # Case C: daemon has seen plenty of offers but the webhook has zero —
     # the --offer-hook path is broken (version mismatch, bind issue, etc).
-    if (reachable and peers > 0
-            and offers_seen >= _SPLASH_HOOK_MIN_SEEN
-            and delivered_total < _SPLASH_HOOK_MIN_DELIVERED):
+    if (
+        reachable
+        and peers > 0
+        and offers_seen >= _SPLASH_HOOK_MIN_SEEN
+        and delivered_total < _SPLASH_HOOK_MIN_DELIVERED
+    ):
         findings.append(
-            f"daemon seen {offers_seen} offers but webhook got "
-            f"{delivered_total}"
+            f"daemon seen {offers_seen} offers but webhook got {delivered_total}"
         )
         _emit_alert(
             alert_id="splash_hook_broken",
@@ -1458,9 +1542,11 @@ def check_splash_daemon(auto_repair: bool = True) -> HealthCheck:
             category="wallet",
             status="pass",
             severity="info",
-            message=(f"Splash healthy: peers={peers}, "
-                     f"offers_seen={offers_seen}, "
-                     f"delivered={delivered_total}"),
+            message=(
+                f"Splash healthy: peers={peers}, "
+                f"offers_seen={offers_seen}, "
+                f"delivered={delivered_total}"
+            ),
         )
 
     return HealthCheck(
@@ -1506,32 +1592,43 @@ def check_spacescan_cache_stale(auto_repair: bool = True) -> HealthCheck:
 
     if not bool(getattr(cfg, "SPACESCAN_ENABLED", True)):
         return HealthCheck(
-            name="spacescan_cache", category="wallet", status="pass",
-            severity="info", message="Spacescan disabled.",
+            name="spacescan_cache",
+            category="wallet",
+            status="pass",
+            severity="info",
+            message="Spacescan disabled.",
         )
 
     asset_id = str(getattr(cfg, "CAT_ASSET_ID", "") or "").strip().lower()
     if not asset_id:
         return HealthCheck(
-            name="spacescan_cache", category="wallet", status="pass",
-            severity="info", message="No CAT selected.",
+            name="spacescan_cache",
+            category="wallet",
+            status="pass",
+            severity="info",
+            message="No CAT selected.",
         )
 
     # Peek at cache age. An expired cache will appear as None here because
     # get_market_analysis_cache filters by expires_at.
     try:
         from database import get_market_analysis_cache
+
         cached = get_market_analysis_cache(asset_id, "spacescan")
     except Exception:
         cached = None
 
     if cached:
         return HealthCheck(
-            name="spacescan_cache", category="wallet", status="pass",
+            name="spacescan_cache",
+            category="wallet",
+            status="pass",
             severity="info",
-            message=(f"Spacescan cache warm for "
-                     f"{asset_id[:16]}... (has_data="
-                     f"{bool(cached.get('has_data'))})"),
+            message=(
+                f"Spacescan cache warm for "
+                f"{asset_id[:16]}... (has_data="
+                f"{bool(cached.get('has_data'))})"
+            ),
         )
 
     # Cache is empty or expired. Rate-limit the refresh so we don't
@@ -1539,20 +1636,26 @@ def check_spacescan_cache_stale(auto_repair: bool = True) -> HealthCheck:
     now = time.time()
     if now - _spacescan_refresh_last_at < 60.0:
         return HealthCheck(
-            name="spacescan_cache", category="wallet", status="pass",
+            name="spacescan_cache",
+            category="wallet",
+            status="pass",
             severity="info",
             message="Spacescan cache stale; refresh pending (throttled).",
         )
     if _spacescan_refresh_inflight:
         return HealthCheck(
-            name="spacescan_cache", category="wallet", status="pass",
+            name="spacescan_cache",
+            category="wallet",
+            status="pass",
             severity="info",
             message="Spacescan refresh already in flight.",
         )
 
     if not auto_repair:
         return HealthCheck(
-            name="spacescan_cache", category="wallet", status="warn",
+            name="spacescan_cache",
+            category="wallet",
+            status="warn",
             severity="warning",
             message=f"Spacescan cache missing/expired for {asset_id[:16]}...",
             anomaly_count=1,
@@ -1567,31 +1670,35 @@ def check_spacescan_cache_stale(auto_repair: bool = True) -> HealthCheck:
         global _spacescan_refresh_inflight
         try:
             from market_data_collector import refresh_spacescan_cache
+
             result = refresh_spacescan_cache(asset_id)
             if result:
-                slog("BOT_HEALTH",
-                     f"spacescan_cache_refreshed {asset_id[:16]}... "
-                     f"holders={result.get('holder_count', 0)} "
-                     f"activity={result.get('activity_count', 0)}",
-                     level="info")
+                slog(
+                    "BOT_HEALTH",
+                    f"spacescan_cache_refreshed {asset_id[:16]}... "
+                    f"holders={result.get('holder_count', 0)} "
+                    f"activity={result.get('activity_count', 0)}",
+                    level="info",
+                )
             else:
-                slog("BOT_HEALTH",
-                     f"spacescan_cache_refresh_empty {asset_id[:16]}...",
-                     level="info")
+                slog(
+                    "BOT_HEALTH",
+                    f"spacescan_cache_refresh_empty {asset_id[:16]}...",
+                    level="info",
+                )
         except Exception as e:
-            slog("BOT_HEALTH",
-                 f"spacescan_cache_refresh_error: {e}",
-                 level="warn")
+            slog("BOT_HEALTH", f"spacescan_cache_refresh_error: {e}", level="warn")
         finally:
             _spacescan_refresh_inflight = False
 
     _spacescan_refresh_inflight = True
     _spacescan_refresh_last_at = now
-    _threading.Thread(target=_do_refresh, daemon=True,
-                      name="spacescan-refresh").start()
+    _threading.Thread(target=_do_refresh, daemon=True, name="spacescan-refresh").start()
 
     return HealthCheck(
-        name="spacescan_cache", category="wallet", status="pass",
+        name="spacescan_cache",
+        category="wallet",
+        status="pass",
         severity="info",
         message=f"Spacescan refresh dispatched for {asset_id[:16]}...",
         repaired_count=1,
@@ -1620,6 +1727,7 @@ def _advised_deposits() -> set:
     """Load the persisted set of coin_ids already shown to the user."""
     try:
         from database import get_setting
+
         raw = get_setting("deposit_advisory_advised_coins", "") or ""
     except Exception:
         return set()
@@ -1630,6 +1738,7 @@ def _recent_absorb(key: str, now_ts: float) -> bool:
     """True if a misfit absorption happened within the cooldown window."""
     try:
         from database import get_setting
+
         ts = int(str(get_setting(key, "0") or "0"))
     except Exception:
         ts = 0
@@ -1642,6 +1751,7 @@ def _configured_smallest_tier_size_xch(is_cat: bool) -> Decimal:
     sizes: list[Decimal] = []
     try:
         from config import get_buy_tier_size_xch, get_sell_tier_size_xch
+
         get_size = get_sell_tier_size_xch if is_cat else get_buy_tier_size_xch
         for tier in tiers:
             try:
@@ -1654,11 +1764,13 @@ def _configured_smallest_tier_size_xch(is_cat: bool) -> Decimal:
         prefix = "SELL" if is_cat else "BUY"
         for tier in tiers:
             try:
-                size = Decimal(str(
-                    getattr(cfg, f"{prefix}_{tier.upper()}_SIZE_XCH", 0)
-                    or getattr(cfg, f"{tier.upper()}_SIZE_XCH", 0)
-                    or 0
-                ))
+                size = Decimal(
+                    str(
+                        getattr(cfg, f"{prefix}_{tier.upper()}_SIZE_XCH", 0)
+                        or getattr(cfg, f"{tier.upper()}_SIZE_XCH", 0)
+                        or 0
+                    )
+                )
             except Exception:
                 size = Decimal("0")
             if size > 0:
@@ -1666,7 +1778,9 @@ def _configured_smallest_tier_size_xch(is_cat: bool) -> Decimal:
     return min(sizes) if sizes else Decimal("0")
 
 
-def _deposit_advisory_thresholds(wallet_type: str, is_cat: bool) -> tuple[int, int, int, Decimal]:
+def _deposit_advisory_thresholds(
+    wallet_type: str, is_cat: bool
+) -> tuple[int, int, int, Decimal]:
     """Return deposit/reserve thresholds for the advisory query."""
     if is_cat:
         scale = Decimal(10) ** Decimal(str(getattr(cfg, "CAT_DECIMALS", 3)))
@@ -1682,9 +1796,9 @@ def _deposit_advisory_thresholds(wallet_type: str, is_cat: bool) -> tuple[int, i
         if price > 0 and tier_xch > 0:
             tier_asset = tier_xch / price
         else:
-            tier_asset = Decimal(str(
-                getattr(cfg, "CAT_RESERVE", 0) or 0
-            )) * Decimal("0.1")
+            tier_asset = Decimal(str(getattr(cfg, "CAT_RESERVE", 0) or 0)) * Decimal(
+                "0.1"
+            )
         smallest_mojos = int(tier_asset * scale)
     else:
         smallest_mojos = int(tier_xch * scale)
@@ -1692,9 +1806,7 @@ def _deposit_advisory_thresholds(wallet_type: str, is_cat: bool) -> tuple[int, i
     if smallest_mojos <= 0:
         return 0, 0, 0, scale
 
-    deposit_threshold_mojos = (
-        smallest_mojos * _DEPOSIT_ADVISORY_TIER_MULTIPLE
-    )
+    deposit_threshold_mojos = smallest_mojos * _DEPOSIT_ADVISORY_TIER_MULTIPLE
     reserve_threshold_mojos = deposit_threshold_mojos
 
     reserve_cfg = "CAT_RESERVE" if is_cat else "XCH_RESERVE"
@@ -1717,18 +1829,15 @@ def _deposit_advisory_thresholds(wallet_type: str, is_cat: bool) -> tuple[int, i
 
     try:
         from database import get_setting
-        raw = get_setting(
-            f"last_prep_reserve_total_mojos_{wallet_type}", ""
-        ) or ""
+
+        raw = get_setting(f"last_prep_reserve_total_mojos_{wallet_type}", "") or ""
         post_prep_total = int(raw) if str(raw).strip().isdigit() else 0
     except Exception:
         post_prep_total = 0
     if post_prep_total > 0:
         reserve_threshold_mojos = max(
             reserve_threshold_mojos,
-            post_prep_total + max(
-                deposit_threshold_mojos, topup_mojos, smallest_mojos
-            ),
+            post_prep_total + max(deposit_threshold_mojos, topup_mojos, smallest_mojos),
         )
 
     return (
@@ -1760,8 +1869,11 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
         from database import get_connection
     except Exception:
         return HealthCheck(
-            name="unclaimed_deposits", category="wallet", status="pass",
-            severity="info", message="Database unavailable.",
+            name="unclaimed_deposits",
+            category="wallet",
+            status="pass",
+            severity="info",
+            message="Database unavailable.",
         )
 
     events_bus = None
@@ -1774,14 +1886,21 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
         if events_bus is None or not auto_repair:
             return
         try:
-            events_bus.alert(alert_id, severity, title, message,
-                             action="allocate_deposit",
-                             action_label="Allocate",
-                             action_value=action_value)
+            events_bus.alert(
+                alert_id,
+                severity,
+                title,
+                message,
+                action="allocate_deposit",
+                action_label="Allocate",
+                action_value=action_value,
+            )
         except Exception as e:
-            slog("BOT_HEALTH",
-                 f"Failed to emit deposit advisory {alert_id}: {e}",
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"Failed to emit deposit advisory {alert_id}: {e}",
+                level="warn",
+            )
 
     def _clear_alert(alert_id):
         if events_bus is None:
@@ -1826,6 +1945,7 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
         import os as _os
         from user_paths import data_dir as _dd
         from database import get_reserve_coins, set_setting, get_setting as _gs
+
         _prep_json = _os.path.join(_dd(), "coin_prep_last.json")
         # Recovery only fires when there's evidence the prep race actually
         # occurred for THIS side: the per-side baseline key must exist AND
@@ -1845,9 +1965,7 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 # and recorded 0; the now-visible coin is genuinely
                 # ours and safe to suppress. If the key is unset (None),
                 # no prep ran — leave the alert flow alone.
-                _baseline_raw = _gs(
-                    f"last_prep_reserve_total_mojos_{_wt}", None
-                )
+                _baseline_raw = _gs(f"last_prep_reserve_total_mojos_{_wt}", None)
                 if _baseline_raw is None:
                     continue
                 try:
@@ -1896,11 +2014,13 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                     except Exception:
                         pass
             if _additions:
-                slog("BOT_HEALTH",
-                     f"Post-prep race recovery: backfilled "
-                     f"{len(_additions)} reserve coin(s) into the "
-                     f"advised list and refreshed per-side baselines",
-                     level="info")
+                slog(
+                    "BOT_HEALTH",
+                    f"Post-prep race recovery: backfilled "
+                    f"{len(_additions)} reserve coin(s) into the "
+                    f"advised list and refreshed per-side baselines",
+                    level="info",
+                )
     except Exception:
         pass
 
@@ -1928,11 +2048,17 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 scale = Decimal(10) ** Decimal(str(getattr(cfg, "CAT_DECIMALS", 3)))
             else:
                 scale = Decimal("1000000000000")
-            inner_xch = Decimal(str(
-                getattr(cfg, "SELL_INNER_SIZE_XCH" if is_cat else "BUY_INNER_SIZE_XCH", 0)
-                or getattr(cfg, "INNER_SIZE_XCH", 0)
-                or "0"
-            ))
+            inner_xch = Decimal(
+                str(
+                    getattr(
+                        cfg,
+                        "SELL_INNER_SIZE_XCH" if is_cat else "BUY_INNER_SIZE_XCH",
+                        0,
+                    )
+                    or getattr(cfg, "INNER_SIZE_XCH", 0)
+                    or "0"
+                )
+            )
             # For CAT the tier size is inner_xch / price; fall back to
             # 1/10 of the current CAT_RESERVE when price isn't available
             # (same heuristic used in check_funds_advisory).
@@ -1944,9 +2070,9 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 if price > 0 and inner_xch > 0:
                     inner_size_asset = inner_xch / price
                 else:
-                    inner_size_asset = Decimal(str(
-                        getattr(cfg, "CAT_RESERVE", 0) or 0
-                    )) * Decimal("0.1")
+                    inner_size_asset = Decimal(
+                        str(getattr(cfg, "CAT_RESERVE", 0) or 0)
+                    ) * Decimal("0.1")
                 smallest_mojos = int(inner_size_asset * scale)
             else:
                 smallest_mojos = int(inner_xch * scale)
@@ -1963,18 +2089,14 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
             # wouldn't fit in the bot's next top-up cycle surface as
             # "new deposit" — rounding overhead stays quiet.
             try:
-                configured_reserve = Decimal(str(
-                    getattr(cfg, reserve_cfg, 0) or 0
-                ))
+                configured_reserve = Decimal(str(getattr(cfg, reserve_cfg, 0) or 0))
             except Exception:
                 configured_reserve = Decimal("0")
             topup_budget_cfg = (
                 "TOPUP_POOL_XCH" if wallet_type == "xch" else "TOPUP_POOL_CAT"
             )
             try:
-                topup_pool = Decimal(str(
-                    getattr(cfg, topup_budget_cfg, 0) or 0
-                ))
+                topup_pool = Decimal(str(getattr(cfg, topup_budget_cfg, 0) or 0))
             except Exception:
                 topup_pool = Decimal("0")
             reserve_mojos = int(configured_reserve * scale)
@@ -1994,6 +2116,7 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
             # post-prep merge that changes coin_id, or a DB reset.
             try:
                 from database import get_setting
+
                 _key = f"last_prep_reserve_total_mojos_{wallet_type}"
                 _raw = get_setting(_key, "") or ""
                 _post_prep_total = int(_raw) if _raw.strip().isdigit() else 0
@@ -2041,9 +2164,11 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 ),
             ).fetchall()
         except Exception as e:
-            slog("BOT_HEALTH",
-                 f"Deposit advisory query failed for {wallet_type}: {e}",
-                 level="warn")
+            slog(
+                "BOT_HEALTH",
+                f"Deposit advisory query failed for {wallet_type}: {e}",
+                level="warn",
+            )
             continue
 
         # Cap the alerts per pass to avoid flooding the Recommendations
@@ -2061,8 +2186,7 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
 
             amount_mojos = int(row["amount_mojos"] or 0)
             display_amount = Decimal(amount_mojos) / scale
-            unit = (str(getattr(cfg, "CAT_NAME", "") or "CAT") if is_cat
-                    else "XCH")
+            unit = str(getattr(cfg, "CAT_NAME", "") or "CAT") if is_cat else "XCH"
             try:
                 designation = str(row["designation"] or "reserve").lower()
             except Exception:
@@ -2072,12 +2196,8 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
             live_alert_ids.add(alert_id)
 
             short_id = coin_id[:10] + "..." + coin_id[-6:]
-            pool_current = Decimal(str(
-                getattr(cfg, budget_cfg, 0) or 0
-            ))
-            reserve_current = Decimal(str(
-                getattr(cfg, reserve_cfg, 0) or 0
-            ))
+            pool_current = Decimal(str(getattr(cfg, budget_cfg, 0) or 0))
+            reserve_current = Decimal(str(getattr(cfg, reserve_cfg, 0) or 0))
             if designation == "unknown":
                 message = (
                     f"Detected {display_amount:,.4f} {unit} in a new "
@@ -2103,8 +2223,10 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 )
             # action_value carries enough for the GUI to open the modal
             # without another API round-trip.
-            action_value = (f"{wallet_type}|{coin_id}|{amount_mojos}|"
-                            f"{unit}|{budget_cfg}|{reserve_cfg}")
+            action_value = (
+                f"{wallet_type}|{coin_id}|{amount_mojos}|"
+                f"{unit}|{budget_cfg}|{reserve_cfg}"
+            )
             _emit_alert(
                 alert_id=alert_id,
                 title=f"New {unit} deposit — allocate?",
@@ -2113,9 +2235,7 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 severity="info",
             )
             alerts_raised.append(alert_id)
-            findings.append(
-                f"{unit} {display_amount:,.4f} in {short_id}"
-            )
+            findings.append(f"{unit} {display_amount:,.4f} in {short_id}")
             raised_this_pass += 1
 
     # Clear any previously-raised advisory alerts whose coins have since
@@ -2128,19 +2248,26 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
                 active = list(store.get_active())
                 for item in active:
                     _id = str(item.get("id", ""))
-                    if _id.startswith("deposit_advisory_") and _id not in live_alert_ids:
+                    if (
+                        _id.startswith("deposit_advisory_")
+                        and _id not in live_alert_ids
+                    ):
                         store.clear(_id)
         except Exception:
             pass
 
     if not findings:
         return HealthCheck(
-            name="unclaimed_deposits", category="wallet", status="pass",
+            name="unclaimed_deposits",
+            category="wallet",
+            status="pass",
             severity="info",
             message="No unallocated deposits.",
         )
     return HealthCheck(
-        name="unclaimed_deposits", category="wallet", status="warn",
+        name="unclaimed_deposits",
+        category="wallet",
+        status="warn",
         severity="warning",
         message="; ".join(findings),
         anomaly_count=len(findings),
@@ -2155,18 +2282,17 @@ def check_unclaimed_deposits(auto_repair: bool = True) -> HealthCheck:
 # calls every cycle but checks need at most ~once per minute)
 _last_run_lock_ts: float = 0.0
 _last_report: Optional[HealthReport] = None
-_MIN_INTERVAL_SECS_IDLE = 60.0   # normal throttle — full 60s between runs
-_MIN_INTERVAL_SECS_BUSY = 15.0   # F84: when last run found pending cancels,
-                                  # shorten the window so they get resolved
-                                  # faster. The 5-hour zombie test showed
-                                  # that waiting a full 60s after each cleanup
-                                  # pass leaves offers mis-tracked for ~5 min
-                                  # longer than necessary — the verifier
-                                  # could be confirming them within 15s.
+_MIN_INTERVAL_SECS_IDLE = 60.0  # normal throttle — full 60s between runs
+_MIN_INTERVAL_SECS_BUSY = 15.0  # F84: when last run found pending cancels,
+# shorten the window so they get resolved
+# faster. The 5-hour zombie test showed
+# that waiting a full 60s after each cleanup
+# pass leaves offers mis-tracked for ~5 min
+# longer than necessary — the verifier
+# could be confirming them within 15s.
 
 
-def run_runtime_checks(auto_repair: bool = True,
-                       force: bool = False) -> HealthReport:
+def run_runtime_checks(auto_repair: bool = True, force: bool = False) -> HealthReport:
     """Run all runtime health checks and return a structured report.
 
     F84 (2026-04-18): adaptive throttle — when the last run found pending
@@ -2180,8 +2306,7 @@ def run_runtime_checks(auto_repair: bool = True,
     # Pick throttle based on last-run state — busy = pending work = fast
     # cycle; idle = nothing to do = slow cycle.
     if _last_report and any(
-        c.name == "pending_cancels" and c.anomaly_count > 0
-        for c in _last_report.checks
+        c.name == "pending_cancels" and c.anomaly_count > 0 for c in _last_report.checks
     ):
         throttle = _MIN_INTERVAL_SECS_BUSY
     else:

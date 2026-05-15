@@ -134,12 +134,14 @@ class MarketToxicityGuard:
             else:
                 sell_evidence += pts
             signal_keys[side].add(key)
-            reasons.append({
-                "key": key,
-                "side": side,
-                "score": int(pts),
-                "detail": detail,
-            })
+            reasons.append(
+                {
+                    "key": key,
+                    "side": side,
+                    "score": int(pts),
+                    "detail": detail,
+                }
+            )
 
         def add_both(key: str, points: Decimal | int, detail: str) -> None:
             add("buy", key, points, detail)
@@ -168,8 +170,7 @@ class MarketToxicityGuard:
             signal_keys=signal_keys,
         )
         throttled_sides = [
-            side for side in SIDES
-            if float(throttle_until.get(side, 0) or 0) > now
+            side for side in SIDES if float(throttle_until.get(side, 0) or 0) > now
         ]
 
         snap = ToxicitySnapshot(
@@ -204,27 +205,48 @@ class MarketToxicityGuard:
                 points = Decimal("0")
             if points:
                 counts[side] += 1
-                add(side, "fast_fills", points,
-                    f"{side} fill landed {age:.0f}s after creation")
+                add(
+                    side,
+                    "fast_fills",
+                    points,
+                    f"{side} fill landed {age:.0f}s after creation",
+                )
         for side, count in counts.items():
             if count >= 2:
-                add(side, "fast_fill_cluster", Decimal("12") * (count - 1),
-                    f"{count} recent {side} fills arrived quickly")
+                add(
+                    side,
+                    "fast_fill_cluster",
+                    Decimal("12") * (count - 1),
+                    f"{count} recent {side} fills arrived quickly",
+                )
 
     def _score_one_sided_flow(self, context: ToxicityContext, add) -> None:
         mode = str(context.liquidity_mode or "two_sided").lower()
         if mode in ("buy_only", "sell_only"):
             return
         side_counts = {
-            "buy": sum(1 for f in context.recent_fills if str(f.get("side", "")).lower() == "buy"),
-            "sell": sum(1 for f in context.recent_fills if str(f.get("side", "")).lower() == "sell"),
+            "buy": sum(
+                1
+                for f in context.recent_fills
+                if str(f.get("side", "")).lower() == "buy"
+            ),
+            "sell": sum(
+                1
+                for f in context.recent_fills
+                if str(f.get("side", "")).lower() == "sell"
+            ),
         }
         total = side_counts["buy"] + side_counts["sell"]
         if total < 3:
             return
         for side in SIDES:
             if Decimal(side_counts[side]) / Decimal(total) >= Decimal("0.75"):
-                add(side, "one_sided_flow", 18, f"{side_counts[side]}/{total} recent fills are {side}")
+                add(
+                    side,
+                    "one_sided_flow",
+                    18,
+                    f"{side_counts[side]}/{total} recent fills are {side}",
+                )
 
     def _score_adverse_moves(self, context: ToxicityContext, add) -> None:
         mid = _dec(context.mid_price)
@@ -239,11 +261,19 @@ class MarketToxicityGuard:
                 continue
             move_bps = (mid - price) / price * Decimal("10000")
             if side == "buy" and move_bps < Decimal("-50"):
-                add("buy", "post_fill_adverse_move", min(abs(move_bps) / Decimal("4"), Decimal("35")),
-                    f"price moved {abs(move_bps):.0f} bps lower after buy fill")
+                add(
+                    "buy",
+                    "post_fill_adverse_move",
+                    min(abs(move_bps) / Decimal("4"), Decimal("35")),
+                    f"price moved {abs(move_bps):.0f} bps lower after buy fill",
+                )
             elif side == "sell" and move_bps > Decimal("50"):
-                add("sell", "post_fill_adverse_move", min(move_bps / Decimal("4"), Decimal("35")),
-                    f"price moved {move_bps:.0f} bps higher after sell fill")
+                add(
+                    "sell",
+                    "post_fill_adverse_move",
+                    min(move_bps / Decimal("4"), Decimal("35")),
+                    f"price moved {move_bps:.0f} bps higher after sell fill",
+                )
 
     def _score_arb_gap(self, context: ToxicityContext, add_both) -> None:
         gap = abs(_dec(context.arb_gap_bps))
@@ -260,7 +290,12 @@ class MarketToxicityGuard:
         if pos_pct >= Decimal("90"):
             side = str(inv.get("pressure_side") or "").lower()
             if side in SIDES:
-                add(side, "inventory_pressure", 25, f"position is {pos_pct:.0f}% of configured limit")
+                add(
+                    side,
+                    "inventory_pressure",
+                    25,
+                    f"position is {pos_pct:.0f}% of configured limit",
+                )
 
     def _score_small_balance_exposure(self, context: ToxicityContext, add) -> None:
         inv = context.inventory_state or {}
@@ -272,7 +307,9 @@ class MarketToxicityGuard:
         for offer in context.open_offers or []:
             side = str(offer.get("side") or "").lower()
             if side in SIDES:
-                by_side[side].append(_dec(offer.get("size_xch") or offer.get("xch_amount")))
+                by_side[side].append(
+                    _dec(offer.get("size_xch") or offer.get("xch_amount"))
+                )
         for side in SIDES:
             available = spendable[side]
             if available <= 0:
@@ -282,46 +319,86 @@ class MarketToxicityGuard:
             exposure_pct = total_exposed / available * Decimal("100")
             largest_pct = largest / available * Decimal("100")
             if exposure_pct >= Decimal("50"):
-                add(side, "small_balance_exposure", 38,
-                    f"{side} offers expose {exposure_pct:.0f}% of spendable balance")
+                add(
+                    side,
+                    "small_balance_exposure",
+                    38,
+                    f"{side} offers expose {exposure_pct:.0f}% of spendable balance",
+                )
             elif exposure_pct >= Decimal("25"):
-                add(side, "small_balance_exposure", 22,
-                    f"{side} offers expose {exposure_pct:.0f}% of spendable balance")
+                add(
+                    side,
+                    "small_balance_exposure",
+                    22,
+                    f"{side} offers expose {exposure_pct:.0f}% of spendable balance",
+                )
             if largest_pct >= Decimal("60"):
-                add(side, "large_offer_vs_balance", 38,
-                    f"largest {side} offer is {largest_pct:.0f}% of spendable balance")
+                add(
+                    side,
+                    "large_offer_vs_balance",
+                    38,
+                    f"largest {side} offer is {largest_pct:.0f}% of spendable balance",
+                )
             elif largest_pct >= Decimal("35"):
-                add(side, "large_offer_vs_balance", 24,
-                    f"largest {side} offer is {largest_pct:.0f}% of spendable balance")
+                add(
+                    side,
+                    "large_offer_vs_balance",
+                    24,
+                    f"largest {side} offer is {largest_pct:.0f}% of spendable balance",
+                )
 
     def _score_sweeps(self, context: ToxicityContext, add) -> None:
         for event in context.recent_sweep_events or []:
             side = str(event.get("side") or "").lower()
             fill_count = int(_dec(event.get("fill_count"), "0"))
             if side in SIDES and fill_count >= 2:
-                add(side, "same_block_sweep", 30 + min(20, 5 * fill_count),
-                    f"{fill_count} {side} fills grouped in the same sweep")
+                add(
+                    side,
+                    "same_block_sweep",
+                    30 + min(20, 5 * fill_count),
+                    f"{fill_count} {side} fills grouped in the same sweep",
+                )
 
     def _score_public_depth(self, context: ToxicityContext, add, add_both) -> None:
         intel = context.market_intel or {}
         thin_side = str(intel.get("thin_side") or "").lower()
         if thin_side in SIDES:
-            add(thin_side, "thin_public_depth", 18, f"Dexie public depth is thin on {thin_side}")
+            add(
+                thin_side,
+                "thin_public_depth",
+                18,
+                f"Dexie public depth is thin on {thin_side}",
+            )
         buy_depth = _dec(intel.get("buy_depth_xch"))
         sell_depth = _dec(intel.get("sell_depth_xch"))
         if buy_depth > 0 and sell_depth > 0:
             ratio = buy_depth / sell_depth
             if ratio >= Decimal("5"):
-                add("sell", "public_depth_imbalance", 18, "public buy depth dominates sell depth")
+                add(
+                    "sell",
+                    "public_depth_imbalance",
+                    18,
+                    "public buy depth dominates sell depth",
+                )
             elif ratio <= Decimal("0.2"):
-                add("buy", "public_depth_imbalance", 18, "public sell depth dominates buy depth")
+                add(
+                    "buy",
+                    "public_depth_imbalance",
+                    18,
+                    "public sell depth dominates buy depth",
+                )
         for whale in intel.get("whale_orders") or []:
             side = str(whale.get("side") or "").lower()
             is_ours = whale.get("is_ours")
             if is_ours is True or str(is_ours).strip().lower() in {"1", "true", "yes"}:
                 continue
             if side in SIDES:
-                add(side, "whale_public_offer", 12, f"large public {side} offer visible on Dexie")
+                add(
+                    side,
+                    "whale_public_offer",
+                    12,
+                    f"large public {side} offer visible on Dexie",
+                )
 
     def _score_data_quality(self, context: ToxicityContext, add_both) -> None:
         intel = context.market_intel or {}
@@ -337,8 +414,9 @@ class MarketToxicityGuard:
         if snapshot.get("buy_truncated") or snapshot.get("sell_truncated"):
             add_both("market_data_quality", 8, "Dexie orderbook page is truncated")
 
-    def _next_throttle_until(self, now: float, buy_score: int, sell_score: int,
-                             signal_keys: Dict[str, set]) -> Dict[str, float]:
+    def _next_throttle_until(
+        self, now: float, buy_score: int, sell_score: int, signal_keys: Dict[str, set]
+    ) -> Dict[str, float]:
         previous = {
             side: float(self._snapshot.throttle_until.get(side, 0) or 0)
             for side in SIDES

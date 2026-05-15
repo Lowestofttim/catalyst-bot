@@ -17,6 +17,7 @@ Usage::
 Stop the desktop app before running. The script aborts if it detects an
 existing lock on the DB file.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -110,7 +111,9 @@ def main() -> int:
     for suffix in ("-wal", "-shm"):
         side = db.with_suffix(db.suffix + suffix)
         if side.exists():
-            shutil.copy2(side, corrupt_backup.with_suffix(corrupt_backup.suffix + suffix))
+            shutil.copy2(
+                side, corrupt_backup.with_suffix(corrupt_backup.suffix + suffix)
+            )
 
     # Step 2: dump what's readable from the corrupt DB and replay into a
     # fresh file. iterdump() is best-effort; rows past the first corrupt

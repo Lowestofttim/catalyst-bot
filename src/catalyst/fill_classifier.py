@@ -28,27 +28,29 @@ from typing import Dict, List, Optional, Set
 # Classification constants
 # ---------------------------------------------------------------------------
 
+
 class FillType:
-    RETAIL          = "retail"
-    ARB_SWEEP_BUY   = "arb_sweep_buy"
-    ARB_SWEEP_SELL  = "arb_sweep_sell"
-    DEXIE_COMBINED  = "dexie_combined"
-    UNKNOWN         = "unknown"
+    RETAIL = "retail"
+    ARB_SWEEP_BUY = "arb_sweep_buy"
+    ARB_SWEEP_SELL = "arb_sweep_sell"
+    DEXIE_COMBINED = "dexie_combined"
+    UNKNOWN = "unknown"
 
 
 @dataclass
 class FillClassification:
     """Result of classifying a single fill."""
-    trade_id:           str
-    classification:     str = FillType.UNKNOWN
-    confidence:         str = "low"       # "high" | "medium" | "low"
-    taker_puzzle_hash:  Optional[str] = None
-    spent_block_index:  Optional[int] = None
-    sweep_group_id:     Optional[str] = None  # set by SweepCoordinator
-    reasons:            List[str] = field(default_factory=list)
+
+    trade_id: str
+    classification: str = FillType.UNKNOWN
+    confidence: str = "low"  # "high" | "medium" | "low"
+    taker_puzzle_hash: Optional[str] = None
+    spent_block_index: Optional[int] = None
+    sweep_group_id: Optional[str] = None  # set by SweepCoordinator
+    reasons: List[str] = field(default_factory=list)
     # Stamped by fill_tracker after classification so sweep protection
     # can determine which side was swept without a DB lookup.
-    side:               Optional[str] = None   # "buy" | "sell"
+    side: Optional[str] = None  # "buy" | "sell"
 
     def is_arb(self) -> bool:
         return self.classification in (
@@ -61,6 +63,7 @@ class FillClassification:
 # ---------------------------------------------------------------------------
 # Core classification logic
 # ---------------------------------------------------------------------------
+
 
 def classify_fill(
     trade_id: str,
@@ -84,6 +87,7 @@ def classify_fill(
     known_arb_hashes: Set[str] = set()
     try:
         from config import cfg
+
         raw_hashes = getattr(cfg, "KNOWN_ARB_PUZZLE_HASHES", [])
         known_arb_hashes = {
             h.strip().lower().removeprefix("0x")
@@ -111,6 +115,7 @@ def classify_fill(
             result.reasons.append("dexie_detail present but spent_block_index missing")
             try:
                 import logging as _logging
+
                 _logging.getLogger("fill_classifier").debug(
                     "trade_id=%s: dexie_detail present but spent_block_index absent — "
                     "sweep grouping disabled for this fill. "
@@ -126,9 +131,7 @@ def classify_fill(
         # was sent. For a buy offer (we spend XCH), XCH outputs go to the taker.
         # For a sell offer (we spend CAT), CAT outputs go to the taker.
         try:
-            result.taker_puzzle_hash = _extract_taker_puzzle_hash(
-                dexie_detail, side
-            )
+            result.taker_puzzle_hash = _extract_taker_puzzle_hash(dexie_detail, side)
         except Exception:
             pass
 
@@ -137,8 +140,7 @@ def classify_fill(
         norm = result.taker_puzzle_hash.lower().removeprefix("0x")
         if norm in known_arb_hashes:
             result.classification = (
-                FillType.ARB_SWEEP_BUY if side == "sell"
-                else FillType.ARB_SWEEP_SELL
+                FillType.ARB_SWEEP_BUY if side == "sell" else FillType.ARB_SWEEP_SELL
             )
             result.confidence = "high"
             result.reasons.append(
@@ -151,7 +153,9 @@ def classify_fill(
     # that are part of an atomic multi-offer sweep.
     if dexie_detail:
         combined = dexie_detail.get("combined") or dexie_detail.get("is_combined")
-        matched = dexie_detail.get("matched_offers") or dexie_detail.get("related_offers")
+        matched = dexie_detail.get("matched_offers") or dexie_detail.get(
+            "related_offers"
+        )
         if combined or (isinstance(matched, list) and len(matched) > 1):
             result.classification = FillType.DEXIE_COMBINED
             result.confidence = "high"
@@ -173,7 +177,9 @@ def classify_fill(
     # share the same spent_block_index in the next bot cycle.
     result.classification = FillType.UNKNOWN
     result.confidence = "low"
-    result.reasons.append("no dexie detail available — insufficient data for classification")
+    result.reasons.append(
+        "no dexie detail available — insufficient data for classification"
+    )
     return result
 
 
@@ -198,6 +204,7 @@ def _extract_taker_puzzle_hash(detail: Dict, side: str) -> Optional[str]:
 
     try:
         from config import cfg
+
         xch_wid = str(getattr(cfg, "WALLET_ID_XCH", 1))
         cat_asset_id = str(getattr(cfg, "CAT_ASSET_ID", "")).lower()
     except Exception:
@@ -213,8 +220,7 @@ def _extract_taker_puzzle_hash(detail: Dict, side: str) -> Optional[str]:
     target_key: Optional[str] = None
     for key in output_coins.keys():
         key_lower = str(key).lower()
-        if side == "sell" and (key_lower == cat_asset_id or
-                               "cat" in key_lower):
+        if side == "sell" and (key_lower == cat_asset_id or "cat" in key_lower):
             target_key = key
             break
         if side == "buy" and key_lower in ("xch", "1", xch_wid):
@@ -249,6 +255,7 @@ def _extract_taker_puzzle_hash(detail: Dict, side: str) -> Optional[str]:
 # Batch update helper
 # ---------------------------------------------------------------------------
 
+
 def update_fill_classification(
     fill_id: int,
     classification: FillClassification,
@@ -259,6 +266,7 @@ def update_fill_classification(
     """
     try:
         from database import get_connection
+
         conn = get_connection()
         conn.execute(
             """UPDATE fills
@@ -298,4 +306,3 @@ def classify_and_store_fill(
         return result
     except Exception:
         return FillClassification(trade_id=trade_id)
-

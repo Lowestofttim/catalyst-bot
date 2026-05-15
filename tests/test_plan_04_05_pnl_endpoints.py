@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -28,6 +29,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _fake_stats():
     return {
@@ -73,7 +75,11 @@ def _make_db_conn(fill_count=0, rt_count=0):
     def _execute(sql, *args, **kwargs):
         result = MagicMock()
         sql_upper = sql.strip().upper()
-        if "COUNT" in sql_upper and "FILLS" in sql_upper and "ROUND_TRIPS" not in sql_upper:
+        if (
+            "COUNT" in sql_upper
+            and "FILLS" in sql_upper
+            and "ROUND_TRIPS" not in sql_upper
+        ):
             result.fetchone.return_value = {"cnt": fill_count}
         elif "COUNT" in sql_upper and "ROUND_TRIPS" in sql_upper:
             result.fetchone.return_value = {"cnt": rt_count}
@@ -114,33 +120,47 @@ class _FlaskBase(unittest.TestCase):
 # 1. GET /api/pnl
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestPnlGet(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 500)
 
     def test_bot_set_returns_200(self):
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server.get_stats", return_value=_fake_stats()):
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server.get_stats", return_value=_fake_stats()),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_required_keys(self):
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server.get_stats", return_value=_fake_stats()):
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server.get_stats", return_value=_fake_stats()),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         body = resp.get_json()
-        for key in ("realised_pnl_xch", "total_fills", "buy_fills", "sell_fills",
-                    "round_trips", "net_position_cat", "circuit_breaker_active",
-                    "volume_xch", "fill_rate_per_hour"):
+        for key in (
+            "realised_pnl_xch",
+            "total_fills",
+            "buy_fills",
+            "sell_fills",
+            "round_trips",
+            "net_position_cat",
+            "circuit_breaker_active",
+            "volume_xch",
+            "fill_rate_per_hour",
+        ):
             self.assertIn(key, body)
 
     def test_fill_counts_match_stats(self):
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server.get_stats", return_value=_fake_stats()):
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server.get_stats", return_value=_fake_stats()),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertEqual(body["total_fills"], 10)
@@ -148,24 +168,31 @@ class TestPnlGet(_FlaskBase):
         self.assertEqual(body["sell_fills"], 5)
 
     def test_sniper_key_present(self):
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server.get_stats", return_value=_fake_stats()):
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server.get_stats", return_value=_fake_stats()),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertIn("sniper", body)
 
     def test_response_includes_usd_values_when_xch_price_available(self):
-        with patch.object(api_server, "bot", _make_bot()), \
-             patch("api_server.get_stats", return_value=_fake_stats()), \
-             patch("market_data_collector.get_cached_xch_usd_price",
-                   return_value={
-                       "has_data": True,
-                       "xch_usd": 2.10,
-                       "source": "spacescan",
-                   },
-                   create=True), \
-             patch("database.get_market_analysis_cache",
-                   return_value={"price_usd": 0.01}):
+        with (
+            patch.object(api_server, "bot", _make_bot()),
+            patch("api_server.get_stats", return_value=_fake_stats()),
+            patch(
+                "market_data_collector.get_cached_xch_usd_price",
+                return_value={
+                    "has_data": True,
+                    "xch_usd": 2.10,
+                    "source": "spacescan",
+                },
+                create=True,
+            ),
+            patch(
+                "database.get_market_analysis_cache", return_value={"price_usd": 0.01}
+            ),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
         body = resp.get_json()
         self.assertEqual(body["xch_usd_price"], "2.1")
@@ -189,8 +216,10 @@ class TestPnlGet(_FlaskBase):
             "net_cat_flow": "100",
         }
 
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server.get_stats", return_value=stats):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server.get_stats", return_value=stats),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
 
         body = resp.get_json()
@@ -213,8 +242,10 @@ class TestPnlGet(_FlaskBase):
             "net_cat_flow": "-100",
         }
 
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server.get_stats", return_value=stats):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server.get_stats", return_value=stats),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
 
         body = resp.get_json()
@@ -238,8 +269,10 @@ class TestPnlGet(_FlaskBase):
             "net_cat_flow": "0",
         }
 
-        with patch.object(api_server, "bot", bot), \
-             patch("api_server.get_stats", return_value=stats):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch("api_server.get_stats", return_value=stats),
+        ):
             resp = self.client.get("/api/pnl", environ_base=self._LOOPBACK)
 
         body = resp.get_json()
@@ -252,48 +285,63 @@ class TestPnlGet(_FlaskBase):
 # 2. GET /api/pnl/reset-preview
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestPnlResetPreview(_FlaskBase):
-
     def test_returns_200(self):
-        with patch("api_server.get_stats", return_value=_fake_stats()), \
-             patch("database.get_connection", return_value=_make_db_conn()):
-            resp = self.client.get("/api/pnl/reset-preview",
-                                   environ_base=self._LOOPBACK)
+        with (
+            patch("api_server.get_stats", return_value=_fake_stats()),
+            patch("database.get_connection", return_value=_make_db_conn()),
+        ):
+            resp = self.client.get(
+                "/api/pnl/reset-preview", environ_base=self._LOOPBACK
+            )
         self.assertEqual(resp.status_code, 200)
 
     def test_success_key_true(self):
-        with patch("api_server.get_stats", return_value=_fake_stats()), \
-             patch("database.get_connection", return_value=_make_db_conn()):
-            resp = self.client.get("/api/pnl/reset-preview",
-                                   environ_base=self._LOOPBACK)
+        with (
+            patch("api_server.get_stats", return_value=_fake_stats()),
+            patch("database.get_connection", return_value=_make_db_conn()),
+        ):
+            resp = self.client.get(
+                "/api/pnl/reset-preview", environ_base=self._LOOPBACK
+            )
         self.assertTrue(resp.get_json().get("success"))
 
     def test_response_has_required_keys(self):
-        with patch("api_server.get_stats", return_value=_fake_stats()), \
-             patch("database.get_connection", return_value=_make_db_conn()):
-            resp = self.client.get("/api/pnl/reset-preview",
-                                   environ_base=self._LOOPBACK)
+        with (
+            patch("api_server.get_stats", return_value=_fake_stats()),
+            patch("database.get_connection", return_value=_make_db_conn()),
+        ):
+            resp = self.client.get(
+                "/api/pnl/reset-preview", environ_base=self._LOOPBACK
+            )
         body = resp.get_json()
         for key in ("has_data", "fills", "round_trips", "realised_pnl_xch"):
             self.assertIn(key, body)
 
     def test_fills_and_round_trips_are_integers(self):
-        with patch("api_server.get_stats", return_value=_fake_stats()), \
-             patch("database.get_connection", return_value=_make_db_conn()):
-            resp = self.client.get("/api/pnl/reset-preview",
-                                   environ_base=self._LOOPBACK)
+        with (
+            patch("api_server.get_stats", return_value=_fake_stats()),
+            patch("database.get_connection", return_value=_make_db_conn()),
+        ):
+            resp = self.client.get(
+                "/api/pnl/reset-preview", environ_base=self._LOOPBACK
+            )
         body = resp.get_json()
         self.assertIsInstance(body["fills"], int)
         self.assertIsInstance(body["round_trips"], int)
 
     def test_has_data_false_when_everything_zero(self):
         zero_stats = {**_fake_stats(), "realised_pnl_xch": "0"}
-        with patch("api_server.get_stats", return_value=zero_stats), \
-             patch("database.get_connection", return_value=_make_db_conn(0, 0)), \
-             patch.object(api_server, "bot", None):
-            resp = self.client.get("/api/pnl/reset-preview",
-                                   environ_base=self._LOOPBACK)
+        with (
+            patch("api_server.get_stats", return_value=zero_stats),
+            patch("database.get_connection", return_value=_make_db_conn(0, 0)),
+            patch.object(api_server, "bot", None),
+        ):
+            resp = self.client.get(
+                "/api/pnl/reset-preview", environ_base=self._LOOPBACK
+            )
         body = resp.get_json()
         self.assertFalse(body["has_data"])
 
@@ -302,14 +350,18 @@ class TestPnlResetPreview(_FlaskBase):
 # 3. POST /api/pnl/reset
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestPnlReset(_FlaskBase):
-
     _FAKE_SUMMARY = {
-        "fills_cleared": 0, "round_trips_cleared": 0,
-        "price_history_cleared": False, "inventory_cleared": False,
-        "coins_cleared": 0, "open_offers_cancelled": 0,
-        "reset_at": "2026-01-01T00:00:00", "preserve_history": False,
+        "fills_cleared": 0,
+        "round_trips_cleared": 0,
+        "price_history_cleared": False,
+        "inventory_cleared": False,
+        "coins_cleared": 0,
+        "open_offers_cancelled": 0,
+        "reset_at": "2026-01-01T00:00:00",
+        "preserve_history": False,
     }
 
     def test_requires_token(self):
@@ -327,22 +379,25 @@ class TestPnlReset(_FlaskBase):
 
     def test_confirm_case_insensitive(self):
         # Handler does .strip().upper() — lowercase "reset" is accepted
-        with patch.object(api_server, "_reset_fresh_run_session",
-                          return_value=self._FAKE_SUMMARY):
+        with patch.object(
+            api_server, "_reset_fresh_run_session", return_value=self._FAKE_SUMMARY
+        ):
             resp = self._post("/api/pnl/reset", {"confirm": "reset"})
         self.assertEqual(resp.status_code, 200)
 
     def test_correct_confirm_returns_200(self):
-        with patch.object(api_server, "_reset_fresh_run_session",
-                          return_value=self._FAKE_SUMMARY):
+        with patch.object(
+            api_server, "_reset_fresh_run_session", return_value=self._FAKE_SUMMARY
+        ):
             resp = self._post("/api/pnl/reset", {"confirm": "RESET"})
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
         self.assertTrue(body.get("success"))
 
     def test_response_includes_message(self):
-        with patch.object(api_server, "_reset_fresh_run_session",
-                          return_value=self._FAKE_SUMMARY):
+        with patch.object(
+            api_server, "_reset_fresh_run_session", return_value=self._FAKE_SUMMARY
+        ):
             resp = self._post("/api/pnl/reset", {"confirm": "RESET"})
         self.assertIn("message", resp.get_json())
 
@@ -351,27 +406,31 @@ class TestPnlReset(_FlaskBase):
 # 4. POST /api/fills/purge
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestFillsPurge(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/fills/purge", auth=False)
         self.assertEqual(resp.status_code, 401)
 
     def test_returns_200_and_success(self):
         conn = _make_db_conn(fill_count=5, rt_count=2)
-        with patch("database.get_connection", return_value=conn), \
-             patch("database.log_event"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch("database.get_connection", return_value=conn),
+            patch("database.log_event"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = self._post("/api/fills/purge")
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.get_json().get("success"))
 
     def test_response_has_purge_count_keys(self):
         conn = _make_db_conn(fill_count=3, rt_count=1)
-        with patch("database.get_connection", return_value=conn), \
-             patch("database.log_event"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch("database.get_connection", return_value=conn),
+            patch("database.log_event"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = self._post("/api/fills/purge")
         body = resp.get_json()
         self.assertIn("fills_purged", body)
@@ -381,9 +440,11 @@ class TestFillsPurge(_FlaskBase):
         conn = _make_db_conn()
         bot = MagicMock()
         bot.risk_manager = MagicMock()
-        with patch("database.get_connection", return_value=conn), \
-             patch("database.log_event"), \
-             patch.object(api_server, "bot", bot):
+        with (
+            patch("database.get_connection", return_value=conn),
+            patch("database.log_event"),
+            patch.object(api_server, "bot", bot),
+        ):
             self._post("/api/fills/purge")
         bot.risk_manager.reset_position.assert_called_once()
 
@@ -392,9 +453,11 @@ class TestFillsPurge(_FlaskBase):
         bot = MagicMock()
         bot.risk_manager = MagicMock()
         # Only called when bot AND bot.risk_manager are set — verify integration
-        with patch("database.get_connection", return_value=conn), \
-             patch("database.log_event"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch("database.get_connection", return_value=conn),
+            patch("database.log_event"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = self._post("/api/fills/purge")
         self.assertEqual(resp.status_code, 200)
 

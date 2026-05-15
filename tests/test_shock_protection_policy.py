@@ -16,7 +16,9 @@ def _cfg(**overrides):
 
 
 def test_auto_trigger_scales_from_inner_edge_with_half_percent_floor():
-    assert tibet_shock_trigger_pct(_cfg(MIN_EDGE_BPS=Decimal("275"))) == Decimal("1.375")
+    assert tibet_shock_trigger_pct(_cfg(MIN_EDGE_BPS=Decimal("275"))) == Decimal(
+        "1.375"
+    )
     assert tibet_shock_trigger_pct(_cfg(MIN_EDGE_BPS=Decimal("50"))) == Decimal("0.50")
 
 

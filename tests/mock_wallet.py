@@ -28,6 +28,7 @@ from typing import Dict, List, Optional
 # Mock state
 # ---------------------------------------------------------------------------
 
+
 class MockWalletState:
     """Holds all simulated wallet state."""
 
@@ -36,7 +37,7 @@ class MockWalletState:
 
         # Simulated balances (in mojos)
         self.xch_balance: int = 10_000_000_000_000  # 10 XCH
-        self.cat_balance: int = 50_000_000           # 50,000 CAT (3 decimals)
+        self.cat_balance: int = 50_000_000  # 50,000 CAT (3 decimals)
 
         # Simulated coins (list of dicts like Chia returns)
         self.xch_coins: List[Dict] = []
@@ -57,19 +58,23 @@ class MockWalletState:
         """Create initial set of simulated coins."""
         # Create 20 XCH coins of 0.5 XCH each
         for i in range(20):
-            self.xch_coins.append(self._make_coin(
-                amount=500_000_000_000,  # 0.5 XCH
-                wallet_type="xch",
-                index=i
-            ))
+            self.xch_coins.append(
+                self._make_coin(
+                    amount=500_000_000_000,  # 0.5 XCH
+                    wallet_type="xch",
+                    index=i,
+                )
+            )
 
         # Create 15 CAT coins of ~3333 CAT each
         for i in range(15):
-            self.cat_coins.append(self._make_coin(
-                amount=3_333_000,  # 3333 CAT (3 decimals)
-                wallet_type="cat",
-                index=i
-            ))
+            self.cat_coins.append(
+                self._make_coin(
+                    amount=3_333_000,  # 3333 CAT (3 decimals)
+                    wallet_type="cat",
+                    index=i,
+                )
+            )
 
     def _make_coin(self, amount: int, wallet_type: str, index: int) -> Dict:
         """Create a realistic-looking coin record."""
@@ -202,12 +207,18 @@ def _mock_get_wallet_balance(payload: dict) -> Dict:
 
     with state._lock:
         if wallet_id == 1:
-            total = sum(c["coin"]["amount"] for c in state.xch_coins
-                       if c["spent_block_index"] == 0)
+            total = sum(
+                c["coin"]["amount"]
+                for c in state.xch_coins
+                if c["spent_block_index"] == 0
+            )
             pending = 0
         else:
-            total = sum(c["coin"]["amount"] for c in state.cat_coins
-                       if c["spent_block_index"] == 0)
+            total = sum(
+                c["coin"]["amount"]
+                for c in state.cat_coins
+                if c["spent_block_index"] == 0
+            )
             pending = 0
 
     return {
@@ -220,7 +231,7 @@ def _mock_get_wallet_balance(payload: dict) -> Dict:
             "max_send_amount": total,
             "unspent_coin_count": total,  # Simplified
             "pending_coin_removal_count": 0,
-        }
+        },
     }
 
 
@@ -329,9 +340,8 @@ def _mock_get_wallets(payload: dict) -> Dict:
         "success": True,
         "wallets": [
             {"id": 1, "name": "Chia Wallet", "type": 0},
-            {"id": 2, "name": "Mock CAT", "type": 6,
-             "data": "mock_asset_id_abc123"},
-        ]
+            {"id": 2, "name": "Mock CAT", "type": 6, "data": "mock_asset_id_abc123"},
+        ],
     }
 
 
@@ -349,7 +359,7 @@ def _mock_get_next_address(payload: dict) -> Dict:
     """Return a fake address."""
     return {
         "success": True,
-        "address": "xch1mock_address_for_testing_purposes_only_not_real"
+        "address": "xch1mock_address_for_testing_purposes_only_not_real",
     }
 
 
@@ -362,22 +372,31 @@ def _mock_log_in(payload: dict) -> Dict:
 # Convenience wrappers (matching wallet.py's module-level functions)
 # ---------------------------------------------------------------------------
 
+
 def get_spendable_coins_rpc(wallet_id: int) -> Optional[Dict]:
     """Mock version of wallet.get_spendable_coins_rpc."""
     return rpc("get_spendable_coins", {"wallet_id": wallet_id})
 
 
-def split_coins_rpc(wallet_id: int, target_coin_id: str, num_coins: int,
-                    amount_per_coin: int, fee_mojos: int = 0,
-                    is_cat: bool = False) -> Optional[Dict]:
+def split_coins_rpc(
+    wallet_id: int,
+    target_coin_id: str,
+    num_coins: int,
+    amount_per_coin: int,
+    fee_mojos: int = 0,
+    is_cat: bool = False,
+) -> Optional[Dict]:
     """Mock version of wallet.split_coins_rpc."""
-    return rpc("split_coins", {
-        "wallet_id": wallet_id,
-        "target_coin_id": target_coin_id,
-        "number_of_coins": num_coins,
-        "amount_per_coin": amount_per_coin,
-        "fee": fee_mojos,
-    })
+    return rpc(
+        "split_coins",
+        {
+            "wallet_id": wallet_id,
+            "target_coin_id": target_coin_id,
+            "number_of_coins": num_coins,
+            "amount_per_coin": amount_per_coin,
+            "fee": fee_mojos,
+        },
+    )
 
 
 def get_wallet_balance(wallet_id: int) -> Optional[Dict]:
@@ -385,8 +404,9 @@ def get_wallet_balance(wallet_id: int) -> Optional[Dict]:
     return rpc("get_wallet_balance", {"wallet_id": wallet_id})
 
 
-def create_offer(offer_dict: dict, validate_only: bool = True,
-                 max_time: int = None) -> Optional[Dict]:
+def create_offer(
+    offer_dict: dict, validate_only: bool = True, max_time: int = None
+) -> Optional[Dict]:
     """Mock version of wallet.create_offer."""
     payload = {
         "wallet_id": WALLET_ID_XCH,
@@ -398,21 +418,26 @@ def create_offer(offer_dict: dict, validate_only: bool = True,
     return rpc("create_offer_for_ids", payload)
 
 
-def cancel_offer(trade_id: str, secure: bool = True,
-                 timeout: int = 60) -> Optional[Dict]:
+def cancel_offer(
+    trade_id: str, secure: bool = True, timeout: int = 60
+) -> Optional[Dict]:
     """Mock version of wallet.cancel_offer."""
     return rpc("cancel_offer", {"trade_id": trade_id, "secure": secure})
 
 
-def get_all_offers(include_completed: bool = True, start: int = 0,
-                   end: int = 50) -> Optional[List]:
+def get_all_offers(
+    include_completed: bool = True, start: int = 0, end: int = 50
+) -> Optional[List]:
     """Mock version of wallet.get_all_offers."""
-    res = rpc("get_all_offers", {
-        "include_completed": include_completed,
-        "start": start,
-        "end": end,
-        "reverse": True,
-    })
+    res = rpc(
+        "get_all_offers",
+        {
+            "include_completed": include_completed,
+            "start": start,
+            "end": end,
+            "reverse": True,
+        },
+    )
     if not res or not res.get("success"):
         return None
     return res.get("trades", [])
@@ -445,8 +470,9 @@ def set_quiet_mode(quiet: bool):
     pass
 
 
-def cancel_offers_batch(trade_ids: list, secure: bool = True,
-                        max_workers: int = 3) -> List[Dict]:
+def cancel_offers_batch(
+    trade_ids: list, secure: bool = True, max_workers: int = 3
+) -> List[Dict]:
     """Cancel multiple offers sequentially (like real wallet.py)."""
     results = []
     for tid in trade_ids:
@@ -459,6 +485,7 @@ def cancel_offers_batch(trade_ids: list, secure: bool = True,
 # ---------------------------------------------------------------------------
 # Fill simulator (call periodically to simulate random fills)
 # ---------------------------------------------------------------------------
+
 
 def simulate_fills(fill_probability: float = 0.05) -> List[str]:
     """Randomly 'fill' some active offers to simulate market activity.

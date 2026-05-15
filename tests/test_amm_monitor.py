@@ -2,6 +2,7 @@
 
 These tests use a mock HTTP session so no real network calls are made.
 """
+
 import sys
 import time
 import types
@@ -58,6 +59,7 @@ else:
 # Helpers
 # --------------------------------------------------------------------------
 
+
 def _make_pair_response(xch_reserve: int, token_reserve: int) -> list:
     """Build the response list that TibetSwap /pairs returns.
 
@@ -97,6 +99,7 @@ def _mock_session_get(response_data: dict, status_code: int = 200):
 # Tests
 # --------------------------------------------------------------------------
 
+
 class TestAMMMonitorInit(unittest.TestCase):
     def test_starts_with_no_state(self):
         m = AMMMonitor()
@@ -120,8 +123,8 @@ class TestAMMMonitorFetchPair(unittest.TestCase):
 
     def test_parses_valid_response(self):
         # 10 XCH, 10000 tokens → price = 10/10000 = 0.001
-        xch_mojos = 10 * 1_000_000_000_000      # 10 XCH
-        token_mojos = 10_000 * 1_000             # 10000 tokens (3 decimals)
+        xch_mojos = 10 * 1_000_000_000_000  # 10 XCH
+        token_mojos = 10_000 * 1_000  # 10000 tokens (3 decimals)
         m = self._make_monitor(_make_pair_response(xch_mojos, token_mojos))
 
         state = m._fetch_pair("test-pair-id-0000")
@@ -195,8 +198,9 @@ class TestAMMMonitorDrift(unittest.TestCase):
         m = self._monitor_with_price(xch, tok)
         amm_price = Decimal("10") / Decimal("10000")  # 0.001
         # buy slightly below, sell slightly above → mid = amm → drift ≈ 0
-        m.notify_quoted_price(amm_price * Decimal("0.999"),
-                               amm_price * Decimal("1.001"))
+        m.notify_quoted_price(
+            amm_price * Decimal("0.999"), amm_price * Decimal("1.001")
+        )
         drift = m.get_drift_bps()
         self.assertIsNotNone(drift)
         self.assertLess(float(drift), 5)  # very small drift
@@ -260,8 +264,11 @@ class TestAMMMonitorBufferGuard(unittest.TestCase):
         fake_config_mod.cfg.AMM_BUFFER_BPS = buffer_bps
 
         class _Noop:
-            def __enter__(self_): return self_
-            def __exit__(self_, *_): pass  # setUp/tearDown handle cleanup
+            def __enter__(self_):
+                return self_
+
+            def __exit__(self_, *_):
+                pass  # setUp/tearDown handle cleanup
 
         return _Noop()
 
@@ -342,19 +349,22 @@ class TestAMMMonitorUserFacingLogs(unittest.TestCase):
     def test_drift_detected_log_formats_percent_for_users(self):
         m = AMMMonitor()
         m.notify_quoted_price(Decimal("1.00"), Decimal("1.00"))
-        m._fetch_pair = MagicMock(return_value={
-            "available": True,
-            "amm_price": Decimal("1.02"),
-            "xch_reserve": Decimal("10"),
-            "token_reserve": Decimal("9.803921"),
-            "fetched_at": time.time(),
-        })
+        m._fetch_pair = MagicMock(
+            return_value={
+                "available": True,
+                "amm_price": Decimal("1.02"),
+                "xch_reserve": Decimal("10"),
+                "token_reserve": Decimal("9.803921"),
+                "fetched_at": time.time(),
+            }
+        )
 
         with patch("amm_monitor.log_event") as log_event:
             m._do_poll()
 
         drift_calls = [
-            call for call in log_event.call_args_list
+            call
+            for call in log_event.call_args_list
             if len(call.args) >= 3 and call.args[1] == "amm_drift_detected"
         ]
         self.assertEqual(len(drift_calls), 1)
@@ -388,12 +398,16 @@ class TestAMMMonitorThreadSafety(unittest.TestCase):
         def _notifier(price):
             try:
                 for _ in range(50):
-                    m.notify_quoted_price(Decimal(str(price)), Decimal(str(price * 1.001)))
+                    m.notify_quoted_price(
+                        Decimal(str(price)), Decimal(str(price * 1.001))
+                    )
             except Exception as e:
                 errors.append(e)
 
-        threads = [threading.Thread(target=_notifier, args=(0.001 + i * 0.0001,))
-                   for i in range(5)]
+        threads = [
+            threading.Thread(target=_notifier, args=(0.001 + i * 0.0001,))
+            for i in range(5)
+        ]
         for t in threads:
             t.start()
         for t in threads:

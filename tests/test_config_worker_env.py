@@ -12,13 +12,15 @@ class ConfigWorkerEnvTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             env_path = Path(temp_dir) / ".env"
             env_path.write_text(
-                "\n".join([
-                    "WALLET_TYPE=chia",
-                    "SAGE_RPC_URL=https://127.0.0.1:9257",
-                    "SAGE_CERT_PATH=C:/stale/wallet.crt",
-                    "SAGE_KEY_PATH=C:/stale/wallet.key",
-                    "SAGE_DATA_DIR=C:/stale",
-                ]),
+                "\n".join(
+                    [
+                        "WALLET_TYPE=chia",
+                        "SAGE_RPC_URL=https://127.0.0.1:9257",
+                        "SAGE_CERT_PATH=C:/stale/wallet.crt",
+                        "SAGE_KEY_PATH=C:/stale/wallet.key",
+                        "SAGE_DATA_DIR=C:/stale",
+                    ]
+                ),
                 encoding="utf-8",
             )
             process_env = {

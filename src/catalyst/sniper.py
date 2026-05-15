@@ -46,8 +46,13 @@ class Sniper:
     immediately (bypassing the queue for speed).
     """
 
-    def __init__(self, offer_manager=None, risk_manager=None, dexie_manager=None,
-                 splash_manager=None):
+    def __init__(
+        self,
+        offer_manager=None,
+        risk_manager=None,
+        dexie_manager=None,
+        splash_manager=None,
+    ):
         self._offer_manager = offer_manager
         self._risk_manager = risk_manager
         self._dexie_manager = dexie_manager
@@ -72,8 +77,12 @@ class Sniper:
         # Thread safety — watcher thread writes, main loop reads/prunes
         self._snipe_lock = threading.Lock()
 
-    def try_snipe(self, bid_price: Decimal, ask_price: Decimal,
-                  arb_gap_bps: Decimal = Decimal("0")) -> List[Dict]:
+    def try_snipe(
+        self,
+        bid_price: Decimal,
+        ask_price: Decimal,
+        arb_gap_bps: Decimal = Decimal("0"),
+    ) -> List[Dict]:
         """Attempt to create sniper offers at given bid/ask prices.
 
         Args:
@@ -103,10 +112,12 @@ class Sniper:
             if len(self._active_snipe_ids) >= self._max_active_snipes:
                 return []
             _buy_count = sum(1 for s in self._active_snipe_sides.values() if s == "buy")
-            _sell_count = sum(1 for s in self._active_snipe_sides.values() if s == "sell")
+            _sell_count = sum(
+                1 for s in self._active_snipe_sides.values() if s == "sell"
+            )
 
         # Skip if coin operations are running
-        if self._offer_manager and hasattr(self._offer_manager, '_lock'):
+        if self._offer_manager and hasattr(self._offer_manager, "_lock"):
             pass  # Offer manager handles its own locking
 
         # Skip if circuit breaker is active.
@@ -128,21 +139,28 @@ class Sniper:
         # Determine which side (if any) is blocked by a position circuit breaker
         _cb_blocked_side = (
             self._risk_manager.get_circuit_breaker_blocked_side()
-            if self._risk_manager else None
+            if self._risk_manager
+            else None
         )
 
         # ---- Sniper BUY (per-side cap check) ----
-        if (cfg.ENABLE_BUY and _buy_count < self._max_per_side
-                and self._should_snipe_side("buy")
-                and _cb_blocked_side != "buy"):
+        if (
+            cfg.ENABLE_BUY
+            and _buy_count < self._max_per_side
+            and self._should_snipe_side("buy")
+            and _cb_blocked_side != "buy"
+        ):
             buy_result = self._create_snipe_offer("buy", bid_price, trade_xch)
             if buy_result:
                 created.append(buy_result)
 
         # ---- Sniper SELL (per-side cap check) ----
-        if (cfg.ENABLE_SELL and _sell_count < self._max_per_side
-                and self._should_snipe_side("sell")
-                and _cb_blocked_side != "sell"):
+        if (
+            cfg.ENABLE_SELL
+            and _sell_count < self._max_per_side
+            and self._should_snipe_side("sell")
+            and _cb_blocked_side != "sell"
+        ):
             sell_result = self._create_snipe_offer("sell", ask_price, trade_xch)
             if sell_result:
                 created.append(sell_result)
@@ -164,27 +182,34 @@ class Sniper:
                             self._active_snipe_sides[tid] = side
 
                 for offer in created:
-                    self._snipe_history.insert(0, {
-                        "side": offer.get("side"),
-                        "price": str(offer.get("price")),
-                        "size_xch": str(trade_xch),
-                        "arb_gap_bps": str(arb_gap_bps),
-                        "timestamp": now,
-                    })
+                    self._snipe_history.insert(
+                        0,
+                        {
+                            "side": offer.get("side"),
+                            "price": str(offer.get("price")),
+                            "size_xch": str(trade_xch),
+                            "arb_gap_bps": str(arb_gap_bps),
+                            "timestamp": now,
+                        },
+                    )
 
                 # In-place trim so readers holding a reference still see
                 # the same list object.
                 if len(self._snipe_history) > self._max_history:
-                    del self._snipe_history[self._max_history:]
+                    del self._snipe_history[self._max_history :]
 
-            log_event("info", "sniper_fired",
-                      f"⚡ Sniper created {len(created)} offers "
-                      f"(arb gap: {_bps_to_pct(arb_gap_bps)}, size: {trade_xch} XCH)")
+            log_event(
+                "info",
+                "sniper_fired",
+                f"⚡ Sniper created {len(created)} offers "
+                f"(arb gap: {_bps_to_pct(arb_gap_bps)}, size: {trade_xch} XCH)",
+            )
 
         return created
 
-    def try_snipe_single(self, side: str, price: Decimal,
-                          arb_gap_bps: Decimal = Decimal("0")) -> List[Dict]:
+    def try_snipe_single(
+        self, side: str, price: Decimal, arb_gap_bps: Decimal = Decimal("0")
+    ) -> List[Dict]:
         """Create a single sniper offer on ONE side at a specific price.
 
         V2 rework: Instead of placing both buy+sell at mid-prices that
@@ -262,20 +287,26 @@ class Sniper:
                         self._active_snipe_ids.append(tid)
                         self._active_snipe_sides[tid] = side
 
-                self._snipe_history.insert(0, {
-                    "side": side,
-                    "price": str(price),
-                    "size_xch": str(trade_xch),
-                    "arb_gap_bps": str(arb_gap_bps),
-                    "timestamp": now,
-                    "mode": "single_side",
-                })
+                self._snipe_history.insert(
+                    0,
+                    {
+                        "side": side,
+                        "price": str(price),
+                        "size_xch": str(trade_xch),
+                        "arb_gap_bps": str(arb_gap_bps),
+                        "timestamp": now,
+                        "mode": "single_side",
+                    },
+                )
                 if len(self._snipe_history) > self._max_history:
-                    del self._snipe_history[self._max_history:]
+                    del self._snipe_history[self._max_history :]
 
-            log_event("info", "sniper_fired",
-                      f"⚡ Sniper {side.upper()} at {price:.8f} "
-                      f"(arb gap: {_bps_to_pct(arb_gap_bps)}, size: {trade_xch} XCH)")
+            log_event(
+                "info",
+                "sniper_fired",
+                f"⚡ Sniper {side.upper()} at {price:.8f} "
+                f"(arb gap: {_bps_to_pct(arb_gap_bps)}, size: {trade_xch} XCH)",
+            )
 
         return created
 
@@ -308,15 +339,21 @@ class Sniper:
                 try:
                     self._dexie_manager._post_single(bech32, trade_id, force=True)
                 except Exception as e:
-                    log_event("warning", "sniper_dexie_failed",
-                              f"Sniper Dexie post failed for {trade_id[:12]}...: {e}")
+                    log_event(
+                        "warning",
+                        "sniper_dexie_failed",
+                        f"Sniper Dexie post failed for {trade_id[:12]}...: {e}",
+                    )
 
             if self._splash_manager and getattr(cfg, "SPLASH_ENABLED", False):
                 try:
                     self._splash_manager._post_single(bech32, trade_id, force=True)
                 except Exception as e:
-                    log_event("warning", "sniper_splash_failed",
-                              f"Sniper Splash post failed for {trade_id[:12]}...: {e}")
+                    log_event(
+                        "warning",
+                        "sniper_splash_failed",
+                        f"Sniper Splash post failed for {trade_id[:12]}...: {e}",
+                    )
 
     def _should_snipe_side(self, side: str) -> bool:
         """Check if sniping this side is allowed (inventory check).
@@ -332,8 +369,9 @@ class Sniper:
         # Use risk manager's side enablement check
         return self._risk_manager.should_enable_side(side)
 
-    def _create_snipe_offer(self, side: str, price: Decimal,
-                             trade_xch: Decimal) -> Optional[Dict]:
+    def _create_snipe_offer(
+        self, side: str, price: Decimal, trade_xch: Decimal
+    ) -> Optional[Dict]:
         """Create a single sniper offer.
 
         Returns offer detail dict, or None if creation failed.
@@ -348,29 +386,38 @@ class Sniper:
 
         # Amount validation — reject zero, negative, or absurdly large values
         if int(cat_mojos) <= 0 or int(xch_mojos) <= 0:
-            log_event("warning", "sniper_bad_amount",
-                      f"⚡ Sniper {side} rejected: invalid mojos "
-                      f"(cat={cat_mojos}, xch={xch_mojos}, price={price})")
+            log_event(
+                "warning",
+                "sniper_bad_amount",
+                f"⚡ Sniper {side} rejected: invalid mojos "
+                f"(cat={cat_mojos}, xch={xch_mojos}, price={price})",
+            )
             return None
         if int(xch_mojos) > 1_000_000_000_000_000:  # > 1000 XCH sanity cap
-            log_event("warning", "sniper_bad_amount",
-                      f"⚡ Sniper {side} rejected: xch_mojos too large ({xch_mojos})")
+            log_event(
+                "warning",
+                "sniper_bad_amount",
+                f"⚡ Sniper {side} rejected: xch_mojos too large ({xch_mojos})",
+            )
             return None
 
         if side == "buy":
             offer_dict = {
                 str(cfg.WALLET_ID_XCH): -int(xch_mojos),
-                str(cfg.CAT_WALLET_ID): int(cat_mojos)
+                str(cfg.CAT_WALLET_ID): int(cat_mojos),
             }
         else:
             offer_dict = {
                 str(cfg.CAT_WALLET_ID): -int(cat_mojos),
-                str(cfg.WALLET_ID_XCH): int(xch_mojos)
+                str(cfg.WALLET_ID_XCH): int(xch_mojos),
             }
 
         if cfg.DRY_RUN:
-            log_event("info", "sniper_dry_run",
-                      f"⚡ [DRY RUN] Would snipe {side} at {price:.8f}")
+            log_event(
+                "info",
+                "sniper_dry_run",
+                f"⚡ [DRY RUN] Would snipe {side} at {price:.8f}",
+            )
             return None
 
         # 30-min expiry — sniper offers auto-cleanup if cancel fails
@@ -385,11 +432,17 @@ class Sniper:
         if not res or not res.get("success"):
             err = (res or {}).get("error") if isinstance(res, dict) else ""
             if err == "no_preferred_tier_coin":
-                log_event("info", "sniper_failed",
-                          f"⚡ Sniper {side} skipped: no sniper coin available yet")
+                log_event(
+                    "info",
+                    "sniper_failed",
+                    f"⚡ Sniper {side} skipped: no sniper coin available yet",
+                )
             else:
-                log_event("warning", "sniper_failed",
-                          f"⚡ Sniper {side} creation failed: {res}")
+                log_event(
+                    "warning",
+                    "sniper_failed",
+                    f"⚡ Sniper {side} creation failed: {res}",
+                )
             return None
 
         trade_record = res.get("trade_record") or {}
@@ -399,10 +452,13 @@ class Sniper:
 
         # Record to database so fill_tracker has price/size for PnL matching
         import datetime
+
         _exp_dt = None
         if _sniper_expiry:
-            _exp_dt = (datetime.datetime.now(datetime.timezone.utc) +
-                       datetime.timedelta(seconds=_sniper_expiry)).isoformat()
+            _exp_dt = (
+                datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=_sniper_expiry)
+            ).isoformat()
         if trade_id:
             db_ok = add_offer(
                 trade_id=trade_id,
@@ -417,18 +473,26 @@ class Sniper:
             )
             if not db_ok:
                 # DB insert failed — cancel on-chain offer to prevent wallet/DB divergence
-                log_event("error", "sniper_db_cancel",
-                          f"DB insert failed for sniper {trade_id[:16]}..., cancelling on-chain offer")
+                log_event(
+                    "error",
+                    "sniper_db_cancel",
+                    f"DB insert failed for sniper {trade_id[:16]}..., cancelling on-chain offer",
+                )
                 try:
-                    self._offer_manager.cancel_offers([trade_id], reason="db_insert_failed")
+                    self._offer_manager.cancel_offers(
+                        [trade_id], reason="db_insert_failed"
+                    )
                 except Exception as _cancel_err:
                     # Compensating cancel failed — this IS the scenario the
                     # cancel was meant to prevent (wallet/DB divergence). Log
                     # loudly so recovery/reconciliation can clean it up later.
-                    log_event("error", "sniper_compensating_cancel_failed",
-                              f"Sniper compensating cancel FAILED for "
-                              f"{trade_id[:16]}... — offer now orphaned in "
-                              f"wallet (not in DB): {_cancel_err}")
+                    log_event(
+                        "error",
+                        "sniper_compensating_cancel_failed",
+                        f"Sniper compensating cancel FAILED for "
+                        f"{trade_id[:16]}... — offer now orphaned in "
+                        f"wallet (not in DB): {_cancel_err}",
+                    )
                 return None
             if locked_coin_id:
                 lock_coin(locked_coin_id, trade_id)
@@ -444,9 +508,12 @@ class Sniper:
                     "dexie_link": "",
                 }
 
-        log_event("info", "sniper_created",
-                  f"⚡ Sniper {side.upper()} at {price:.8f} XCH "
-                  f"({trade_xch} XCH / {cat_amount:.2f} CAT)")
+        log_event(
+            "info",
+            "sniper_created",
+            f"⚡ Sniper {side.upper()} at {price:.8f} XCH "
+            f"({trade_xch} XCH / {cat_amount:.2f} CAT)",
+        )
 
         return {
             "trade_id": trade_id,
@@ -471,7 +538,9 @@ class Sniper:
         """
         with self._snipe_lock:
             before = len(self._active_snipe_ids)
-            removed_ids = [tid for tid in self._active_snipe_ids if tid not in open_trade_ids]
+            removed_ids = [
+                tid for tid in self._active_snipe_ids if tid not in open_trade_ids
+            ]
             self._active_snipe_ids = [
                 tid for tid in self._active_snipe_ids if tid in open_trade_ids
             ]
@@ -480,12 +549,19 @@ class Sniper:
                 self._active_snipe_sides.pop(tid, None)
             pruned = before - len(self._active_snipe_ids)
             if pruned > 0:
-                _buy_active = sum(1 for s in self._active_snipe_sides.values() if s == "buy")
-                _sell_active = sum(1 for s in self._active_snipe_sides.values() if s == "sell")
-                log_event("debug", "sniper_pruned",
-                          f"Pruned {pruned} closed sniper offers "
-                          f"({_buy_active}b/{_sell_active}s active, "
-                          f"{len(self._active_snipe_ids)}/{self._max_active_snipes} total)")
+                _buy_active = sum(
+                    1 for s in self._active_snipe_sides.values() if s == "buy"
+                )
+                _sell_active = sum(
+                    1 for s in self._active_snipe_sides.values() if s == "sell"
+                )
+                log_event(
+                    "debug",
+                    "sniper_pruned",
+                    f"Pruned {pruned} closed sniper offers "
+                    f"({_buy_active}b/{_sell_active}s active, "
+                    f"{len(self._active_snipe_ids)}/{self._max_active_snipes} total)",
+                )
 
     def get_stats(self) -> Dict:
         """Get sniper statistics for GUI (thread-safe snapshot)."""
@@ -502,4 +578,3 @@ class Sniper:
             "last_snipe_time": self._last_snipe_time,
             "recent_snipes": recent,
         }
-

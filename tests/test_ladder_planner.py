@@ -1,6 +1,8 @@
 """Tests for the pre-flight ladder planner."""
+
 import sys
 import os
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from decimal import Decimal
@@ -13,10 +15,10 @@ from ladder_planner import (
 
 # Test fixture: MZ_XCH reverse-ladder configuration (CAT denominated)
 MZ_TIER_SIZES = {
-    "inner":   26_678_000,
-    "mid":     13_339_000,
-    "outer":    5_802_000,
-    "extreme":  2_901_000,
+    "inner": 26_678_000,
+    "mid": 13_339_000,
+    "outer": 5_802_000,
+    "extreme": 2_901_000,
 }
 MZ_TIER_COUNTS = {"inner": 10, "mid": 5, "outer": 3, "extreme": 2}
 
@@ -24,8 +26,9 @@ MZ_TIER_COUNTS = {"inner": 10, "mid": 5, "outer": 3, "extreme": 2}
 MZ_SELL_PRICES = [Decimal("0.000127") + Decimal("0.00000001") * i for i in range(20)]
 
 
-def _coin(coin_id: str, amount: int, tier: str = "inner",
-          designation: str = "tier_spare") -> dict:
+def _coin(
+    coin_id: str, amount: int, tier: str = "inner", designation: str = "tier_spare"
+) -> dict:
     return {
         "coin_id": coin_id,
         "amount_mojos": amount,

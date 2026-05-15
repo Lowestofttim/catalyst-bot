@@ -26,6 +26,7 @@ from database import log_event
 try:
     from api_call_tracker import record as _record_api_call
 except Exception:
+
     def _record_api_call(*args, **kwargs):
         return None
 
@@ -55,6 +56,7 @@ def _fetch_dbx_pair_status(asset_id: str, ticker_id: str) -> dict:
 
     try:
         from dexie_incentives import fetch_incentives, get_pair_incentives
+
         bulk = fetch_incentives()
         # If the upstream call genuinely failed (no incentives at all and
         # success=False) we keep pair_incentivized as None so the GUI can
@@ -109,8 +111,12 @@ def api_market_intel():
         pass
 
     summary = bot.market_intel.get_market_summary()
-    asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
-    ticker_id = api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "")
+    asset_id = api_server._active_cat.get("asset_id") or getattr(
+        cfg, "CAT_ASSET_ID", ""
+    )
+    ticker_id = api_server._active_cat.get("ticker_id") or getattr(
+        cfg, "CAT_TICKER_ID", ""
+    )
     try:
         buy_spread = bot.risk_manager.get_adjusted_spread("buy")
         sell_spread = bot.risk_manager.get_adjusted_spread("sell")
@@ -131,18 +137,27 @@ def api_market_intel():
         summary["our_open_sells"] = int(local_book.get("our_open_sells", 0) or 0)
         summary["live_book_source"] = local_book.get("source", "")
 
-        ext_best_bid = Decimal(str(summary.get("overall_best_bid") or summary.get("best_bid") or 0))
-        ext_best_ask = Decimal(str(summary.get("overall_best_ask") or summary.get("best_ask") or 0))
+        ext_best_bid = Decimal(
+            str(summary.get("overall_best_bid") or summary.get("best_bid") or 0)
+        )
+        ext_best_ask = Decimal(
+            str(summary.get("overall_best_ask") or summary.get("best_ask") or 0)
+        )
         overall_best_bid = max(ext_best_bid, our_best_bid)
         bid_candidates = [v for v in (ext_best_ask, our_best_ask) if v > 0]
         overall_best_ask = min(bid_candidates) if bid_candidates else Decimal("0")
         summary["overall_best_bid"] = str(overall_best_bid)
         summary["overall_best_ask"] = str(overall_best_ask)
-        if overall_best_bid > 0 and overall_best_ask > 0 and overall_best_bid < overall_best_ask:
+        if (
+            overall_best_bid > 0
+            and overall_best_ask > 0
+            and overall_best_bid < overall_best_ask
+        ):
             overall_mid = (overall_best_bid + overall_best_ask) / 2
             summary["overall_spread_bps"] = str(
                 ((overall_best_ask - overall_best_bid) / overall_mid * Decimal("10000"))
-                if overall_mid > 0 else Decimal("0")
+                if overall_mid > 0
+                else Decimal("0")
             )
         elif overall_best_bid > 0 and overall_best_ask > 0:
             summary["overall_spread_bps"] = "0"
@@ -194,7 +209,11 @@ def api_market_intel():
         summary["spacescan"] = api_server._get_spacescan_market_context(
             asset_id=asset_id,
             ticker_id=ticker_id,
-            decimals=int(api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3) or 3),
+            decimals=int(
+                api_server._active_cat.get("decimals")
+                or getattr(cfg, "CAT_DECIMALS", 3)
+                or 3
+            ),
             executable_mid_price=float(mid_price or 0),
         )
     except Exception:
@@ -216,7 +235,9 @@ def api_dbx_info():
     """
     asset_id = (request.args.get("asset_id") or "").strip()
     if not asset_id:
-        asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+        asset_id = api_server._active_cat.get("asset_id") or getattr(
+            cfg, "CAT_ASSET_ID", ""
+        )
     out = {
         "asset_id": asset_id,
         "pair_incentivized": None,
@@ -234,6 +255,7 @@ def api_dbx_info():
         return jsonify(out)
     try:
         from dexie_incentives import fetch_incentives, get_pair_incentives
+
         bulk = fetch_incentives()
         if not bulk.get("success") and not bulk.get("incentives"):
             return jsonify(out)  # API unreachable — pair_incentivized stays None
@@ -242,10 +264,18 @@ def api_dbx_info():
         out["buy"] = pair.get("buy")
         out["sell"] = pair.get("sell")
         sides = [s for s in (out["buy"], out["sell"]) if s]
-        caps = [int(s.get("max_spread_bps") or 0) for s in sides if (s.get("max_spread_bps") or 0) > 0]
+        caps = [
+            int(s.get("max_spread_bps") or 0)
+            for s in sides
+            if (s.get("max_spread_bps") or 0) > 0
+        ]
         if caps:
             out["max_spread_bps"] = min(caps)
-        aprs = [float(s.get("estimated_apr") or 0) for s in sides if (s.get("estimated_apr") or 0) > 0]
+        aprs = [
+            float(s.get("estimated_apr") or 0)
+            for s in sides
+            if (s.get("estimated_apr") or 0) > 0
+        ]
         if aprs:
             out["estimated_apr"] = max(aprs)
         for s in sides:
@@ -263,15 +293,25 @@ def api_dbx_pending():
     """List the user's offers that currently have claimable Dexie rewards."""
     try:
         from dexie_claims import list_pending_rewards
+
         result = list_pending_rewards() or {}
         # Include the auto-claim toggle so the GUI panel can render the
         # right messaging in a single round-trip (auto-claim ON →
         # informational only; auto-claim OFF → show Claim button).
-        result["auto_claim_enabled"] = bool(getattr(cfg, "DEXIE_AUTO_CLAIM_REWARDS", True))
+        result["auto_claim_enabled"] = bool(
+            getattr(cfg, "DEXIE_AUTO_CLAIM_REWARDS", True)
+        )
         return jsonify(result)
     except Exception as e:
         log_event("error", "dbx_claim", f"pending lookup failed: {e}")
-        return jsonify({"success": False, "error": "pending_rewards_lookup_failed", "offers": [], "totals": {}})
+        return jsonify(
+            {
+                "success": False,
+                "error": "pending_rewards_lookup_failed",
+                "offers": [],
+                "totals": {},
+            }
+        )
 
 
 @bp.route("/api/dbx/claim", methods=["POST"])
@@ -286,6 +326,7 @@ def api_dbx_claim():
     target = (payload.get("target_address") or "").strip() or None
     try:
         from dexie_claims import claim_all
+
         result = claim_all(target_address=target)
     except Exception as e:
         log_event("error", "dbx_claim", f"claim failed: {e}")
@@ -302,7 +343,9 @@ def api_dbx_claim():
 @bp.route("/api/market/price-history")
 def api_market_price_history():
     """Return persisted price samples for the active pair."""
-    asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+    asset_id = api_server._active_cat.get("asset_id") or getattr(
+        cfg, "CAT_ASSET_ID", ""
+    )
     if not asset_id:
         return jsonify({"success": False, "error": "No active CAT", "points": []}), 400
 
@@ -320,6 +363,7 @@ def api_market_price_history():
 
     try:
         from database import get_recent_prices
+
         rows = get_recent_prices(asset_id, hours=hours, limit=limit)
         points = [
             {
@@ -331,12 +375,14 @@ def api_market_price_history():
             }
             for row in rows
         ]
-        return jsonify({
-            "success": True,
-            "asset_id": asset_id,
-            "range_hours": hours,
-            "points": points,
-        })
+        return jsonify(
+            {
+                "success": True,
+                "asset_id": asset_id,
+                "range_hours": hours,
+                "points": points,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -366,10 +412,7 @@ def api_market_slippage():
     side = request.args.get("side", "buy")
 
     try:
-        quote = bot.price_engine.get_tibet_quote(
-            amount_xch=Decimal(amount),
-            side=side
-        )
+        quote = bot.price_engine.get_tibet_quote(amount_xch=Decimal(amount), side=side)
         if quote:
             return jsonify(quote)
         return jsonify({"error": "Could not get quote"}), 404
@@ -391,8 +434,12 @@ def api_market_dbx():
         mid_price = bot.price_engine.get_last_price() or Decimal("0")
 
         dbx = bot.market_intel.check_dbx_eligibility(avg_spread_bps, mid_price)
-        asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
-        ticker_id = api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "")
+        asset_id = api_server._active_cat.get("asset_id") or getattr(
+            cfg, "CAT_ASSET_ID", ""
+        )
+        ticker_id = api_server._active_cat.get("ticker_id") or getattr(
+            cfg, "CAT_TICKER_ID", ""
+        )
         dbx["spread_eligible"] = bool(dbx.get("eligible_offers", 0))
         dbx.update(_fetch_dbx_pair_status(asset_id, ticker_id))
         return jsonify(api_server._serialize_dict(dbx))
@@ -418,9 +465,13 @@ def api_price():
     """Get current price from all sources."""
     bot = api_server.bot
     cfg = api_server.cfg
-    asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
+    asset_id = api_server._active_cat.get("asset_id") or (
+        cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+    )
     decimals = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
-    ticker = api_server._active_cat.get("ticker_id") or (cfg.CAT_TICKER_ID if hasattr(cfg, "CAT_TICKER_ID") else "")
+    ticker = api_server._active_cat.get("ticker_id") or (
+        cfg.CAT_TICKER_ID if hasattr(cfg, "CAT_TICKER_ID") else ""
+    )
 
     if bot:
         price_data = bot.price_engine.get_price(asset_id, decimals, ticker)
@@ -449,16 +500,28 @@ def api_market_summary():
     cfg = api_server.cfg
     import requests as _req
 
-    asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
-    ticker_id = api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "")
-    decimals = int(api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3))
+    asset_id = api_server._active_cat.get("asset_id") or (
+        cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+    )
+    ticker_id = api_server._active_cat.get("ticker_id") or getattr(
+        cfg, "CAT_TICKER_ID", ""
+    )
+    decimals = int(
+        api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+    )
 
     result = {
-        "best_bid": 0, "best_ask": 0,
-        "dexie_price": 0, "tibet_price": 0, "mid_price": 0,
-        "volume_24h": 0, "pool_xch": 0, "pool_cat": 0,
+        "best_bid": 0,
+        "best_ask": 0,
+        "dexie_price": 0,
+        "tibet_price": 0,
+        "mid_price": 0,
+        "volume_24h": 0,
+        "pool_xch": 0,
+        "pool_cat": 0,
         "dexie_depth_xch": 0,
-        "arb_gap_bps": 0, "has_data": False,
+        "arb_gap_bps": 0,
+        "has_data": False,
     }
 
     if not asset_id:
@@ -471,8 +534,9 @@ def api_market_summary():
         if ticker_id:
             tid = ticker_id if "_" in ticker_id else f"{ticker_id}_XCH"
             _record_api_call("dexie", "/v2/prices/tickers")
-            resp = _req.get(f"{dexie_base}/v2/prices/tickers",
-                            params={"ticker_id": tid}, timeout=8)
+            resp = _req.get(
+                f"{dexie_base}/v2/prices/tickers", params={"ticker_id": tid}, timeout=8
+            )
             if resp.status_code == 200:
                 tickers = resp.json().get("tickers", [])
                 if tickers:
@@ -506,10 +570,17 @@ def api_market_summary():
 
     try:
         _record_api_call("dexie", "/v1/offers")
-        resp = _req.get(f"{dexie_base}/v1/offers",
-                        params={"offered": asset_id, "requested": "xch",
-                                "status": 0, "page_size": 3, "sort": "price_asc"},
-                        timeout=8)
+        resp = _req.get(
+            f"{dexie_base}/v1/offers",
+            params={
+                "offered": asset_id,
+                "requested": "xch",
+                "status": 0,
+                "page_size": 3,
+                "sort": "price_asc",
+            },
+            timeout=8,
+        )
         if resp.status_code == 200:
             for offer in resp.json().get("offers", []):
                 p = _extract_xch_per_cat(offer, asset_id)
@@ -518,10 +589,17 @@ def api_market_summary():
                     break
 
         _record_api_call("dexie", "/v1/offers")
-        resp = _req.get(f"{dexie_base}/v1/offers",
-                        params={"offered": "xch", "requested": asset_id,
-                                "status": 0, "page_size": 3, "sort": "price_asc"},
-                        timeout=8)
+        resp = _req.get(
+            f"{dexie_base}/v1/offers",
+            params={
+                "offered": "xch",
+                "requested": asset_id,
+                "status": 0,
+                "page_size": 3,
+                "sort": "price_asc",
+            },
+            timeout=8,
+        )
         if resp.status_code == 200:
             for offer in resp.json().get("offers", []):
                 p = _extract_xch_per_cat(offer, asset_id)
@@ -534,10 +612,16 @@ def api_market_summary():
     try:
         dexie_total_xch = 0.0
         _record_api_call("dexie", "/v1/offers")
-        resp = _req.get(f"{dexie_base}/v1/offers",
-                        params={"offered": asset_id, "requested": "xch",
-                                "status": 0, "page_size": 50},
-                        timeout=8)
+        resp = _req.get(
+            f"{dexie_base}/v1/offers",
+            params={
+                "offered": asset_id,
+                "requested": "xch",
+                "status": 0,
+                "page_size": 50,
+            },
+            timeout=8,
+        )
         if resp.status_code == 200:
             for offer in resp.json().get("offers", []):
                 for asset in offer.get("requested", []):
@@ -545,10 +629,16 @@ def api_market_summary():
                         dexie_total_xch += float(asset.get("amount", 0) or 0)
 
         _record_api_call("dexie", "/v1/offers")
-        resp = _req.get(f"{dexie_base}/v1/offers",
-                        params={"offered": "xch", "requested": asset_id,
-                                "status": 0, "page_size": 50},
-                        timeout=8)
+        resp = _req.get(
+            f"{dexie_base}/v1/offers",
+            params={
+                "offered": "xch",
+                "requested": asset_id,
+                "status": 0,
+                "page_size": 50,
+            },
+            timeout=8,
+        )
         if resp.status_code == 200:
             for offer in resp.json().get("offers", []):
                 for asset in offer.get("offered", []):
@@ -561,15 +651,18 @@ def api_market_summary():
 
     try:
         _record_api_call("tibetswap", "/pairs")
-        resp = _req.get("https://api.v2.tibetswap.io/pairs",
-                        params={"skip": 0, "limit": 200}, timeout=8)
+        resp = _req.get(
+            "https://api.v2.tibetswap.io/pairs",
+            params={"skip": 0, "limit": 200},
+            timeout=8,
+        )
         if resp.status_code == 200:
             norm_id = asset_id.lower().strip().replace("0x", "")
             for p in resp.json():
                 p_id = str(p.get("asset_id", "")).lower().strip().replace("0x", "")
                 if p_id == norm_id:
                     xr = float(p.get("xch_reserve", 0)) / 1e12
-                    tr = float(p.get("token_reserve", 0)) / (10 ** decimals)
+                    tr = float(p.get("token_reserve", 0)) / (10**decimals)
                     if tr > 0:
                         result["tibet_price"] = xr / tr
                         result["pool_xch"] = round(xr, 2)
@@ -585,7 +678,9 @@ def api_market_summary():
     tp = result["tibet_price"]
     if dexie_live_mid > 0 and tp > 0:
         result["mid_price"] = (dexie_live_mid + tp) / 2
-        result["arb_gap_bps"] = round(abs(dexie_live_mid - tp) / dexie_live_mid * 10000, 1)
+        result["arb_gap_bps"] = round(
+            abs(dexie_live_mid - tp) / dexie_live_mid * 10000, 1
+        )
     elif dp > 0 and tp > 0:
         result["mid_price"] = (dp + tp) / 2
         result["arb_gap_bps"] = round(abs(dp - tp) / dp * 10000, 1)
@@ -603,7 +698,9 @@ def api_tibet_price():
     """Get TibetSwap pool info."""
     bot = api_server.bot
     cfg = api_server.cfg
-    asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
+    asset_id = api_server._active_cat.get("asset_id") or (
+        cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+    )
     decimals = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
 
     if bot:
@@ -627,11 +724,19 @@ def api_amm_price():
 
         result = {
             "available": bool(state and state.get("available")),
-            "amm_price": str(state["amm_price"]) if state and state.get("amm_price") else None,
-            "xch_reserve": str(state["xch_reserve"]) if state and state.get("xch_reserve") else None,
-            "token_reserve": str(state["token_reserve"]) if state and state.get("token_reserve") else None,
+            "amm_price": str(state["amm_price"])
+            if state and state.get("amm_price")
+            else None,
+            "xch_reserve": str(state["xch_reserve"])
+            if state and state.get("xch_reserve")
+            else None,
+            "token_reserve": str(state["token_reserve"])
+            if state and state.get("token_reserve")
+            else None,
             "fetched_at": state.get("fetched_at", 0) if state else 0,
-            "drift_bps": str(drift.quantize(Decimal("0.1"))) if drift is not None else None,
+            "drift_bps": str(drift.quantize(Decimal("0.1")))
+            if drift is not None
+            else None,
             "pair_id": stats.get("pair_id", ""),
             "total_polls": stats.get("total_polls", 0),
             "failed_polls": stats.get("failed_polls", 0),
@@ -641,10 +746,10 @@ def api_amm_price():
             "drift_threshold_bps": str(getattr(cfg, "AMM_DRIFT_REQUOTE_BPS", "40")),
             "buffer_enabled": getattr(cfg, "ENABLE_AMM_BUFFER", False),
             "buffer_bps": str(getattr(cfg, "AMM_BUFFER_BPS", "30")),
-            "arb_pressure":        stats.get("arb_pressure"),
-            "arb_pressure_label":  stats.get("arb_pressure_label"),
-            "dynamic_buffer":      stats.get("dynamic_buffer", {}),
-            "sweep_protection":    {
+            "arb_pressure": stats.get("arb_pressure"),
+            "arb_pressure_label": stats.get("arb_pressure_label"),
+            "dynamic_buffer": stats.get("dynamic_buffer", {}),
+            "sweep_protection": {
                 side: round(max(0, expiry - time.time()), 1)
                 for side, expiry in getattr(bot, "_sweep_protection", {}).items()
                 if expiry > time.time()
@@ -692,6 +797,7 @@ def api_debug_coinprep():
 
     try:
         from database import get_recent_events
+
         events = get_recent_events(limit=20)
         prep_events = [e for e in events if "coin_prep" in str(e.get("event_type", ""))]
         result["recent_coin_prep_events"] = prep_events[:10]
@@ -705,8 +811,13 @@ def api_debug_coinprep():
 def api_debug_pricing():
     """Debug: shows exactly what pricing the GUI sees."""
     import requests as _req
+
     bot = api_server.bot
-    result = {"_active_cat": {k: str(v)[:50] if v else None for k, v in api_server._active_cat.items()}}
+    result = {
+        "_active_cat": {
+            k: str(v)[:50] if v else None for k, v in api_server._active_cat.items()
+        }
+    }
     result["bot_exists"] = bot is not None
 
     asset_id = api_server._active_cat.get("asset_id") or ""
@@ -730,8 +841,11 @@ def api_debug_pricing():
         result["price_error"] = str(e)
 
     try:
-        resp = _req.get("https://api.v2.tibetswap.io/pairs",
-                        params={"skip": 0, "limit": 200}, timeout=10)
+        resp = _req.get(
+            "https://api.v2.tibetswap.io/pairs",
+            params={"skip": 0, "limit": 200},
+            timeout=10,
+        )
         pairs = resp.json() if resp.status_code == 200 else []
         result["tibet_total_pairs"] = len(pairs)
         if asset_id:
@@ -761,20 +875,31 @@ def api_debug_tibet_test():
     """Debug endpoint: test TibetSwap API connectivity directly."""
     cfg = api_server.cfg
     result = {"test": "TibetSwap API connectivity"}
-    asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
+    asset_id = api_server._active_cat.get("asset_id") or (
+        cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+    )
     result["asset_id_used"] = asset_id
-    result["_active_cat"] = {k: str(v)[:30] if v else None for k, v in api_server._active_cat.items()}
+    result["_active_cat"] = {
+        k: str(v)[:30] if v else None for k, v in api_server._active_cat.items()
+    }
 
     try:
         import requests as _req
-        resp = _req.get("https://api.v2.tibetswap.io/pairs",
-                        params={"skip": 0, "limit": 200}, timeout=10)
+
+        resp = _req.get(
+            "https://api.v2.tibetswap.io/pairs",
+            params={"skip": 0, "limit": 200},
+            timeout=10,
+        )
         result["tibet_status"] = resp.status_code
         if resp.status_code == 200:
             pairs = resp.json()
             result["total_pairs"] = len(pairs)
             result["sample_pairs"] = [
-                {"name": p.get("short_name", p.get("name", "?")), "asset_id": str(p.get("asset_id", ""))[:20] + "..."}
+                {
+                    "name": p.get("short_name", p.get("name", "?")),
+                    "asset_id": str(p.get("asset_id", ""))[:20] + "...",
+                }
                 for p in pairs[:3]
             ]
             if asset_id:
@@ -783,7 +908,9 @@ def api_debug_tibet_test():
                     pid = str(p.get("asset_id", "")).lower().strip().replace("0x", "")
                     if pid == norm:
                         xr = float(p.get("xch_reserve", 0)) / 1e12
-                        dec = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+                        dec = api_server._active_cat.get("decimals") or getattr(
+                            cfg, "CAT_DECIMALS", 3
+                        )
                         tr = float(p.get("token_reserve", 0)) / (10 ** int(dec))
                         result["matched_pair"] = {
                             "name": p.get("short_name", p.get("name")),
@@ -815,6 +942,7 @@ def api_debug_sage_single_offer_test():
             cancel_offer,
             get_owned_coins_detailed,
         )
+
         if get_wallet_type() != "sage":
             return jsonify({"ok": False, "error": "sage_only_debug_route"}), 400
 
@@ -834,7 +962,9 @@ def api_debug_sage_single_offer_test():
                     trade_id = offer_obj.get("id") or offer_obj.get("offer_id") or ""
             return str(trade_id or "")
 
-        def _run_case(name: str, wallet_id: int, offer_dict: dict, selected_coin_id: str):
+        def _run_case(
+            name: str, wallet_id: int, offer_dict: dict, selected_coin_id: str
+        ):
             result = {
                 "name": name,
                 "selected_coin_id": selected_coin_id,
@@ -859,10 +989,12 @@ def api_debug_sage_single_offer_test():
             for coin_id, info in owned.items():
                 offer_id = str(info.get("offer_id") or "").lower()
                 if offer_id == trade_id.lower():
-                    locked_inputs.append({
-                        "coin_id": coin_id,
-                        "amount": int(info.get("amount") or 0),
-                    })
+                    locked_inputs.append(
+                        {
+                            "coin_id": coin_id,
+                            "amount": int(info.get("amount") or 0),
+                        }
+                    )
             result["locked_inputs"] = locked_inputs
 
             cancel_res = cancel_offer(trade_id, secure=False, timeout=30)
@@ -872,12 +1004,14 @@ def api_debug_sage_single_offer_test():
         xch_coin = get_smallest_free_tier_spare("xch")
         cat_coin = get_smallest_free_tier_spare("cat")
         if not xch_coin or not cat_coin:
-            return jsonify({
-                "ok": False,
-                "error": "no_free_spare_coin",
-                "xch_coin": xch_coin,
-                "cat_coin": cat_coin,
-            }), 409
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "no_free_spare_coin",
+                    "xch_coin": xch_coin,
+                    "cat_coin": cat_coin,
+                }
+            ), 409
 
         xch_case = _run_case(
             name="xch_selected_manual",
@@ -907,7 +1041,9 @@ def api_debug_sage_single_offer_test():
             "cat_coin": cat_coin,
             "results": [xch_case, cat_case],
         }
-        log_event("info", "sage_single_offer_test", json.dumps(payload, default=str)[:1500])
+        log_event(
+            "info", "sage_single_offer_test", json.dumps(payload, default=str)[:1500]
+        )
         return jsonify(payload)
     except Exception:
         return api_server._api_exception(request.path)

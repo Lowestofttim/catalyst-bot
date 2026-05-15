@@ -25,6 +25,7 @@ try:
     import pystray
     from pystray import MenuItem, Menu
     from PIL import Image, ImageDraw
+
     PYSTRAY_AVAILABLE = True
 except ImportError:
     PYSTRAY_AVAILABLE = False
@@ -33,6 +34,7 @@ except ImportError:
 try:
     import urllib.request
     import urllib.error
+
     _HTTP_AVAILABLE = True
 except ImportError:
     _HTTP_AVAILABLE = False
@@ -41,11 +43,11 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Icon colour constants matching DESIGN_SPEC.md
 # ---------------------------------------------------------------------------
-COLOUR_GREEN = (16, 185, 129)     # Running, healthy
-COLOUR_AMBER = (245, 158, 11)     # Warning, degraded
-COLOUR_RED = (239, 68, 68)        # Error, critical
-COLOUR_GREY = (107, 114, 128)     # Stopped, unknown
-COLOUR_INDIGO = (99, 102, 241)    # Brand accent (used for default icon)
+COLOUR_GREEN = (16, 185, 129)  # Running, healthy
+COLOUR_AMBER = (245, 158, 11)  # Warning, degraded
+COLOUR_RED = (239, 68, 68)  # Error, critical
+COLOUR_GREY = (107, 114, 128)  # Stopped, unknown
+COLOUR_INDIGO = (99, 102, 241)  # Brand accent (used for default icon)
 
 FLASK_BASE = "http://127.0.0.1:5000"
 
@@ -83,15 +85,15 @@ class TrayManager:
         self._icon = None
         self._status = "stopped"
         self._tooltip_extra = ""
-        self._cat_name = ""      # Active trading pair name (e.g. "MZ")
+        self._cat_name = ""  # Active trading pair name (e.g. "MZ")
 
         # Callbacks — set these from desktop_app.py
         self.on_show_dashboard = None
         self.on_quit = None
         self.on_pause = None
         self.on_resume = None
-        self.on_start_bot = None   # Phase 3: Start Bot from tray
-        self.on_stop_bot = None    # Phase 3: Stop Bot from tray
+        self.on_start_bot = None  # Phase 3: Start Bot from tray
+        self.on_stop_bot = None  # Phase 3: Stop Bot from tray
 
     # -----------------------------------------------------------------------
     # Public API
@@ -103,7 +105,7 @@ class TrayManager:
             name="chia_market_maker",
             icon=self._create_icon(COLOUR_INDIGO),
             title=self._build_tooltip(),
-            menu=self._build_menu()
+            menu=self._build_menu(),
         )
         self.is_running = True
         self._icon.run()  # Blocks
@@ -144,7 +146,7 @@ class TrayManager:
         """
         self._status = status
         self._cat_name = cat_name or ""
-        self._tooltip_extra = ""   # update_tray_state owns tooltip; clear legacy extra
+        self._tooltip_extra = ""  # update_tray_state owns tooltip; clear legacy extra
         self._apply_icon_update()
 
     # -----------------------------------------------------------------------
@@ -156,8 +158,8 @@ class TrayManager:
         colour_map = {
             "running": COLOUR_GREEN,
             "warning": COLOUR_AMBER,
-            "paused":  COLOUR_AMBER,
-            "error":   COLOUR_RED,
+            "paused": COLOUR_AMBER,
+            "error": COLOUR_RED,
             "stopped": COLOUR_GREY,
         }
         colour = colour_map.get(self._status, COLOUR_GREY)
@@ -221,8 +223,8 @@ class TrayManager:
             MenuItem(
                 f"{self.app_name}",
                 action=self._on_show,
-                default=True,   # Double-click action
-                enabled=False   # Just a label
+                default=True,  # Double-click action
+                enabled=False,  # Just a label
             ),
             MenuItem(f"Status: {status_text}", action=None, enabled=False),
             Menu.SEPARATOR,
@@ -236,10 +238,12 @@ class TrayManager:
             # stopped / error / unknown
             items.append(MenuItem("▶ Start Bot", self._on_start_bot))
 
-        items.extend([
-            Menu.SEPARATOR,
-            MenuItem("❌ Exit", self._on_quit),
-        ])
+        items.extend(
+            [
+                Menu.SEPARATOR,
+                MenuItem("❌ Exit", self._on_quit),
+            ]
+        )
 
         return Menu(*items)
 
@@ -285,7 +289,7 @@ class TrayManager:
             threading.Thread(
                 target=self._call_flask_api,
                 args=("/api/bot/start", "POST"),
-                daemon=True
+                daemon=True,
             ).start()
         # Show the window so user can see the bot starting
         if self.on_show_dashboard:
@@ -304,9 +308,7 @@ class TrayManager:
         # Fallback — call Flask API
         if _HTTP_AVAILABLE:
             threading.Thread(
-                target=self._call_flask_api,
-                args=("/api/bot/stop", "POST"),
-                daemon=True
+                target=self._call_flask_api, args=("/api/bot/stop", "POST"), daemon=True
             ).start()
 
     def _call_flask_api(self, path: str, method: str = "POST"):
@@ -320,14 +322,14 @@ class TrayManager:
                 url,
                 data=b"{}",
                 method=method,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
-                _ = resp.read()   # Consume response
+                _ = resp.read()  # Consume response
         except Exception:
-            pass   # Non-critical — silently ignore network/server errors
+            pass  # Non-critical — silently ignore network/server errors
 
-    def _create_icon(self, colour: tuple, size: int = 64) -> 'Image.Image':
+    def _create_icon(self, colour: tuple, size: int = 64) -> "Image.Image":
         """
         Create a simple tray icon — a filled circle on transparent background.
         The circle colour indicates bot status.
@@ -342,8 +344,7 @@ class TrayManager:
         # Inner circle (main colour)
         inset = 6
         draw.ellipse(
-            [inset, inset, size - inset - 1, size - inset - 1],
-            fill=colour + (255,)
+            [inset, inset, size - inset - 1, size - inset - 1], fill=colour + (255,)
         )
 
         # Bright highlight dot (top-left) for depth effect
@@ -352,8 +353,7 @@ class TrayManager:
         highlight = tuple(min(255, c + 80) for c in colour) + (120,)
         draw.ellipse(
             [hl_offset, hl_offset, hl_offset + hl_size, hl_offset + hl_size],
-            fill=highlight
+            fill=highlight,
         )
 
         return img
-

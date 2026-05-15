@@ -16,6 +16,7 @@ Key responsibilities:
 Findings are emitted as structured log events so downstream consumers
 (scheduled monitors, `bot_health`) can pick them up and apply fixes.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -33,17 +34,19 @@ class Severity(Enum):
 @dataclass
 class Issue:
     """One specific problem found during audit."""
+
     severity: Severity
-    code: str            # stable identifier for logging/filtering
-    message: str         # human-readable description
-    suggested_action: str = ""   # what the caller/operator should do
+    code: str  # stable identifier for logging/filtering
+    message: str  # human-readable description
+    suggested_action: str = ""  # what the caller/operator should do
     details: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class AuditResult:
     """Result of a single audit run."""
-    ok: bool             # True if no ERROR-severity issues
+
+    ok: bool  # True if no ERROR-severity issues
     issues: List[Issue] = field(default_factory=list)
     # Diagnostic summary — useful for logging even when ok=True
     summary: Dict[str, Any] = field(default_factory=dict)
@@ -58,6 +61,7 @@ class AuditResult:
 # ---------------------------------------------------------------------------
 # Ladder shape audit
 # ---------------------------------------------------------------------------
+
 
 def audit_ladder_shape(
     side: str,
@@ -127,21 +131,27 @@ def audit_ladder_shape(
     result.summary["reversed"] = reversed_ladder
 
     # Check 1: total offer count
-    if expected_count and n_offers not in (expected_count, expected_count - 1, expected_count + 1):
+    if expected_count and n_offers not in (
+        expected_count,
+        expected_count - 1,
+        expected_count + 1,
+    ):
         # ±1 tolerance for transient states (sniper probe, mid-requote)
-        result.issues.append(Issue(
-            severity=Severity.WARN,
-            code="ladder_count_mismatch",
-            message=(
-                f"{side} ladder has {n_offers} offers, configured total is "
-                f"{expected_count} (tier_counts={dict(tier_counts)})"
-            ),
-            suggested_action=(
-                "Expected during requote transitions. If persists >5 cycles, "
-                "check offer_manager.create_ladder for silent failures."
-            ),
-            details={"observed": n_offers, "expected": expected_count},
-        ))
+        result.issues.append(
+            Issue(
+                severity=Severity.WARN,
+                code="ladder_count_mismatch",
+                message=(
+                    f"{side} ladder has {n_offers} offers, configured total is "
+                    f"{expected_count} (tier_counts={dict(tier_counts)})"
+                ),
+                suggested_action=(
+                    "Expected during requote transitions. If persists >5 cycles, "
+                    "check offer_manager.create_ladder for silent failures."
+                ),
+                details={"observed": n_offers, "expected": expected_count},
+            )
+        )
 
     # Check 2: walk each offer, decide which tier it SHOULD belong to
     # based on its slot position, and compare size to configured tier_size.
@@ -165,10 +175,7 @@ def audit_ladder_shape(
         tier = _normalise_tier(offer.get("tier"))
         if tier:
             tier_label_counts[tier] += 1
-    expected_label_counts = {
-        t: int(tier_counts.get(t, 0) or 0)
-        for t in tier_order
-    }
+    expected_label_counts = {t: int(tier_counts.get(t, 0) or 0) for t in tier_order}
     use_offer_tiers = (
         sum(tier_label_counts.values()) == len(sorted_offers)
         and tier_label_counts == expected_label_counts
@@ -207,37 +214,43 @@ def audit_ladder_shape(
         lower = expected_size * (Decimal("1") - size_tolerance)
         upper = expected_size * (Decimal("1") + size_tolerance)
         if not (lower <= actual_size <= upper):
-            size_violations.append({
-                "slot": i,
-                "trade_id": tid,
-                "expected_tier": expected_tier,
-                "expected_size": float(expected_size),
-                "actual_size": float(actual_size),
-                "drift_pct": float(abs(actual_size - expected_size) / expected_size * 100),
-            })
+            size_violations.append(
+                {
+                    "slot": i,
+                    "trade_id": tid,
+                    "expected_tier": expected_tier,
+                    "expected_size": float(expected_size),
+                    "actual_size": float(actual_size),
+                    "drift_pct": float(
+                        abs(actual_size - expected_size) / expected_size * 100
+                    ),
+                }
+            )
 
     if size_violations:
         # Collect the trade_ids of the offending offers so the dashboard
         # action button has something concrete to cancel.
         offender_tids = [v["trade_id"] for v in size_violations if v.get("trade_id")]
-        result.issues.append(Issue(
-            severity=Severity.WARN,
-            code="ladder_size_taper_violated",
-            message=(
-                f"{side} ladder has {len(size_violations)} offer(s) whose size "
-                f"does not match the configured tier size (>{float(size_tolerance)*100:.0f}% drift)"
-            ),
-            suggested_action=(
-                "A slot was filled with a misfit-sized coin. Cancel the offending "
-                "offer(s) and let topup reshape the misfit into a tier-correct coin "
-                "before the next requote."
-            ),
-            details={
-                "side": side,
-                "violations": size_violations[:5],   # cap for log size
-                "trade_ids": offender_tids,          # full list for cancel action
-            },
-        ))
+        result.issues.append(
+            Issue(
+                severity=Severity.WARN,
+                code="ladder_size_taper_violated",
+                message=(
+                    f"{side} ladder has {len(size_violations)} offer(s) whose size "
+                    f"does not match the configured tier size (>{float(size_tolerance) * 100:.0f}% drift)"
+                ),
+                suggested_action=(
+                    "A slot was filled with a misfit-sized coin. Cancel the offending "
+                    "offer(s) and let topup reshape the misfit into a tier-correct coin "
+                    "before the next requote."
+                ),
+                details={
+                    "side": side,
+                    "violations": size_violations[:5],  # cap for log size
+                    "trade_ids": offender_tids,  # full list for cancel action
+                },
+            )
+        )
 
     # Check 3: per-tier size monotonicity with respect to reverse-ladder config
     # For a reverse ladder, inner_size > mid_size > outer_size > extreme_size.
@@ -251,7 +264,9 @@ def audit_ladder_shape(
         return s[n // 2] if n % 2 == 1 else (s[n // 2 - 1] + s[n // 2]) / Decimal("2")
 
     medians = {t: _median(sizes_by_tier[t]) for t in tier_order}
-    result.summary["size_medians"] = {t: float(v) if v is not None else None for t, v in medians.items()}
+    result.summary["size_medians"] = {
+        t: float(v) if v is not None else None for t, v in medians.items()
+    }
 
     # Build list of (tier, median) in "inner-to-extreme" order, skipping empty tiers
     seq = [(t, medians[t]) for t in tier_order if medians[t] is not None]
@@ -273,50 +288,58 @@ def audit_ladder_shape(
                 # Cancel the smaller-side offers at t1 — those are the
                 # misfit-backed ones that caused the inversion.
                 offender_tids = list(trade_ids_by_tier.get(t1, []))
-                result.issues.append(Issue(
-                    severity=Severity.ERROR,
-                    code="ladder_inversion_reverse",
-                    message=(
-                        f"{side} reverse-ladder INVERSION: {t1} median "
-                        f"{float(m1):.4f} XCH < {t2} median {float(m2):.4f} XCH. "
-                        f"Inner should be LARGEST in reverse layout."
-                    ),
-                    suggested_action=(
-                        "A misfit-backed offer is at an outer slot. Force-rebuild "
-                        "the ladder OR wait for topup to reshape and next natural "
-                        "requote to correct the layout."
-                    ),
-                    details={
-                        "side": side,
-                        "reverse": True,
-                        "tier_a": t1, "median_a": float(m1),
-                        "tier_b": t2, "median_b": float(m2),
-                        "trade_ids": offender_tids,
-                    },
-                ))
+                result.issues.append(
+                    Issue(
+                        severity=Severity.ERROR,
+                        code="ladder_inversion_reverse",
+                        message=(
+                            f"{side} reverse-ladder INVERSION: {t1} median "
+                            f"{float(m1):.4f} XCH < {t2} median {float(m2):.4f} XCH. "
+                            f"Inner should be LARGEST in reverse layout."
+                        ),
+                        suggested_action=(
+                            "A misfit-backed offer is at an outer slot. Force-rebuild "
+                            "the ladder OR wait for topup to reshape and next natural "
+                            "requote to correct the layout."
+                        ),
+                        details={
+                            "side": side,
+                            "reverse": True,
+                            "tier_a": t1,
+                            "median_a": float(m1),
+                            "tier_b": t2,
+                            "median_b": float(m2),
+                            "trade_ids": offender_tids,
+                        },
+                    )
+                )
         else:
             if m1 > m2 + _MEDIAN_EPS:
                 offender_tids = list(trade_ids_by_tier.get(t1, []))
-                result.issues.append(Issue(
-                    severity=Severity.ERROR,
-                    code="ladder_inversion_standard",
-                    message=(
-                        f"{side} standard-ladder INVERSION: {t1} median "
-                        f"{float(m1):.4f} XCH > {t2} median {float(m2):.4f} XCH. "
-                        f"Inner should be SMALLEST in standard layout."
-                    ),
-                    suggested_action=(
-                        "A misfit-backed offer is at an inner slot. Force-rebuild "
-                        "the ladder OR wait for topup to reshape."
-                    ),
-                    details={
-                        "side": side,
-                        "reverse": False,
-                        "tier_a": t1, "median_a": float(m1),
-                        "tier_b": t2, "median_b": float(m2),
-                        "trade_ids": offender_tids,
-                    },
-                ))
+                result.issues.append(
+                    Issue(
+                        severity=Severity.ERROR,
+                        code="ladder_inversion_standard",
+                        message=(
+                            f"{side} standard-ladder INVERSION: {t1} median "
+                            f"{float(m1):.4f} XCH > {t2} median {float(m2):.4f} XCH. "
+                            f"Inner should be SMALLEST in standard layout."
+                        ),
+                        suggested_action=(
+                            "A misfit-backed offer is at an inner slot. Force-rebuild "
+                            "the ladder OR wait for topup to reshape."
+                        ),
+                        details={
+                            "side": side,
+                            "reverse": False,
+                            "tier_a": t1,
+                            "median_a": float(m1),
+                            "tier_b": t2,
+                            "median_b": float(m2),
+                            "trade_ids": offender_tids,
+                        },
+                    )
+                )
 
     result.ok = not result.has_errors()
     return result
@@ -326,11 +349,14 @@ def audit_ladder_shape(
 # Coin-accounting invariant checks
 # ---------------------------------------------------------------------------
 
+
 def check_coin_invariants(
-    wallet_totals: Dict[str, int],        # {"xch_total": N, "cat_total": N}
-    inventory: Dict[str, Dict[str, int]], # {"xch": {"free": N, "locked": N}, "cat": {...}}
-    open_offers_count: Dict[str, int],    # {"buy": N, "sell": N}
-    db_locked_count: Dict[str, int],      # {"xch": N, "cat": N}
+    wallet_totals: Dict[str, int],  # {"xch_total": N, "cat_total": N}
+    inventory: Dict[
+        str, Dict[str, int]
+    ],  # {"xch": {"free": N, "locked": N}, "cat": {...}}
+    open_offers_count: Dict[str, int],  # {"buy": N, "sell": N}
+    db_locked_count: Dict[str, int],  # {"xch": N, "cat": N}
 ) -> AuditResult:
     """Cycle-level cross-view reconciliation.
 
@@ -366,58 +392,66 @@ def check_coin_invariants(
         wallet_total = int(wallet_totals.get(f"{wtype}_total", 0) or 0)
         if wallet_total > 0 and inv_total != wallet_total:
             diff = wallet_total - inv_total
-            result.issues.append(Issue(
-                severity=Severity.WARN,
-                code="inventory_count_mismatch",
-                message=(
-                    f"{wtype.upper()} inventory count ({inv_total}) does not "
-                    f"match wallet total ({wallet_total}), diff={diff:+d}"
-                ),
-                suggested_action=(
-                    "Small transient drift expected during mempool settlement. "
-                    "If persists >2 cycles, trigger reconcile_with_wallet() "
-                    "to re-sync DB and inventory."
-                ),
-                details={"wallet_type": wtype, "inv_total": inv_total,
-                         "wallet_total": wallet_total, "diff": diff},
-            ))
+            result.issues.append(
+                Issue(
+                    severity=Severity.WARN,
+                    code="inventory_count_mismatch",
+                    message=(
+                        f"{wtype.upper()} inventory count ({inv_total}) does not "
+                        f"match wallet total ({wallet_total}), diff={diff:+d}"
+                    ),
+                    suggested_action=(
+                        "Small transient drift expected during mempool settlement. "
+                        "If persists >2 cycles, trigger reconcile_with_wallet() "
+                        "to re-sync DB and inventory."
+                    ),
+                    details={
+                        "wallet_type": wtype,
+                        "inv_total": inv_total,
+                        "wallet_total": wallet_total,
+                        "diff": diff,
+                    },
+                )
+            )
 
     # Invariant 2: DB-locked counts approximately match open offer counts
     # (±2 for sniper probes and temporary requote-transition state)
     xch_locked = int(db_locked_count.get("xch", 0) or 0)
     buy_offers = int(open_offers_count.get("buy", 0) or 0)
     if abs(xch_locked - buy_offers) > 2:
-        result.issues.append(Issue(
-            severity=Severity.WARN,
-            code="xch_locked_vs_buys_mismatch",
-            message=(
-                f"DB has {xch_locked} XCH coins marked 'locked' but "
-                f"{buy_offers} open buy offers. Divergence >2 suggests "
-                f"either phantom locks or untracked live offers."
-            ),
-            suggested_action=(
-                "Trigger orphan cleanup and offer-coin relinking. "
-                "Check for zombie offers in Sage that don't match the DB."
-            ),
-            details={"xch_locked": xch_locked, "buy_offers": buy_offers},
-        ))
+        result.issues.append(
+            Issue(
+                severity=Severity.WARN,
+                code="xch_locked_vs_buys_mismatch",
+                message=(
+                    f"DB has {xch_locked} XCH coins marked 'locked' but "
+                    f"{buy_offers} open buy offers. Divergence >2 suggests "
+                    f"either phantom locks or untracked live offers."
+                ),
+                suggested_action=(
+                    "Trigger orphan cleanup and offer-coin relinking. "
+                    "Check for zombie offers in Sage that don't match the DB."
+                ),
+                details={"xch_locked": xch_locked, "buy_offers": buy_offers},
+            )
+        )
 
     cat_locked = int(db_locked_count.get("cat", 0) or 0)
     sell_offers = int(open_offers_count.get("sell", 0) or 0)
     if abs(cat_locked - sell_offers) > 2:
-        result.issues.append(Issue(
-            severity=Severity.WARN,
-            code="cat_locked_vs_sells_mismatch",
-            message=(
-                f"DB has {cat_locked} CAT coins marked 'locked' but "
-                f"{sell_offers} open sell offers. Divergence >2 suggests "
-                f"either phantom locks or untracked live offers."
-            ),
-            suggested_action=(
-                "Trigger orphan cleanup and offer-coin relinking."
-            ),
-            details={"cat_locked": cat_locked, "sell_offers": sell_offers},
-        ))
+        result.issues.append(
+            Issue(
+                severity=Severity.WARN,
+                code="cat_locked_vs_sells_mismatch",
+                message=(
+                    f"DB has {cat_locked} CAT coins marked 'locked' but "
+                    f"{sell_offers} open sell offers. Divergence >2 suggests "
+                    f"either phantom locks or untracked live offers."
+                ),
+                suggested_action=("Trigger orphan cleanup and offer-coin relinking."),
+                details={"cat_locked": cat_locked, "sell_offers": sell_offers},
+            )
+        )
 
     result.ok = not result.has_errors()
     return result
@@ -426,6 +460,7 @@ def check_coin_invariants(
 # ---------------------------------------------------------------------------
 # Combined periodic audit — called from bot_loop
 # ---------------------------------------------------------------------------
+
 
 def run_periodic_audit(
     *,
@@ -449,7 +484,8 @@ def run_periodic_audit(
     issues: List[Issue] = []
 
     buy_audit = audit_ladder_shape(
-        side="buy", offers=offers_buy,
+        side="buy",
+        offers=offers_buy,
         tier_sizes_xch=buy_tier_sizes_xch,
         tier_counts=buy_tier_counts,
         reversed_ladder=buy_reversed,
@@ -457,7 +493,8 @@ def run_periodic_audit(
     issues.extend(buy_audit.issues)
 
     sell_audit = audit_ladder_shape(
-        side="sell", offers=offers_sell,
+        side="sell",
+        offers=offers_sell,
         tier_sizes_xch=sell_tier_sizes_xch,
         tier_counts=sell_tier_counts,
         reversed_ladder=sell_reversed,

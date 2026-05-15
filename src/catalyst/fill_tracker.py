@@ -25,8 +25,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import cfg
 from database import (
-    record_fill, get_unmatched_fills, match_round_trip,
-    log_event, transition_offer
+    record_fill,
+    get_unmatched_fills,
+    match_round_trip,
+    log_event,
+    transition_offer,
 )
 
 
@@ -107,8 +110,12 @@ class FillTracker:
     # Core fill detection
     # -------------------------------------------------------------------
 
-    def detect_fills(self, current_buy_ids: Set[str], current_sell_ids: Set[str],
-                     offer_details_cache: Dict[str, Dict] = None) -> Dict[str, List[Dict]]:
+    def detect_fills(
+        self,
+        current_buy_ids: Set[str],
+        current_sell_ids: Set[str],
+        offer_details_cache: Dict[str, Dict] = None,
+    ) -> Dict[str, List[Dict]]:
         """Compare current offer IDs against previous loop to detect fills.
 
         Args:
@@ -134,8 +141,11 @@ class FillTracker:
         ):
             self._previous_ids["buy"] = current_buy_ids.copy()
             self._previous_ids["sell"] = current_sell_ids.copy()
-            log_event("info", "fill_tracker_init",
-                      f"Baseline set: {len(current_buy_ids)} buys, {len(current_sell_ids)} sells")
+            log_event(
+                "info",
+                "fill_tracker_init",
+                f"Baseline set: {len(current_buy_ids)} buys, {len(current_sell_ids)} sells",
+            )
             return result
 
         # Retry any previously-parked unverified offers before processing new
@@ -153,14 +163,18 @@ class FillTracker:
         # 42 warnings for offers that never actually filled.
         if self._pending_reverify:
             _live_ids = current_buy_ids | current_sell_ids
-            _restored = [tid for tid in list(self._pending_reverify.keys())
-                         if tid in _live_ids]
+            _restored = [
+                tid for tid in list(self._pending_reverify.keys()) if tid in _live_ids
+            ]
             for _tid in _restored:
                 self._pending_reverify.pop(_tid, None)
             if _restored:
-                log_event("info", "fill_verify_cancelled_alive",
-                          f"Dropped {len(_restored)} pending verifications: "
-                          f"offers reappeared in wallet (Sage RPC lag, not fills)")
+                log_event(
+                    "info",
+                    "fill_verify_cancelled_alive",
+                    f"Dropped {len(_restored)} pending verifications: "
+                    f"offers reappeared in wallet (Sage RPC lag, not fills)",
+                )
         if self._pending_reverify:
             retried_pending_ids = set(self._pending_reverify.keys())
             retry_fills = self._retry_pending_reverify(details_cache)
@@ -180,7 +194,9 @@ class FillTracker:
         disappeared_sell = self._previous_ids["sell"] - current_sell_ids
 
         total_disappeared = len(disappeared_buy) + len(disappeared_sell)
-        total_previous = len(self._previous_ids["buy"]) + len(self._previous_ids["sell"])
+        total_previous = len(self._previous_ids["buy"]) + len(
+            self._previous_ids["sell"]
+        )
 
         # Mass disappearance guard
         if total_previous > 0 and total_disappeared > 0:
@@ -192,12 +208,12 @@ class FillTracker:
         # pending-reverify retry path above so they are not overwritten.
         buy_fills = list(result["buy_fills"])
         sell_fills = list(result["sell_fills"])
-        buy_fills.extend(self._process_disappeared(
-            disappeared_buy, "buy", details_cache
-        ))
-        sell_fills.extend(self._process_disappeared(
-            disappeared_sell, "sell", details_cache
-        ))
+        buy_fills.extend(
+            self._process_disappeared(disappeared_buy, "buy", details_cache)
+        )
+        sell_fills.extend(
+            self._process_disappeared(disappeared_sell, "sell", details_cache)
+        )
         newborn_buy_fills = self._process_disappeared(
             newborn_missing["buy"], "buy", details_cache
         )
@@ -255,8 +271,11 @@ class FillTracker:
             try:
                 recently_by_side = manager.get_recently_created_ids_by_side()
             except Exception as e:
-                log_event("debug", "newborn_offer_scan_failed",
-                          f"Could not read recently-created offer ids: {e}")
+                log_event(
+                    "debug",
+                    "newborn_offer_scan_failed",
+                    f"Could not read recently-created offer ids: {e}",
+                )
                 recently_by_side = None
 
         if recently_by_side is None:
@@ -279,19 +298,24 @@ class FillTracker:
         )
         missing = {
             "buy": {
-                str(tid) for tid in recently_by_side.get("buy", set()) or set()
+                str(tid)
+                for tid in recently_by_side.get("buy", set()) or set()
                 if tid and str(tid) not in known_wallet_or_baselined
             },
             "sell": {
-                str(tid) for tid in recently_by_side.get("sell", set()) or set()
+                str(tid)
+                for tid in recently_by_side.get("sell", set()) or set()
                 if tid and str(tid) not in known_wallet_or_baselined
             },
         }
         total = len(missing["buy"]) + len(missing["sell"])
         if total:
-            log_event("debug", "newborn_fill_candidates",
-                      f"Verifying {total} recently-created offer(s) absent "
-                      "from a fresh wallet snapshot before baseline visibility")
+            log_event(
+                "debug",
+                "newborn_fill_candidates",
+                f"Verifying {total} recently-created offer(s) absent "
+                "from a fresh wallet snapshot before baseline visibility",
+            )
         return missing
 
     def _forget_recently_created(self, trade_id: str) -> None:
@@ -372,27 +396,36 @@ class FillTracker:
 
             if self._mass_disappearance_count >= 3:
                 # 3 strikes — accept as genuine, reset counter
-                log_event("info", "mass_disappearance_accepted",
-                          f"Mass disappearance confirmed after 3 checks: "
-                          f"{disappeared}/{previous} offers gone")
+                log_event(
+                    "info",
+                    "mass_disappearance_accepted",
+                    f"Mass disappearance confirmed after 3 checks: "
+                    f"{disappeared}/{previous} offers gone",
+                )
                 self._mass_disappearance_count = 0
                 self._mass_disappearance_first_at = 0
                 return True
             elif guard_age_secs > guard_timeout_secs:
                 # Timeout — accept despite not reaching 3 consecutive strikes
-                log_event("info", "mass_disappearance_accepted",
-                          f"Mass disappearance accepted after {guard_age_secs:.0f}s timeout: "
-                          f"{disappeared}/{previous} offers gone "
-                          f"(guard count was {self._mass_disappearance_count}/3)")
+                log_event(
+                    "info",
+                    "mass_disappearance_accepted",
+                    f"Mass disappearance accepted after {guard_age_secs:.0f}s timeout: "
+                    f"{disappeared}/{previous} offers gone "
+                    f"(guard count was {self._mass_disappearance_count}/3)",
+                )
                 self._mass_disappearance_count = 0
                 self._mass_disappearance_first_at = 0
                 return True
             else:
                 # Guard triggered — skip this loop, DON'T update baseline
-                log_event("info", "mass_disappearance_guard",
-                          f"Guard triggered ({self._mass_disappearance_count}/3, "
-                          f"age {guard_age_secs:.0f}s): "
-                          f"{disappeared}/{previous} offers disappeared")
+                log_event(
+                    "info",
+                    "mass_disappearance_guard",
+                    f"Guard triggered ({self._mass_disappearance_count}/3, "
+                    f"age {guard_age_secs:.0f}s): "
+                    f"{disappeared}/{previous} offers disappeared",
+                )
                 return False
         else:
             # Normal disappearance — reset counter
@@ -412,6 +445,7 @@ class FillTracker:
 
         try:
             from wallet import get_wallet_type
+
             if get_wallet_type() != "sage":
                 return results  # Only needed for Sage wallet
             from wallet_sage import rpc as _sage_rpc
@@ -425,17 +459,28 @@ class FillTracker:
                     _status = _check.get("status", "")
                     _status_norm = str(_status).upper()
                     if _status in (0, 1, 2) or _status_norm in (
-                        "ACTIVE", "OPEN", "PENDING_ACCEPT", "PENDING_CONFIRM",
-                        "PENDING", "PENDING_CANCEL", "IN_PROGRESS"
+                        "ACTIVE",
+                        "OPEN",
+                        "PENDING_ACCEPT",
+                        "PENDING_CONFIRM",
+                        "PENDING",
+                        "PENDING_CANCEL",
+                        "IN_PROGRESS",
                     ):
                         return (trade_id, True, False, _status_norm)
                     elif _status in (3, 5) or _status_norm in (
-                        "CANCELLED", "CANCELED", "FAILED", "EXPIRED"
+                        "CANCELLED",
+                        "CANCELED",
+                        "FAILED",
+                        "EXPIRED",
                     ):
                         return (trade_id, False, True, _status_norm)
             except Exception as _e:
-                log_event("debug", "wallet_batch_check_error",
-                          f"Wallet status check failed for {trade_id[:16]}...: {_e}")
+                log_event(
+                    "debug",
+                    "wallet_batch_check_error",
+                    f"Wallet status check failed for {trade_id[:16]}...: {_e}",
+                )
             return (trade_id, False, False, "")
 
         max_workers = min(len(trade_ids), 8)
@@ -450,7 +495,9 @@ class FillTracker:
                     results[tid] = (False, False, "")
         return results
 
-    def _retry_pending_reverify(self, details_cache: Dict[str, Dict]) -> Dict[str, List[Dict]]:
+    def _retry_pending_reverify(
+        self, details_cache: Dict[str, Dict]
+    ) -> Dict[str, List[Dict]]:
         """Re-run Spacescan verification for offers parked as 'unverified'.
 
         Each entry in ``_pending_reverify`` was a disappeared offer whose
@@ -471,8 +518,11 @@ class FillTracker:
             try:
                 verdict = self._verify_fill_on_chain(trade_id, side)
             except Exception as _vre:
-                log_event("debug", "fill_reverify_error",
-                          f"Retry verify raised for {trade_id[:16]}...: {_vre}")
+                log_event(
+                    "debug",
+                    "fill_reverify_error",
+                    f"Retry verify raised for {trade_id[:16]}...: {_vre}",
+                )
                 verdict = "unverified"
 
             if verdict == "filled":
@@ -485,11 +535,14 @@ class FillTracker:
                     key = "buy_fills" if side == "buy" else "sell_fills"
                     out[key].append(fill_detail)
                 self._pending_reverify.pop(trade_id, None)
-                log_event("warning", "fill_recovered_late",
-                          f"{side.upper()} offer {trade_id[:16]}... recovered "
-                          f"as fill after Spacescan retry (attempts="
-                          f"{meta.get('attempts', 0)})",
-                          data={"trade_id": trade_id, "side": side})
+                log_event(
+                    "warning",
+                    "fill_recovered_late",
+                    f"{side.upper()} offer {trade_id[:16]}... recovered "
+                    f"as fill after Spacescan retry (attempts="
+                    f"{meta.get('attempts', 0)})",
+                    data={"trade_id": trade_id, "side": side},
+                )
             elif verdict == "rejected":
                 self._last_dexie_details.pop(trade_id, None)
                 status = "expired" if meta.get("local_clock_expired") else "cancelled"
@@ -500,8 +553,11 @@ class FillTracker:
                     status=status,
                     event_type="offer_closed_nonfill",
                     severity="info",
-                    suffix=("expired on-chain" if status == "expired"
-                            else "retired after Spacescan rejection"),
+                    suffix=(
+                        "expired on-chain"
+                        if status == "expired"
+                        else "retired after Spacescan rejection"
+                    ),
                     data_extra={"verification_state": "rejected"},
                 )
                 self._pending_reverify.pop(trade_id, None)
@@ -522,41 +578,62 @@ class FillTracker:
                             transition_offer(trade_id, "fill_verified")
                         except Exception:
                             pass
-                        fill_detail = self._record_verified_fill(trade_id, side, details_cache)
+                        fill_detail = self._record_verified_fill(
+                            trade_id, side, details_cache
+                        )
                         if fill_detail:
                             key = "buy_fills" if side == "buy" else "sell_fills"
                             out[key].append(fill_detail)
-                        log_event("warning", "fill_recovered_via_dexie",
-                                  f"{side.upper()} offer {trade_id[:16]}... "
-                                  f"Spacescan exhausted after {attempts} retries "
-                                  f"but Dexie reports status=4 (COMPLETED) — "
-                                  f"recorded as fill.",
-                                  data={"trade_id": trade_id, "side": side,
-                                        "attempts": attempts,
-                                        "source": "dexie_fallback"})
+                        log_event(
+                            "warning",
+                            "fill_recovered_via_dexie",
+                            f"{side.upper()} offer {trade_id[:16]}... "
+                            f"Spacescan exhausted after {attempts} retries "
+                            f"but Dexie reports status=4 (COMPLETED) — "
+                            f"recorded as fill.",
+                            data={
+                                "trade_id": trade_id,
+                                "side": side,
+                                "attempts": attempts,
+                                "source": "dexie_fallback",
+                            },
+                        )
                         self._pending_reverify.pop(trade_id, None)
                         continue
 
                     if dexie_terminal == "cancelled":
-                        status = "expired" if meta.get("local_clock_expired") else "cancelled"
+                        status = (
+                            "expired"
+                            if meta.get("local_clock_expired")
+                            else "cancelled"
+                        )
                         self._retire_local_offer(
-                            trade_id, side, details_cache,
+                            trade_id,
+                            side,
+                            details_cache,
                             status=status,
                             event_type="offer_closed_nonfill",
                             severity="info",
-                            suffix=("expired on-chain" if status == "expired"
-                                    else "retired after Dexie confirmed cancel "
-                                         "(Spacescan exhausted)"),
-                            data_extra={"verification_state": "dexie_confirmed_cancelled",
-                                        "attempts": attempts,
-                                        "source": "dexie_fallback"},
+                            suffix=(
+                                "expired on-chain"
+                                if status == "expired"
+                                else "retired after Dexie confirmed cancel "
+                                "(Spacescan exhausted)"
+                            ),
+                            data_extra={
+                                "verification_state": "dexie_confirmed_cancelled",
+                                "attempts": attempts,
+                                "source": "dexie_fallback",
+                            },
                         )
                         self._pending_reverify.pop(trade_id, None)
                         continue
 
                     # Dexie also inconclusive (404, still-open, pending, rate-limited,
                     # or network error). Retire conservatively and alert operator.
-                    status = "expired" if meta.get("local_clock_expired") else "cancelled"
+                    status = (
+                        "expired" if meta.get("local_clock_expired") else "cancelled"
+                    )
                     self._retire_local_offer(
                         trade_id,
                         side,
@@ -564,25 +641,36 @@ class FillTracker:
                         status=status,
                         event_type="offer_closed_unverified",
                         severity="error",
-                        suffix=("exhausted Spacescan retries — expired on local clock"
-                                if status == "expired" else
-                                "exhausted Spacescan retries — manual review"),
-                        data_extra={"verification_state": "exhausted",
-                                    "attempts": attempts},
+                        suffix=(
+                            "exhausted Spacescan retries — expired on local clock"
+                            if status == "expired"
+                            else "exhausted Spacescan retries — manual review"
+                        ),
+                        data_extra={
+                            "verification_state": "exhausted",
+                            "attempts": attempts,
+                        },
                     )
-                    log_event("error", "fill_verify_exhausted",
-                              f"{side.upper()} offer {trade_id[:16]}... failed "
-                              f"to verify after {attempts} Spacescan retries "
-                              f"AND Dexie fallback was inconclusive — "
-                              f"retired as {status}. MANUAL REVIEW RECOMMENDED.",
-                              data={"trade_id": trade_id, "side": side,
-                                    "attempts": attempts,
-                                    "final_status": status})
+                    log_event(
+                        "error",
+                        "fill_verify_exhausted",
+                        f"{side.upper()} offer {trade_id[:16]}... failed "
+                        f"to verify after {attempts} Spacescan retries "
+                        f"AND Dexie fallback was inconclusive — "
+                        f"retired as {status}. MANUAL REVIEW RECOMMENDED.",
+                        data={
+                            "trade_id": trade_id,
+                            "side": side,
+                            "attempts": attempts,
+                            "final_status": status,
+                        },
+                    )
                     self._pending_reverify.pop(trade_id, None)
         return out
 
-    def _process_disappeared(self, disappeared_ids: Set[str], side: str,
-                             details_cache: Dict[str, Dict]) -> List[Dict]:
+    def _process_disappeared(
+        self, disappeared_ids: Set[str], side: str, details_cache: Dict[str, Dict]
+    ) -> List[Dict]:
         """Process disappeared offers — classify as filled, cancelled, or expired.
 
         Returns list of confirmed fills (not cancellations or expirations).
@@ -594,23 +682,32 @@ class FillTracker:
         if disappeared_ids:
             try:
                 from database import get_offers_by_trade_ids as _get_batch
+
                 _batch = _get_batch(list(disappeared_ids))
                 if _batch:
-                    _db_records = {r["trade_id"]: r for r in _batch if r.get("trade_id")}
+                    _db_records = {
+                        r["trade_id"]: r for r in _batch if r.get("trade_id")
+                    }
             except ImportError:
                 # get_offers_by_trade_ids not available — fall back to per-offer lookup
                 pass
             except Exception as _batch_err:
-                log_event("warning", "fill_tracker_batch_prefetch_failed",
-                          f"Batch offer prefetch failed ({_batch_err}) — using per-offer lookup")
+                log_event(
+                    "warning",
+                    "fill_tracker_batch_prefetch_failed",
+                    f"Batch offer prefetch failed ({_batch_err}) — using per-offer lookup",
+                )
 
         # Batch wallet status check (parallel RPC) — avoids N×5s serial calls
         _wallet_status_cache = {}
         try:
             _wallet_status_cache = self._check_wallet_status_batch(disappeared_ids)
         except Exception as _ws_err:
-            log_event("debug", "fill_tracker_wallet_batch_failed",
-                      f"Wallet status batch check failed ({_ws_err}) — falling back to serial")
+            log_event(
+                "debug",
+                "fill_tracker_wallet_batch_failed",
+                f"Wallet status batch check failed ({_ws_err}) — falling back to serial",
+            )
 
         # Parallel Spacescan pre-verification — avoids N×20s serial latency.
         # For a 14-fill sweep this compresses ~4min of HTTP waits to ~30s,
@@ -659,20 +756,30 @@ class FillTracker:
             _verify_candidates.append(_pv_tid)
 
         if len(_verify_candidates) > 1:
+
             def _verify_one_parallel(_tid: str):
                 try:
                     return _tid, self._verify_fill_on_chain(_tid, side)
                 except Exception as _ve:
-                    log_event("debug", "fill_verify_parallel_error",
-                              f"Parallel verify of {_tid[:16]}... failed: {_ve}")
-                    return _tid, None  # None sentinel → main loop falls back to serial call
+                    log_event(
+                        "debug",
+                        "fill_verify_parallel_error",
+                        f"Parallel verify of {_tid[:16]}... failed: {_ve}",
+                    )
+                    return (
+                        _tid,
+                        None,
+                    )  # None sentinel → main loop falls back to serial call
 
             _max_workers = min(len(_verify_candidates), 6)
             try:
-                with ThreadPoolExecutor(max_workers=_max_workers,
-                                        thread_name_prefix="fill-verify") as _pool:
-                    _futures = {_pool.submit(_verify_one_parallel, _c): _c
-                                for _c in _verify_candidates}
+                with ThreadPoolExecutor(
+                    max_workers=_max_workers, thread_name_prefix="fill-verify"
+                ) as _pool:
+                    _futures = {
+                        _pool.submit(_verify_one_parallel, _c): _c
+                        for _c in _verify_candidates
+                    }
                     # Outer cap: 180s total so a pathologically-hung Spacescan
                     # call can't stall fill detection indefinitely. Individual
                     # calls already have their own 20s timeouts; this is a
@@ -684,14 +791,20 @@ class FillTracker:
                                 _verify_cache[_tid] = _result
                         except Exception:
                             pass
-                log_event("info", "fill_verify_parallel_done",
-                          f"Parallel pre-verify: {len(_verify_cache)}/"
-                          f"{len(_verify_candidates)} resolved "
-                          f"({_max_workers} workers)")
+                log_event(
+                    "info",
+                    "fill_verify_parallel_done",
+                    f"Parallel pre-verify: {len(_verify_cache)}/"
+                    f"{len(_verify_candidates)} resolved "
+                    f"({_max_workers} workers)",
+                )
             except Exception as _pv_err:
-                log_event("warning", "fill_verify_parallel_failed",
-                          f"Parallel pre-verify batch failed ({_pv_err}) — "
-                          f"falling back to serial verification in main loop")
+                log_event(
+                    "warning",
+                    "fill_verify_parallel_failed",
+                    f"Parallel pre-verify batch failed ({_pv_err}) — "
+                    f"falling back to serial verification in main loop",
+                )
 
         for trade_id in disappeared_ids:
             # Do NOT early-exit on bot-cancelled here. The _bot_cancelled_ids
@@ -719,6 +832,7 @@ class FillTracker:
                     # Fallback: individual lookup (e.g., very new offer not in batch)
                     try:
                         from database import get_offer as _get_db_offer
+
                         _db_rec = _get_db_offer(trade_id)
                     except Exception:
                         pass
@@ -726,13 +840,17 @@ class FillTracker:
                     _expires = _db_rec.get("expires_at")
                     if _expires:
                         import datetime as _dt
+
                         # Handle both "+00:00" and "Z" suffix formats
                         _exp_str = _expires.replace("Z", "+00:00")
                         _exp_ts = _dt.datetime.fromisoformat(_exp_str).timestamp()
                         local_clock_expired = time.time() > _exp_ts
             except Exception as _expiry_err:
-                log_event("debug", "expiry_check_error",
-                          f"Expiry check failed for {trade_id[:16]}...: {_expiry_err}")
+                log_event(
+                    "debug",
+                    "expiry_check_error",
+                    f"Expiry check failed for {trade_id[:16]}...: {_expiry_err}",
+                )
                 # Proceed with other verification gates
 
             pre_terminal = _terminal_prefilter.get(trade_id)
@@ -746,10 +864,11 @@ class FillTracker:
                     status=status,
                     event_type="offer_closed_nonfill",
                     severity="info",
-                    suffix=("expired via Dexie terminal status"
-                            if status == "expired"
-                            else "retired after Dexie confirmed cancel "
-                                 "(pre-Spacescan)"),
+                    suffix=(
+                        "expired via Dexie terminal status"
+                        if status == "expired"
+                        else "retired after Dexie confirmed cancel (pre-Spacescan)"
+                    ),
                     data_extra={
                         "verification_state": "dexie_confirmed_cancelled",
                         "source": "dexie_prefilter",
@@ -762,11 +881,14 @@ class FillTracker:
                 except Exception:
                     pass
                 if was_cancelled:
-                    log_event("info", "fill_beat_cancel_dexie",
-                              f"{side.upper()} offer {trade_id[:16]}... was marked "
-                              f"bot-cancelled but Dexie reports COMPLETED — "
-                              f"recording fill before Spacescan.",
-                              data={"trade_id": trade_id, "side": side})
+                    log_event(
+                        "info",
+                        "fill_beat_cancel_dexie",
+                        f"{side.upper()} offer {trade_id[:16]}... was marked "
+                        f"bot-cancelled but Dexie reports COMPLETED — "
+                        f"recording fill before Spacescan.",
+                        data={"trade_id": trade_id, "side": side},
+                    )
                 fill_detail = self._record_verified_fill(trade_id, side, details_cache)
                 if fill_detail:
                     fills.append(fill_detail)
@@ -783,39 +905,60 @@ class FillTracker:
             try:
                 if trade_id in _wallet_status_cache:
                     # Use pre-fetched result from parallel batch check
-                    offer_still_exists, offer_closed_nonfill, wallet_offer_status = \
+                    offer_still_exists, offer_closed_nonfill, wallet_offer_status = (
                         _wallet_status_cache[trade_id]
+                    )
                 else:
                     # Fallback: serial RPC (e.g., batch check failed or non-Sage wallet)
                     from wallet import get_wallet_type
+
                     if get_wallet_type() == "sage":
                         from wallet_sage import rpc as _sage_rpc
-                        _check = _sage_rpc("get_offer", {"offer_id": trade_id}, timeout=5)
+
+                        _check = _sage_rpc(
+                            "get_offer", {"offer_id": trade_id}, timeout=5
+                        )
                         if _check and isinstance(_check, dict):
                             _status = _check.get("status", "")
                             _status_norm = str(_status).upper()
                             wallet_offer_status = _status_norm
                             if _status in (0, 1, 2) or _status_norm in (
-                                "ACTIVE", "OPEN", "PENDING_ACCEPT", "PENDING_CONFIRM",
-                                "PENDING", "PENDING_CANCEL", "IN_PROGRESS"
+                                "ACTIVE",
+                                "OPEN",
+                                "PENDING_ACCEPT",
+                                "PENDING_CONFIRM",
+                                "PENDING",
+                                "PENDING_CANCEL",
+                                "IN_PROGRESS",
                             ):
                                 offer_still_exists = True
                             elif _status in (3, 5) or _status_norm in (
-                                "CANCELLED", "CANCELED", "FAILED", "EXPIRED"
+                                "CANCELLED",
+                                "CANCELED",
+                                "FAILED",
+                                "EXPIRED",
                             ):
                                 offer_closed_nonfill = True
             except Exception as _wallet_err:
-                log_event("debug", "wallet_serial_check_error",
-                          f"Serial wallet check failed for {trade_id[:16]}...: {_wallet_err}")
+                log_event(
+                    "debug",
+                    "wallet_serial_check_error",
+                    f"Serial wallet check failed for {trade_id[:16]}...: {_wallet_err}",
+                )
                 # Proceed with normal verification
 
             if offer_still_exists:
-                log_event("info", "fill_wallet_still_open",
-                          f"Offer {trade_id[:16]}... still OPEN in wallet — "
-                          f"NOT a fill (DB inconsistency)")
+                log_event(
+                    "info",
+                    "fill_wallet_still_open",
+                    f"Offer {trade_id[:16]}... still OPEN in wallet — "
+                    f"NOT a fill (DB inconsistency)",
+                )
                 continue
             if offer_closed_nonfill:
-                local_status = "expired" if wallet_offer_status == "EXPIRED" else "cancelled"
+                local_status = (
+                    "expired" if wallet_offer_status == "EXPIRED" else "cancelled"
+                )
                 self._retire_local_offer(
                     trade_id,
                     side,
@@ -823,13 +966,19 @@ class FillTracker:
                     status=local_status,
                     event_type="offer_closed_nonfill",
                     severity="info",
-                    suffix=("expired in wallet" if local_status == "expired"
-                            else "closed in wallet"),
+                    suffix=(
+                        "expired in wallet"
+                        if local_status == "expired"
+                        else "closed in wallet"
+                    ),
                     data_extra={"wallet_status": wallet_offer_status or "UNKNOWN"},
                 )
-                log_event("info", "fill_wallet_closed_nonfill",
-                          f"Offer {trade_id[:16]}... is CLOSED in wallet with "
-                          f"non-fill status — NOT a fill")
+                log_event(
+                    "info",
+                    "fill_wallet_closed_nonfill",
+                    f"Offer {trade_id[:16]}... is CLOSED in wallet with "
+                    f"non-fill status — NOT a fill",
+                )
                 continue
 
             # ---- Spacescan Verification Gate (Golden Source of Truth) ----
@@ -862,11 +1011,14 @@ class FillTracker:
                     # counterparty took the offer first. Spacescan confirmed
                     # the on-chain spend as a fill, so we record it and the
                     # local cancel assumption is overridden.
-                    log_event("warning", "fill_beat_cancel",
-                              f"{side.upper()} offer {trade_id[:16]}... was marked "
-                              f"bot-cancelled but Spacescan confirms a fill — "
-                              f"recording fill and overriding local cancel state.",
-                              data={"trade_id": trade_id, "side": side})
+                    log_event(
+                        "warning",
+                        "fill_beat_cancel",
+                        f"{side.upper()} offer {trade_id[:16]}... was marked "
+                        f"bot-cancelled but Spacescan confirms a fill — "
+                        f"recording fill and overriding local cancel state.",
+                        data={"trade_id": trade_id, "side": side},
+                    )
                 fill_detail = self._record_verified_fill(trade_id, side, details_cache)
                 if fill_detail:
                     fills.append(fill_detail)
@@ -880,6 +1032,7 @@ class FillTracker:
                 try:
                     from offer_lifecycle import OfferState
                     from database import update_offer_lifecycle_state as _uls
+
                     _uls(trade_id, str(OfferState.PHANTOM_REJECTED))
                 except Exception:
                     pass
@@ -909,27 +1062,41 @@ class FillTracker:
                     # produced N warnings per fill cascade where the
                     # downstream cause (Spacescan rate-limit) is already
                     # logged once via the spacescan dedup.
-                    log_event("info", "fill_verify_pending",
-                              f"{side.upper()} offer {trade_id[:16]}... disappeared "
-                              f"but Spacescan unverified — parked for retry "
-                              f"(1/{self._pending_reverify_max_attempts})",
-                              data={"trade_id": trade_id,
-                                    "local_clock_expired": local_clock_expired})
+                    log_event(
+                        "info",
+                        "fill_verify_pending",
+                        f"{side.upper()} offer {trade_id[:16]}... disappeared "
+                        f"but Spacescan unverified — parked for retry "
+                        f"(1/{self._pending_reverify_max_attempts})",
+                        data={
+                            "trade_id": trade_id,
+                            "local_clock_expired": local_clock_expired,
+                        },
+                    )
                 else:
                     existing["attempts"] = int(existing.get("attempts", 0)) + 1
                     existing["local_clock_expired"] = (
                         existing.get("local_clock_expired") or local_clock_expired
                     )
-                    log_event("debug", "fill_verify_pending_retry",
-                              f"{side.upper()} offer {trade_id[:16]}... still "
-                              f"unverified ({existing['attempts']}/"
-                              f"{self._pending_reverify_max_attempts})")
+                    log_event(
+                        "debug",
+                        "fill_verify_pending_retry",
+                        f"{side.upper()} offer {trade_id[:16]}... still "
+                        f"unverified ({existing['attempts']}/"
+                        f"{self._pending_reverify_max_attempts})",
+                    )
                 # Mark lifecycle_state for operator visibility; do NOT
                 # collapse to a terminal state yet.
                 try:
                     from offer_lifecycle import OfferState
                     from database import update_offer_lifecycle_state as _uls
-                    _uls(trade_id, str(getattr(OfferState, "MEMPOOL_OBSERVED", "mempool_observed")))
+
+                    _uls(
+                        trade_id,
+                        str(
+                            getattr(OfferState, "MEMPOOL_OBSERVED", "mempool_observed")
+                        ),
+                    )
                 except Exception:
                     pass
                 # Hold off on clearing cached Dexie details — they'll be
@@ -940,10 +1107,18 @@ class FillTracker:
 
         return fills
 
-    def _retire_local_offer(self, trade_id: str, side: str,
-                            details_cache: Dict[str, Dict], *,
-                            status: str, event_type: str, severity: str,
-                            suffix: str, data_extra: Optional[Dict] = None) -> None:
+    def _retire_local_offer(
+        self,
+        trade_id: str,
+        side: str,
+        details_cache: Dict[str, Dict],
+        *,
+        status: str,
+        event_type: str,
+        severity: str,
+        suffix: str,
+        data_extra: Optional[Dict] = None,
+    ) -> None:
         """Retire a disappeared offer locally so counts stay aligned."""
         try:
             from database import update_offer_status
@@ -954,8 +1129,11 @@ class FillTracker:
             try:
                 update_offer_status(trade_id, status)
             except Exception as e:
-                log_event("error", "fill_local_retire_failed",
-                          f"Failed to mark {trade_id[:16]}... as {status}: {e}")
+                log_event(
+                    "error",
+                    "fill_local_retire_failed",
+                    f"Failed to mark {trade_id[:16]}... as {status}: {e}",
+                )
 
         ctx = self._get_offer_context(trade_id, side, details_cache)
         side_upper = str(ctx.get("side") or side or "").upper()
@@ -998,8 +1176,9 @@ class FillTracker:
         log_event(severity, event_type, " ".join(parts), data=data)
         self._forget_recently_created(trade_id)
 
-    def _get_offer_context(self, trade_id: str, side: str,
-                           details_cache: Dict[str, Dict]) -> Dict:
+    def _get_offer_context(
+        self, trade_id: str, side: str, details_cache: Dict[str, Dict]
+    ) -> Dict:
         """Best-effort lookup of offer context for human-friendly activity text."""
         cached = details_cache.get(trade_id) or {}
         price = cached.get("price")
@@ -1011,10 +1190,12 @@ class FillTracker:
             price in (None, "", 0, "0")
             or size_xch in (None, "", 0, "0")
             or size_cat in (None, "", 0, "0")
-            or not tier or tier == "unknown"
+            or not tier
+            or tier == "unknown"
         ):
             try:
                 from database import get_offer
+
                 db_offer = get_offer(trade_id)
             except Exception:
                 db_offer = None
@@ -1054,21 +1235,28 @@ class FillTracker:
         try:
             from spacescan import verify_fill as spacescan_verify
         except ImportError:
-            log_event("warning", "spacescan_import_failed",
-                      "spacescan module not available — cannot verify fill. "
-                      "Fill will NOT be recorded (conservative).")
+            log_event(
+                "warning",
+                "spacescan_import_failed",
+                "spacescan module not available — cannot verify fill. "
+                "Fill will NOT be recorded (conservative).",
+            )
             return "rejected"
 
         # Check if Spacescan verification is enabled
         if not getattr(cfg, "SPACESCAN_ENABLED", True):
-            log_event("warning", "spacescan_disabled",
-                      f"Spacescan disabled — cannot verify {side} fill "
-                      f"{trade_id[:16]}... so it will NOT be recorded")
+            log_event(
+                "warning",
+                "spacescan_disabled",
+                f"Spacescan disabled — cannot verify {side} fill "
+                f"{trade_id[:16]}... so it will NOT be recorded",
+            )
             return "rejected"
 
         # Look up the coin_id from our offers database
         try:
             from database import get_offer
+
             db_offer = get_offer(trade_id)
         except Exception:
             db_offer = None
@@ -1082,6 +1270,7 @@ class FillTracker:
         candidate_coin_ids: list = []
         try:
             from database import get_locked_coin_ids_for_trade
+
             candidate_coin_ids = list(get_locked_coin_ids_for_trade(trade_id))
         except Exception:
             pass
@@ -1093,11 +1282,14 @@ class FillTracker:
             # No coin_id recorded — we can't verify on-chain.
             # This happens for offers created before coin tracking was added,
             # or if coin detection failed during creation.
-            log_event("warning", "fill_no_coin_id",
-                      f"Offer {trade_id[:16]}... has no coin_id — "
-                      f"cannot verify on-chain. Fill NOT recorded (conservative). "
-                      f"This prevents phantom fills but may miss real fills "
-                      f"for old offers without coin tracking.")
+            log_event(
+                "warning",
+                "fill_no_coin_id",
+                f"Offer {trade_id[:16]}... has no coin_id — "
+                f"cannot verify on-chain. Fill NOT recorded (conservative). "
+                f"This prevents phantom fills but may miss real fills "
+                f"for old offers without coin tracking.",
+            )
             return "rejected"
 
         # Use the primary candidate to pre-fetch Dexie detail (for the
@@ -1134,9 +1326,12 @@ class FillTracker:
         coin_id = verified_coin_id  # use the coin that gave a decisive answer
 
         if is_real_fill:
-            log_event("success", "fill_verified",
-                      f"Spacescan CONFIRMED {side} fill for {trade_id[:16]}... "
-                      f"(coin {coin_id[:16]}...)")
+            log_event(
+                "success",
+                "fill_verified",
+                f"Spacescan CONFIRMED {side} fill for {trade_id[:16]}... "
+                f"(coin {coin_id[:16]}...)",
+            )
             return "filled"
         elif is_real_fill is False:
             # Spacescan explicitly said NOT a fill (coin unspent or self-spend).
@@ -1150,14 +1345,19 @@ class FillTracker:
             # Mitigation: when this combination is active, cross-check with the
             # Sage wallet directly. If Sage reports the offer as CONFIRMED/filled,
             # override the Spacescan rejection and record the fill.
-            if (getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False) and
-                    str(getattr(cfg, "WALLET_TYPE", "")).lower() == "sage"):
+            if (
+                getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False)
+                and str(getattr(cfg, "WALLET_TYPE", "")).lower() == "sage"
+            ):
                 sage_confirmed = self._check_sage_offer_confirmed(trade_id)
                 if sage_confirmed:
-                    log_event("success", "fill_sage_override",
-                              f"Spacescan self-spend BUT Sage confirms FILL for "
-                              f"{trade_id[:16]}... (batch settlement via own address). "
-                              f"Recording fill.")
+                    log_event(
+                        "success",
+                        "fill_sage_override",
+                        f"Spacescan self-spend BUT Sage confirms FILL for "
+                        f"{trade_id[:16]}... (batch settlement via own address). "
+                        f"Recording fill.",
+                    )
                     return "filled"
 
                 # Sage also non-confirmatory — try Dexie as a final tiebreaker.
@@ -1167,25 +1367,43 @@ class FillTracker:
                     _dexie_id_false = (db_offer or {}).get("dexie_id")
                     if _dexie_id_false:
                         from dexie_manager import get_offer_detail
-                        _detail_f = get_offer_detail(_dexie_id_false, cache_ttl_secs=0, timeout=5)
+
+                        _detail_f = get_offer_detail(
+                            _dexie_id_false, cache_ttl_secs=0, timeout=5
+                        )
                         if _detail_f and isinstance(_detail_f, dict):
-                            _dexie_trade_f = str(_detail_f.get("trade_id") or "").lower().replace("0x", "")
+                            _dexie_trade_f = (
+                                str(_detail_f.get("trade_id") or "")
+                                .lower()
+                                .replace("0x", "")
+                            )
                             _our_trade_f = str(trade_id).lower().replace("0x", "")
-                            _match_f = (_dexie_trade_f == _our_trade_f or not _dexie_trade_f)
+                            _match_f = (
+                                _dexie_trade_f == _our_trade_f or not _dexie_trade_f
+                            )
                             if _detail_f.get("status") == 4 and _match_f:
-                                log_event("success", "fill_dexie_override_false_path",
-                                          f"Spacescan self-spend AND Sage non-confirm BUT "
-                                          f"Dexie status=4 confirms FILL for "
-                                          f"{trade_id[:16]}... — recording fill.")
+                                log_event(
+                                    "success",
+                                    "fill_dexie_override_false_path",
+                                    f"Spacescan self-spend AND Sage non-confirm BUT "
+                                    f"Dexie status=4 confirms FILL for "
+                                    f"{trade_id[:16]}... — recording fill.",
+                                )
                                 return "filled"
                 except Exception as _dexie_err_f:
-                    log_event("debug", "fill_dexie_fallback_failed_false_path",
-                              f"Dexie fallback (false path) failed for "
-                              f"{trade_id[:16]}...: {_dexie_err_f}")
+                    log_event(
+                        "debug",
+                        "fill_dexie_fallback_failed_false_path",
+                        f"Dexie fallback (false path) failed for "
+                        f"{trade_id[:16]}...: {_dexie_err_f}",
+                    )
 
-                log_event("info", "fill_rejected_sage_checked",
-                          f"Spacescan self-spend AND Sage+Dexie do NOT confirm fill for "
-                          f"{trade_id[:16]}... — rejected (likely a cancel).")
+                log_event(
+                    "info",
+                    "fill_rejected_sage_checked",
+                    f"Spacescan self-spend AND Sage+Dexie do NOT confirm fill for "
+                    f"{trade_id[:16]}... — rejected (likely a cancel).",
+                )
                 return "rejected"
 
             # SAGE_SET_CHANGE_ADDRESS not active — Spacescan is authoritative.
@@ -1199,31 +1417,50 @@ class FillTracker:
                 _dexie_id_rej = (db_offer or {}).get("dexie_id")
                 if _dexie_id_rej:
                     from dexie_manager import get_offer_detail
-                    _detail_r = get_offer_detail(_dexie_id_rej, cache_ttl_secs=0, timeout=5)
-                    if _detail_r and isinstance(_detail_r, dict):
-                        _dexie_trade_r = str(_detail_r.get("trade_id") or "").lower().replace("0x", "")
-                        _our_trade_r = str(trade_id).lower().replace("0x", "")
-                        _match_r = (_dexie_trade_r == _our_trade_r or not _dexie_trade_r)
-                        if _detail_r.get("status") == 4 and _match_r:
-                            log_event("warning", "fill_spacescan_dexie_disagree",
-                                      f"Spacescan REJECTED {side} fill for "
-                                      f"{trade_id[:16]}... but Dexie status=4 "
-                                      f"suggests COMPLETED. Spacescan is "
-                                      f"authoritative — NOT recording fill. "
-                                      f"Operator should reconcile manually if "
-                                      f"Dexie turns out to be right.",
-                                      data={"trade_id": trade_id, "side": side,
-                                            "dexie_id": _dexie_id_rej,
-                                            "dexie_status": 4,
-                                            "spacescan_verdict": "rejected"})
-            except Exception as _dexie_err_r:
-                log_event("debug", "fill_dexie_fallback_failed_rejected_path",
-                          f"Dexie fallback (rejected path) failed for "
-                          f"{trade_id[:16]}...: {_dexie_err_r}")
 
-            log_event("info", "fill_rejected",
-                      f"Spacescan REJECTED {side} fill for {trade_id[:16]}... "
-                      f"(coin {coin_id[:16]}...) — phantom fill prevented!")
+                    _detail_r = get_offer_detail(
+                        _dexie_id_rej, cache_ttl_secs=0, timeout=5
+                    )
+                    if _detail_r and isinstance(_detail_r, dict):
+                        _dexie_trade_r = (
+                            str(_detail_r.get("trade_id") or "")
+                            .lower()
+                            .replace("0x", "")
+                        )
+                        _our_trade_r = str(trade_id).lower().replace("0x", "")
+                        _match_r = _dexie_trade_r == _our_trade_r or not _dexie_trade_r
+                        if _detail_r.get("status") == 4 and _match_r:
+                            log_event(
+                                "warning",
+                                "fill_spacescan_dexie_disagree",
+                                f"Spacescan REJECTED {side} fill for "
+                                f"{trade_id[:16]}... but Dexie status=4 "
+                                f"suggests COMPLETED. Spacescan is "
+                                f"authoritative — NOT recording fill. "
+                                f"Operator should reconcile manually if "
+                                f"Dexie turns out to be right.",
+                                data={
+                                    "trade_id": trade_id,
+                                    "side": side,
+                                    "dexie_id": _dexie_id_rej,
+                                    "dexie_status": 4,
+                                    "spacescan_verdict": "rejected",
+                                },
+                            )
+            except Exception as _dexie_err_r:
+                log_event(
+                    "debug",
+                    "fill_dexie_fallback_failed_rejected_path",
+                    f"Dexie fallback (rejected path) failed for "
+                    f"{trade_id[:16]}...: {_dexie_err_r}",
+                )
+
+            log_event(
+                "info",
+                "fill_rejected",
+                f"Spacescan REJECTED {side} fill for {trade_id[:16]}... "
+                f"(coin {coin_id[:16]}...) — phantom fill prevented!",
+            )
             return "rejected"
         else:
             # F63 (2026-04-10): Spacescan returned None (inconclusive). Before
@@ -1237,13 +1474,19 @@ class FillTracker:
             try:
                 sage_confirmed = self._check_sage_offer_confirmed(trade_id)
                 if sage_confirmed:
-                    log_event("success", "fill_verified_via_sage",
-                              f"Spacescan inconclusive BUT Sage confirms FILL for "
-                              f"{trade_id[:16]}... — recording fill.")
+                    log_event(
+                        "success",
+                        "fill_verified_via_sage",
+                        f"Spacescan inconclusive BUT Sage confirms FILL for "
+                        f"{trade_id[:16]}... — recording fill.",
+                    )
                     return "filled"
             except Exception as _sage_err:
-                log_event("debug", "fill_sage_fallback_failed",
-                          f"Sage fallback check failed for {trade_id[:16]}...: {_sage_err}")
+                log_event(
+                    "debug",
+                    "fill_sage_fallback_failed",
+                    f"Sage fallback check failed for {trade_id[:16]}...: {_sage_err}",
+                )
 
             # Fallback 2: Check Dexie API for the offer's completion status.
             # If Dexie reports the offer as completed (status=4), that's
@@ -1253,30 +1496,44 @@ class FillTracker:
                 dexie_id = (db_offer or {}).get("dexie_id")
                 if dexie_id:
                     from dexie_manager import get_offer_detail
+
                     detail = get_offer_detail(dexie_id, cache_ttl_secs=0, timeout=5)
                     if detail and isinstance(detail, dict):
                         # Validate the Dexie detail matches our trade_id
                         # to prevent cross-offer confusion
-                        _dexie_trade = str(detail.get("trade_id") or "").lower().replace("0x", "")
+                        _dexie_trade = (
+                            str(detail.get("trade_id") or "").lower().replace("0x", "")
+                        )
                         _our_trade = str(trade_id).lower().replace("0x", "")
                         _trade_match = (
                             _dexie_trade == _our_trade
                             or not _dexie_trade  # no trade_id in response = trust dexie_id match
                         )
                         dexie_status = detail.get("status")
-                        if dexie_status == 4 and _trade_match:  # Dexie: 4 = completed/filled
-                            log_event("success", "fill_verified_via_dexie",
-                                      f"Spacescan inconclusive BUT Dexie confirms FILL "
-                                      f"(status=4) for {trade_id[:16]}... — recording fill.")
+                        if (
+                            dexie_status == 4 and _trade_match
+                        ):  # Dexie: 4 = completed/filled
+                            log_event(
+                                "success",
+                                "fill_verified_via_dexie",
+                                f"Spacescan inconclusive BUT Dexie confirms FILL "
+                                f"(status=4) for {trade_id[:16]}... — recording fill.",
+                            )
                             return "filled"
                         elif dexie_status == 3:  # Dexie: 3 = cancelled
-                            log_event("info", "fill_rejected_via_dexie",
-                                      f"Dexie reports CANCELLED (status=3) for "
-                                      f"{trade_id[:16]}... — not a fill.")
+                            log_event(
+                                "info",
+                                "fill_rejected_via_dexie",
+                                f"Dexie reports CANCELLED (status=3) for "
+                                f"{trade_id[:16]}... — not a fill.",
+                            )
                             return "rejected"
             except Exception as _dexie_err:
-                log_event("debug", "fill_dexie_fallback_failed",
-                          f"Dexie fallback check failed for {trade_id[:16]}...: {_dexie_err}")
+                log_event(
+                    "debug",
+                    "fill_dexie_fallback_failed",
+                    f"Dexie fallback check failed for {trade_id[:16]}...: {_dexie_err}",
+                )
 
             # All sources inconclusive — fail closed. INFO (not WARNING)
             # because the retry path will re-attempt verification across
@@ -1285,10 +1542,13 @@ class FillTracker:
             # lost-fill path). Logging at WARN here produced N warnings
             # per cascade where the underlying spacescan rate-limit was
             # already deduped to a single warning.
-            log_event("info", "fill_unverified",
-                      f"On-chain verification inconclusive for {side} fill "
-                      f"{trade_id[:16]}... — Spacescan, Sage, and Dexie all "
-                      f"inconclusive. NOT recording (retry will re-verify).")
+            log_event(
+                "info",
+                "fill_unverified",
+                f"On-chain verification inconclusive for {side} fill "
+                f"{trade_id[:16]}... — Spacescan, Sage, and Dexie all "
+                f"inconclusive. NOT recording (retry will re-verify).",
+            )
             return "unverified"
 
     def _check_sage_offer_confirmed(self, trade_id: str) -> bool:
@@ -1310,7 +1570,10 @@ class FillTracker:
             # Try targeted single-offer lookup first (much cheaper than fetching 500)
             try:
                 from wallet_sage import rpc as _sage_rpc_direct
-                _single = _sage_rpc_direct("get_offer", {"offer_id": trade_id}, timeout=8)
+
+                _single = _sage_rpc_direct(
+                    "get_offer", {"offer_id": trade_id}, timeout=8
+                )
                 if _single and isinstance(_single, dict):
                     # Sage wraps offer details inside a "trade_record" key.
                     # Check both top-level (legacy) and nested (current) positions.
@@ -1321,20 +1584,29 @@ class FillTracker:
                     CONFIRMED_INT = {4}  # Chia TradeStatus: 3=CANCELLED, 4=CONFIRMED
                     if isinstance(status_val, int) and status_val in CONFIRMED_INT:
                         return True
-                    if isinstance(status_val, str) and status_val.lower() in CONFIRMED_STATUSES:
+                    if (
+                        isinstance(status_val, str)
+                        and status_val.lower() in CONFIRMED_STATUSES
+                    ):
                         return True
                     # Found but not confirmed — no need to fetch bulk
                     return False
             except Exception as _sage_err:
-                log_event("debug", "sage_single_offer_check_failed",
-                          f"Single-offer Sage check failed for {trade_id[:16]}...: {_sage_err}")
+                log_event(
+                    "debug",
+                    "sage_single_offer_check_failed",
+                    f"Single-offer Sage check failed for {trade_id[:16]}...: {_sage_err}",
+                )
                 # Fall through to bulk fetch
 
             # Fetch completed offers from Sage (include_completed=True)
             all_offers = get_all_offers(include_completed=True, start=0, end=500)
         except Exception as exc:
-            log_event("warning", "sage_check_failed",
-                      f"Failed to fetch Sage offers for self-spend check: {exc}")
+            log_event(
+                "warning",
+                "sage_check_failed",
+                f"Failed to fetch Sage offers for self-spend check: {exc}",
+            )
             return False
 
         if not all_offers:
@@ -1342,7 +1614,9 @@ class FillTracker:
 
         norm_trade = str(trade_id).lower().replace("0x", "")
         CONFIRMED_STATUSES = {
-            "confirmed", "completed", "success",
+            "confirmed",
+            "completed",
+            "success",
             "taken",  # some Sage builds use this
         }
         # Chia numeric enum: 3=CANCELLED, 4=CONFIRMED
@@ -1352,7 +1626,11 @@ class FillTracker:
             if not isinstance(offer, dict):
                 continue
             # Match by trade_id or offer_id
-            oid = str(offer.get("trade_id") or offer.get("offer_id") or "").lower().replace("0x", "")
+            oid = (
+                str(offer.get("trade_id") or offer.get("offer_id") or "")
+                .lower()
+                .replace("0x", "")
+            )
             if oid != norm_trade:
                 continue
             # Found the offer — check its status
@@ -1362,15 +1640,21 @@ class FillTracker:
             if isinstance(status_val, str) and status_val.lower() in CONFIRMED_STATUSES:
                 return True
             # Found but NOT confirmed
-            log_event("info", "sage_offer_status_check",
-                      f"Sage offer {trade_id[:16]}... status={repr(status_val)} "
-                      f"— not confirmed, treating as non-fill.")
+            log_event(
+                "info",
+                "sage_offer_status_check",
+                f"Sage offer {trade_id[:16]}... status={repr(status_val)} "
+                f"— not confirmed, treating as non-fill.",
+            )
             return False
 
         # Not found in Sage's offer list at all — treat as non-fill (conservative)
-        log_event("info", "sage_offer_not_found",
-                  f"Offer {trade_id[:16]}... not found in Sage completed offers — "
-                  f"treating as non-fill.")
+        log_event(
+            "info",
+            "sage_offer_not_found",
+            f"Offer {trade_id[:16]}... not found in Sage completed offers — "
+            f"treating as non-fill.",
+        )
         return False
 
     def _dexie_terminal_status(self, trade_id: str) -> str:
@@ -1393,6 +1677,7 @@ class FillTracker:
         """
         try:
             from database import get_offer
+
             db_offer = get_offer(trade_id)
         except Exception:
             db_offer = None
@@ -1409,6 +1694,7 @@ class FillTracker:
 
         try:
             from dexie_manager import get_offer_detail
+
             detail = get_offer_detail(dexie_id)
         except Exception:
             detail = None
@@ -1432,8 +1718,9 @@ class FillTracker:
             return "cancelled"
         return "unknown"
 
-    def _check_dexie_offer_still_open(self, trade_id: str, db_offer: Optional[Dict],
-                                      coin_id: str) -> Optional[bool]:
+    def _check_dexie_offer_still_open(
+        self, trade_id: str, db_offer: Optional[Dict], coin_id: str
+    ) -> Optional[bool]:
         """Narrow pre-Spacescan check: is Dexie still showing this offer as OPEN?
 
         Returns True ONLY when Dexie unambiguously reports status=0 (ACTIVE)
@@ -1460,6 +1747,7 @@ class FillTracker:
 
         try:
             from dexie_manager import get_offer_detail
+
             detail = get_offer_detail(dexie_id)
         except Exception:
             detail = None
@@ -1474,18 +1762,24 @@ class FillTracker:
         detail_trade_id = str(detail.get("trade_id") or "").lower().replace("0x", "")
         if detail_trade_id and detail_trade_id != norm_trade_id:
             # Mismatch: log for operator visibility but DO NOT veto.
-            log_event("debug", "fill_dexie_trade_mismatch_defer",
-                      f"Dexie detail {dexie_id[:16]}... maps to trade "
-                      f"{detail_trade_id[:16]}..., not {norm_trade_id[:16]}... "
-                      f"Deferring to Spacescan for authoritative verdict.")
+            log_event(
+                "debug",
+                "fill_dexie_trade_mismatch_defer",
+                f"Dexie detail {dexie_id[:16]}... maps to trade "
+                f"{detail_trade_id[:16]}..., not {norm_trade_id[:16]}... "
+                f"Deferring to Spacescan for authoritative verdict.",
+            )
             return None
 
         tracked_coin = str(coin_id or "").lower().replace("0x", "")
         detail_coin_ids = self._extract_dexie_coin_ids(detail)
         if tracked_coin and detail_coin_ids and tracked_coin not in detail_coin_ids:
-            log_event("debug", "fill_dexie_coin_mismatch_defer",
-                      f"Dexie detail {dexie_id[:16]}... does not reference coin "
-                      f"{tracked_coin[:16]}... Deferring to Spacescan.")
+            log_event(
+                "debug",
+                "fill_dexie_coin_mismatch_defer",
+                f"Dexie detail {dexie_id[:16]}... does not reference coin "
+                f"{tracked_coin[:16]}... Deferring to Spacescan.",
+            )
             return None
 
         try:
@@ -1494,9 +1788,12 @@ class FillTracker:
             status_num = None
 
         if status_num == 0:
-            log_event("info", "fill_dexie_still_open",
-                      f"Dexie still shows {trade_id[:16]}... as OPEN — "
-                      f"disappearance is likely a Sage cache blip, not a fill.")
+            log_event(
+                "info",
+                "fill_dexie_still_open",
+                f"Dexie still shows {trade_id[:16]}... as OPEN — "
+                f"disappearance is likely a Sage cache blip, not a fill.",
+            )
             return True
 
         return None
@@ -1506,7 +1803,9 @@ class FillTracker:
         if not value:
             return None
         try:
-            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+            return _dt.datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            ).timestamp()
         except Exception:
             return None
 
@@ -1531,8 +1830,9 @@ class FillTracker:
 
         return coin_ids
 
-    def _record_fill(self, trade_id: str, side: str,
-                     details_cache: Dict[str, Dict]) -> Optional[Dict]:
+    def _record_fill(
+        self, trade_id: str, side: str, details_cache: Dict[str, Dict]
+    ) -> Optional[Dict]:
         """Record a filled offer to the database and history.
 
         Returns fill detail dict, or None on error.
@@ -1551,6 +1851,7 @@ class FillTracker:
         if price == Decimal("0") or size_xch == Decimal("0"):
             try:
                 from database import get_offer
+
                 db_offer = get_offer(trade_id)
                 if db_offer:
                     if price == Decimal("0") and db_offer.get("price_xch"):
@@ -1561,9 +1862,12 @@ class FillTracker:
                         size_cat = Decimal(str(db_offer["size_cat"]))
                     if tier == "unknown" and db_offer.get("tier"):
                         tier = db_offer["tier"]
-                    log_event("info", "fill_cache_miss_recovered",
-                              f"Recovered fill details from DB for {trade_id[:16]}... "
-                              f"(price={price:.8f}, size={size_xch})")
+                    log_event(
+                        "info",
+                        "fill_cache_miss_recovered",
+                        f"Recovered fill details from DB for {trade_id[:16]}... "
+                        f"(price={price:.8f}, size={size_xch})",
+                    )
             except Exception:
                 pass  # DB lookup is best-effort
 
@@ -1573,9 +1877,12 @@ class FillTracker:
         # Record it as 'unmatched' so operators can investigate, but exclude
         # from PnL (all PnL queries filter verification_status='verified').
         if price == Decimal("0") and size_xch == Decimal("0"):
-            log_event("warning", "fill_no_details",
-                      f"Offer {trade_id[:16]}... disappeared but has no price/size data "
-                      f"(not in cache or DB) — recording as unmatched for investigation")
+            log_event(
+                "warning",
+                "fill_no_details",
+                f"Offer {trade_id[:16]}... disappeared but has no price/size data "
+                f"(not in cache or DB) — recording as unmatched for investigation",
+            )
             try:
                 record_fill(
                     trade_id=trade_id,
@@ -1589,8 +1896,11 @@ class FillTracker:
                     fee_mojos_xch=0,
                 )
             except Exception as e:
-                log_event("error", "fill_unmatched_record_failed",
-                          f"Failed to record unmatched fill for {trade_id[:16]}...: {e}")
+                log_event(
+                    "error",
+                    "fill_unmatched_record_failed",
+                    f"Failed to record unmatched fill for {trade_id[:16]}...: {e}",
+                )
             return None  # Still return None — caller shouldn't treat this as a confirmed fill
 
         # Record to database
@@ -1600,11 +1910,14 @@ class FillTracker:
             _fee_mojos = 0
             try:
                 from database import get_offer as _get_offer_fee
+
                 db_offer = _get_offer_fee(trade_id) if trade_id else None
                 if db_offer and int(db_offer.get("fee_mojos_xch") or 0) > 0:
                     _fee_mojos = int(db_offer["fee_mojos_xch"])
                 else:
-                    _fee_xch = Decimal(str(getattr(cfg, "TRANSACTION_FEE_XCH", "0") or "0"))
+                    _fee_xch = Decimal(
+                        str(getattr(cfg, "TRANSACTION_FEE_XCH", "0") or "0")
+                    )
                     _fee_mojos = int(_fee_xch * Decimal("1000000000000"))
             except Exception:
                 _fee_mojos = 0
@@ -1616,11 +1929,14 @@ class FillTracker:
                 size_cat=size_cat,
                 cat_asset_id=cfg.CAT_ASSET_ID,
                 tier=tier,
-                fee_mojos_xch=_fee_mojos
+                fee_mojos_xch=_fee_mojos,
             )
         except Exception as e:
-            log_event("error", "fill_record_failed",
-                      f"Failed to record fill for {trade_id}: {e}")
+            log_event(
+                "error",
+                "fill_record_failed",
+                f"Failed to record fill for {trade_id}: {e}",
+            )
             return None
 
         # Look up the coin_id that was destroyed by this fill
@@ -1634,6 +1950,7 @@ class FillTracker:
                 _offer_row = db_offer
                 if not _offer_row:
                     from database import get_offer as _get_offer_for_coin
+
                     _offer_row = _get_offer_for_coin(trade_id)
                 if _offer_row and _offer_row.get("coin_id"):
                     coin_id = _offer_row["coin_id"]
@@ -1656,7 +1973,7 @@ class FillTracker:
         # Add to history (capped)
         self._fill_history.insert(0, fill_detail)
         if len(self._fill_history) > self._max_history:
-            self._fill_history = self._fill_history[:self._max_history]
+            self._fill_history = self._fill_history[: self._max_history]
 
         # Check whether the mempool watcher caught this fill before the
         # block confirmed — useful as a running measure of watcher latency
@@ -1665,29 +1982,37 @@ class FillTracker:
         mempool_warned = False
         try:
             import mempool_watcher as _mw
+
             _w = getattr(_mw, "_watcher_instance", None)
             if _w is not None and coin_id and coin_id != "unknown":
                 mempool_warned = _w.was_fill_warned(coin_id)
         except Exception:
             pass
 
-        log_event("info", "offer_filled",
-                  self._format_offer_filled_log_message(
-                      side=side,
-                      coin_id=coin_id,
-                      price=price,
-                      size_xch=size_xch,
-                      size_cat=size_cat,
-                      tier=tier,
-                      mempool_warned=mempool_warned,
-                  ),
-                  data={"fill_id": fill_id, "trade_id": trade_id,
-                        "coin_id": coin_id, "side": side,
-                        "price": float(price) if price else None,
-                        "size_xch": float(size_xch) if size_xch else None,
-                        "size_cat": float(size_cat) if size_cat else None,
-                        "tier": tier,
-                        "mempool_warned": mempool_warned})
+        log_event(
+            "info",
+            "offer_filled",
+            self._format_offer_filled_log_message(
+                side=side,
+                coin_id=coin_id,
+                price=price,
+                size_xch=size_xch,
+                size_cat=size_cat,
+                tier=tier,
+                mempool_warned=mempool_warned,
+            ),
+            data={
+                "fill_id": fill_id,
+                "trade_id": trade_id,
+                "coin_id": coin_id,
+                "side": side,
+                "price": float(price) if price else None,
+                "size_xch": float(size_xch) if size_xch else None,
+                "size_cat": float(size_cat) if size_cat else None,
+                "tier": tier,
+                "mempool_warned": mempool_warned,
+            },
+        )
 
         # Notify BoostManager when a boost-tier offer was confirmed filled
         # so the inverted-probe state machine can settle that side. This
@@ -1696,6 +2021,7 @@ class FillTracker:
         try:
             if str(tier or "").lower() == "boost":
                 import api_server as _api_server
+
                 bot_ref = getattr(_api_server, "bot", None)
                 bm = getattr(bot_ref, "boost_manager", None) if bot_ref else None
                 if bm and hasattr(bm, "notify_boost_fill"):
@@ -1734,17 +2060,25 @@ class FillTracker:
 
             if _classification.classification != "unknown":
                 fill_detail["fill_classification"] = _classification.classification
-                log_event("info", "fill_classified",
-                          f"Fill {fill_id} classified as {_classification.classification} "
-                          f"(confidence={_classification.confidence})",
-                          data={"fill_id": fill_id,
-                                "classification": _classification.classification,
-                                "confidence": _classification.confidence,
-                                "taker_puzzle_hash": _classification.taker_puzzle_hash,
-                                "spent_block_index": _classification.spent_block_index})
+                log_event(
+                    "info",
+                    "fill_classified",
+                    f"Fill {fill_id} classified as {_classification.classification} "
+                    f"(confidence={_classification.confidence})",
+                    data={
+                        "fill_id": fill_id,
+                        "classification": _classification.classification,
+                        "confidence": _classification.confidence,
+                        "taker_puzzle_hash": _classification.taker_puzzle_hash,
+                        "spent_block_index": _classification.spent_block_index,
+                    },
+                )
         except Exception as _class_err:
-            log_event("debug", "fill_classification_error",
-                      f"Fill classification failed for fill_id={fill_id}: {_class_err}")
+            log_event(
+                "debug",
+                "fill_classification_error",
+                f"Fill classification failed for fill_id={fill_id}: {_class_err}",
+            )
             # Classification is additive — never block fill recording
 
         return fill_detail
@@ -1772,7 +2106,9 @@ class FillTracker:
         cat_asset_id = cfg.CAT_ASSET_ID
         run_cutoff = getattr(cfg, "RUN_HISTORY_CUTOFF", None)
         unmatched_buys = get_unmatched_fills(cat_asset_id, side="buy", since=run_cutoff)
-        unmatched_sells = get_unmatched_fills(cat_asset_id, side="sell", since=run_cutoff)
+        unmatched_sells = get_unmatched_fills(
+            cat_asset_id, side="sell", since=run_cutoff
+        )
 
         if not unmatched_buys or not unmatched_sells:
             return []
@@ -1783,23 +2119,36 @@ class FillTracker:
         # (a profitable MM trade + a deliberate giveaway) and produce
         # misleading round-trip PnL. Boost cost is tracked separately in
         # BoostManager.session_total_arb_cost_xch.
-        unmatched_buys  = [f for f in unmatched_buys  if (f.get("tier") or "").lower() != "boost"]
-        unmatched_sells = [f for f in unmatched_sells if (f.get("tier") or "").lower() != "boost"]
+        unmatched_buys = [
+            f for f in unmatched_buys if (f.get("tier") or "").lower() != "boost"
+        ]
+        unmatched_sells = [
+            f for f in unmatched_sells if (f.get("tier") or "").lower() != "boost"
+        ]
 
         # Filter out zero-value fills (no price/size data — can't calculate PnL)
-        valid_buys = [f for f in unmatched_buys
-                      if Decimal(str(f.get("size_xch", 0))) > 0
-                      and Decimal(str(f.get("price_xch", 0))) > 0]
-        valid_sells = [f for f in unmatched_sells
-                       if Decimal(str(f.get("size_xch", 0))) > 0
-                       and Decimal(str(f.get("price_xch", 0))) > 0]
+        valid_buys = [
+            f
+            for f in unmatched_buys
+            if Decimal(str(f.get("size_xch", 0))) > 0
+            and Decimal(str(f.get("price_xch", 0))) > 0
+        ]
+        valid_sells = [
+            f
+            for f in unmatched_sells
+            if Decimal(str(f.get("size_xch", 0))) > 0
+            and Decimal(str(f.get("price_xch", 0))) > 0
+        ]
 
         skipped_buys = len(unmatched_buys) - len(valid_buys)
         skipped_sells = len(unmatched_sells) - len(valid_sells)
         if skipped_buys or skipped_sells:
-            log_event("warning", "pnl_skipped_zero_fills",
-                      f"Skipped {skipped_buys} buy + {skipped_sells} sell fills "
-                      f"with zero price/size (no data available for PnL)")
+            log_event(
+                "warning",
+                "pnl_skipped_zero_fills",
+                f"Skipped {skipped_buys} buy + {skipped_sells} sell fills "
+                f"with zero price/size (no data available for PnL)",
+            )
 
         if not valid_buys or not valid_sells:
             return []
@@ -1820,15 +2169,20 @@ class FillTracker:
         #   the unbalanced CAT position is valued at the current mid price,
         #   giving an accurate mark-to-market realized PnL.
         pass4_eligible = (
-            len([f for f in valid_buys
-                 if f["fill_id"] not in {m["buy_fill_id"] for m in matched}]) > 0
-            and len([f for f in valid_sells
-                     if f["fill_id"] not in used_sell_ids]) > 0
+            len(
+                [
+                    f
+                    for f in valid_buys
+                    if f["fill_id"] not in {m["buy_fill_id"] for m in matched}
+                ]
+            )
+            > 0
+            and len([f for f in valid_sells if f["fill_id"] not in used_sell_ids]) > 0
         )
         pass_specs = [
-            (True, Decimal("0.01")),    # Pass 1: same tier, exact size
-            (False, Decimal("0.01")),   # Pass 2: any tier, exact size
-            (False, Decimal("0.20")),   # Pass 3: any tier, 20% tolerance
+            (True, Decimal("0.01")),  # Pass 1: same tier, exact size
+            (False, Decimal("0.01")),  # Pass 2: any tier, exact size
+            (False, Decimal("0.20")),  # Pass 3: any tier, 20% tolerance
         ]
         if pass4_eligible:
             pass_specs.append((False, None))  # Pass 4: FIFO, no size limit
@@ -1880,17 +2234,25 @@ class FillTracker:
 
         # Log unmatched fills (one-directional inventory changes)
         matched_buy_ids = {m["buy_fill_id"] for m in matched}
-        unmatched_buy_count = sum(1 for f in valid_buys if f["fill_id"] not in matched_buy_ids)
-        unmatched_sell_count = sum(1 for f in valid_sells if f["fill_id"] not in used_sell_ids)
+        unmatched_buy_count = sum(
+            1 for f in valid_buys if f["fill_id"] not in matched_buy_ids
+        )
+        unmatched_sell_count = sum(
+            1 for f in valid_sells if f["fill_id"] not in used_sell_ids
+        )
         if unmatched_buy_count or unmatched_sell_count:
-            log_event("info", "pnl_unmatched_fills",
-                      f"{unmatched_buy_count} buy + {unmatched_sell_count} sell fills "
-                      f"unmatched (one-directional inventory build)")
+            log_event(
+                "info",
+                "pnl_unmatched_fills",
+                f"{unmatched_buy_count} buy + {unmatched_sell_count} sell fills "
+                f"unmatched (one-directional inventory build)",
+            )
 
         return matched
 
-    def _create_round_trip(self, buy_fill: Dict, sell_fill: Dict,
-                           pass_num: int) -> Optional[Dict]:
+    def _create_round_trip(
+        self, buy_fill: Dict, sell_fill: Dict, pass_num: int
+    ) -> Optional[Dict]:
         """Calculate PnL and record a round-trip match.
 
         PnL formula:
@@ -1926,7 +2288,9 @@ class FillTracker:
         try:
             buy_fee_mojos = int(buy_fill.get("fee_mojos_xch") or 0)
             sell_fee_mojos = int(sell_fill.get("fee_mojos_xch") or 0)
-            total_fee_xch = Decimal(buy_fee_mojos + sell_fee_mojos) / Decimal("1000000000000")
+            total_fee_xch = Decimal(buy_fee_mojos + sell_fee_mojos) / Decimal(
+                "1000000000000"
+            )
             pnl_xch -= total_fee_xch
         except Exception:
             pass  # Fee deduction is best-effort; don't break PnL matching
@@ -1935,16 +2299,19 @@ class FillTracker:
             rt_id = match_round_trip(
                 buy_fill_id=buy_fill["fill_id"],
                 sell_fill_id=sell_fill["fill_id"],
-                pnl_xch=pnl_xch
+                pnl_xch=pnl_xch,
             )
 
             buy_tier = buy_fill.get("tier", "?")
             sell_tier = sell_fill.get("tier", "?")
-            log_event("info", "round_trip_matched",
-                      f"Round-trip PnL: {pnl_xch:+.8f} XCH (incl. fees) "
-                      f"(buy {buy_xch} @ {buy_price:.8f} [{buy_tier}], "
-                      f"sell {sell_xch} @ {sell_price:.8f} [{sell_tier}], "
-                      f"pass={pass_num})")
+            log_event(
+                "info",
+                "round_trip_matched",
+                f"Round-trip PnL: {pnl_xch:+.8f} XCH (incl. fees) "
+                f"(buy {buy_xch} @ {buy_price:.8f} [{buy_tier}], "
+                f"sell {sell_xch} @ {sell_price:.8f} [{sell_tier}], "
+                f"pass={pass_num})",
+            )
 
             return {
                 "round_trip_id": rt_id,
@@ -1961,8 +2328,9 @@ class FillTracker:
             }
 
         except Exception as e:
-            log_event("error", "round_trip_match_failed",
-                      f"Failed to match round-trip: {e}")
+            log_event(
+                "error", "round_trip_match_failed", f"Failed to match round-trip: {e}"
+            )
             return None
 
     # -------------------------------------------------------------------
@@ -2027,8 +2395,11 @@ class FillTracker:
         """
         self._previous_ids["buy"] = set(buy_ids)
         self._previous_ids["sell"] = set(sell_ids)
-        log_event("info", "fill_tracker_baseline_set",
-                  f"Pre-startup baseline set: {len(buy_ids)} buys, "
-                  f"{len(sell_ids)} sells — offline fills will be detected on first loop")
+        log_event(
+            "info",
+            "fill_tracker_baseline_set",
+            f"Pre-startup baseline set: {len(buy_ids)} buys, "
+            f"{len(sell_ids)} sells — offline fills will be detected on first loop",
+        )
 
     # prune_known_ids REMOVED — _known_ids was dead state (write-only, never read)

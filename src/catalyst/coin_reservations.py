@@ -43,6 +43,7 @@ Usage::
         registry.reserve([coin_id], owner="topup-absorb", purpose="absorb")
         ...
 """
+
 from __future__ import annotations
 
 import threading
@@ -269,6 +270,7 @@ class ReservationRegistry:
 # the codebase mixes "0x"-prefixed and bare lowercase. Standardise on
 # bare lowercase throughout this registry so equality is reliable.
 # ---------------------------------------------------------------------
+
 
 def _normalise(coin_id: str) -> str:
     if not coin_id:

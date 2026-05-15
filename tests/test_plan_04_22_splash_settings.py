@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -38,9 +39,7 @@ def _make_bot():
     bot = MagicMock()
     bot.splash_manager.get_stats.return_value = {"total_sent": 0}
     bot.splash_manager.check_health.return_value = {"ok": True}
-    bot.get_splash_receive_stats.return_value = {
-        "enabled": False, "received": 0
-    }
+    bot.get_splash_receive_stats.return_value = {"enabled": False, "received": 0}
     bot.splash_node.get_status.return_value = {"running": False}
     bot.splash_node.start.return_value = True
     bot.splash_node.is_running.return_value = False
@@ -77,9 +76,9 @@ class _FlaskBase(unittest.TestCase):
 # GET /api/splash/stats
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSplashStats(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self._get("/api/splash/stats")
@@ -105,9 +104,9 @@ class TestSplashStats(_FlaskBase):
 # GET/POST /api/splash/receive
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSplashReceive(_FlaskBase):
-
     def test_get_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self._get("/api/splash/receive")
@@ -124,18 +123,22 @@ class TestSplashReceive(_FlaskBase):
 
     def test_post_toggle_returns_success(self):
         bot = _make_bot()
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server.cfg, "update"), \
-             patch("api_server.log_event"):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server.cfg, "update"),
+            patch("api_server.log_event"),
+        ):
             resp = self._post("/api/splash/receive", {"enabled": False})
         body = resp.get_json()
         self.assertTrue(body.get("success"))
 
     def test_post_response_has_enabled_key(self):
         bot = _make_bot()
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server.cfg, "update"), \
-             patch("api_server.log_event"):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server.cfg, "update"),
+            patch("api_server.log_event"),
+        ):
             resp = self._post("/api/splash/receive", {"enabled": True})
         self.assertIn("enabled", resp.get_json())
 
@@ -144,9 +147,9 @@ class TestSplashReceive(_FlaskBase):
 # GET /api/splash/node
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSplashNode(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self._get("/api/splash/node")
@@ -162,9 +165,9 @@ class TestSplashNode(_FlaskBase):
 # POST /api/splash/node/start
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSplashNodeStart(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/splash/node/start", auth=False)
         self.assertEqual(resp.status_code, 401)
@@ -176,17 +179,21 @@ class TestSplashNodeStart(_FlaskBase):
 
     def test_returns_200_with_bot(self):
         bot = _make_bot()
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server.cfg, "update"), \
-             patch("api_server.log_event"):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server.cfg, "update"),
+            patch("api_server.log_event"),
+        ):
             resp = self._post("/api/splash/node/start")
         self.assertEqual(resp.status_code, 200)
 
     def test_response_has_success_key(self):
         bot = _make_bot()
-        with patch.object(api_server, "bot", bot), \
-             patch.object(api_server.cfg, "update"), \
-             patch("api_server.log_event"):
+        with (
+            patch.object(api_server, "bot", bot),
+            patch.object(api_server.cfg, "update"),
+            patch("api_server.log_event"),
+        ):
             resp = self._post("/api/splash/node/start")
         self.assertIn("success", resp.get_json())
 
@@ -194,6 +201,7 @@ class TestSplashNodeStart(_FlaskBase):
 # ---------------------------------------------------------------------------
 # POST /api/splash/incoming  (webhook)
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSplashIncoming(_FlaskBase):
@@ -208,64 +216,70 @@ class TestSplashIncoming(_FlaskBase):
         )
 
     def test_disabled_returns_403(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", False,
-                          create=True):
+        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", False, create=True):
             resp = self._post_incoming({"offer": "offer1abc"})
         self.assertEqual(resp.status_code, 403)
 
     def test_missing_offer_returns_400(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+        ):
             resp = self._post_incoming({})
         self.assertEqual(resp.status_code, 400)
 
     def test_invalid_offer_format_returns_400(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+        ):
             resp = self._post_incoming({"offer": "notanoffer"})
         self.assertEqual(resp.status_code, 400)
 
     def test_oversized_offer_returns_413(self):
         huge = "offer1" + "x" * 32800
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+        ):
             resp = self._post_incoming({"offer": huge})
         self.assertEqual(resp.status_code, 413)
 
     def test_valid_offer_returns_200(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False), \
-             patch("database.record_splash_incoming", return_value=True), \
-             patch("api_server.log_event"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+            patch("database.record_splash_incoming", return_value=True),
+            patch("api_server.log_event"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = self._post_incoming({"offer": "offer1valid"})
         self.assertEqual(resp.status_code, 200)
 
     def test_valid_offer_response_has_ok_key(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False), \
-             patch("database.record_splash_incoming", return_value=True), \
-             patch("api_server.log_event"), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+            patch("database.record_splash_incoming", return_value=True),
+            patch("api_server.log_event"),
+            patch.object(api_server, "bot", None),
+        ):
             resp = self._post_incoming({"offer": "offer1valid"})
         self.assertIn("ok", resp.get_json())
 
     def test_rate_limited_returns_429(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=True):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=True),
+        ):
             resp = self._post_incoming({"offer": "offer1valid"})
         self.assertEqual(resp.status_code, 429)
 
     def test_invalid_body_returns_400(self):
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True,
-                          create=True), \
-             patch("api_server._splash_incoming_rate_limited", return_value=False):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True, create=True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+        ):
             resp = self.client.post(
                 "/api/splash/incoming",
                 data="not json",
@@ -279,9 +293,9 @@ class TestSplashIncoming(_FlaskBase):
 # GET /api/settings/defaults
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSettingsDefaults(_FlaskBase):
-
     def test_returns_200(self):
         resp = self._get("/api/settings/defaults")
         self.assertEqual(resp.status_code, 200)
@@ -304,9 +318,9 @@ class TestSettingsDefaults(_FlaskBase):
 # POST /api/settings/validate
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestSettingsValidate(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post("/api/settings/validate", {}, auth=False)
         self.assertEqual(resp.status_code, 401)
@@ -353,9 +367,9 @@ class TestSettingsValidate(_FlaskBase):
 # GET /api/config/export-env
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestConfigExportEnv(_FlaskBase):
-
     def test_returns_200(self):
         resp = self._get("/api/config/export-env")
         self.assertEqual(resp.status_code, 200)

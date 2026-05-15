@@ -18,6 +18,7 @@ import requests
 # ─── Configuration ────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -25,8 +26,9 @@ except ImportError:
 # Suppress noisy SQL logging from database.py during tests
 logging.disable(logging.WARNING)
 
-DEFAULT_ASSET_ID = os.getenv("CAT_ASSET_ID",
-    "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105")
+DEFAULT_ASSET_ID = os.getenv(
+    "CAT_ASSET_ID", "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105"
+)
 DEFAULT_TICKER_ID = os.getenv("CAT_TICKER_ID", "MZ_XCH")
 DEXIE_API = os.getenv("DEXIE_API_BASE", "https://api.dexie.space")
 TIBET_API = os.getenv("TIBET_API_BASE", "https://api.v2.tibetswap.io")
@@ -47,10 +49,12 @@ RESET = "\033[0m"
 
 results = {"pass": 0, "fail": 0, "warn": 0}
 
+
 def section(title):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"{BOLD}  {title}{RESET}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
+
 
 def test(name, passed, detail="", warn=False):
     if warn:
@@ -64,6 +68,7 @@ def test(name, passed, detail="", warn=False):
         results["fail"] += 1
     detail_str = f" — {detail}" if detail else ""
     print(f"  {status} {name}{detail_str}")
+
 
 def safe_get(url, params=None, headers=None, timeout=10):
     """GET with error handling, returns (response_json, error_string)."""
@@ -97,8 +102,7 @@ print(f"  {INFO} Ticker:   {TICKER_ID}")
 
 # 1a. Ticker
 print(f"\n  {BOLD}1a. Ticker (v2/prices/tickers){RESET}")
-data, err = safe_get(f"{DEXIE_API}/v2/prices/tickers",
-                     params={"ticker_id": TICKER_ID})
+data, err = safe_get(f"{DEXIE_API}/v2/prices/tickers", params={"ticker_id": TICKER_ID})
 dexie_ticker = None
 if data:
     tickers = data.get("tickers", [])
@@ -122,7 +126,11 @@ if data:
             # Check 30d volume instead — low-frequency tokens won't have 24h data
             vol_30d = float(t.get("base_volume_30d", 0) or 0)
             if vol_30d > 0:
-                test("24h volume", True, f"no 24h trades, but 30d volume = {vol_30d:.4f} XCH")
+                test(
+                    "24h volume",
+                    True,
+                    f"no 24h trades, but 30d volume = {vol_30d:.4f} XCH",
+                )
             else:
                 test("24h volume", False, "no volume data at any timeframe")
 
@@ -138,8 +146,11 @@ if data:
 
         bid = float(t.get("bid", 0) or 0)
         ask = float(t.get("ask", 0) or 0)
-        test("Bid/Ask spread", bid > 0 and ask > 0,
-             f"bid={bid:.10f}, ask={ask:.10f}" if bid > 0 else "missing")
+        test(
+            "Bid/Ask spread",
+            bid > 0 and ask > 0,
+            f"bid={bid:.10f}, ask={ask:.10f}" if bid > 0 else "missing",
+        )
     else:
         test("Has ticker data", False, "empty tickers array")
 else:
@@ -148,13 +159,25 @@ else:
 # 1b. Trade History
 print(f"\n  {BOLD}1b. Trade History — KEY FOR SMART DEFAULTS V2{RESET}")
 trade_endpoints = [
-    (f"{DEXIE_API}/v1/trades", {"offered": "xch", "requested": ASSET_ID, "page_size": 10}),
-    (f"{DEXIE_API}/v1/trades", {"offered": ASSET_ID, "requested": "xch", "page_size": 10}),
+    (
+        f"{DEXIE_API}/v1/trades",
+        {"offered": "xch", "requested": ASSET_ID, "page_size": 10},
+    ),
+    (
+        f"{DEXIE_API}/v1/trades",
+        {"offered": ASSET_ID, "requested": "xch", "page_size": 10},
+    ),
     (f"{DEXIE_API}/v1/trades", {"pair": f"{ASSET_ID}_xch", "page_size": 10}),
     (f"{DEXIE_API}/v1/trades", {"ticker_id": TICKER_ID, "page_size": 10}),
     (f"{DEXIE_API}/v2/trades", {"ticker_id": TICKER_ID, "page_size": 10}),
-    (f"{DEXIE_API}/v1/offers", {"offered": "xch", "requested": ASSET_ID, "status": 3, "page_size": 10}),
-    (f"{DEXIE_API}/v1/offers", {"offered": "xch", "requested": ASSET_ID, "status": 6, "page_size": 10}),
+    (
+        f"{DEXIE_API}/v1/offers",
+        {"offered": "xch", "requested": ASSET_ID, "status": 3, "page_size": 10},
+    ),
+    (
+        f"{DEXIE_API}/v1/offers",
+        {"offered": "xch", "requested": ASSET_ID, "status": 6, "page_size": 10},
+    ),
 ]
 
 trade_data_found = False
@@ -164,31 +187,71 @@ for url, params in trade_endpoints:
         for key in ["trades", "offers", "data", "results"]:
             items = data.get(key, [])
             if items and len(items) > 0:
-                test("Trade history endpoint found", True,
-                     f"{url.split('/')[-1]}?{list(params.keys())} → {len(items)} results")
+                test(
+                    "Trade history endpoint found",
+                    True,
+                    f"{url.split('/')[-1]}?{list(params.keys())} → {len(items)} results",
+                )
 
                 first = items[0]
                 trade_fields = list(first.keys())
                 test("Trade record fields", True, f"{len(trade_fields)} fields")
-                print(f"  {INFO} Fields: {trade_fields[:15]}{'...' if len(trade_fields) > 15 else ''}")
+                print(
+                    f"  {INFO} Fields: {trade_fields[:15]}{'...' if len(trade_fields) > 15 else ''}"
+                )
 
-                has_time = any(k in first for k in ["date", "created_at", "timestamp", "time", "date_completed"])
-                test("Has timestamp", has_time,
-                     next((first[k] for k in ["date", "created_at", "timestamp", "time", "date_completed"] if k in first), "none"))
+                has_time = any(
+                    k in first
+                    for k in [
+                        "date",
+                        "created_at",
+                        "timestamp",
+                        "time",
+                        "date_completed",
+                    ]
+                )
+                test(
+                    "Has timestamp",
+                    has_time,
+                    next(
+                        (
+                            first[k]
+                            for k in [
+                                "date",
+                                "created_at",
+                                "timestamp",
+                                "time",
+                                "date_completed",
+                            ]
+                            if k in first
+                        ),
+                        "none",
+                    ),
+                )
 
-                has_amounts = any(k in first for k in ["offered_amount", "requested_amount", "price", "amount"])
+                has_amounts = any(
+                    k in first
+                    for k in ["offered_amount", "requested_amount", "price", "amount"]
+                )
                 test("Has price/amount data", has_amounts)
 
                 trade_data_found = True
 
                 # Pagination test
                 print(f"\n  {INFO} Testing pagination for 30-day history...")
-                page2_data, page2_err = safe_get(url, params={**params, "page": 2, "page_size": 100})
+                page2_data, page2_err = safe_get(
+                    url, params={**params, "page": 2, "page_size": 100}
+                )
                 if page2_data:
                     page2_items = page2_data.get(key, [])
-                    test("Pagination works", len(page2_items) > 0,
-                         f"page 2 has {len(page2_items)} items")
-                    total = data.get("count", data.get("total", data.get("total_count", "unknown")))
+                    test(
+                        "Pagination works",
+                        len(page2_items) > 0,
+                        f"page 2 has {len(page2_items)} items",
+                    )
+                    total = data.get(
+                        "count", data.get("total", data.get("total_count", "unknown"))
+                    )
                     test("Total count available", total != "unknown", f"total: {total}")
                 else:
                     test("Pagination works", False, page2_err)
@@ -201,8 +264,14 @@ if not trade_data_found:
     print(f"  {INFO} Trying filled offers as trade proxy...")
     web_data, web_err = safe_get(
         f"{DEXIE_API}/v1/offers",
-        params={"offered_or_requested": ASSET_ID, "status": "3,6", "page_size": 10,
-                "sort": "date_completed", "order": "desc"})
+        params={
+            "offered_or_requested": ASSET_ID,
+            "status": "3,6",
+            "page_size": 10,
+            "sort": "date_completed",
+            "order": "desc",
+        },
+    )
     if web_data:
         offers = web_data.get("offers", [])
         if offers:
@@ -215,18 +284,32 @@ if not trade_data_found:
 
 # 1c. Orderbook
 print(f"\n  {BOLD}1c. Orderbook (v1/offers){RESET}")
-data, err = safe_get(f"{DEXIE_API}/v1/offers",
-                     params={"offered": "xch", "requested": ASSET_ID,
-                             "status": 0, "page_size": 10, "compact": True})
+data, err = safe_get(
+    f"{DEXIE_API}/v1/offers",
+    params={
+        "offered": "xch",
+        "requested": ASSET_ID,
+        "status": 0,
+        "page_size": 10,
+        "compact": True,
+    },
+)
 if data:
     offers = data.get("offers", [])
     test("Buy orderbook", True, f"{len(offers)} buy offers")
 else:
     test("Buy orderbook", False, err)
 
-data, err = safe_get(f"{DEXIE_API}/v1/offers",
-                     params={"offered": ASSET_ID, "requested": "xch",
-                             "status": 0, "page_size": 10, "compact": True})
+data, err = safe_get(
+    f"{DEXIE_API}/v1/offers",
+    params={
+        "offered": ASSET_ID,
+        "requested": "xch",
+        "status": 0,
+        "page_size": 10,
+        "compact": True,
+    },
+)
 if data:
     offers = data.get("offers", [])
     test("Sell orderbook", True, f"{len(offers)} sell offers")
@@ -255,8 +338,17 @@ if data and isinstance(data, list):
         if pair_asset == normalized or pair_asset.rstrip("0") == normalized.rstrip("0"):
             pair_id = pair.get("pair_id")
             tibet_pair = pair
-            name = pair.get("asset_short_name") or pair.get("asset_name") or pair.get("short_name") or "?"
-            test("Token found in TibetSwap", True, f"pair_id={pair_id[:16]}..., name={name}")
+            name = (
+                pair.get("asset_short_name")
+                or pair.get("asset_name")
+                or pair.get("short_name")
+                or "?"
+            )
+            test(
+                "Token found in TibetSwap",
+                True,
+                f"pair_id={pair_id[:16]}..., name={name}",
+            )
             break
     if not pair_id:
         test("Token found in TibetSwap", False, "not listed on TibetSwap")
@@ -269,7 +361,9 @@ if pair_id:
     data, err = safe_get(f"{TIBET_API}/pair/{pair_id}")
     if data:
         test("Pair data endpoint", True)
-        xch_reserve = float(data.get("xch_reserve", 0)) / 1e12 if data.get("xch_reserve") else 0
+        xch_reserve = (
+            float(data.get("xch_reserve", 0)) / 1e12 if data.get("xch_reserve") else 0
+        )
         cat_reserve = float(data.get("token_reserve", 0))
         test("XCH reserve", xch_reserve > 0, f"{xch_reserve:.2f} XCH")
         test("CAT reserve", cat_reserve > 0, f"{cat_reserve:.0f} tokens")
@@ -281,16 +375,22 @@ if pair_id:
 
     # 2c. Quote — GET /quote/{pair_id}?amount_in=X&xch_is_input=true
     print(f"\n  {BOLD}2c. Quote (Price Impact){RESET}")
-    quote_data, quote_err = safe_get(f"{TIBET_API}/quote/{pair_id}",
-                                      params={"amount_in": 1000000000000,
-                                              "xch_is_input": "true",
-                                              "estimate_fee": "false"})
+    quote_data, quote_err = safe_get(
+        f"{TIBET_API}/quote/{pair_id}",
+        params={
+            "amount_in": 1000000000000,
+            "xch_is_input": "true",
+            "estimate_fee": "false",
+        },
+    )
     if quote_data:
         test("Quote endpoint", True)
         fields = list(quote_data.keys())
         print(f"  {INFO} Quote fields: {fields}")
         amount_out = quote_data.get("amount_out", 0)
-        price_impact = quote_data.get("price_impact", quote_data.get("price_warning", "N/A"))
+        price_impact = quote_data.get(
+            "price_impact", quote_data.get("price_warning", "N/A")
+        )
         test("Has amount_out", amount_out > 0, f"{amount_out}")
         test("Has price impact", price_impact != "N/A", f"{price_impact}")
     else:
@@ -298,9 +398,15 @@ if pair_id:
 
     # 2d. Analytics — confirmed not available via Swagger docs
     print(f"\n  {BOLD}2d. Analytics / History{RESET}")
-    print(f"  {INFO} TibetSwap has no historical/analytics endpoints (confirmed via Swagger docs)")
-    print(f"  {INFO} Available endpoints: /tokens, /pairs, /pair/{{id}}, /quote/{{id}}, /router, /offer, /new-pair")
-    print(f"  {INFO} Strategy: Store pool snapshots in our DB every cycle to build history over time")
+    print(
+        f"  {INFO} TibetSwap has no historical/analytics endpoints (confirmed via Swagger docs)"
+    )
+    print(
+        f"  {INFO} Available endpoints: /tokens, /pairs, /pair/{{id}}, /quote/{{id}}, /router, /offer, /new-pair"
+    )
+    print(
+        f"  {INFO} Strategy: Store pool snapshots in our DB every cycle to build history over time"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -317,8 +423,10 @@ has_pro = bool(SPACESCAN_KEY)
 # GET https://api.spacescan.io/token/info/{token_id}?include_price=true&include_supply=true
 print(f"\n  {BOLD}3a. Token Info (free tier){RESET}")
 spacescan_info_ok = False
-data, err = safe_get(f"{SPACESCAN_FREE_API}/token/info/{ASSET_ID}",
-                     params={"include_price": "true", "include_supply": "true"})
+data, err = safe_get(
+    f"{SPACESCAN_FREE_API}/token/info/{ASSET_ID}",
+    params={"include_price": "true", "include_supply": "true"},
+)
 if data:
     test("Token info endpoint", True)
     spacescan_info_ok = True
@@ -337,8 +445,11 @@ if data:
 
     price_usd = price_obj.get("usd", "N/A") if price_obj else "N/A"
     price_xch = price_obj.get("xch", "N/A") if price_obj else "N/A"
-    test("Price data", price_usd != "N/A" or price_xch != "N/A",
-         f"USD={price_usd}, XCH={price_xch}")
+    test(
+        "Price data",
+        price_usd != "N/A" or price_xch != "N/A",
+        f"USD={price_usd}, XCH={price_xch}",
+    )
 
     total_supply = supply_obj.get("total_supply", "N/A") if supply_obj else "N/A"
     circ_supply = supply_obj.get("circulating_supply", "N/A") if supply_obj else "N/A"
@@ -346,9 +457,15 @@ if data:
     test("Circulating supply", circ_supply != "N/A", f"{circ_supply}")
 
     print(f"  {INFO} Top-level: {list(data.keys()) if isinstance(data, dict) else '?'}")
-    print(f"  {INFO} Info: {list(info_data.keys()) if isinstance(info_data, dict) else '?'}")
-    print(f"  {INFO} Price: {list(price_obj.keys()) if isinstance(price_obj, dict) else '?'}")
-    print(f"  {INFO} Supply: {list(supply_obj.keys()) if isinstance(supply_obj, dict) else '?'}")
+    print(
+        f"  {INFO} Info: {list(info_data.keys()) if isinstance(info_data, dict) else '?'}"
+    )
+    print(
+        f"  {INFO} Price: {list(price_obj.keys()) if isinstance(price_obj, dict) else '?'}"
+    )
+    print(
+        f"  {INFO} Supply: {list(supply_obj.keys()) if isinstance(supply_obj, dict) else '?'}"
+    )
 else:
     test("Token info endpoint", False, err)
 
@@ -358,7 +475,9 @@ if has_pro:
     headers = {"x-api-key": SPACESCAN_KEY}
 
     time.sleep(1)
-    data, err = safe_get(f"{SPACESCAN_PRO_API}/token/holders/{ASSET_ID}", headers=headers)
+    data, err = safe_get(
+        f"{SPACESCAN_PRO_API}/token/holders/{ASSET_ID}", headers=headers
+    )
     if data:
         test("Token holders (Pro)", True)
         holder_list = data.get("data", data.get("holders", []))
@@ -373,9 +492,11 @@ if has_pro:
     # Token activities — GET /token/activity?asset_id=X (query param, not path)
     print(f"\n  {BOLD}3c. Token Activities (Pro API){RESET}")
     time.sleep(1)
-    data, err = safe_get(f"{SPACESCAN_PRO_API}/token/activity",
-                         params={"asset_id": ASSET_ID, "count": 10, "type": "transfer"},
-                         headers=headers)
+    data, err = safe_get(
+        f"{SPACESCAN_PRO_API}/token/activity",
+        params={"asset_id": ASSET_ID, "count": 10, "type": "transfer"},
+        headers=headers,
+    )
     if data:
         test("Token activities (Pro)", True)
         activity_list = data.get("data", data.get("activities", []))
@@ -390,9 +511,11 @@ if has_pro:
     # Pro token info (verify pro works independently)
     print(f"\n  {BOLD}3d. Pro API Info (cross-check){RESET}")
     time.sleep(1)
-    data, err = safe_get(f"{SPACESCAN_PRO_API}/token/info/{ASSET_ID}",
-                         params={"include_price": "true", "include_supply": "true"},
-                         headers=headers)
+    data, err = safe_get(
+        f"{SPACESCAN_PRO_API}/token/info/{ASSET_ID}",
+        params={"include_price": "true", "include_supply": "true"},
+        headers=headers,
+    )
     test("Pro token info", data is not None, err if err else "OK")
 
 else:
@@ -403,16 +526,28 @@ else:
     if data:
         test("Token holders (free)", True)
     else:
-        test("Token holders (free)", False, f"{err} — consider using Pro API key", warn=True)
+        test(
+            "Token holders (free)",
+            False,
+            f"{err} — consider using Pro API key",
+            warn=True,
+        )
 
     print(f"\n  {BOLD}3c. Token Activities (free tier){RESET}")
     time.sleep(3)
-    data, err = safe_get(f"{SPACESCAN_FREE_API}/token/activity",
-                         params={"asset_id": ASSET_ID, "count": 10, "type": "transfer"})
+    data, err = safe_get(
+        f"{SPACESCAN_FREE_API}/token/activity",
+        params={"asset_id": ASSET_ID, "count": 10, "type": "transfer"},
+    )
     if data:
         test("Token activities (free)", True)
     else:
-        test("Token activities (free)", False, f"{err} — consider using Pro API key", warn=True)
+        test(
+            "Token activities (free)",
+            False,
+            f"{err} — consider using Pro API key",
+            warn=True,
+        )
 
     print(f"\n  {BOLD}3d. Pro API — SKIPPED{RESET}")
     test("Pro API", False, "Set SPACESCAN_API_KEY in .env to enable", warn=True)
@@ -430,10 +565,12 @@ try:
 
     # Temporarily suppress all stdout from database init
     import io
+
     old_stdout = sys.stdout
     sys.stdout = io.StringIO()
     try:
         from database import get_connection, get_recent_prices, init_database
+
         init_database()
         conn = get_connection()
     finally:
@@ -451,36 +588,54 @@ try:
             newest = prices[0].get("timestamp", "?")
             test("Date range", True, f"{oldest} → {newest}")
         else:
-            test("Price history", False, "0 records — will populate when bot runs", warn=True)
+            test(
+                "Price history",
+                False,
+                "0 records — will populate when bot runs",
+                warn=True,
+            )
     except Exception as e:
         test("Price history", False, str(e), warn=True)
 
     print(f"\n  {BOLD}4b. Fill History{RESET}")
     try:
         cursor = conn.execute(
-            "SELECT COUNT(*) FROM fills WHERE cat_asset_id = ?", (ASSET_ID,))
+            "SELECT COUNT(*) FROM fills WHERE cat_asset_id = ?", (ASSET_ID,)
+        )
         count = cursor.fetchone()[0]
         if count > 0:
             test("Fill records", True, f"{count} fills recorded")
             cursor = conn.execute(
                 "SELECT MIN(filled_at), MAX(filled_at) FROM fills WHERE cat_asset_id = ?",
-                (ASSET_ID,))
+                (ASSET_ID,),
+            )
             row = cursor.fetchone()
             test("Fill date range", True, f"{row[0]} → {row[1]}")
         else:
-            test("Fill records", False, "0 fills — will populate when bot trades", warn=True)
+            test(
+                "Fill records",
+                False,
+                "0 fills — will populate when bot trades",
+                warn=True,
+            )
     except Exception as e:
         test("Fill history", False, str(e), warn=True)
 
     print(f"\n  {BOLD}4c. Inventory History{RESET}")
     try:
         cursor = conn.execute(
-            "SELECT COUNT(*) FROM inventory WHERE cat_asset_id = ?", (ASSET_ID,))
+            "SELECT COUNT(*) FROM inventory WHERE cat_asset_id = ?", (ASSET_ID,)
+        )
         count = cursor.fetchone()[0]
         if count > 0:
             test("Inventory snapshots", True, f"{count} snapshots")
         else:
-            test("Inventory snapshots", False, "0 snapshots — will populate when bot runs", warn=True)
+            test(
+                "Inventory snapshots",
+                False,
+                "0 snapshots — will populate when bot runs",
+                warn=True,
+            )
     except Exception as e:
         test("Inventory snapshots", False, str(e), warn=True)
 
@@ -497,14 +652,14 @@ section("5. DATA QUALITY ASSESSMENT")
 
 # Score based on what Smart Defaults v2 actually needs
 quality_checks = [
-    ("Dexie price data",      results["pass"] >= 3),
-    ("Dexie trade history",   trade_data_found),
-    ("Dexie orderbook",       True),  # Always works
-    ("TibetSwap pool data",   pair_id is not None),
-    ("TibetSwap quote",       pair_id is not None),  # Quote works if pair found
-    ("Spacescan token info",  spacescan_info_ok),
+    ("Dexie price data", results["pass"] >= 3),
+    ("Dexie trade history", trade_data_found),
+    ("Dexie orderbook", True),  # Always works
+    ("TibetSwap pool data", pair_id is not None),
+    ("TibetSwap quote", pair_id is not None),  # Quote works if pair found
+    ("Spacescan token info", spacescan_info_ok),
     ("Spacescan holders/activity", has_pro),  # Only reliable via Pro
-    ("Internal DB history",   db_ok),  # DB loads, even if empty
+    ("Internal DB history", db_ok),  # DB loads, even if empty
 ]
 
 quality_score = sum(1 for _, available in quality_checks if available)
@@ -542,7 +697,9 @@ print(f"  Total: {total} tests")
 print()
 
 if results["fail"] == 0 and results["warn"] <= 3:
-    print(f"  {BOLD}All critical tests passed! Ready to build Smart Defaults v2.{RESET}")
+    print(
+        f"  {BOLD}All critical tests passed! Ready to build Smart Defaults v2.{RESET}"
+    )
 elif results["fail"] <= 2:
     print(f"  {BOLD}Looking good — minor issues only. Ready to build.{RESET}")
 else:

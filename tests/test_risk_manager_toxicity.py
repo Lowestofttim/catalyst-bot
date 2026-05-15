@@ -7,11 +7,19 @@ from risk_manager import RiskManager
 def _patch_spread_cfg(monkeypatch):
     monkeypatch.setattr("risk_manager.cfg.DYNAMIC_SPREAD_ENABLED", True, raising=False)
     monkeypatch.setattr("risk_manager.cfg.INVENTORY_ENABLED", False, raising=False)
-    monkeypatch.setattr("risk_manager.cfg.BASE_SPREAD_BPS", Decimal("800"), raising=False)
-    monkeypatch.setattr("risk_manager.cfg.MIN_SPREAD_BPS", Decimal("300"), raising=False)
-    monkeypatch.setattr("risk_manager.cfg.MAX_SPREAD_BPS", Decimal("3000"), raising=False)
+    monkeypatch.setattr(
+        "risk_manager.cfg.BASE_SPREAD_BPS", Decimal("800"), raising=False
+    )
+    monkeypatch.setattr(
+        "risk_manager.cfg.MIN_SPREAD_BPS", Decimal("300"), raising=False
+    )
+    monkeypatch.setattr(
+        "risk_manager.cfg.MAX_SPREAD_BPS", Decimal("3000"), raising=False
+    )
     monkeypatch.setattr("risk_manager.cfg.MIN_EDGE_BPS", Decimal("200"), raising=False)
-    monkeypatch.setattr("risk_manager.cfg.COMPETITOR_AWARE_ENABLED", False, raising=False)
+    monkeypatch.setattr(
+        "risk_manager.cfg.COMPETITOR_AWARE_ENABLED", False, raising=False
+    )
     monkeypatch.setattr("risk_manager.cfg.MARKET_TOXICITY_ENABLED", True, raising=False)
 
 
@@ -50,7 +58,9 @@ def test_inventory_state_exposes_toxicity_snapshot(monkeypatch):
             level="elevated",
             buy_spread_multiplier=Decimal("1.35"),
             sell_spread_multiplier=Decimal("1.10"),
-            reasons=[{"key": "fast_fills", "side": "buy", "score": 35, "detail": "fast"}],
+            reasons=[
+                {"key": "fast_fills", "side": "buy", "score": 35, "detail": "fast"}
+            ],
         )
     )
 
@@ -105,7 +115,9 @@ def test_malformed_toxicity_dict_fails_open_and_logs(monkeypatch):
         }
     )
     events = []
-    monkeypatch.setattr("risk_manager.log_event", lambda *args, **kwargs: events.append(args))
+    monkeypatch.setattr(
+        "risk_manager.log_event", lambda *args, **kwargs: events.append(args)
+    )
 
     assert rm.should_enable_side("buy", Decimal("0.01")) is True
     assert any(evt[1] == "toxicity_throttle_parse_failed" for evt in events)
@@ -120,7 +132,9 @@ def test_toxicity_side_check_exception_fails_open_and_logs(monkeypatch):
     rm = RiskManager()
     rm.set_market_toxicity(BadSnapshot())
     events = []
-    monkeypatch.setattr("risk_manager.log_event", lambda *args, **kwargs: events.append(args))
+    monkeypatch.setattr(
+        "risk_manager.log_event", lambda *args, **kwargs: events.append(args)
+    )
 
     assert rm.should_enable_side("buy", Decimal("0.01")) is True
     assert any(evt[1] == "toxicity_side_check_failed" for evt in events)
@@ -138,7 +152,9 @@ def test_market_health_logs_malformed_toxicity_conditions(monkeypatch):
         }
     )
     events = []
-    monkeypatch.setattr("risk_manager.log_event", lambda *args, **kwargs: events.append(args))
+    monkeypatch.setattr(
+        "risk_manager.log_event", lambda *args, **kwargs: events.append(args)
+    )
 
     health = rm.get_market_health()
 

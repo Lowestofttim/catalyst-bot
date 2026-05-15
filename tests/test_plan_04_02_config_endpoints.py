@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -27,6 +28,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
+
 
 class _FlaskBase(unittest.TestCase):
     _LOOPBACK = {"REMOTE_ADDR": "127.0.0.1"}
@@ -55,9 +57,9 @@ class _FlaskBase(unittest.TestCase):
 # 1. GET /api/config
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestConfigGet(_FlaskBase):
-
     def test_returns_200_without_token(self):
         resp = self.client.get("/api/config", environ_base=self._LOOPBACK)
         self.assertEqual(resp.status_code, 200)
@@ -94,12 +96,13 @@ class TestConfigGet(_FlaskBase):
 # 2. POST /api/config — auth, validation, blocked keys
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestConfigPost(_FlaskBase):
-
     def test_post_without_token_returns_401(self):
-        resp = self._post_json("/api/config", {"key": "SPREAD_BPS", "value": "200"},
-                               auth=False)
+        resp = self._post_json(
+            "/api/config", {"key": "SPREAD_BPS", "value": "200"}, auth=False
+        )
         self.assertEqual(resp.status_code, 401)
 
     def test_post_invalid_body_returns_400(self):
@@ -117,30 +120,33 @@ class TestConfigPost(_FlaskBase):
         self.assertEqual(resp.status_code, 400)
 
     def test_blocked_credential_key_returns_403(self):
-        resp = self._post_json("/api/config",
-                               {"key": "CHIA_WALLET_CERT", "value": "evil"})
+        resp = self._post_json(
+            "/api/config", {"key": "CHIA_WALLET_CERT", "value": "evil"}
+        )
         self.assertEqual(resp.status_code, 403)
         body = resp.get_json()
         self.assertFalse(body.get("success"))
 
     def test_blocked_rpc_url_returns_403(self):
-        resp = self._post_json("/api/config",
-                               {"key": "SAGE_RPC_URL", "value": "http://evil"})
+        resp = self._post_json(
+            "/api/config", {"key": "SAGE_RPC_URL", "value": "http://evil"}
+        )
         self.assertEqual(resp.status_code, 403)
 
     def test_blocked_cat_asset_id_returns_403(self):
-        resp = self._post_json("/api/config",
-                               {"key": "CAT_ASSET_ID", "value": "abc123"})
+        resp = self._post_json(
+            "/api/config", {"key": "CAT_ASSET_ID", "value": "abc123"}
+        )
         self.assertEqual(resp.status_code, 403)
 
     def test_blocked_wallet_type_returns_403(self):
-        resp = self._post_json("/api/config",
-                               {"key": "WALLET_TYPE", "value": "chia"})
+        resp = self._post_json("/api/config", {"key": "WALLET_TYPE", "value": "chia"})
         self.assertEqual(resp.status_code, 403)
 
     def test_blocked_sage_fingerprint_returns_403(self):
-        resp = self._post_json("/api/config",
-                               {"key": "SAGE_FINGERPRINT", "value": "12345678"})
+        resp = self._post_json(
+            "/api/config", {"key": "SAGE_FINGERPRINT", "value": "12345678"}
+        )
         self.assertEqual(resp.status_code, 403)
 
     def test_valid_key_update_returns_success(self):
@@ -149,8 +155,7 @@ class TestConfigPost(_FlaskBase):
         fake_cfg.update.return_value = True
         fake_cfg.to_dict.return_value = {}
         with patch.object(api_server, "cfg", fake_cfg):
-            resp = self._post_json("/api/config",
-                                   {"key": "SPREAD_BPS", "value": "300"})
+            resp = self._post_json("/api/config", {"key": "SPREAD_BPS", "value": "300"})
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
         self.assertTrue(body.get("success"))
@@ -174,7 +179,9 @@ class TestConfigPost(_FlaskBase):
             resp = self._post_json("/api/config", payload)
 
         self.assertEqual(resp.status_code, 200)
-        written = {call.args[0]: call.args[1] for call in fake_cfg.update.call_args_list}
+        written = {
+            call.args[0]: call.args[1] for call in fake_cfg.update.call_args_list
+        }
         self.assertEqual(written["MARKET_TOXICITY_ENABLED"], "True")
         self.assertEqual(written["TOXICITY_PROTECTION_LEVEL"], "defensive")
         self.assertEqual(written["TOXICITY_THROTTLE_SECS"], "180")
@@ -186,8 +193,7 @@ class TestConfigPost(_FlaskBase):
         fake_cfg.update.return_value = False
         fake_cfg.to_dict.return_value = {}
         with patch.object(api_server, "cfg", fake_cfg):
-            resp = self._post_json("/api/config",
-                                   {"key": "SPREAD_BPS", "value": "300"})
+            resp = self._post_json("/api/config", {"key": "SPREAD_BPS", "value": "300"})
         self.assertEqual(resp.status_code, 500)
 
 
@@ -195,9 +201,9 @@ class TestConfigPost(_FlaskBase):
 # 3. POST /api/config/reload
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestConfigReload(_FlaskBase):
-
     def test_requires_token(self):
         resp = self._post_json("/api/config/reload", {}, auth=False)
         self.assertEqual(resp.status_code, 401)
@@ -223,9 +229,9 @@ class TestConfigReload(_FlaskBase):
 # 4. POST /api/config/apply
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestConfigApply(_FlaskBase):
-
     def test_bot_none_returns_500(self):
         with patch.object(api_server, "bot", None):
             resp = self._post_json("/api/config/apply", {})
@@ -237,8 +243,10 @@ class TestConfigApply(_FlaskBase):
         )
         fake_cfg = MagicMock()
         fake_cfg.reload.return_value = None
-        with patch.object(api_server, "bot", fake_bot), \
-             patch.object(api_server, "cfg", fake_cfg):
+        with (
+            patch.object(api_server, "bot", fake_bot),
+            patch.object(api_server, "cfg", fake_cfg),
+        ):
             resp = self._post_json("/api/config/apply", {})
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
@@ -254,12 +262,13 @@ class TestConfigApply(_FlaskBase):
 # 5. POST /api/config/live
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
 class TestConfigLive(_FlaskBase):
-
     def test_requires_token(self):
-        resp = self._post_json("/api/config/live",
-                               {"key": "SPREAD_BPS", "value": "300"}, auth=False)
+        resp = self._post_json(
+            "/api/config/live", {"key": "SPREAD_BPS", "value": "300"}, auth=False
+        )
         self.assertEqual(resp.status_code, 401)
 
     def test_invalid_body_returns_400(self):
@@ -281,18 +290,24 @@ class TestConfigLive(_FlaskBase):
         self.assertEqual(resp.status_code, 400)
 
     def test_blocked_key_returns_403(self):
-        resp = self._post_json("/api/config/live",
-                               {"key": "CHIA_WALLET_CERT", "value": "x"})
+        resp = self._post_json(
+            "/api/config/live", {"key": "CHIA_WALLET_CERT", "value": "x"}
+        )
         self.assertEqual(resp.status_code, 403)
 
     def test_valid_live_update_returns_success(self):
         fake_cfg = MagicMock()
         fake_cfg.update.return_value = True
-        with patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "bot", None):
-            resp = self._post_json("/api/config/live",
-                                   {"key": "SPREAD_BPS", "value": "300"})
-        self.assertIn(resp.status_code, (200, 500))  # bot=None may return error but not 4xx
+        with (
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(api_server, "bot", None),
+        ):
+            resp = self._post_json(
+                "/api/config/live", {"key": "SPREAD_BPS", "value": "300"}
+            )
+        self.assertIn(
+            resp.status_code, (200, 500)
+        )  # bot=None may return error but not 4xx
 
     def test_live_liquidity_mode_change_blocked_while_running(self):
         fake_cfg = MagicMock()
@@ -301,8 +316,10 @@ class TestConfigLive(_FlaskBase):
         fake_bot.is_running.return_value = True
         fake_bot.get_state.return_value = {"status": "running"}
 
-        with patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "bot", fake_bot):
+        with (
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(api_server, "bot", fake_bot),
+        ):
             resp = self._post_json(
                 "/api/config/live",
                 {"key": "LIQUIDITY_MODE", "value": "sell_only"},
@@ -315,8 +332,10 @@ class TestConfigLive(_FlaskBase):
         fake_cfg = MagicMock()
         fake_cfg.update.return_value = True
 
-        with patch.object(api_server, "cfg", fake_cfg), \
-             patch.object(api_server, "bot", None):
+        with (
+            patch.object(api_server, "cfg", fake_cfg),
+            patch.object(api_server, "bot", None),
+        ):
             resp = self._post_json(
                 "/api/config/live",
                 {"key": "LIQUIDITY_MODE", "value": "sideways"},

@@ -9,6 +9,7 @@ from unittest.mock import patch
 import api_server
 import sage_node
 from blueprints import bot as bot_routes
+from blueprints import coin_prep as coin_prep_routes
 from blueprints import config_bp
 import coin_prep_worker
 
@@ -38,7 +39,9 @@ def test_open_data_folder_error_does_not_expose_exception_details():
     loopback = {"REMOTE_ADDR": "127.0.0.1"}
     client.get("/", environ_base=loopback)
 
-    with patch("user_paths.data_dir", side_effect=RuntimeError("secret local path leaked")):
+    with patch(
+        "user_paths.data_dir", side_effect=RuntimeError("secret local path leaked")
+    ):
         resp = client.post("/api/open-data-folder", environ_base=loopback)
 
     assert resp.status_code == 500
@@ -73,14 +76,19 @@ def test_api_error_event_log_hides_exception_details():
             )
 
     assert status == 500
-    assert response.get_json() == {"error": "Internal server error", "code": "SERVER_ERROR"}
+    assert response.get_json() == {
+        "error": "Internal server error",
+        "code": "SERVER_ERROR",
+    }
     logged_message = str(log_event.call_args.args[2]).lower()
     assert "secret api error details" not in logged_message
 
 
 def test_spacescan_context_hides_exception_details():
-    with patch("database.get_market_analysis_cache",
-               side_effect=RuntimeError("secret spacescan path")):
+    with patch(
+        "database.get_market_analysis_cache",
+        side_effect=RuntimeError("secret spacescan path"),
+    ):
         context = api_server._get_spacescan_market_context("a" * 64)
 
     assert context["message"] == "Spacescan context unavailable right now."
@@ -173,9 +181,13 @@ def test_bot_start_warnings_do_not_expose_exception_details(monkeypatch):
     monkeypatch.setattr(api_server.cfg, "ENABLE_COIN_PREP", False, raising=False)
     monkeypatch.setattr(api_server, "_get_sage_signing_block_reason", lambda: None)
 
-    with patch("wallet.get_wallet_sync_status",
-               side_effect=RuntimeError("secret wallet traceback")), \
-            patch("coin_manager.check_tier_size_drift_standalone", return_value=[]):
+    with (
+        patch(
+            "wallet.get_wallet_sync_status",
+            side_effect=RuntimeError("secret wallet traceback"),
+        ),
+        patch("coin_manager.check_tier_size_drift_standalone", return_value=[]),
+    ):
         resp = client.post(
             "/api/bot/start",
             headers={"X-Bot-Local-Token": api_server._LOCAL_API_TOKEN},
@@ -203,9 +215,14 @@ def test_bot_start_coin_prep_gate_hides_worker_exception_details(monkeypatch):
         "phase": "error",
         "error": "secret coin prep traceback",
     }
-    with patch("wallet.get_wallet_sync_status", return_value={"reachable": True, "sync_state": "synced"}), \
-            patch("coin_manager.check_tier_size_drift_standalone", return_value=[]), \
-            patch.dict(api_server._coin_prep_state, failed_state, clear=True):
+    with (
+        patch(
+            "wallet.get_wallet_sync_status",
+            return_value={"reachable": True, "sync_state": "synced"},
+        ),
+        patch("coin_manager.check_tier_size_drift_standalone", return_value=[]),
+        patch.dict(api_server._coin_prep_state, failed_state, clear=True),
+    ):
         resp = client.post(
             "/api/bot/start",
             headers={"X-Bot-Local-Token": api_server._LOCAL_API_TOKEN},
@@ -223,8 +240,10 @@ def test_sage_route_payloads_hide_exception_derived_details(monkeypatch):
     client, loopback = _api_client()
     auth = {"X-Bot-Local-Token": api_server._LOCAL_API_TOKEN}
 
-    with patch("sage_node.start_chia",
-               return_value={"success": False, "error": "secret daemon traceback"}):
+    with patch(
+        "sage_node.start_chia",
+        return_value={"success": False, "error": "secret daemon traceback"},
+    ):
         resp = client.post(
             "/api/sage/daemon/start",
             json={"services": "all"},
@@ -234,14 +253,18 @@ def test_sage_route_payloads_hide_exception_derived_details(monkeypatch):
     assert resp.status_code == 200
     assert "secret daemon traceback" not in resp.get_data(as_text=True).lower()
 
-    with patch("chia_node.get_startup_status",
-               return_value={"phase": "error", "error": "secret startup traceback"}):
+    with patch(
+        "chia_node.get_startup_status",
+        return_value={"phase": "error", "error": "secret startup traceback"},
+    ):
         resp = client.get("/api/sage/startup-status", environ_base=loopback)
     assert resp.status_code == 200
     assert "secret startup traceback" not in resp.get_data(as_text=True).lower()
 
-    with patch("chia_node.trigger_start",
-               return_value={"success": False, "error": "secret trigger traceback"}):
+    with patch(
+        "chia_node.trigger_start",
+        return_value={"success": False, "error": "secret trigger traceback"},
+    ):
         resp = client.post(
             "/api/sage/start-with-fingerprint",
             json={"fingerprint": "12345678"},
@@ -252,12 +275,18 @@ def test_sage_route_payloads_hide_exception_derived_details(monkeypatch):
     assert "secret trigger traceback" not in resp.get_data(as_text=True).lower()
 
     fake_cfg = SimpleNamespace(update=lambda *args, **kwargs: True)
-    with patch.object(api_server, "bot", None), \
-            patch.object(api_server, "cfg", fake_cfg), \
-            patch("chia_node.get_available_fingerprints",
-                  return_value=[{"fingerprint": "12345678"}]), \
-            patch("chia_node.trigger_start",
-                  return_value={"success": False, "error": "secret persist traceback"}):
+    with (
+        patch.object(api_server, "bot", None),
+        patch.object(api_server, "cfg", fake_cfg),
+        patch(
+            "chia_node.get_available_fingerprints",
+            return_value=[{"fingerprint": "12345678"}],
+        ),
+        patch(
+            "chia_node.trigger_start",
+            return_value={"success": False, "error": "secret persist traceback"},
+        ),
+    ):
         resp = client.post(
             "/api/sage/fingerprint",
             json={"fingerprint": "12345678"},
@@ -279,11 +308,17 @@ def test_config_change_address_result_hides_wallet_exception_details(monkeypatch
     monkeypatch.setattr(api_server, "cfg", fake_cfg)
     monkeypatch.setattr(config_bp, "cfg", fake_cfg)
 
-    with patch("wallet.get_wallet_type", return_value="sage"), \
-            patch("wallet.get_next_address",
-                  return_value={"success": True, "address": "xch1safeaddress"}), \
-            patch("wallet_sage.set_change_address",
-                  return_value={"success": False, "error": "secret change traceback"}):
+    with (
+        patch("wallet.get_wallet_type", return_value="sage"),
+        patch(
+            "wallet.get_next_address",
+            return_value={"success": True, "address": "xch1safeaddress"},
+        ),
+        patch(
+            "wallet_sage.set_change_address",
+            return_value={"success": False, "error": "secret change traceback"},
+        ),
+    ):
         resp = client.post(
             "/api/config",
             json={"key": "SAGE_SET_CHANGE_ADDRESS", "value": "true"},
@@ -363,9 +398,11 @@ def test_status_prebot_response_hides_traceback_shaped_cached_values(monkeypatch
         raising=False,
     )
 
-    with patch("wallet.get_all_offers", return_value=[]), \
-            patch("wallet.get_spendable_coin_count", return_value=0), \
-            patch("chia_node.is_startup_authorised", return_value=False):
+    with (
+        patch("wallet.get_all_offers", return_value=[]),
+        patch("wallet.get_spendable_coin_count", return_value=0),
+        patch("chia_node.is_startup_authorised", return_value=False),
+    ):
         resp = client.get("/api/status", environ_base=loopback)
 
     body = resp.get_data(as_text=True).lower()
@@ -379,15 +416,22 @@ def test_coin_prep_verify_response_hides_traceback_shaped_drift_details(monkeypa
     monkeypatch.setitem(api_server._active_cat, "wallet_id", 2)
     monkeypatch.setitem(api_server._active_cat, "decimals", 3)
 
-    drift = [{
-        "tier": "inner",
-        "side": "xch",
-        "detail": "Traceback (most recent call last): secret drift traceback",
-    }]
+    drift = [
+        {
+            "tier": "inner",
+            "side": "xch",
+            "detail": "Traceback (most recent call last): secret drift traceback",
+        }
+    ]
     balance = {"wallet_balance": {"confirmed_wallet_balance": 0}}
-    with patch("wallet.get_wallet_balance", return_value=balance), \
-            patch("wallet.get_spendable_coins_rpc", return_value={"success": True, "records": []}), \
-            patch("coin_manager.check_tier_size_drift_standalone", return_value=drift):
+    with (
+        patch("wallet.get_wallet_balance", return_value=balance),
+        patch(
+            "wallet.get_spendable_coins_rpc",
+            return_value={"success": True, "records": []},
+        ),
+        patch("coin_manager.check_tier_size_drift_standalone", return_value=drift),
+    ):
         resp = client.get(
             "/api/coin-prep/verify",
             query_string={
@@ -402,4 +446,62 @@ def test_coin_prep_verify_response_hides_traceback_shaped_drift_details(monkeypa
     body = resp.get_data(as_text=True).lower()
     assert resp.status_code == 200
     assert "secret drift traceback" not in body
+    assert "traceback" not in body
+
+
+def test_coin_prep_flat_verify_response_hides_traceback_shaped_values(monkeypatch):
+    client, loopback = _api_client()
+    monkeypatch.setitem(api_server._active_cat, "wallet_id", 2)
+    monkeypatch.setitem(api_server._active_cat, "decimals", 3)
+
+    malicious_balance = {
+        "wallet_balance": {
+            "confirmed_wallet_balance": (
+                "Traceback (most recent call last): secret balance traceback"
+            )
+        }
+    }
+    malicious_coins = {
+        "success": True,
+        "records": [
+            {
+                "coin": {
+                    "amount": "Traceback (most recent call last): secret coin traceback"
+                }
+            }
+        ],
+    }
+
+    with (
+        patch("wallet.get_wallet_balance", side_effect=[malicious_balance] * 2),
+        patch("wallet.get_spendable_coins_rpc", side_effect=[malicious_coins] * 2),
+        patch("wallet.WALLET_ID_XCH", 1),
+        patch.object(coin_prep_routes.cfg, "CAT_DECIMALS", 3),
+    ):
+        resp = client.get(
+            "/api/coin-prep/verify",
+            query_string={
+                "tier_enabled": "false",
+                "liquidity_mode": (
+                    "Traceback (most recent call last): secret mode traceback"
+                ),
+                "trade_size": (
+                    "Traceback (most recent call last): secret trade traceback"
+                ),
+                "prepared_xch_size": (
+                    "Traceback (most recent call last): secret xch traceback"
+                ),
+                "prepared_cat_size": (
+                    "Traceback (most recent call last): secret cat traceback"
+                ),
+                "max_buy": "Traceback (most recent call last): secret buy traceback",
+                "max_sell": "Traceback (most recent call last): secret sell traceback",
+            },
+            environ_base=loopback,
+        )
+
+    body = resp.get_data(as_text=True).lower()
+    assert resp.status_code == 200
+    assert resp.get_json()["liquidity_mode"] == "two_sided"
+    assert "secret" not in body
     assert "traceback" not in body

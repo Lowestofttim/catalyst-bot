@@ -3,19 +3,24 @@ from unittest.mock import patch
 
 try:
     import wallet_sage
+
     _IMPORT_ERROR = None
 except ModuleNotFoundError as exc:
     wallet_sage = None
     _IMPORT_ERROR = exc
 
 
-@unittest.skipIf(wallet_sage is None, f"wallet_sage import unavailable: {_IMPORT_ERROR}")
+@unittest.skipIf(
+    wallet_sage is None, f"wallet_sage import unavailable: {_IMPORT_ERROR}"
+)
 class TestWalletSageLogin(unittest.TestCase):
     def setUp(self):
         """Reset init state so each test starts clean."""
         wallet_sage._init_ok = False
         wallet_sage._init_last_attempt = 0.0
-        self._reachable_patch = patch.object(wallet_sage, "_sage_rpc_port_reachable", return_value=True)
+        self._reachable_patch = patch.object(
+            wallet_sage, "_sage_rpc_port_reachable", return_value=True
+        )
         self._reachable_patch.start()
         self.addCleanup(self._reachable_patch.stop)
 
@@ -34,8 +39,15 @@ class TestWalletSageLogin(unittest.TestCase):
             return None
 
         with patch.object(wallet_sage, "rpc", side_effect=fake_rpc):
-            with patch.object(wallet_sage, "get_current_key",
-                              return_value={"fingerprint": 1234567890, "name": "Test", "has_secrets": True}):
+            with patch.object(
+                wallet_sage,
+                "get_current_key",
+                return_value={
+                    "fingerprint": 1234567890,
+                    "name": "Test",
+                    "has_secrets": True,
+                },
+            ):
                 with patch.object(wallet_sage.time, "sleep", return_value=None):
                     ok = wallet_sage.sage_login(1234567890)
 
@@ -59,8 +71,15 @@ class TestWalletSageLogin(unittest.TestCase):
             return None
 
         with patch.object(wallet_sage, "rpc", side_effect=fake_rpc):
-            with patch.object(wallet_sage, "get_current_key",
-                              return_value={"fingerprint": 1234567890, "name": "Test", "has_secrets": True}):
+            with patch.object(
+                wallet_sage,
+                "get_current_key",
+                return_value={
+                    "fingerprint": 1234567890,
+                    "name": "Test",
+                    "has_secrets": True,
+                },
+            ):
                 with patch.object(wallet_sage.time, "sleep", return_value=None):
                     ok = wallet_sage.sage_login(1234567890, force_resync=True)
 
@@ -120,6 +139,7 @@ class TestWalletSageLogin(unittest.TestCase):
 
     def test_login_returns_false_on_fingerprint_mismatch(self):
         """sage_login returns False when active key fingerprint differs."""
+
         def fake_rpc(method, payload, timeout=0):
             if method == "get_version":
                 return {"version": "0.12.10"}
@@ -130,8 +150,15 @@ class TestWalletSageLogin(unittest.TestCase):
             return None
 
         with patch.object(wallet_sage, "rpc", side_effect=fake_rpc):
-            with patch.object(wallet_sage, "get_current_key",
-                              return_value={"fingerprint": 999999, "name": "Wrong", "has_secrets": True}):
+            with patch.object(
+                wallet_sage,
+                "get_current_key",
+                return_value={
+                    "fingerprint": 999999,
+                    "name": "Wrong",
+                    "has_secrets": True,
+                },
+            ):
                 with patch.object(wallet_sage.time, "sleep", return_value=None):
                     ok = wallet_sage.sage_login(1234567890)
 

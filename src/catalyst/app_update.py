@@ -26,9 +26,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 OWNER = "Lowestofttim"
 RELEASE_CHANNEL_REPO = "catalyst-releases"
-OFFICIAL_MANIFEST_URL = (
-    f"https://github.com/{OWNER}/{RELEASE_CHANNEL_REPO}/releases/latest/download/latest.json"
-)
+OFFICIAL_MANIFEST_URL = f"https://github.com/{OWNER}/{RELEASE_CHANNEL_REPO}/releases/latest/download/latest.json"
 OFFICIAL_MANIFEST_SIG_URL = f"{OFFICIAL_MANIFEST_URL}.sig"
 
 # Raw Ed25519 public key, base64-encoded. The matching private key belongs only
@@ -113,7 +111,8 @@ def is_allowed_manifest_url(raw_url: str) -> bool:
     return (
         parsed.scheme == "https"
         and parsed.netloc.lower() == "github.com"
-        and path == f"{OWNER}/{RELEASE_CHANNEL_REPO}/releases/latest/download/latest.json"
+        and path
+        == f"{OWNER}/{RELEASE_CHANNEL_REPO}/releases/latest/download/latest.json"
     )
 
 
@@ -144,9 +143,14 @@ def _replace_channel_asset_filename(
     return urlunparse(("https", "github.com", path, "", "", ""))
 
 
-def _signature_url_for_manifest(manifest_url: str, manifest_response: Any = None) -> str:
+def _signature_url_for_manifest(
+    manifest_url: str, manifest_response: Any = None
+) -> str:
     if manifest_response is not None:
-        candidates = [manifest_response, *reversed(getattr(manifest_response, "history", []) or [])]
+        candidates = [
+            manifest_response,
+            *reversed(getattr(manifest_response, "history", []) or []),
+        ]
         for response in candidates:
             resolved = _replace_channel_asset_filename(
                 getattr(response, "url", ""),
@@ -184,7 +188,9 @@ def _is_allowed_release_download_url(raw_url: str, tag: str, filename: str) -> b
     )
 
 
-def _normalise_manifest(manifest: Dict[str, Any], *, now: Optional[datetime] = None) -> Dict[str, Any]:
+def _normalise_manifest(
+    manifest: Dict[str, Any], *, now: Optional[datetime] = None
+) -> Dict[str, Any]:
     if not isinstance(manifest, dict):
         raise ValueError("update manifest was not an object")
     if manifest.get("schema") != MANIFEST_SCHEMA_VERSION:
@@ -219,7 +225,9 @@ def verify_signed_manifest(
     try:
         import base64
 
-        public_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(public_key_b64))
+        public_key = Ed25519PublicKey.from_public_bytes(
+            base64.b64decode(public_key_b64)
+        )
         signature = base64.b64decode(str(signature_b64 or "").strip())
     except Exception as exc:
         raise ValueError("update manifest signature material is invalid") from exc
@@ -236,7 +244,9 @@ def expected_windows_installer_name(tag: str) -> str:
     return f"Catalyst-Setup-{_ensure_v_tag(tag)}.exe"
 
 
-def select_windows_manifest_installer(manifest: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def select_windows_manifest_installer(
+    manifest: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
     tag = _ensure_v_tag(str(manifest.get("tag") or manifest.get("version") or ""))
     installer_name = expected_windows_installer_name(tag)
     try:
@@ -319,7 +329,9 @@ def fetch_signed_manifest(
 ) -> Dict[str, Any]:
     url = str(manifest_url or OFFICIAL_MANIFEST_URL).strip() or OFFICIAL_MANIFEST_URL
     if not is_allowed_manifest_url(url):
-        raise ValueError("update manifest source is not the official CATalyst release channel")
+        raise ValueError(
+            "update manifest source is not the official CATalyst release channel"
+        )
 
     import requests
 
@@ -350,8 +362,12 @@ def fetch_signed_manifest(
     )
 
 
-def build_update_info_from_manifest(current_version: str, manifest: Dict[str, Any]) -> Dict[str, Any]:
-    latest_tag = _ensure_v_tag(str(manifest.get("tag") or manifest.get("version") or ""))
+def build_update_info_from_manifest(
+    current_version: str, manifest: Dict[str, Any]
+) -> Dict[str, Any]:
+    latest_tag = _ensure_v_tag(
+        str(manifest.get("tag") or manifest.get("version") or "")
+    )
     latest = normalise_version(latest_tag)
     current = normalise_version(current_version)
     cur_sv = parse_semver(current)
@@ -468,7 +484,10 @@ def _download_file(
                 fh.write(chunk)
                 if progress and total > 0:
                     pct = 20 + min(60, int((downloaded / total) * 60))
-                    progress(pct, f"Downloading installer ({downloaded // (1024 * 1024)} MB)...")
+                    progress(
+                        pct,
+                        f"Downloading installer ({downloaded // (1024 * 1024)} MB)...",
+                    )
     if expected_size and downloaded != expected_size:
         raise ValueError("downloaded installer size did not match GitHub metadata")
 
@@ -495,10 +514,16 @@ def write_update_relaunch_intent(intent: Dict[str, Any]) -> None:
         "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "created_at_ts": time.time(),
         "auto_start_bot": bool((intent or {}).get("auto_start_bot")),
-        "resume_existing_offers": bool((intent or {}).get("resume_existing_offers", True)),
+        "resume_existing_offers": bool(
+            (intent or {}).get("resume_existing_offers", True)
+        ),
         "cancel_offers": bool((intent or {}).get("cancel_offers", False)),
-        "source_version": normalise_version(str((intent or {}).get("source_version") or "")),
-        "target_version": normalise_version(str((intent or {}).get("target_version") or "")),
+        "source_version": normalise_version(
+            str((intent or {}).get("source_version") or "")
+        ),
+        "target_version": normalise_version(
+            str((intent or {}).get("target_version") or "")
+        ),
         "latest_tag": _ensure_v_tag(str((intent or {}).get("latest_tag") or "")),
     }
     path = _relaunch_intent_path()
@@ -547,12 +572,20 @@ def get_update_relaunch_intent(
 
 
 def _safe_cmd_value(value: Any) -> str:
-    return str(value or "").replace('"', "").replace("\r", "").replace("\n", "").replace("%", "%%")
+    return (
+        str(value or "")
+        .replace('"', "")
+        .replace("\r", "")
+        .replace("\n", "")
+        .replace("%", "%%")
+    )
 
 
 def _launch_installer(installer_path: Path) -> None:
     if sys.platform != "win32":
-        raise RuntimeError("automatic installer launch is only supported on Windows builds")
+        raise RuntimeError(
+            "automatic installer launch is only supported on Windows builds"
+        )
 
     creationflags = 0
     if hasattr(subprocess, "DETACHED_PROCESS"):
@@ -600,7 +633,9 @@ exit /b %INSTALL_EXIT%
     )
 
 
-def _run_update_worker(info: Dict[str, Any], launcher: Optional[Callable[[Path], None]]) -> None:
+def _run_update_worker(
+    info: Dict[str, Any], launcher: Optional[Callable[[Path], None]]
+) -> None:
     try:
         assets = info.get("_assets") or {}
         installer = assets.get("installer") or {}
@@ -609,7 +644,9 @@ def _run_update_worker(info: Dict[str, Any], launcher: Optional[Callable[[Path],
         installer_url = installer.get("url") or ""
         expected_digest = str(installer.get("sha256") or "").strip().lower()
         if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
-            raise ValueError("signed update manifest did not include a valid installer digest")
+            raise ValueError(
+                "signed update manifest did not include a valid installer digest"
+            )
 
         update_dir = _updates_dir(str(latest_tag))
         final_path = update_dir / installer_name
@@ -631,7 +668,9 @@ def _run_update_worker(info: Dict[str, Any], launcher: Optional[Callable[[Path],
             progress=lambda pct, msg: _set_status(percent=pct, message=msg),
         )
 
-        _set_status(phase="verify", percent=85, message="Verifying installer SHA-256...")
+        _set_status(
+            phase="verify", percent=85, message="Verifying installer SHA-256..."
+        )
         if not verify_file_sha256(str(temp_path), expected_digest):
             try:
                 temp_path.unlink(missing_ok=True)
@@ -640,7 +679,9 @@ def _run_update_worker(info: Dict[str, Any], launcher: Optional[Callable[[Path],
             raise ValueError("downloaded installer failed SHA-256 verification")
 
         os.replace(temp_path, final_path)
-        _set_status(phase="launch", percent=95, message="Launching verified installer...")
+        _set_status(
+            phase="launch", percent=95, message="Launching verified installer..."
+        )
         (launcher or _launch_installer)(final_path)
         _set_status(
             in_progress=False,
@@ -673,7 +714,10 @@ def start_update_install(
 
     info = get_update_info(current_version, manifest_url, force=True)
     if not info.get("enabled", False):
-        return {"success": False, "error": info.get("error") or "Update checking is disabled."}
+        return {
+            "success": False,
+            "error": info.get("error") or "Update checking is disabled.",
+        }
     if not info.get("update_available", False):
         return {"success": False, "error": "No newer CATalyst release is available."}
     if not info.get("installer_ready", False) or not info.get("_assets"):
@@ -682,15 +726,20 @@ def start_update_install(
             "error": "The signed update manifest is missing a verified Windows installer.",
         }
     if sys.platform != "win32" and launcher is None:
-        return {"success": False, "error": "Automatic upgrade is only available on Windows."}
+        return {
+            "success": False,
+            "error": "Automatic upgrade is only available on Windows.",
+        }
 
     if relaunch_intent is not None:
-        write_update_relaunch_intent({
-            **dict(relaunch_intent or {}),
-            "source_version": current_version,
-            "target_version": info.get("latest"),
-            "latest_tag": info.get("latest_tag"),
-        })
+        write_update_relaunch_intent(
+            {
+                **dict(relaunch_intent or {}),
+                "source_version": current_version,
+                "target_version": info.get("latest"),
+                "latest_tag": info.get("latest_tag"),
+            }
+        )
 
     _set_status(
         in_progress=True,

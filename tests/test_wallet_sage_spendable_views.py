@@ -10,7 +10,13 @@ class WalletSageSpendableViewTests(unittest.TestCase):
     def setUpClass(cls):
         cls._saved_modules = {
             name: sys.modules.get(name)
-            for name in ("wallet_sage", "requests", "requests.adapters", "urllib3", "dotenv")
+            for name in (
+                "wallet_sage",
+                "requests",
+                "requests.adapters",
+                "urllib3",
+                "dotenv",
+            )
         }
 
         fake_requests = types.ModuleType("requests")
@@ -66,7 +72,9 @@ class WalletSageSpendableViewTests(unittest.TestCase):
             raise AssertionError(f"Unexpected filter_mode {payload['filter_mode']}")
 
         with mock.patch.object(self.wallet_sage, "rpc", side_effect=fake_rpc):
-            result = self.wallet_sage.get_spendable_coins_rpc(self.wallet_sage.WALLET_ID_XCH)
+            result = self.wallet_sage.get_spendable_coins_rpc(
+                self.wallet_sage.WALLET_ID_XCH
+            )
 
         self.assertEqual(calls, ["selectable"])
         self.assertTrue(result["success"])
@@ -88,8 +96,12 @@ class WalletSageSpendableViewTests(unittest.TestCase):
                 return {"coins": [selectable_coin]}
             raise AssertionError(f"Unexpected filter_mode {payload['filter_mode']}")
 
-        if hasattr(self.wallet_sage.get_spendable_coins_with_owned_fallback, "_hidden_XCH"):
-            delattr(self.wallet_sage.get_spendable_coins_with_owned_fallback, "_hidden_XCH")
+        if hasattr(
+            self.wallet_sage.get_spendable_coins_with_owned_fallback, "_hidden_XCH"
+        ):
+            delattr(
+                self.wallet_sage.get_spendable_coins_with_owned_fallback, "_hidden_XCH"
+            )
 
         with mock.patch.object(self.wallet_sage, "rpc", side_effect=fake_rpc):
             with mock.patch("builtins.print"):

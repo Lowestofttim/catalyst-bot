@@ -82,30 +82,38 @@ def api_splash_receive():
             started = bot.splash_node.start()
             node_action = "started" if started else "start_failed"
     except Exception as e:
-        log_event("warning", "splash_receive_toggle_failed",
-                  f"Splash listener update failed: {e}")
+        log_event(
+            "warning",
+            "splash_receive_toggle_failed",
+            f"Splash listener update failed: {e}",
+        )
         node_action = "error"
 
     log_event(
         "info",
         "splash_receive_toggled",
-        f"Splash listening {'enabled' if enabled else 'disabled'} ({node_action})"
+        f"Splash listening {'enabled' if enabled else 'disabled'} ({node_action})",
     )
 
     payload = bot.get_splash_receive_stats()
     api_server.events.emit("splash_incoming", payload)
-    api_server.events.emit("config_changed", {
-        "key": "SPLASH_RECEIVE_ENABLED",
-        "value": enabled,
-        "source": "splash_receive_toggle",
-    })
+    api_server.events.emit(
+        "config_changed",
+        {
+            "key": "SPLASH_RECEIVE_ENABLED",
+            "value": enabled,
+            "source": "splash_receive_toggle",
+        },
+    )
 
-    return jsonify({
-        "success": True,
-        "enabled": enabled,
-        "node_action": node_action,
-        "stats": api_server._serialize_dict(payload),
-    })
+    return jsonify(
+        {
+            "success": True,
+            "enabled": enabled,
+            "node_action": node_action,
+            "stats": api_server._serialize_dict(payload),
+        }
+    )
 
 
 @bp.route("/api/splash/node")
@@ -136,11 +144,15 @@ def api_splash_node_start():
             )
         started = bot.splash_node.start()
         status = bot.splash_node.get_status()
-        return jsonify({
-            "success": started,
-            "message": "Splash node started" if started else "Failed to start Splash node",
-            "status": status
-        })
+        return jsonify(
+            {
+                "success": started,
+                "message": "Splash node started"
+                if started
+                else "Failed to start Splash node",
+                "status": status,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -161,6 +173,7 @@ def api_splash_setup_check():
     """Check if Splash binary is installed and get platform info."""
     try:
         from splash_setup import check_installed
+
         return jsonify(check_installed())
     except Exception:
         return api_server._api_exception(request.path)
@@ -171,6 +184,7 @@ def api_splash_setup_download():
     """Start downloading the Splash binary (non-blocking)."""
     try:
         from splash_setup import start_background_download
+
         result = start_background_download()
         return jsonify(result)
     except Exception:
@@ -182,6 +196,7 @@ def api_splash_setup_progress():
     """Get download progress (poll this during download)."""
     try:
         from splash_setup import get_download_status
+
         return jsonify(get_download_status())
     except Exception:
         return api_server._api_exception(request.path)
@@ -192,12 +207,15 @@ def api_splash_setup_release():
     """Get latest Splash release info from GitHub."""
     try:
         from splash_setup import get_latest_release, detect_platform
+
         release = get_latest_release()
         platform_info = detect_platform()
-        return jsonify({
-            "release": release,
-            "platform": platform_info,
-        })
+        return jsonify(
+            {
+                "release": release,
+                "platform": platform_info,
+            }
+        )
     except Exception:
         return api_server._api_exception(request.path)
 
@@ -249,15 +267,21 @@ def api_splash_incoming():
         source_ip = request.remote_addr
 
         from database import record_splash_incoming
+
         was_new = record_splash_incoming(offer_bech32, fp, source_ip=source_ip)
 
         if was_new:
-            log_event("debug", "splash_received",
-                      f"Received new offer from Splash (fp: {fp[:16]}...)")
+            log_event(
+                "debug",
+                "splash_received",
+                f"Received new offer from Splash (fp: {fp[:16]}...)",
+            )
             bot = server.bot
             if bot:
                 try:
-                    server.events.emit("splash_incoming", bot.get_splash_receive_stats())
+                    server.events.emit(
+                        "splash_incoming", bot.get_splash_receive_stats()
+                    )
                 except Exception:
                     pass
 
@@ -277,6 +301,7 @@ def api_splash_incoming_list():
         status_filter = request.args.get("status")
         limit = int(request.args.get("limit", 50))
         from database import get_splash_incoming_offers
+
         offers = get_splash_incoming_offers(status=status_filter, limit=limit)
         return jsonify({"offers": offers, "count": len(offers)})
     except Exception:

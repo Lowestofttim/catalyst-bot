@@ -63,10 +63,11 @@ def _maybe_log_warn(event_type: str, message: str) -> None:
         _last_warned[event_type] = now
         log_event("warning", event_type, message)
 
+
 # Tier-aware rate limiting and call budgeting
 # Free plan limits are documented publicly by Spacescan.
 # Paid plans vary, so the paid-key interval here is just the app's faster default.
-_PRO_CALL_INTERVAL = 2.0   # seconds between calls when a paid key is configured
+_PRO_CALL_INTERVAL = 2.0  # seconds between calls when a paid key is configured
 _FREE_CALL_INTERVAL = 12.0  # seconds between calls on the free tier
 
 # Monthly call budget tracking (resets on module load / bot restart)
@@ -86,6 +87,7 @@ _ADDRESS_RE = re.compile(r"\b(?:xch|txch)1[0-9a-z]{20,}\b")
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_base_url() -> str:
     """Return the appropriate Spacescan API base URL."""
@@ -111,6 +113,7 @@ def _reset_daily_counter_if_needed() -> None:
     """Reset the runtime daily counter after midnight."""
     global _calls_today, _today_date
     import datetime
+
     today = datetime.date.today().isoformat()
     if today != _today_date:
         _today_date = today
@@ -179,9 +182,12 @@ def _check_daily_budget(call_type: str = "general") -> bool:
     # Balance checks: only if we have budget headroom
     # Reserve at least 10 calls/day for fill verification
     if _calls_today >= (_FREE_DAILY_BUDGET - 10):
-        log_event("debug", "spacescan_budget_exceeded",
-                  f"Free tier daily budget nearly exhausted ({_calls_today}/{_FREE_DAILY_BUDGET}). "
-                  f"Skipping {call_type} to reserve for fill verification.")
+        log_event(
+            "debug",
+            "spacescan_budget_exceeded",
+            f"Free tier daily budget nearly exhausted ({_calls_today}/{_FREE_DAILY_BUDGET}). "
+            f"Skipping {call_type} to reserve for fill verification.",
+        )
         return False
 
     return True
@@ -271,27 +277,36 @@ def _spacescan_get(endpoint: str) -> Optional[Dict]:
             response = requests.get(url, headers=_get_headers(), timeout=timeout)
 
             if response.status_code == 429:
-                _maybe_log_warn("spacescan_rate_limited",
-                                "Spacescan rate limit hit — backing off 60s (non-blocking)")
+                _maybe_log_warn(
+                    "spacescan_rate_limited",
+                    "Spacescan rate limit hit — backing off 60s (non-blocking)",
+                )
                 _rate_limited_until = time.time() + 60
                 return None
 
             if response.status_code == 404:
-                log_event("debug", "spacescan_not_found",
-                          f"Spacescan 404 for {endpoint[:60]}...")
+                log_event(
+                    "debug",
+                    "spacescan_not_found",
+                    f"Spacescan 404 for {endpoint[:60]}...",
+                )
                 return None
 
             if response.status_code >= 500:
-                _maybe_log_warn("spacescan_server_error",
-                                f"Spacescan server error {response.status_code}")
+                _maybe_log_warn(
+                    "spacescan_server_error",
+                    f"Spacescan server error {response.status_code}",
+                )
                 return None
 
             response.raise_for_status()
             data = response.json()
 
             if data.get("status") != "success":
-                _maybe_log_warn("spacescan_api_error",
-                                f"Spacescan returned non-success: {data.get('status')}")
+                _maybe_log_warn(
+                    "spacescan_api_error",
+                    f"Spacescan returned non-success: {data.get('status')}",
+                )
                 return None
 
             _record_successful_call(endpoint=endpoint)
@@ -301,22 +316,24 @@ def _spacescan_get(endpoint: str) -> Optional[Dict]:
             return data
 
         except requests.exceptions.Timeout:
-            _maybe_log_warn("spacescan_timeout",
-                            f"Spacescan request timed out after {timeout}s")
+            _maybe_log_warn(
+                "spacescan_timeout", f"Spacescan request timed out after {timeout}s"
+            )
             return None
         except requests.exceptions.ConnectionError:
-            _maybe_log_warn("spacescan_connection_error",
-                            "Cannot connect to Spacescan API")
+            _maybe_log_warn(
+                "spacescan_connection_error", "Cannot connect to Spacescan API"
+            )
             return None
         except Exception as e:
-            log_event("error", "spacescan_error",
-                      f"Spacescan request failed: {e}")
+            log_event("error", "spacescan_error", f"Spacescan request failed: {e}")
             return None
 
 
 # ---------------------------------------------------------------------------
 # Public API — Coin Verification (Fill Detection)
 # ---------------------------------------------------------------------------
+
 
 def is_coin_spent(coin_id: str) -> Optional[Dict]:
     """Check if a specific coin has been spent on-chain.
@@ -344,16 +361,27 @@ def is_coin_spent(coin_id: str) -> Optional[Dict]:
     # Pro API returns 200/success even for non-existent coins,
     # but with amount_value=null and empty sender/receiver.
     # Detect this and treat as "coin not found".
-    if coin.get("amount_value") is None and not coin.get("sender") and not coin.get("receiver"):
-        log_event("debug", "spacescan_coin_not_found",
-                  f"Coin {coin_id[:16]}... not found on-chain (empty response)")
+    if (
+        coin.get("amount_value") is None
+        and not coin.get("sender")
+        and not coin.get("receiver")
+    ):
+        log_event(
+            "debug",
+            "spacescan_coin_not_found",
+            f"Coin {coin_id[:16]}... not found on-chain (empty response)",
+        )
         return None
 
     # Handle both Pro API format and docs format for spent_block
     spent_block = coin.get("spent_block")
     # Pro API may return spent_block as None, empty string, or 0 for unspent
-    is_spent = (spent_block is not None and spent_block != "" and spent_block != 0
-                and str(spent_block) != "0")
+    is_spent = (
+        spent_block is not None
+        and spent_block != ""
+        and spent_block != 0
+        and str(spent_block) != "0"
+    )
 
     receiver = coin.get("receiver", {})
     receiver_addr = receiver.get("address", "") if isinstance(receiver, dict) else ""
@@ -379,7 +407,9 @@ def is_coin_spent(coin_id: str) -> Optional[Dict]:
     }
 
 
-def is_known_wallet_address(address: str, explicit_addresses: Optional[set[str]] = None) -> bool:
+def is_known_wallet_address(
+    address: str, explicit_addresses: Optional[set[str]] = None
+) -> bool:
     """Return True when an address is recognised as belonging to this wallet."""
     addr = str(address or "").strip()
     if not addr:
@@ -389,15 +419,18 @@ def is_known_wallet_address(address: str, explicit_addresses: Optional[set[str]]
     if explicit_addresses:
         try:
             known_wallet_addresses.update(
-                str(item or "").strip() for item in explicit_addresses if str(item or "").strip()
+                str(item or "").strip()
+                for item in explicit_addresses
+                if str(item or "").strip()
             )
         except Exception:
             pass
     return addr in known_wallet_addresses
 
 
-def _known_wallet_addresses_for_verification(result: Dict, our_address: str,
-                                             explicit_addresses: Optional[set[str]] = None) -> Set[str]:
+def _known_wallet_addresses_for_verification(
+    result: Dict, our_address: str, explicit_addresses: Optional[set[str]] = None
+) -> Set[str]:
     """Build the address set trusted for one coin verification.
 
     Spacescan's related coin graph can reveal wallet change addresses through
@@ -414,7 +447,9 @@ def _known_wallet_addresses_for_verification(result: Dict, our_address: str,
     if explicit_addresses:
         try:
             known_wallet_addresses.update(
-                str(item or "").strip() for item in explicit_addresses if str(item or "").strip()
+                str(item or "").strip()
+                for item in explicit_addresses
+                if str(item or "").strip()
             )
         except Exception:
             pass
@@ -445,8 +480,9 @@ def _known_wallet_addresses_for_verification(result: Dict, our_address: str,
     return known_wallet_addresses
 
 
-def verify_fill(coin_id: str, our_address: str,
-                explicit_addresses: Optional[set[str]] = None) -> Optional[bool]:
+def verify_fill(
+    coin_id: str, our_address: str, explicit_addresses: Optional[set[str]] = None
+) -> Optional[bool]:
     """Verify that a coin was spent to an external address (= real fill).
 
     This is the golden gate: only returns True if we have on-chain proof
@@ -466,8 +502,9 @@ def verify_fill(coin_id: str, our_address: str,
     conservative approach — better to miss a fill than record a phantom one.
     """
     if not coin_id:
-        log_event("debug", "spacescan_no_coin_id",
-                  "Cannot verify fill — no coin_id available")
+        log_event(
+            "debug", "spacescan_no_coin_id", "Cannot verify fill — no coin_id available"
+        )
         return False
 
     result = is_coin_spent(coin_id)
@@ -477,15 +514,19 @@ def verify_fill(coin_id: str, our_address: str,
         # once, we used to log one of these per thread. The first call
         # already logged the underlying cause (rate_limited / timeout); a
         # per-coin verify_failed for each one just adds noise.
-        _maybe_log_warn("spacescan_verify_failed",
-                        f"Cannot verify coin {coin_id[:16]}... — API error "
-                        "(further verify failures suppressed for 60s).")
+        _maybe_log_warn(
+            "spacescan_verify_failed",
+            f"Cannot verify coin {coin_id[:16]}... — API error "
+            "(further verify failures suppressed for 60s).",
+        )
         return None  # Distinct from False (explicit rejection)
 
     if not result["spent"]:
-        log_event("info", "spacescan_phantom_detected",
-                  f"Coin {coin_id[:16]}... NOT spent on-chain. "
-                  f"Phantom fill prevented!")
+        log_event(
+            "info",
+            "spacescan_phantom_detected",
+            f"Coin {coin_id[:16]}... NOT spent on-chain. Phantom fill prevented!",
+        )
         return False
 
     # -----------------------------------------------------------------------
@@ -514,15 +555,21 @@ def verify_fill(coin_id: str, our_address: str,
 
         if _oi_completed:
             oi_hash = str(_oi_completed[0].get("hash_base_58") or "")[:16]
-            log_event("success", "spacescan_fill_via_offer_info",
-                      f"Coin {coin_id[:16]}... offer_info reports status=4 "
-                      f"(COMPLETED, offer {oi_hash}...) — confirmed fill.")
+            log_event(
+                "success",
+                "spacescan_fill_via_offer_info",
+                f"Coin {coin_id[:16]}... offer_info reports status=4 "
+                f"(COMPLETED, offer {oi_hash}...) — confirmed fill.",
+            )
             return True
         elif _oi_cancelled:
             oi_hash = str(_oi_cancelled[0].get("hash_base_58") or "")[:16]
-            log_event("info", "spacescan_cancel_via_offer_info",
-                      f"Coin {coin_id[:16]}... offer_info reports status=3 "
-                      f"(CANCELLED, offer {oi_hash}...) — not a fill.")
+            log_event(
+                "info",
+                "spacescan_cancel_via_offer_info",
+                f"Coin {coin_id[:16]}... offer_info reports status=3 "
+                f"(CANCELLED, offer {oi_hash}...) — not a fill.",
+            )
             return False
         # status=1 (active) or unknown: fall through to child-coin / receiver logic
 
@@ -546,14 +593,20 @@ def verify_fill(coin_id: str, our_address: str,
         for child in child_coin_entries:
             owner = str(child.get("owner_address") or "").strip()
             if owner and owner not in known_wallet_addresses:
-                log_event("success", "spacescan_fill_via_child_coin",
-                          f"Coin {coin_id[:16]}... child coin went to external "
-                          f"address {owner[:16]}... — confirmed fill.")
+                log_event(
+                    "success",
+                    "spacescan_fill_via_child_coin",
+                    f"Coin {coin_id[:16]}... child coin went to external "
+                    f"address {owner[:16]}... — confirmed fill.",
+                )
                 return True
         # All children went to our own addresses = self-spend (cancel or internal tx)
-        log_event("info", "spacescan_cancel_via_child_coins",
-                  f"Coin {coin_id[:16]}... all {len(child_coin_entries)} child "
-                  f"coin(s) owned by our wallet — not a fill.")
+        log_event(
+            "info",
+            "spacescan_cancel_via_child_coins",
+            f"Coin {coin_id[:16]}... all {len(child_coin_entries)} child "
+            f"coin(s) owned by our wallet — not a fill.",
+        )
         return False
 
     # -----------------------------------------------------------------------
@@ -565,29 +618,40 @@ def verify_fill(coin_id: str, our_address: str,
     receiver = result["receiver_address"]
 
     if receiver and receiver in known_wallet_addresses:
-        log_event("info", "spacescan_self_spend",
-                  f"Coin {coin_id[:16]}... spent to known own address "
-                  f"{receiver[:16]}... Not a fill.")
+        log_event(
+            "info",
+            "spacescan_self_spend",
+            f"Coin {coin_id[:16]}... spent to known own address "
+            f"{receiver[:16]}... Not a fill.",
+        )
         return False
 
-    if (getattr(cfg, "WALLET_TYPE", "") == "sage" and
-            not getattr(cfg, "SAGE_SET_CHANGE_ADDRESS", False)):
-        log_event("warning", "spacescan_fill_ambiguous",
-                  f"Coin {coin_id[:16]}... spent to {receiver[:16] if receiver else 'unknown'}..., "
-                  f"but Sage change-address pinning is off. Treating as unverified.")
+    if getattr(cfg, "WALLET_TYPE", "") == "sage" and not getattr(
+        cfg, "SAGE_SET_CHANGE_ADDRESS", False
+    ):
+        log_event(
+            "warning",
+            "spacescan_fill_ambiguous",
+            f"Coin {coin_id[:16]}... spent to {receiver[:16] if receiver else 'unknown'}..., "
+            f"but Sage change-address pinning is off. Treating as unverified.",
+        )
         return None
 
     # Coin spent to external address = CONFIRMED FILL
-    log_event("success", "spacescan_fill_confirmed",
-              f"CONFIRMED: Coin {coin_id[:16]}... spent to "
-              f"{receiver[:16] if receiver else 'unknown'}... "
-              f"in block {result['spent_block']}. Real fill!")
+    log_event(
+        "success",
+        "spacescan_fill_confirmed",
+        f"CONFIRMED: Coin {coin_id[:16]}... spent to "
+        f"{receiver[:16] if receiver else 'unknown'}... "
+        f"in block {result['spent_block']}. Real fill!",
+    )
     return True
 
 
 # ---------------------------------------------------------------------------
 # Public API — Balance Verification
 # ---------------------------------------------------------------------------
+
 
 def get_xch_balance(address: str) -> Optional[Decimal]:
     """Fetch the on-chain XCH balance for an address.
@@ -609,8 +673,11 @@ def get_xch_balance(address: str) -> Optional[Decimal]:
     try:
         return Decimal(str(data["xch"]))
     except (KeyError, ValueError, InvalidOperation) as e:
-        log_event("warning", "spacescan_balance_parse_error",
-                  f"Could not parse XCH balance: {e}")
+        log_event(
+            "warning",
+            "spacescan_balance_parse_error",
+            f"Could not parse XCH balance: {e}",
+        )
         return None
 
 
@@ -700,9 +767,12 @@ def should_check_balance() -> bool:
     return True
 
 
-def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
-                               wallet_cat: Decimal = None,
-                               cat_asset_id: str = None) -> Dict:
+def check_balance_discrepancy(
+    our_address: str,
+    wallet_xch: Decimal,
+    wallet_cat: Decimal = None,
+    cat_asset_id: str = None,
+) -> Dict:
     """Compare wallet balances against on-chain truth.
 
     XCH comparison uses BASELINE CALIBRATION rather than raw diff:
@@ -745,11 +815,16 @@ def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
     """
     threshold = getattr(cfg, "SPACESCAN_BALANCE_THRESHOLD_XCH", Decimal("0.1"))
     result = {
-        "xch_onchain": None, "xch_wallet": wallet_xch,
-        "xch_diff": None, "xch_baseline_delta": None, "xch_drift": None,
+        "xch_onchain": None,
+        "xch_wallet": wallet_xch,
+        "xch_diff": None,
+        "xch_baseline_delta": None,
+        "xch_drift": None,
         "xch_ok": True,
-        "cat_onchain": None, "cat_wallet": wallet_cat,
-        "cat_diff": None, "cat_ok": True,
+        "cat_onchain": None,
+        "cat_wallet": wallet_cat,
+        "cat_diff": None,
+        "cat_ok": True,
     }
 
     # Check XCH
@@ -763,7 +838,11 @@ def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
         # Key is address-specific so changing WALLET_ADDRESS forces
         # automatic recalibration.
         try:
-            from database import get_setting, set_setting  # local import to avoid cycles
+            from database import (
+                get_setting,
+                set_setting,
+            )  # local import to avoid cycles
+
             baseline_key = f"spacescan_xch_baseline_delta:{our_address}"
             baseline_str = get_setting(baseline_key, None)
 
@@ -773,13 +852,16 @@ def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
                 result["xch_baseline_delta"] = current_delta
                 result["xch_drift"] = Decimal("0")
                 result["xch_ok"] = True
-                log_event("info", "spacescan_baseline_set",
-                          f"Spacescan XCH baseline delta established: "
-                          f"{current_delta} XCH (on-chain {xch_onchain} − "
-                          f"wallet {wallet_xch}). This represents XCH held "
-                          f"inside CAT/NFT/DID puzzles and is expected to "
-                          f"stay roughly constant. Drift from this baseline "
-                          f"beyond {threshold} XCH will raise a warning.")
+                log_event(
+                    "info",
+                    "spacescan_baseline_set",
+                    f"Spacescan XCH baseline delta established: "
+                    f"{current_delta} XCH (on-chain {xch_onchain} − "
+                    f"wallet {wallet_xch}). This represents XCH held "
+                    f"inside CAT/NFT/DID puzzles and is expected to "
+                    f"stay roughly constant. Drift from this baseline "
+                    f"beyond {threshold} XCH will raise a warning.",
+                )
             else:
                 try:
                     baseline_delta = Decimal(baseline_str)
@@ -793,22 +875,31 @@ def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
                 result["xch_ok"] = drift <= threshold
 
                 if not result["xch_ok"]:
-                    log_event("warning", "balance_discrepancy_xch",
-                              f"XCH balance drift from baseline! "
-                              f"Wallet: {wallet_xch}, On-chain: {xch_onchain}, "
-                              f"Current delta: {current_delta}, "
-                              f"Baseline delta: {baseline_delta}, "
-                              f"Drift: {drift} XCH (threshold {threshold}).")
+                    log_event(
+                        "warning",
+                        "balance_discrepancy_xch",
+                        f"XCH balance drift from baseline! "
+                        f"Wallet: {wallet_xch}, On-chain: {xch_onchain}, "
+                        f"Current delta: {current_delta}, "
+                        f"Baseline delta: {baseline_delta}, "
+                        f"Drift: {drift} XCH (threshold {threshold}).",
+                    )
         except Exception as e:
             # Baseline plumbing failed — fall back to raw-diff check so the
             # caller still gets a result, but note it.
-            log_event("debug", "spacescan_baseline_fallback",
-                      f"Baseline lookup failed ({e}); falling back to raw diff")
+            log_event(
+                "debug",
+                "spacescan_baseline_fallback",
+                f"Baseline lookup failed ({e}); falling back to raw diff",
+            )
             result["xch_ok"] = result["xch_diff"] <= threshold
             if not result["xch_ok"]:
-                log_event("warning", "balance_discrepancy_xch",
-                          f"XCH balance mismatch! Wallet: {wallet_xch}, "
-                          f"On-chain: {xch_onchain}, Diff: {result['xch_diff']}")
+                log_event(
+                    "warning",
+                    "balance_discrepancy_xch",
+                    f"XCH balance mismatch! Wallet: {wallet_xch}, "
+                    f"On-chain: {xch_onchain}, Diff: {result['xch_diff']}",
+                )
 
     # Check CAT (if requested)
     if wallet_cat is not None and cat_asset_id:
@@ -821,8 +912,11 @@ def check_balance_discrepancy(our_address: str, wallet_xch: Decimal,
             result["cat_ok"] = result["cat_diff"] <= cat_threshold
 
             if not result["cat_ok"]:
-                log_event("warning", "balance_discrepancy_cat",
-                          f"CAT balance mismatch! Wallet: {wallet_cat}, "
-                          f"On-chain: {cat_onchain}, Diff: {result['cat_diff']}")
+                log_event(
+                    "warning",
+                    "balance_discrepancy_cat",
+                    f"CAT balance mismatch! Wallet: {wallet_cat}, "
+                    f"On-chain: {cat_onchain}, Diff: {result['cat_diff']}",
+                )
 
     return result

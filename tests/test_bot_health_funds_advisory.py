@@ -79,8 +79,16 @@ class _FakeEventBus:
         self.cleared = []
         self._alert_store = self
 
-    def alert(self, alert_id, severity, title, message,
-              action=None, action_label=None, action_value=None):
+    def alert(
+        self,
+        alert_id,
+        severity,
+        title,
+        message,
+        action=None,
+        action_label=None,
+        action_value=None,
+    ):
         self.alerts[alert_id] = {
             "id": alert_id,
             "severity": severity,
@@ -131,14 +139,16 @@ class FundsAdvisoryTests(unittest.TestCase):
             cfg = bot_health.cfg
             # Spendable 100 XCH, reserve 10 XCH, floor ~ 2×0.6 = 1.2 XCH
             balance = {"wallet_balance": {"spendable_balance": 100 * 10**12}}
-            with patch.object(cfg, "XCH_RESERVE", Decimal("10")), \
-                 patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-                 patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")), \
-                 patch.object(cfg, "WALLET_ID_XCH", 1), \
-                 patch.object(cfg, "CAT_WALLET_ID", 2), \
-                 patch.object(cfg, "WALLET_ADDRESS", "xch1test..."), \
-                 patch("wallet.get_wallet_type", return_value="sage"), \
-                 patch("wallet_sage.get_wallet_balance", return_value=balance):
+            with (
+                patch.object(cfg, "XCH_RESERVE", Decimal("10")),
+                patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+                patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")),
+                patch.object(cfg, "WALLET_ID_XCH", 1),
+                patch.object(cfg, "CAT_WALLET_ID", 2),
+                patch.object(cfg, "WALLET_ADDRESS", "xch1test..."),
+                patch("wallet.get_wallet_type", return_value="sage"),
+                patch("wallet_sage.get_wallet_balance", return_value=balance),
+            ):
                 check = bot_health.check_funds_advisory(auto_repair=True)
 
             self.assertEqual(check.status, "pass")
@@ -159,14 +169,16 @@ class FundsAdvisoryTests(unittest.TestCase):
             # Spendable 10.05 XCH, reserve 10 XCH → available 0.05 XCH.
             # Floor = 2×0.6023 + 0.01 = 1.2146 XCH. 0.05 < 1.21 → alert.
             balance = {"wallet_balance": {"spendable_balance": 10_050_000_000_000}}
-            with patch.object(cfg, "XCH_RESERVE", Decimal("10")), \
-                 patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-                 patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")), \
-                 patch.object(cfg, "WALLET_ID_XCH", 1), \
-                 patch.object(cfg, "CAT_WALLET_ID", 2), \
-                 patch.object(cfg, "WALLET_ADDRESS", "xch1demo123..."), \
-                 patch("wallet.get_wallet_type", return_value="sage"), \
-                 patch("wallet_sage.get_wallet_balance", return_value=balance):
+            with (
+                patch.object(cfg, "XCH_RESERVE", Decimal("10")),
+                patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+                patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")),
+                patch.object(cfg, "WALLET_ID_XCH", 1),
+                patch.object(cfg, "CAT_WALLET_ID", 2),
+                patch.object(cfg, "WALLET_ADDRESS", "xch1demo123..."),
+                patch("wallet.get_wallet_type", return_value="sage"),
+                patch("wallet_sage.get_wallet_balance", return_value=balance),
+            ):
                 check = bot_health.check_funds_advisory(auto_repair=True)
 
             self.assertEqual(check.status, "warn")
@@ -192,28 +204,32 @@ class FundsAdvisoryTests(unittest.TestCase):
             cfg = bot_health.cfg
             # First call: low.
             low_balance = {"wallet_balance": {"spendable_balance": 10_050_000_000_000}}
-            with patch.object(cfg, "XCH_RESERVE", Decimal("10")), \
-                 patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-                 patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")), \
-                 patch.object(cfg, "WALLET_ID_XCH", 1), \
-                 patch.object(cfg, "CAT_WALLET_ID", 2), \
-                 patch.object(cfg, "WALLET_ADDRESS", "xch1..."), \
-                 patch("wallet.get_wallet_type", return_value="sage"), \
-                 patch("wallet_sage.get_wallet_balance", return_value=low_balance):
+            with (
+                patch.object(cfg, "XCH_RESERVE", Decimal("10")),
+                patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+                patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")),
+                patch.object(cfg, "WALLET_ID_XCH", 1),
+                patch.object(cfg, "CAT_WALLET_ID", 2),
+                patch.object(cfg, "WALLET_ADDRESS", "xch1..."),
+                patch("wallet.get_wallet_type", return_value="sage"),
+                patch("wallet_sage.get_wallet_balance", return_value=low_balance),
+            ):
                 bot_health.check_funds_advisory(auto_repair=True)
 
             self.assertIn("funds_advisory_xch", bus.alerts)
 
             # Second call: funds restored.
             healthy_balance = {"wallet_balance": {"spendable_balance": 50 * 10**12}}
-            with patch.object(cfg, "XCH_RESERVE", Decimal("10")), \
-                 patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-                 patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")), \
-                 patch.object(cfg, "WALLET_ID_XCH", 1), \
-                 patch.object(cfg, "CAT_WALLET_ID", 2), \
-                 patch.object(cfg, "WALLET_ADDRESS", "xch1..."), \
-                 patch("wallet.get_wallet_type", return_value="sage"), \
-                 patch("wallet_sage.get_wallet_balance", return_value=healthy_balance):
+            with (
+                patch.object(cfg, "XCH_RESERVE", Decimal("10")),
+                patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+                patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")),
+                patch.object(cfg, "WALLET_ID_XCH", 1),
+                patch.object(cfg, "CAT_WALLET_ID", 2),
+                patch.object(cfg, "WALLET_ADDRESS", "xch1..."),
+                patch("wallet.get_wallet_type", return_value="sage"),
+                patch("wallet_sage.get_wallet_balance", return_value=healthy_balance),
+            ):
                 check = bot_health.check_funds_advisory(auto_repair=True)
 
             self.assertEqual(check.status, "pass")
@@ -232,14 +248,16 @@ class FundsAdvisoryTests(unittest.TestCase):
         try:
             cfg = bot_health.cfg
             low_balance = {"wallet_balance": {"spendable_balance": 10_050_000_000_000}}
-            with patch.object(cfg, "XCH_RESERVE", Decimal("10")), \
-                 patch.object(cfg, "CAT_RESERVE", Decimal("0")), \
-                 patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")), \
-                 patch.object(cfg, "WALLET_ID_XCH", 1), \
-                 patch.object(cfg, "CAT_WALLET_ID", 2), \
-                 patch.object(cfg, "WALLET_ADDRESS", "xch1..."), \
-                 patch("wallet.get_wallet_type", return_value="sage"), \
-                 patch("wallet_sage.get_wallet_balance", return_value=low_balance):
+            with (
+                patch.object(cfg, "XCH_RESERVE", Decimal("10")),
+                patch.object(cfg, "CAT_RESERVE", Decimal("0")),
+                patch.object(cfg, "SELL_INNER_SIZE_XCH", Decimal("0.6023")),
+                patch.object(cfg, "WALLET_ID_XCH", 1),
+                patch.object(cfg, "CAT_WALLET_ID", 2),
+                patch.object(cfg, "WALLET_ADDRESS", "xch1..."),
+                patch("wallet.get_wallet_type", return_value="sage"),
+                patch("wallet_sage.get_wallet_balance", return_value=low_balance),
+            ):
                 check = bot_health.check_funds_advisory(auto_repair=False)
 
             # Condition still detected and reported...
@@ -318,7 +336,9 @@ class FundsAdvisoryTests(unittest.TestCase):
                     "WALLET_ADDRESS": "xch1demo123...",
                 }.items():
                     stack.enter_context(patch.object(cfg, name, value, create=True))
-                stack.enter_context(patch("wallet.get_wallet_type", return_value="sage"))
+                stack.enter_context(
+                    patch("wallet.get_wallet_type", return_value="sage")
+                )
                 stack.enter_context(
                     patch("wallet_sage.get_wallet_balance", side_effect=_balance)
                 )

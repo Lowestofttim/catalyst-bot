@@ -113,9 +113,9 @@ class PoolRebuildTargetRespectTests(unittest.TestCase):
     def test_mixed_healthy_and_needy_only_healthy_contributes(self):
         # inner=12 (above 10 target), mid=2 (below 5 target), others healthy.
         inv = {
-            "inner": self._make_bucket(12),   # +2 excess
-            "mid": self._make_bucket(2),      # below target → skip
-            "outer": self._make_bucket(4),    # +1 excess (target 3)
+            "inner": self._make_bucket(12),  # +2 excess
+            "mid": self._make_bucket(2),  # below target → skip
+            "outer": self._make_bucket(4),  # +1 excess (target 3)
             "extreme": self._make_bucket(2),  # at target → 0 excess
         }
         candidates = _select_rebuild_candidates(inv, self.targets)

@@ -69,7 +69,9 @@ class SpacescanVerifyFillTests(unittest.TestCase):
         result = self.spacescan.verify_fill("0xcoin", _FakeCfg.WALLET_ADDRESS)
 
         self.assertIsNone(result)
-        self.assertTrue(any(evt == "spacescan_fill_ambiguous" for _, evt, _ in self.logged))
+        self.assertTrue(
+            any(evt == "spacescan_fill_ambiguous" for _, evt, _ in self.logged)
+        )
 
     def test_pinned_sage_change_address_allows_external_fill(self):
         sys.modules["config"].cfg.SAGE_SET_CHANGE_ADDRESS = True
@@ -86,7 +88,9 @@ class SpacescanVerifyFillTests(unittest.TestCase):
         result = self.spacescan.verify_fill("0xcoin", _FakeCfg.WALLET_ADDRESS)
 
         self.assertTrue(result)
-        self.assertTrue(any(evt == "spacescan_fill_confirmed" for _, evt, _ in self.logged))
+        self.assertTrue(
+            any(evt == "spacescan_fill_confirmed" for _, evt, _ in self.logged)
+        )
 
     def test_explicit_addresses_are_treated_as_own_wallet(self):
         explicit_addr = "xch1explicitown00000000000000000000000000000000000000000"

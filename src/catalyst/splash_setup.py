@@ -50,7 +50,7 @@ def detect_platform() -> Dict:
 
     Returns: {os: str, arch: str, binary_name: str, asset_name: str}
     """
-    system = platform.system().lower()   # 'windows', 'darwin', 'linux'
+    system = platform.system().lower()  # 'windows', 'darwin', 'linux'
     machine = platform.machine().lower()  # 'x86_64', 'amd64', 'arm64', 'aarch64'
 
     # Normalize architecture
@@ -103,9 +103,12 @@ def check_installed() -> Dict:
         # Try to get version
         try:
             import subprocess
+
             proc = subprocess.run(
                 [path, "--version"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
                 **hidden_subprocess_kwargs(),
             )
             if proc.returncode == 0:
@@ -125,28 +128,30 @@ def get_latest_release() -> Optional[Dict]:
     try:
         try:
             from api_call_tracker import record as _t
+
             _t("github", f"/repos/{GITHUB_REPO}/releases/latest")
         except Exception:
             pass
         r = requests.get(
             GITHUB_API_URL,
             headers={"Accept": "application/vnd.github.v3+json"},
-            timeout=10
+            timeout=10,
         )
 
         if r.status_code != 200:
-            log_event("warning", "splash_setup",
-                      f"GitHub API returned {r.status_code}")
+            log_event("warning", "splash_setup", f"GitHub API returned {r.status_code}")
             return None
 
         data = r.json()
         assets = []
         for a in data.get("assets", []):
-            assets.append({
-                "name": a["name"],
-                "size": a["size"],
-                "url": a["browser_download_url"],
-            })
+            assets.append(
+                {
+                    "name": a["name"],
+                    "size": a["size"],
+                    "url": a["browser_download_url"],
+                }
+            )
 
         return {
             "tag": data.get("tag_name", "unknown"),
@@ -167,6 +172,7 @@ def download_splash(progress_callback: Callable = None) -> Dict:
 
     Returns: {success: bool, message: str, path: str}
     """
+
     def _progress(pct, msg):
         if progress_callback:
             try:
@@ -178,8 +184,9 @@ def download_splash(progress_callback: Callable = None) -> Dict:
     info = detect_platform()
 
     _progress(10, f"Platform: {info['os']} {info['arch']}")
-    log_event("info", "splash_setup",
-              f"Downloading Splash for {info['os']}/{info['arch']}...")
+    log_event(
+        "info", "splash_setup", f"Downloading Splash for {info['os']}/{info['arch']}..."
+    )
 
     # Fetch latest release
     _progress(15, "Checking latest release...")
@@ -210,15 +217,17 @@ def download_splash(progress_callback: Callable = None) -> Dict:
     if not download_url:
         # List available assets for troubleshooting
         available = [a["name"] for a in release["assets"]]
-        msg = (f"No binary found for {info['os']}/{info['arch']}. "
-               f"Looked for '{target_asset}'. "
-               f"Available: {', '.join(available)}")
+        msg = (
+            f"No binary found for {info['os']}/{info['arch']}. "
+            f"Looked for '{target_asset}'. "
+            f"Available: {', '.join(available)}"
+        )
         log_event("warning", "splash_setup", msg)
         return {"success": False, "message": msg, "path": ""}
 
-    allow_unverified = os.environ.get(
-        "CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD", ""
-    ).strip() == "1"
+    allow_unverified = (
+        os.environ.get("CATALYST_ALLOW_UNVERIFIED_SPLASH_DOWNLOAD", "").strip() == "1"
+    )
     if not sha256_url and not allow_unverified:
         msg = (
             f"No SHA256 checksum found for '{target_asset}'. "
@@ -228,7 +237,9 @@ def download_splash(progress_callback: Callable = None) -> Dict:
         return {"success": False, "message": msg, "path": ""}
 
     # Download the binary
-    _progress(25, f"Downloading {target_asset} ({download_size / 1024 / 1024:.1f} MB)...")
+    _progress(
+        25, f"Downloading {target_asset} ({download_size / 1024 / 1024:.1f} MB)..."
+    )
     install_path = info["install_path"]
     os.makedirs(os.path.dirname(install_path), exist_ok=True)
 
@@ -273,8 +284,10 @@ def download_splash(progress_callback: Callable = None) -> Dict:
                 actual_hash = hashlib.sha256(f.read()).hexdigest().lower()
 
             if actual_hash != expected_hash:
-                msg = (f"SHA256 mismatch! Expected: {expected_hash[:16]}... "
-                       f"Got: {actual_hash[:16]}... — download may be corrupted.")
+                msg = (
+                    f"SHA256 mismatch! Expected: {expected_hash[:16]}... "
+                    f"Got: {actual_hash[:16]}... — download may be corrupted."
+                )
                 log_event("error", "splash_setup", msg)
                 os.remove(install_path)
                 return {"success": False, "message": msg, "path": ""}
@@ -296,19 +309,25 @@ def download_splash(progress_callback: Callable = None) -> Dict:
     if info["os"] != "windows":
         try:
             st = os.stat(install_path)
-            os.chmod(install_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+            os.chmod(
+                install_path, st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+            )
             _progress(92, "Set executable permissions")
         except Exception as e:
-            log_event("debug", "splash_setup",
-                      f"chmod failed (may need manual fix): {e}")
+            log_event(
+                "debug", "splash_setup", f"chmod failed (may need manual fix): {e}"
+            )
 
     # Verify the binary runs
     _progress(95, "Testing binary...")
     try:
         import subprocess
+
         proc = subprocess.run(
             [install_path, "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             **hidden_subprocess_kwargs(),
         )
         version = proc.stdout.strip() if proc.returncode == 0 else "unknown"
@@ -320,8 +339,10 @@ def download_splash(progress_callback: Callable = None) -> Dict:
     _progress(100, "Installation complete!")
 
     file_size_mb = os.path.getsize(install_path) / 1024 / 1024
-    msg = (f"Splash {release['tag']} installed successfully! "
-           f"({file_size_mb:.1f} MB, {info['os']}/{info['arch']})")
+    msg = (
+        f"Splash {release['tag']} installed successfully! "
+        f"({file_size_mb:.1f} MB, {info['os']}/{info['arch']})"
+    )
     log_event("info", "splash_setup", msg)
 
     return {
@@ -377,4 +398,3 @@ def get_download_status() -> Dict:
     """Get current download progress."""
     with _download_lock:
         return dict(_download_status)
-

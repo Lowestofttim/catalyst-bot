@@ -64,6 +64,7 @@ def _find_env_example_path(install_dir: str) -> str:
 # ---------------------------------------------------------------------------
 try:
     from user_paths import env_file as _env_file, install_dir as _install_dir
+
     _ENV_PATH = _env_file()
     # If the user data .env doesn't exist yet but a template does in the
     # install dir, seed the data-dir .env from .env.example so first-run
@@ -73,6 +74,7 @@ try:
         if _example:
             try:
                 import shutil as _shutil
+
                 _tmp_env = f"{_ENV_PATH}.{os.getpid()}.tmp"
                 _shutil.copy2(_example, _tmp_env)
                 try:
@@ -86,11 +88,17 @@ try:
                     except OSError:
                         pass
             except Exception as _copy_err:
-                print(f"[config] Could not seed .env from .env.example: {_copy_err}", flush=True)
+                print(
+                    f"[config] Could not seed .env from .env.example: {_copy_err}",
+                    flush=True,
+                )
 except Exception as _e:
     # Fallback: legacy behaviour if user_paths import fails during an
     # unusual dev setup.  Should never happen in a packaged build.
-    print(f"[config] user_paths unavailable ({_e}); falling back to install dir", flush=True)
+    print(
+        f"[config] user_paths unavailable ({_e}); falling back to install dir",
+        flush=True,
+    )
     _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 
 load_dotenv(_ENV_PATH)
@@ -110,9 +118,7 @@ def _capture_preserved_process_env() -> dict:
     if os.getenv(_PRESERVE_PROCESS_ENV_FLAG) != "1":
         return {}
     return {
-        key: os.environ[key]
-        for key in _PRESERVED_PROCESS_ENV_KEYS
-        if key in os.environ
+        key: os.environ[key] for key in _PRESERVED_PROCESS_ENV_KEYS if key in os.environ
     }
 
 
@@ -125,8 +131,9 @@ def _strip_quotes(val: str) -> str:
     """Strip surrounding single or double quotes from .env values."""
     val = val.strip()
     if len(val) >= 2:
-        if (val.startswith("'") and val.endswith("'")) or \
-           (val.startswith('"') and val.endswith('"')):
+        if (val.startswith("'") and val.endswith("'")) or (
+            val.startswith('"') and val.endswith('"')
+        ):
             val = val[1:-1]
     return val
 
@@ -157,7 +164,9 @@ def _safe_url(key: str, default: str) -> str:
     if val:
         parsed = urlparse(val)
         if parsed.scheme not in ("http", "https"):
-            print(f"[CONFIG] WARNING: {key} has invalid scheme '{parsed.scheme}' — using default")
+            print(
+                f"[CONFIG] WARNING: {key} has invalid scheme '{parsed.scheme}' — using default"
+            )
             return default
     return val
 
@@ -184,7 +193,7 @@ class Config:
 
     def reload(self):
         """Re-read all settings from .env file (thread-safe)."""
-        lock = getattr(self, '_lock', None)
+        lock = getattr(self, "_lock", None)
         if lock:
             lock.acquire()
         try:
@@ -194,6 +203,7 @@ class Config:
             # not yet applied).
             try:
                 import user_secrets as _user_secrets
+
                 _user_secrets.apply_to_config(self)
             except Exception:
                 pass
@@ -201,6 +211,7 @@ class Config:
             # surface errors/warnings immediately after any reload.
             try:
                 from config_validator import validate_config
+
                 self._validation_report = validate_config(self)
             except Exception:
                 self._validation_report = None
@@ -224,7 +235,9 @@ class Config:
         self.CHIA_WALLET_RPC_URL = _str("CHIA_WALLET_RPC_URL", "https://localhost:9256")
         self.CHIA_WALLET_CERT = _str("CHIA_WALLET_CERT")
         self.CHIA_WALLET_KEY = _str("CHIA_WALLET_KEY")
-        self.CHIA_FULL_NODE_RPC_URL = _str("CHIA_FULL_NODE_RPC_URL", "https://localhost:8555")
+        self.CHIA_FULL_NODE_RPC_URL = _str(
+            "CHIA_FULL_NODE_RPC_URL", "https://localhost:8555"
+        )
         self.WALLET_ID_XCH = _int("CHIA_WALLET_ID_XCH", 1)
         self.WALLET_FINGERPRINT = _str("WALLET_FINGERPRINT")
         self.WALLET_DEBUG = _bool("WALLET_DEBUG", False)
@@ -233,11 +246,11 @@ class Config:
         self.SAGE_RPC_URL = _str("SAGE_RPC_URL", "https://localhost:9257")
         self.SAGE_CERT_PATH = _str("SAGE_CERT_PATH")
         self.SAGE_KEY_PATH = _str("SAGE_KEY_PATH")
-        self.SAGE_EXE_PATH = _str("SAGE_EXE_PATH")           # Auto-detected if empty
-        self.SAGE_DATA_DIR = _str("SAGE_DATA_DIR")           # Optional custom Sage data root
+        self.SAGE_EXE_PATH = _str("SAGE_EXE_PATH")  # Auto-detected if empty
+        self.SAGE_DATA_DIR = _str("SAGE_DATA_DIR")  # Optional custom Sage data root
         # SAGE_FINGERPRINT is read directly via os.getenv() in sage_node.py
         # (line 416). Kept in cfg for to_dict() exclusion list completeness.
-        self.SAGE_FINGERPRINT = _str("SAGE_FINGERPRINT")      # Auto-login fingerprint
+        self.SAGE_FINGERPRINT = _str("SAGE_FINGERPRINT")  # Auto-login fingerprint
         self.SAGE_SET_CHANGE_ADDRESS = _bool("SAGE_SET_CHANGE_ADDRESS", False)
 
         # ----- Wallet Address (for Spacescan self-spend detection) -----
@@ -354,11 +367,25 @@ class Config:
         # GUI key takes priority (it's what the user actually sets).
         # GUI writes MAX_ACTIVE_BUY; old .env may have MAX_ACTIVE_BUY_OFFERS.
         # Use _str() to distinguish "key not set" from "key set to 0".
-        self.MAX_ACTIVE_BUY_OFFERS = _int("MAX_ACTIVE_BUY") if _str("MAX_ACTIVE_BUY") else _int("MAX_ACTIVE_BUY_OFFERS", 0)
-        self.MAX_ACTIVE_SELL_OFFERS = _int("MAX_ACTIVE_SELL") if _str("MAX_ACTIVE_SELL") else _int("MAX_ACTIVE_SELL_OFFERS", 0)
-        self.OFFER_EXPIRY_SECS = _int("OFFER_EXPIRY_SECS", 86400)  # 24 hours — safety net only
-        self.OFFER_STAGGER_SECS = _int("OFFER_STAGGER_SECS", 10)  # Stagger to avoid mass-expiry
-        self.OFFER_REFRESH_BEFORE = _int("OFFER_REFRESH_BEFORE", 1800)  # Refresh 30 min before expiry (settle time)
+        self.MAX_ACTIVE_BUY_OFFERS = (
+            _int("MAX_ACTIVE_BUY")
+            if _str("MAX_ACTIVE_BUY")
+            else _int("MAX_ACTIVE_BUY_OFFERS", 0)
+        )
+        self.MAX_ACTIVE_SELL_OFFERS = (
+            _int("MAX_ACTIVE_SELL")
+            if _str("MAX_ACTIVE_SELL")
+            else _int("MAX_ACTIVE_SELL_OFFERS", 0)
+        )
+        self.OFFER_EXPIRY_SECS = _int(
+            "OFFER_EXPIRY_SECS", 86400
+        )  # 24 hours — safety net only
+        self.OFFER_STAGGER_SECS = _int(
+            "OFFER_STAGGER_SECS", 10
+        )  # Stagger to avoid mass-expiry
+        self.OFFER_REFRESH_BEFORE = _int(
+            "OFFER_REFRESH_BEFORE", 1800
+        )  # Refresh 30 min before expiry (settle time)
         self.FILL_PROTECT_SECS = _int("FILL_PROTECT_SECS", 180)
 
         # ----- Requoting -----
@@ -392,16 +419,22 @@ class Config:
         # requoting.  Only tiers whose drift exceeds their threshold are
         # requoted.  Uses REQUOTE_BPS and AMM_DRIFT_REQUOTE_BPS as the
         # first two defaults to stay consistent with existing behaviour.
-        self.REQUOTE_DRIFT_INNER = _decimal("REQUOTE_DRIFT_INNER", "0.003")   # 30 bps
-        self.REQUOTE_DRIFT_MID   = _decimal("REQUOTE_DRIFT_MID",   "0.008")   # 80 bps
-        self.REQUOTE_DRIFT_FULL  = _decimal("REQUOTE_DRIFT_FULL",  "0.02")    # 200 bps
-        self.REQUOTE_DRIFT_EMERGENCY = _decimal("REQUOTE_DRIFT_EMERGENCY", "0.05")  # 500 bps
+        self.REQUOTE_DRIFT_INNER = _decimal("REQUOTE_DRIFT_INNER", "0.003")  # 30 bps
+        self.REQUOTE_DRIFT_MID = _decimal("REQUOTE_DRIFT_MID", "0.008")  # 80 bps
+        self.REQUOTE_DRIFT_FULL = _decimal("REQUOTE_DRIFT_FULL", "0.02")  # 200 bps
+        self.REQUOTE_DRIFT_EMERGENCY = _decimal(
+            "REQUOTE_DRIFT_EMERGENCY", "0.05"
+        )  # 500 bps
         # TibetSwap confirmed-reserve shock protection. Trigger is a percent
         # move, not bps. 0 preserves auto mode: half MIN_EDGE_BPS, with a
         # 0.50% floor. Positive values give operators a direct threshold.
-        self.TIBET_SHOCK_CANCEL_TRIGGER_PCT = _decimal("TIBET_SHOCK_CANCEL_TRIGGER_PCT", "0")
+        self.TIBET_SHOCK_CANCEL_TRIGGER_PCT = _decimal(
+            "TIBET_SHOCK_CANCEL_TRIGGER_PCT", "0"
+        )
         self.TIBET_SHOCK_CANCEL_MID_PCT = _decimal("TIBET_SHOCK_CANCEL_MID_PCT", "5")
-        self.TIBET_SHOCK_CANCEL_OUTER_PCT = _decimal("TIBET_SHOCK_CANCEL_OUTER_PCT", "10")
+        self.TIBET_SHOCK_CANCEL_OUTER_PCT = _decimal(
+            "TIBET_SHOCK_CANCEL_OUTER_PCT", "10"
+        )
 
         # ----- Reserves -----
         #
@@ -428,7 +461,11 @@ class Config:
         # XCH_RESERVE / CAT_RESERVE. See coin_manager._classify_coins.
         self.XCH_RESERVE = _decimal("XCH_RESERVE", "0.03")
         # Support both new and legacy names
-        self.CAT_RESERVE = _decimal("CAT_RESERVE") if _str("CAT_RESERVE") else _decimal("MZ_RESERVE", "0")
+        self.CAT_RESERVE = (
+            _decimal("CAT_RESERVE")
+            if _str("CAT_RESERVE")
+            else _decimal("MZ_RESERVE", "0")
+        )
 
         # Topup pool — percentage of (spendable - reserve) that Smart
         # Settings allocates to the coin-splitting budget. Operators can
@@ -561,9 +598,7 @@ class Config:
         self.DYNAMIC_FILL_RATE_FULL_PER_HOUR = _decimal(
             "DYNAMIC_FILL_RATE_FULL_PER_HOUR", "12"
         )
-        self.DYNAMIC_FILL_RATE_MAX_BPS = _decimal(
-            "DYNAMIC_FILL_RATE_MAX_BPS", "100"
-        )
+        self.DYNAMIC_FILL_RATE_MAX_BPS = _decimal("DYNAMIC_FILL_RATE_MAX_BPS", "100")
 
         # ----- Market Toxicity Guard -----
         self.MARKET_TOXICITY_ENABLED = _bool("MARKET_TOXICITY_ENABLED", True)
@@ -629,14 +664,26 @@ class Config:
         # SELL_* shapes the sell ladder (CAT-funded). Fall back to the legacy
         # single-shared keys above when per-side keys are not set, so existing
         # configs keep working unchanged.
-        self.BUY_INNER_TIER_COUNT = _int("BUY_INNER_TIER_COUNT", str(self.INNER_TIER_COUNT))
+        self.BUY_INNER_TIER_COUNT = _int(
+            "BUY_INNER_TIER_COUNT", str(self.INNER_TIER_COUNT)
+        )
         self.BUY_MID_TIER_COUNT = _int("BUY_MID_TIER_COUNT", str(self.MID_TIER_COUNT))
-        self.BUY_OUTER_TIER_COUNT = _int("BUY_OUTER_TIER_COUNT", str(self.OUTER_TIER_COUNT))
-        self.BUY_EXTREME_TIER_COUNT = _int("BUY_EXTREME_TIER_COUNT", str(self.EXTREME_TIER_COUNT))
-        self.SELL_INNER_TIER_COUNT = _int("SELL_INNER_TIER_COUNT", str(self.INNER_TIER_COUNT))
+        self.BUY_OUTER_TIER_COUNT = _int(
+            "BUY_OUTER_TIER_COUNT", str(self.OUTER_TIER_COUNT)
+        )
+        self.BUY_EXTREME_TIER_COUNT = _int(
+            "BUY_EXTREME_TIER_COUNT", str(self.EXTREME_TIER_COUNT)
+        )
+        self.SELL_INNER_TIER_COUNT = _int(
+            "SELL_INNER_TIER_COUNT", str(self.INNER_TIER_COUNT)
+        )
         self.SELL_MID_TIER_COUNT = _int("SELL_MID_TIER_COUNT", str(self.MID_TIER_COUNT))
-        self.SELL_OUTER_TIER_COUNT = _int("SELL_OUTER_TIER_COUNT", str(self.OUTER_TIER_COUNT))
-        self.SELL_EXTREME_TIER_COUNT = _int("SELL_EXTREME_TIER_COUNT", str(self.EXTREME_TIER_COUNT))
+        self.SELL_OUTER_TIER_COUNT = _int(
+            "SELL_OUTER_TIER_COUNT", str(self.OUTER_TIER_COUNT)
+        )
+        self.SELL_EXTREME_TIER_COUNT = _int(
+            "SELL_EXTREME_TIER_COUNT", str(self.EXTREME_TIER_COUNT)
+        )
         self.INNER_TIER_SPARE_COUNT = _int("INNER_TIER_SPARE_COUNT", 0)
         self.MID_TIER_SPARE_COUNT = _int("MID_TIER_SPARE_COUNT", 0)
         self.OUTER_TIER_SPARE_COUNT = _int("OUTER_TIER_SPARE_COUNT", 0)
@@ -644,14 +691,30 @@ class Config:
         # Per-side spare counts (V4): BUY_* governs XCH (used to fund buy offers),
         # SELL_* governs CAT (used to fund sell offers). When the legacy single-shared
         # keys above are non-zero and per-side keys are not set, fall back to legacy.
-        self.BUY_INNER_TIER_SPARE_COUNT = _int("BUY_INNER_TIER_SPARE_COUNT", str(self.INNER_TIER_SPARE_COUNT))
-        self.BUY_MID_TIER_SPARE_COUNT = _int("BUY_MID_TIER_SPARE_COUNT", str(self.MID_TIER_SPARE_COUNT))
-        self.BUY_OUTER_TIER_SPARE_COUNT = _int("BUY_OUTER_TIER_SPARE_COUNT", str(self.OUTER_TIER_SPARE_COUNT))
-        self.BUY_EXTREME_TIER_SPARE_COUNT = _int("BUY_EXTREME_TIER_SPARE_COUNT", str(self.EXTREME_TIER_SPARE_COUNT))
-        self.SELL_INNER_TIER_SPARE_COUNT = _int("SELL_INNER_TIER_SPARE_COUNT", str(self.INNER_TIER_SPARE_COUNT))
-        self.SELL_MID_TIER_SPARE_COUNT = _int("SELL_MID_TIER_SPARE_COUNT", str(self.MID_TIER_SPARE_COUNT))
-        self.SELL_OUTER_TIER_SPARE_COUNT = _int("SELL_OUTER_TIER_SPARE_COUNT", str(self.OUTER_TIER_SPARE_COUNT))
-        self.SELL_EXTREME_TIER_SPARE_COUNT = _int("SELL_EXTREME_TIER_SPARE_COUNT", str(self.EXTREME_TIER_SPARE_COUNT))
+        self.BUY_INNER_TIER_SPARE_COUNT = _int(
+            "BUY_INNER_TIER_SPARE_COUNT", str(self.INNER_TIER_SPARE_COUNT)
+        )
+        self.BUY_MID_TIER_SPARE_COUNT = _int(
+            "BUY_MID_TIER_SPARE_COUNT", str(self.MID_TIER_SPARE_COUNT)
+        )
+        self.BUY_OUTER_TIER_SPARE_COUNT = _int(
+            "BUY_OUTER_TIER_SPARE_COUNT", str(self.OUTER_TIER_SPARE_COUNT)
+        )
+        self.BUY_EXTREME_TIER_SPARE_COUNT = _int(
+            "BUY_EXTREME_TIER_SPARE_COUNT", str(self.EXTREME_TIER_SPARE_COUNT)
+        )
+        self.SELL_INNER_TIER_SPARE_COUNT = _int(
+            "SELL_INNER_TIER_SPARE_COUNT", str(self.INNER_TIER_SPARE_COUNT)
+        )
+        self.SELL_MID_TIER_SPARE_COUNT = _int(
+            "SELL_MID_TIER_SPARE_COUNT", str(self.MID_TIER_SPARE_COUNT)
+        )
+        self.SELL_OUTER_TIER_SPARE_COUNT = _int(
+            "SELL_OUTER_TIER_SPARE_COUNT", str(self.OUTER_TIER_SPARE_COUNT)
+        )
+        self.SELL_EXTREME_TIER_SPARE_COUNT = _int(
+            "SELL_EXTREME_TIER_SPARE_COUNT", str(self.EXTREME_TIER_SPARE_COUNT)
+        )
 
         # ----- Coin Prep -----
         self.COIN_PREP_MULTIPLIER = _decimal("COIN_PREP_MULTIPLIER", "1.0")
@@ -668,12 +731,16 @@ class Config:
         # the selector may use a moderately oversized coin up to this ratio.
         # The reclaim pass uses the same ceiling so it does not immediately
         # cancel offers the selector intentionally allowed.
-        self.COIN_OVERSIZE_FALLBACK_RATIO = float(os.getenv("COIN_OVERSIZE_FALLBACK_RATIO", "2.0"))
+        self.COIN_OVERSIZE_FALLBACK_RATIO = float(
+            os.getenv("COIN_OVERSIZE_FALLBACK_RATIO", "2.0")
+        )
         default_fee_mode = "manual" if self.WALLET_TYPE == "sage" else "auto"
         self.TRANSACTION_FEE_MODE = _str("TRANSACTION_FEE_MODE", default_fee_mode)
         self.TRANSACTION_FEE_XCH = _decimal("TRANSACTION_FEE_XCH", "0")
         self.TRANSACTION_FEE_TARGET_SECS = _int("TRANSACTION_FEE_TARGET_SECS", 300)
-        self.TRANSACTION_FEE_ESTIMATE_COST = _int("TRANSACTION_FEE_ESTIMATE_COST", 20_000_000)
+        self.TRANSACTION_FEE_ESTIMATE_COST = _int(
+            "TRANSACTION_FEE_ESTIMATE_COST", 20_000_000
+        )
         self.FEE_PREP_COUNT = _int("FEE_PREP_COUNT", 20)
         self.FEE_COIN_SIZE_XCH = _decimal("FEE_COIN_SIZE_XCH", "0.0001")
         self.LADDER_CREATE_PARALLELISM = _int("LADDER_CREATE_PARALLELISM", 5)
@@ -682,9 +749,15 @@ class Config:
 
         # ----- Adaptive Coin Management (V3 — designation-based pools) -----
         # Topup triggers: % of spares remaining before replenishment starts
-        self.TOPUP_SLOW_PCT = _int("TOPUP_SLOW_PCT", 20)        # Trigger at 20% spares on slow days
-        self.TOPUP_NORMAL_PCT = _int("TOPUP_NORMAL_PCT", 30)     # Trigger at 30% spares normally
-        self.TOPUP_BUSY_PCT = _int("TOPUP_BUSY_PCT", 50)         # Trigger at 50% spares on busy days
+        self.TOPUP_SLOW_PCT = _int(
+            "TOPUP_SLOW_PCT", 20
+        )  # Trigger at 20% spares on slow days
+        self.TOPUP_NORMAL_PCT = _int(
+            "TOPUP_NORMAL_PCT", 30
+        )  # Trigger at 30% spares normally
+        self.TOPUP_BUSY_PCT = _int(
+            "TOPUP_BUSY_PCT", 50
+        )  # Trigger at 50% spares on busy days
         # Per-tier topup trigger percentages (V4). Overrides the global pace
         # threshold above on a per-tier basis. The "starting pool size" for
         # each tier comes from the live spare-count settings (source of truth),
@@ -709,8 +782,10 @@ class Config:
         # the harder TIER_TRIGGER_PCT_* values still govern emergency topups.
         self.TIER_DRIP_PCT = _int("TIER_DRIP_PCT", 100)
         # Trading pace thresholds (fills per hour)
-        self.FILLS_PER_HOUR_BUSY = _int("FILLS_PER_HOUR_BUSY", 10)   # >10 fills/hr = busy
-        self.FILLS_PER_HOUR_SLOW = _int("FILLS_PER_HOUR_SLOW", 2)    # <2 fills/hr = slow
+        self.FILLS_PER_HOUR_BUSY = _int(
+            "FILLS_PER_HOUR_BUSY", 10
+        )  # >10 fills/hr = busy
+        self.FILLS_PER_HOUR_SLOW = _int("FILLS_PER_HOUR_SLOW", 2)  # <2 fills/hr = slow
         # Wallet reconciliation frequency
         self.RECONCILE_EVERY_N_LOOPS = _int("RECONCILE_EVERY_N_LOOPS", 2)
 
@@ -718,34 +793,70 @@ class Config:
         self.SNIPER_ENABLED = _bool("SNIPER_ENABLED", True)
         self.SNIPER_SIZE_XCH = _decimal("SNIPER_SIZE_XCH", "0.001")
         self.SNIPER_PREP_COUNT = _int("SNIPER_PREP_COUNT", 20)
-        self.SNIPER_EXPIRY_SECS = _int("SNIPER_EXPIRY_SECS", 600)  # 10 min — edge probes should expire quickly
+        self.SNIPER_EXPIRY_SECS = _int(
+            "SNIPER_EXPIRY_SECS", 600
+        )  # 10 min — edge probes should expire quickly
         self.SNIPER_COOLDOWN_SECS = _int("SNIPER_COOLDOWN_SECS", 30)
-        self.SNIPER_CONFIRM_SECS = _int("SNIPER_CONFIRM_SECS", 54)  # ~3 Chia blocks (18s each)
-        self.SNIPER_LINGER_SECS = _int("SNIPER_LINGER_SECS", 600)  # 10 min — keep edge only briefly
-        self.SNIPER_POLL_SECS = _int("SNIPER_POLL_SECS", 5)  # Fast wallet poll cadence while probes are active
-        self.SNIPER_BUFFER_BPS = _decimal("SNIPER_BUFFER_BPS", "50")  # How far past TibetSwap to place sniper (0.5%)
-        self.SNIPER_TOP_BOOK_BPS = _decimal("SNIPER_TOP_BOOK_BPS", "1")  # Improve the live best bid/ask by 1 BPS when probing
-        self.SNIPER_RETRY_BACKOFF_BPS = _decimal("SNIPER_RETRY_BACKOFF_BPS", "50")  # How far to step back from the last sniper after it gets arbed
-        self.SNIPER_MAIN_BOOK_GUARD_BPS = _decimal("SNIPER_MAIN_BOOK_GUARD_BPS", "1")  # Keep the main book 1 BPS behind the probe
-        self.SNIPER_MIN_GAP_BPS = _decimal("SNIPER_MIN_GAP_BPS", "400")  # Only snipe on big moves (4%+)
-        self.SNIPER_REARM_PRICE_MOVE_BPS = _decimal("SNIPER_REARM_PRICE_MOVE_BPS", "100")  # Re-discover only after ~1% price move
-        self.SNIPER_REARM_GAP_MOVE_BPS = _decimal("SNIPER_REARM_GAP_MOVE_BPS", "100")  # Or after ~1% arb-gap shift
+        self.SNIPER_CONFIRM_SECS = _int(
+            "SNIPER_CONFIRM_SECS", 54
+        )  # ~3 Chia blocks (18s each)
+        self.SNIPER_LINGER_SECS = _int(
+            "SNIPER_LINGER_SECS", 600
+        )  # 10 min — keep edge only briefly
+        self.SNIPER_POLL_SECS = _int(
+            "SNIPER_POLL_SECS", 5
+        )  # Fast wallet poll cadence while probes are active
+        self.SNIPER_BUFFER_BPS = _decimal(
+            "SNIPER_BUFFER_BPS", "50"
+        )  # How far past TibetSwap to place sniper (0.5%)
+        self.SNIPER_TOP_BOOK_BPS = _decimal(
+            "SNIPER_TOP_BOOK_BPS", "1"
+        )  # Improve the live best bid/ask by 1 BPS when probing
+        self.SNIPER_RETRY_BACKOFF_BPS = _decimal(
+            "SNIPER_RETRY_BACKOFF_BPS", "50"
+        )  # How far to step back from the last sniper after it gets arbed
+        self.SNIPER_MAIN_BOOK_GUARD_BPS = _decimal(
+            "SNIPER_MAIN_BOOK_GUARD_BPS", "1"
+        )  # Keep the main book 1 BPS behind the probe
+        self.SNIPER_MIN_GAP_BPS = _decimal(
+            "SNIPER_MIN_GAP_BPS", "400"
+        )  # Only snipe on big moves (4%+)
+        self.SNIPER_REARM_PRICE_MOVE_BPS = _decimal(
+            "SNIPER_REARM_PRICE_MOVE_BPS", "100"
+        )  # Re-discover only after ~1% price move
+        self.SNIPER_REARM_GAP_MOVE_BPS = _decimal(
+            "SNIPER_REARM_GAP_MOVE_BPS", "100"
+        )  # Or after ~1% arb-gap shift
         # Iterative floor tightening: after a probe is confirmed, fire tighter
         # probes each cycle until one gets taken. That locates the true AMM-arb
         # floor empirically instead of stopping at the first comfortable buffer.
         self.SNIPER_FLOOR_TIGHTEN_ENABLED = _bool("SNIPER_FLOOR_TIGHTEN_ENABLED", True)
-        self.SNIPER_FLOOR_TIGHTEN_STEP_BPS = _int("SNIPER_FLOOR_TIGHTEN_STEP_BPS", 15)  # Buffer reduction per successful round
-        self.SNIPER_FLOOR_TIGHTEN_COOLDOWN_SECS = _int("SNIPER_FLOOR_TIGHTEN_COOLDOWN_SECS", 60)  # Wait between tightening rounds
-        self.SNIPER_FLOOR_SAFETY_BPS = _int("SNIPER_FLOOR_SAFETY_BPS", 5)  # Stop tightening when within this many bps of TIBETSWAP_FEE_BPS
+        self.SNIPER_FLOOR_TIGHTEN_STEP_BPS = _int(
+            "SNIPER_FLOOR_TIGHTEN_STEP_BPS", 15
+        )  # Buffer reduction per successful round
+        self.SNIPER_FLOOR_TIGHTEN_COOLDOWN_SECS = _int(
+            "SNIPER_FLOOR_TIGHTEN_COOLDOWN_SECS", 60
+        )  # Wait between tightening rounds
+        self.SNIPER_FLOOR_SAFETY_BPS = _int(
+            "SNIPER_FLOOR_SAFETY_BPS", 5
+        )  # Stop tightening when within this many bps of TIBETSWAP_FEE_BPS
 
         # ----- Close the Gap (Dexie ranking improvement) -----
         # Probe size uses SNIPER_SIZE_XCH (same coin pool).
         # Probe expiry uses SNIPER_EXPIRY_SECS (same lifecycle).
-        self.BOOST_SPREAD_BPS = _int("BOOST_SPREAD_BPS", 200)  # Fallback spread if no main book
+        self.BOOST_SPREAD_BPS = _int(
+            "BOOST_SPREAD_BPS", 200
+        )  # Fallback spread if no main book
         # Adaptive gap-closing strategy
-        self.GAP_CLOSE_START_PCT = _int("GAP_CLOSE_START_PCT", 75)  # Start at 75% of main spread
-        self.GAP_CLOSE_STEP_PCT = _int("GAP_CLOSE_STEP_PCT", 30)  # Tighten 30% per stable period (bigger jumps = faster floor discovery)
-        self.GAP_CLOSE_SAFETY_BUFFER_BPS = _int("GAP_CLOSE_SAFETY_BUFFER_BPS", 5)  # Buffer above arb gap (tight — empirical test showed Dexie watchers take any +EV offer, so sub-probe needs room to actually push past the real arb threshold)
+        self.GAP_CLOSE_START_PCT = _int(
+            "GAP_CLOSE_START_PCT", 75
+        )  # Start at 75% of main spread
+        self.GAP_CLOSE_STEP_PCT = _int(
+            "GAP_CLOSE_STEP_PCT", 30
+        )  # Tighten 30% per stable period (bigger jumps = faster floor discovery)
+        self.GAP_CLOSE_SAFETY_BUFFER_BPS = _int(
+            "GAP_CLOSE_SAFETY_BUFFER_BPS", 5
+        )  # Buffer above arb gap (tight — empirical test showed Dexie watchers take any +EV offer, so sub-probe needs room to actually push past the real arb threshold)
 
         # ----- Inverted-probe floor discovery (2026-04-25) -----
         # Empirical evidence: symmetric tight quotes (positive half-spread on
@@ -770,13 +881,27 @@ class Config:
         self.GAP_PROBE_HANDOFF_BUFFER_BPS = _int("GAP_PROBE_HANDOFF_BUFFER_BPS", 20)
         # Inverted-mode cascade after both sides settle: plant N new tight
         # inner-tier offers per side at half-spread Y, cancel N furthest.
-        self.GAP_PROBE_CASCADE_COUNT_PER_SIDE = _int("GAP_PROBE_CASCADE_COUNT_PER_SIDE", 2)
-        self.GAP_PROBE_CASCADE_HALF_SPREAD_BPS = _int("GAP_PROBE_CASCADE_HALF_SPREAD_BPS", 50)
-        self.GAP_CLOSE_STEP_COOLDOWN_SECS = _int("GAP_CLOSE_STEP_COOLDOWN_SECS", 60)  # 1 min between steps
-        self.GAP_CLOSE_CONVERGENCE_SECS = _int("GAP_CLOSE_CONVERGENCE_SECS", 120)  # 2 min between main book convergence steps
-        self.GAP_CLOSE_CONVERGENCE_STEP_PCT = _int("GAP_CLOSE_CONVERGENCE_STEP_PCT", 20)  # Main book tightens 20% per step
-        self.GAP_CLOSE_CASCADE_WAIT_SECS = _int("GAP_CLOSE_CASCADE_WAIT_SECS", 60)  # Wait 60s before cascading main book behind probe
-        self.GAP_CLOSE_CASCADE_BATCH_SIZE = _int("GAP_CLOSE_CASCADE_BATCH_SIZE", 5)  # How many offers to replace per cascade batch
+        self.GAP_PROBE_CASCADE_COUNT_PER_SIDE = _int(
+            "GAP_PROBE_CASCADE_COUNT_PER_SIDE", 2
+        )
+        self.GAP_PROBE_CASCADE_HALF_SPREAD_BPS = _int(
+            "GAP_PROBE_CASCADE_HALF_SPREAD_BPS", 50
+        )
+        self.GAP_CLOSE_STEP_COOLDOWN_SECS = _int(
+            "GAP_CLOSE_STEP_COOLDOWN_SECS", 60
+        )  # 1 min between steps
+        self.GAP_CLOSE_CONVERGENCE_SECS = _int(
+            "GAP_CLOSE_CONVERGENCE_SECS", 120
+        )  # 2 min between main book convergence steps
+        self.GAP_CLOSE_CONVERGENCE_STEP_PCT = _int(
+            "GAP_CLOSE_CONVERGENCE_STEP_PCT", 20
+        )  # Main book tightens 20% per step
+        self.GAP_CLOSE_CASCADE_WAIT_SECS = _int(
+            "GAP_CLOSE_CASCADE_WAIT_SECS", 60
+        )  # Wait 60s before cascading main book behind probe
+        self.GAP_CLOSE_CASCADE_BATCH_SIZE = _int(
+            "GAP_CLOSE_CASCADE_BATCH_SIZE", 5
+        )  # How many offers to replace per cascade batch
 
         # ----- Market Intelligence (V2 — ecosystem upgrades) -----
         self.COMPETITOR_AWARE_ENABLED = _bool("COMPETITOR_AWARE_ENABLED", False)
@@ -805,7 +930,9 @@ class Config:
         # snapshot polling (~45x faster batch creation). Requires Sage wallet
         # with coin_ids support. Falls back to polling if selection fails.
         # Chia wallet ignores coin_ids silently (always uses polling).
-        self.COIN_IDS_ENABLED = _bool("COIN_IDS_ENABLED", True)  # Default ON — 4x faster offer creation
+        self.COIN_IDS_ENABLED = _bool(
+            "COIN_IDS_ENABLED", True
+        )  # Default ON — 4x faster offer creation
 
         # ----- Coinset API (V3 — fast cloud coin queries) -----
         self.COINSET_ENABLED = _bool("COINSET_ENABLED", True)
@@ -834,15 +961,27 @@ class Config:
         # ----- Spacescan (V4 — on-chain verification, golden source of truth) -----
         self.SPACESCAN_ENABLED = _bool("SPACESCAN_ENABLED", True)
         self.SPACESCAN_API_KEY = _str("SPACESCAN_API_KEY", "")
-        self.SPACESCAN_PRO_URL = _safe_url("SPACESCAN_PRO_URL", "https://pro-api.spacescan.io")
-        self.SPACESCAN_FREE_URL = _safe_url("SPACESCAN_FREE_URL", "https://api.spacescan.io")
+        self.SPACESCAN_PRO_URL = _safe_url(
+            "SPACESCAN_PRO_URL", "https://pro-api.spacescan.io"
+        )
+        self.SPACESCAN_FREE_URL = _safe_url(
+            "SPACESCAN_FREE_URL", "https://api.spacescan.io"
+        )
         self.SPACESCAN_TIMEOUT = _int("SPACESCAN_TIMEOUT", 10)
-        self.SPACESCAN_BALANCE_CHECK_EVERY_N = _int("SPACESCAN_BALANCE_CHECK_EVERY_N", 10)  # Check balance every N loops
-        self.SPACESCAN_BALANCE_THRESHOLD_XCH = _decimal("SPACESCAN_BALANCE_THRESHOLD_XCH", "0.1")  # Alert if diff > this
+        self.SPACESCAN_BALANCE_CHECK_EVERY_N = _int(
+            "SPACESCAN_BALANCE_CHECK_EVERY_N", 10
+        )  # Check balance every N loops
+        self.SPACESCAN_BALANCE_THRESHOLD_XCH = _decimal(
+            "SPACESCAN_BALANCE_THRESHOLD_XCH", "0.1"
+        )  # Alert if diff > this
         self.RUNTIME_MONITOR_ENABLED = _bool("RUNTIME_MONITOR_ENABLED", True)
         self.RUNTIME_MONITOR_POLL_SECS = _int("RUNTIME_MONITOR_POLL_SECS", 20)
-        self.RUNTIME_MONITOR_DEXIE_GRACE_SECS = _int("RUNTIME_MONITOR_DEXIE_GRACE_SECS", 120)
-        self.RUNTIME_MONITOR_TOPUP_WARN_SECS = _int("RUNTIME_MONITOR_TOPUP_WARN_SECS", 900)
+        self.RUNTIME_MONITOR_DEXIE_GRACE_SECS = _int(
+            "RUNTIME_MONITOR_DEXIE_GRACE_SECS", 120
+        )
+        self.RUNTIME_MONITOR_TOPUP_WARN_SECS = _int(
+            "RUNTIME_MONITOR_TOPUP_WARN_SECS", 900
+        )
         self.RUNTIME_MONITOR_STALE_POLLS = _int("RUNTIME_MONITOR_STALE_POLLS", 2)
         # Stale wallet data guard: block new offer creation after this many
         # consecutive stale sync cycles. Default 3 (~15s at 5s/loop).
@@ -853,61 +992,104 @@ class Config:
     # an attacker with API access from redirecting wallet RPC.
     _UPDATABLE_KEYS = {
         # Trading core
-        "DRY_RUN", "ENABLE_BUY", "ENABLE_SELL", "LIQUIDITY_MODE", "LOOP_SECONDS",
-        "MIN_TRADE_XCH", "MAX_TRADE_XCH", "DEFAULT_TRADE_XCH",
+        "DRY_RUN",
+        "ENABLE_BUY",
+        "ENABLE_SELL",
+        "LIQUIDITY_MODE",
+        "LOOP_SECONDS",
+        "MIN_TRADE_XCH",
+        "MAX_TRADE_XCH",
+        "DEFAULT_TRADE_XCH",
         # Spread & pricing
-        "SPREAD_BPS", "MIN_EDGE_BPS", "PRICE_STRATEGY", "TIBET_WEIGHT",
+        "SPREAD_BPS",
+        "MIN_EDGE_BPS",
+        "PRICE_STRATEGY",
+        "TIBET_WEIGHT",
         "ARB_ALERT_THRESHOLD_BPS",
         # Price safety
-        "DYNAMIC_LIMIT_PCT", "HARD_MIN_PRICE_XCH", "HARD_MAX_PRICE_XCH",
+        "DYNAMIC_LIMIT_PCT",
+        "HARD_MIN_PRICE_XCH",
+        "HARD_MAX_PRICE_XCH",
         # MIN_MID / MAX_MID kept for Smart Settings clear-only path —
         # they're legacy fallbacks for HARD_MIN/MAX_PRICE_XCH (see lines
         # 217-220) and Smart Settings explicitly nulls them so the new
         # rails take precedence. MAX_MID_MOVE_BPS removed 2026-04-08:
         # the trading code never consumed it.
-        "MAX_STEP_CHANGE_FRACTION", "MIN_MID", "MAX_MID",
+        "MAX_STEP_CHANGE_FRACTION",
+        "MIN_MID",
+        "MAX_MID",
         # Offer management
-        "MAX_ACTIVE_BUY", "MAX_ACTIVE_SELL",
-        "MAX_ACTIVE_BUY_OFFERS", "MAX_ACTIVE_SELL_OFFERS",
-        "OFFER_EXPIRY_SECS", "OFFER_STAGGER_SECS",
-        "OFFER_REFRESH_BEFORE", "FILL_PROTECT_SECS",
+        "MAX_ACTIVE_BUY",
+        "MAX_ACTIVE_SELL",
+        "MAX_ACTIVE_BUY_OFFERS",
+        "MAX_ACTIVE_SELL_OFFERS",
+        "OFFER_EXPIRY_SECS",
+        "OFFER_STAGGER_SECS",
+        "OFFER_REFRESH_BEFORE",
+        "FILL_PROTECT_SECS",
         # Requoting
-        "AUTO_REQUOTE", "REQUOTE_BPS", "REQUOTE_COOLDOWN_SECS",
-        "REQUOTE_BATCH_SIZE", "REQUOTE_COIN_FREE_WAIT",
+        "AUTO_REQUOTE",
+        "REQUOTE_BPS",
+        "REQUOTE_COOLDOWN_SECS",
+        "REQUOTE_BATCH_SIZE",
+        "REQUOTE_COIN_FREE_WAIT",
         "TIBET_SHOCK_CANCEL_TRIGGER_PCT",
-        "TIBET_SHOCK_CANCEL_MID_PCT", "TIBET_SHOCK_CANCEL_OUTER_PCT",
+        "TIBET_SHOCK_CANCEL_MID_PCT",
+        "TIBET_SHOCK_CANCEL_OUTER_PCT",
         # Reserves + topup pool (F49)
-        "XCH_RESERVE", "CAT_RESERVE", "MZ_RESERVE",
-        "TOPUP_POOL_PCT", "TOPUP_POOL_XCH", "TOPUP_POOL_CAT",
+        "XCH_RESERVE",
+        "CAT_RESERVE",
+        "MZ_RESERVE",
+        "TOPUP_POOL_PCT",
+        "TOPUP_POOL_XCH",
+        "TOPUP_POOL_CAT",
         # Cancel poll tuning (F51). CANCEL_RETRY_WAIT_SECS removed F77.
-        "CANCEL_POLL_INTERVAL_SECS", "CANCEL_MAX_WAIT_SECS",
-        "PENDING_CANCEL_SETTLE_RETRY_SECS", "PENDING_CANCEL_SETTLE_MAX_RETRIES",
+        "CANCEL_POLL_INTERVAL_SECS",
+        "CANCEL_MAX_WAIT_SECS",
+        "PENDING_CANCEL_SETTLE_RETRY_SECS",
+        "PENDING_CANCEL_SETTLE_MAX_RETRIES",
         # Coin prep. COIN_PREP_COOLDOWN_SECS removed F77 (never consumed).
         "ENABLE_COIN_PREP",
-        "XCH_TARGET_COINS", "XCH_COIN_SIZE",
-        "CAT_TARGET_COINS", "CAT_COIN_SIZE",
-        "COIN_PREP_MULTIPLIER", "COIN_PREP_HEADROOM_PCT", "COIN_MAX_SIZE_RATIO",
+        "XCH_TARGET_COINS",
+        "XCH_COIN_SIZE",
+        "CAT_TARGET_COINS",
+        "CAT_COIN_SIZE",
+        "COIN_PREP_MULTIPLIER",
+        "COIN_PREP_HEADROOM_PCT",
+        "COIN_MAX_SIZE_RATIO",
         "COIN_OVERSIZE_FALLBACK_RATIO",
-        "TRANSACTION_FEE_MODE", "TRANSACTION_FEE_XCH",
-        "TRANSACTION_FEE_TARGET_SECS", "TRANSACTION_FEE_ESTIMATE_COST",
-        "FEE_PREP_COUNT", "FEE_COIN_SIZE_XCH",
-        "LADDER_CREATE_PARALLELISM", "LADDER_CREATE_DELAY_MS",
+        "TRANSACTION_FEE_MODE",
+        "TRANSACTION_FEE_XCH",
+        "TRANSACTION_FEE_TARGET_SECS",
+        "TRANSACTION_FEE_ESTIMATE_COST",
+        "FEE_PREP_COUNT",
+        "FEE_COIN_SIZE_XCH",
+        "LADDER_CREATE_PARALLELISM",
+        "LADDER_CREATE_DELAY_MS",
         "LADDER_CREATE_GLOBAL_SERIAL",
         # Dexie
-        "DEXIE_AUTO_POST", "DEXIE_POST_ENABLED",
-        "DEXIE_POST_TIMEOUT", "DEXIE_POST_RETRIES",
+        "DEXIE_AUTO_POST",
+        "DEXIE_POST_ENABLED",
+        "DEXIE_POST_TIMEOUT",
+        "DEXIE_POST_RETRIES",
         "DEXIE_AUTO_CLAIM_REWARDS",
-        "DEXIE_POST_RETRY_SLEEP", "MAX_POSTS_PER_LOOP", "BOT_TAG",
+        "DEXIE_POST_RETRY_SLEEP",
+        "MAX_POSTS_PER_LOOP",
+        "BOT_TAG",
         # TibetSwap
         "TIBET_TIMEOUT",
         # Runtime features
         "ENABLE_RUNTIME_COIN_HEALTH",
         "SAGE_SET_CHANGE_ADDRESS",
         # Inventory
-        "INVENTORY_ENABLED", "SKEW_INTENSITY", "MAX_POSITION_XCH",
+        "INVENTORY_ENABLED",
+        "SKEW_INTENSITY",
+        "MAX_POSITION_XCH",
         # Dynamic spreads
-        "DYNAMIC_SPREAD_ENABLED", "BASE_SPREAD_BPS",
-        "MIN_SPREAD_BPS", "MAX_SPREAD_BPS",
+        "DYNAMIC_SPREAD_ENABLED",
+        "BASE_SPREAD_BPS",
+        "MIN_SPREAD_BPS",
+        "MAX_SPREAD_BPS",
         "VOLATILITY_WINDOW_HOURS",
         "DYNAMIC_FILL_RATE_START_PER_HOUR",
         "DYNAMIC_FILL_RATE_FULL_PER_HOUR",
@@ -925,80 +1107,137 @@ class Config:
         "TOXICITY_MIN_THROTTLE_SIGNALS",
         "TOXICITY_CANCEL_ENABLED",
         # Tiered orders
-        "TIER_ENABLED", "BUY_LADDER_REVERSED", "INNER_SIZE_XCH", "MID_SIZE_XCH",
-        "OUTER_SIZE_XCH", "EXTREME_SIZE_XCH",
+        "TIER_ENABLED",
+        "BUY_LADDER_REVERSED",
+        "INNER_SIZE_XCH",
+        "MID_SIZE_XCH",
+        "OUTER_SIZE_XCH",
+        "EXTREME_SIZE_XCH",
         # F62 (2026-04-09): per-side tier sizes so buy and sell ladders
         # can be sized independently from their own balances.
-        "BUY_INNER_SIZE_XCH", "BUY_MID_SIZE_XCH",
-        "BUY_OUTER_SIZE_XCH", "BUY_EXTREME_SIZE_XCH",
-        "SELL_INNER_SIZE_XCH", "SELL_MID_SIZE_XCH",
-        "SELL_OUTER_SIZE_XCH", "SELL_EXTREME_SIZE_XCH",
-        "INNER_TIER_COUNT", "MID_TIER_COUNT",
-        "OUTER_TIER_COUNT", "EXTREME_TIER_COUNT",
-        "BUY_INNER_TIER_COUNT", "BUY_MID_TIER_COUNT",
-        "BUY_OUTER_TIER_COUNT", "BUY_EXTREME_TIER_COUNT",
-        "SELL_INNER_TIER_COUNT", "SELL_MID_TIER_COUNT",
-        "SELL_OUTER_TIER_COUNT", "SELL_EXTREME_TIER_COUNT",
-        "INNER_TIER_SPARE_COUNT", "MID_TIER_SPARE_COUNT",
-        "OUTER_TIER_SPARE_COUNT", "EXTREME_TIER_SPARE_COUNT",
-        "BUY_INNER_TIER_SPARE_COUNT", "BUY_MID_TIER_SPARE_COUNT",
-        "BUY_OUTER_TIER_SPARE_COUNT", "BUY_EXTREME_TIER_SPARE_COUNT",
-        "SELL_INNER_TIER_SPARE_COUNT", "SELL_MID_TIER_SPARE_COUNT",
-        "SELL_OUTER_TIER_SPARE_COUNT", "SELL_EXTREME_TIER_SPARE_COUNT",
+        "BUY_INNER_SIZE_XCH",
+        "BUY_MID_SIZE_XCH",
+        "BUY_OUTER_SIZE_XCH",
+        "BUY_EXTREME_SIZE_XCH",
+        "SELL_INNER_SIZE_XCH",
+        "SELL_MID_SIZE_XCH",
+        "SELL_OUTER_SIZE_XCH",
+        "SELL_EXTREME_SIZE_XCH",
+        "INNER_TIER_COUNT",
+        "MID_TIER_COUNT",
+        "OUTER_TIER_COUNT",
+        "EXTREME_TIER_COUNT",
+        "BUY_INNER_TIER_COUNT",
+        "BUY_MID_TIER_COUNT",
+        "BUY_OUTER_TIER_COUNT",
+        "BUY_EXTREME_TIER_COUNT",
+        "SELL_INNER_TIER_COUNT",
+        "SELL_MID_TIER_COUNT",
+        "SELL_OUTER_TIER_COUNT",
+        "SELL_EXTREME_TIER_COUNT",
+        "INNER_TIER_SPARE_COUNT",
+        "MID_TIER_SPARE_COUNT",
+        "OUTER_TIER_SPARE_COUNT",
+        "EXTREME_TIER_SPARE_COUNT",
+        "BUY_INNER_TIER_SPARE_COUNT",
+        "BUY_MID_TIER_SPARE_COUNT",
+        "BUY_OUTER_TIER_SPARE_COUNT",
+        "BUY_EXTREME_TIER_SPARE_COUNT",
+        "SELL_INNER_TIER_SPARE_COUNT",
+        "SELL_MID_TIER_SPARE_COUNT",
+        "SELL_OUTER_TIER_SPARE_COUNT",
+        "SELL_EXTREME_TIER_SPARE_COUNT",
         # Adaptive coin management
-        "TOPUP_SLOW_PCT", "TOPUP_NORMAL_PCT", "TOPUP_BUSY_PCT",
-        "TIER_TRIGGER_PCT_INNER", "TIER_TRIGGER_PCT_MID",
-        "TIER_TRIGGER_PCT_OUTER", "TIER_TRIGGER_PCT_EXTREME",
-        "TIER_TRIGGER_PCT_SNIPER", "TIER_TRIGGER_PCT_FEES",
-        "TIER_TRIGGER_PACE_SCALE", "TIER_DRIP_PCT",
-        "FILLS_PER_HOUR_BUSY", "FILLS_PER_HOUR_SLOW",
+        "TOPUP_SLOW_PCT",
+        "TOPUP_NORMAL_PCT",
+        "TOPUP_BUSY_PCT",
+        "TIER_TRIGGER_PCT_INNER",
+        "TIER_TRIGGER_PCT_MID",
+        "TIER_TRIGGER_PCT_OUTER",
+        "TIER_TRIGGER_PCT_EXTREME",
+        "TIER_TRIGGER_PCT_SNIPER",
+        "TIER_TRIGGER_PCT_FEES",
+        "TIER_TRIGGER_PACE_SCALE",
+        "TIER_DRIP_PCT",
+        "FILLS_PER_HOUR_BUSY",
+        "FILLS_PER_HOUR_SLOW",
         "RECONCILE_EVERY_N_LOOPS",
         # Sniper
-        "SNIPER_ENABLED", "SNIPER_SIZE_XCH", "SNIPER_PREP_COUNT",
-        "SNIPER_EXPIRY_SECS", "SNIPER_COOLDOWN_SECS",
-        "SNIPER_CONFIRM_SECS", "SNIPER_LINGER_SECS",
-        "SNIPER_POLL_SECS", "SNIPER_BUFFER_BPS",
-        "SNIPER_TOP_BOOK_BPS", "SNIPER_RETRY_BACKOFF_BPS",
-        "SNIPER_MAIN_BOOK_GUARD_BPS", "SNIPER_MIN_GAP_BPS",
-        "SNIPER_REARM_PRICE_MOVE_BPS", "SNIPER_REARM_GAP_MOVE_BPS",
-        "SNIPER_FLOOR_TIGHTEN_ENABLED", "SNIPER_FLOOR_TIGHTEN_STEP_BPS",
-        "SNIPER_FLOOR_TIGHTEN_COOLDOWN_SECS", "SNIPER_FLOOR_SAFETY_BPS",
+        "SNIPER_ENABLED",
+        "SNIPER_SIZE_XCH",
+        "SNIPER_PREP_COUNT",
+        "SNIPER_EXPIRY_SECS",
+        "SNIPER_COOLDOWN_SECS",
+        "SNIPER_CONFIRM_SECS",
+        "SNIPER_LINGER_SECS",
+        "SNIPER_POLL_SECS",
+        "SNIPER_BUFFER_BPS",
+        "SNIPER_TOP_BOOK_BPS",
+        "SNIPER_RETRY_BACKOFF_BPS",
+        "SNIPER_MAIN_BOOK_GUARD_BPS",
+        "SNIPER_MIN_GAP_BPS",
+        "SNIPER_REARM_PRICE_MOVE_BPS",
+        "SNIPER_REARM_GAP_MOVE_BPS",
+        "SNIPER_FLOOR_TIGHTEN_ENABLED",
+        "SNIPER_FLOOR_TIGHTEN_STEP_BPS",
+        "SNIPER_FLOOR_TIGHTEN_COOLDOWN_SECS",
+        "SNIPER_FLOOR_SAFETY_BPS",
         # Close the Gap / Boost
-        "BOOST_SIZE_XCH", "BOOST_EXPIRY_SECS", "BOOST_SPREAD_BPS",
-        "GAP_CLOSE_START_PCT", "GAP_CLOSE_STEP_PCT",
-        "GAP_CLOSE_SAFETY_BUFFER_BPS", "GAP_CLOSE_STEP_COOLDOWN_SECS",
-        "GAP_CLOSE_CONVERGENCE_SECS", "GAP_CLOSE_CONVERGENCE_STEP_PCT",
-        "GAP_CLOSE_CASCADE_WAIT_SECS", "GAP_CLOSE_CASCADE_BATCH_SIZE",
+        "BOOST_SIZE_XCH",
+        "BOOST_EXPIRY_SECS",
+        "BOOST_SPREAD_BPS",
+        "GAP_CLOSE_START_PCT",
+        "GAP_CLOSE_STEP_PCT",
+        "GAP_CLOSE_SAFETY_BUFFER_BPS",
+        "GAP_CLOSE_STEP_COOLDOWN_SECS",
+        "GAP_CLOSE_CONVERGENCE_SECS",
+        "GAP_CLOSE_CONVERGENCE_STEP_PCT",
+        "GAP_CLOSE_CASCADE_WAIT_SECS",
+        "GAP_CLOSE_CASCADE_BATCH_SIZE",
         # Market intel
         "COMPETITOR_AWARE_ENABLED",
         "DBX_MAX_SPREAD_BPS",
         # Splash
-        "SPLASH_ENABLED", "SPLASH_POST_RETRIES",
-        "SPLASH_POST_TIMEOUT", "SPLASH_POST_RETRY_SLEEP",
-        "SPLASH_RECEIVE_ENABLED", "SPLASH_RECEIVE_POLL_SECS",
-        "SPLASH_RECEIVE_BATCH_SIZE", "SPLASH_P2P_PORT",
-        "SPLASH_AUTO_START", "SPLASH_TESTNET",
+        "SPLASH_ENABLED",
+        "SPLASH_POST_RETRIES",
+        "SPLASH_POST_TIMEOUT",
+        "SPLASH_POST_RETRY_SLEEP",
+        "SPLASH_RECEIVE_ENABLED",
+        "SPLASH_RECEIVE_POLL_SECS",
+        "SPLASH_RECEIVE_BATCH_SIZE",
+        "SPLASH_P2P_PORT",
+        "SPLASH_AUTO_START",
+        "SPLASH_TESTNET",
         # Coin IDs
         "COIN_IDS_ENABLED",
         # Coinset
-        "COINSET_ENABLED", "COINSET_TIMEOUT", "COINSET_FALLBACK_WALLET",
+        "COINSET_ENABLED",
+        "COINSET_TIMEOUT",
+        "COINSET_FALLBACK_WALLET",
         # Local Chia full-node RPC (optional zero-lag mempool source).
         # URL + cert/key paths are updatable from the GUI so the operator
         # can point the watcher at their own node without editing .env.
-        "FULL_NODE_ENABLED", "FULL_NODE_RPC_URL",
-        "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH",
+        "FULL_NODE_ENABLED",
+        "FULL_NODE_RPC_URL",
+        "FULL_NODE_CERT_PATH",
+        "FULL_NODE_KEY_PATH",
         "FULL_NODE_TIMEOUT",
         # Spacescan
-        "SPACESCAN_ENABLED", "SPACESCAN_TIMEOUT",
+        "SPACESCAN_ENABLED",
+        "SPACESCAN_TIMEOUT",
         "SPACESCAN_BALANCE_CHECK_EVERY_N",
         "SPACESCAN_BALANCE_THRESHOLD_XCH",
-        "RUNTIME_MONITOR_ENABLED", "RUNTIME_MONITOR_POLL_SECS",
+        "RUNTIME_MONITOR_ENABLED",
+        "RUNTIME_MONITOR_POLL_SECS",
         "RUNTIME_MONITOR_DEXIE_GRACE_SECS",
         "RUNTIME_MONITOR_TOPUP_WARN_SECS",
         "RUNTIME_MONITOR_STALE_POLLS",
         "WALLET_STALE_CREATE_LIMIT",
         # CAT identity (safe — does not control wallet access)
-        "CAT_ASSET_ID", "CAT_TICKER_ID", "CAT_NAME", "CAT_DECIMALS",
+        "CAT_ASSET_ID",
+        "CAT_TICKER_ID",
+        "CAT_NAME",
+        "CAT_DECIMALS",
         # TibetSwap pair (auto-resolved by cat_resolver at startup)
         "TIBET_PAIR_ID",
         # Sage startup preference. This is intentionally blocked from the
@@ -1007,8 +1246,7 @@ class Config:
         "SAGE_FINGERPRINT",
     }
 
-    def update(self, key: str, value: str,
-               source: str = "api", note: str = "") -> bool:
+    def update(self, key: str, value: str, source: str = "api", note: str = "") -> bool:
         """Update a setting: writes to .env and refreshes in-memory value.
 
         Only keys in _UPDATABLE_KEYS can be modified via the API.
@@ -1033,7 +1271,9 @@ class Config:
 
         # Reject control characters that could inject extra .env lines
         if any(c in str(value) for c in ("\n", "\r", "\x00")):
-            print(f"[CONFIG] Blocked update of {key}: value contains control characters")
+            print(
+                f"[CONFIG] Blocked update of {key}: value contains control characters"
+            )
             return False
 
         try:
@@ -1053,7 +1293,10 @@ class Config:
                 # Record the change (import here to avoid circular import)
                 try:
                     from database import record_config_change
-                    record_config_change(key, old_value, value, source=source, note=note)
+
+                    record_config_change(
+                        key, old_value, value, source=source, note=note
+                    )
                 except ImportError:
                     pass  # Database not available yet during early startup
 
@@ -1066,6 +1309,7 @@ class Config:
                 try:
                     if key in ("TOPUP_POOL_XCH", "TOPUP_POOL_CAT"):
                         from database import set_setting as _set_setting
+
                         spend_key = (
                             "topup_pool_cat_spent_mojos"
                             if key == "TOPUP_POOL_CAT"
@@ -1080,6 +1324,7 @@ class Config:
             print(f"[CONFIG] Failed to update {key}: {e}")
             try:
                 from database import log_event as _log_cfg
+
                 _log_cfg("error", "config_error", f"Failed to update {key}: {e}")
             except Exception:
                 pass
@@ -1166,9 +1411,7 @@ class Config:
 
         shock_trigger = getattr(self, "TIBET_SHOCK_CANCEL_TRIGGER_PCT", Decimal("0"))
         if shock_trigger < Decimal("0"):
-            errors.append(
-                "TIBET_SHOCK_CANCEL_TRIGGER_PCT cannot be negative"
-            )
+            errors.append("TIBET_SHOCK_CANCEL_TRIGGER_PCT cannot be negative")
         elif shock_trigger > Decimal("20"):
             warnings.append(
                 "TIBET_SHOCK_CANCEL_TRIGGER_PCT is above 20% — defensive "
@@ -1181,9 +1424,7 @@ class Config:
         # hard floor on a 50-100 XCH wallet.
         reserve = self.XCH_RESERVE
         if reserve < Decimal("0"):
-            errors.append(
-                f"XCH_RESERVE={reserve} is negative — invalid reserve value"
-            )
+            errors.append(f"XCH_RESERVE={reserve} is negative — invalid reserve value")
         elif reserve > Decimal("100"):
             warnings.append(
                 f"XCH_RESERVE={reserve} XCH is very large (>100) — verify this is intentional"
@@ -1234,8 +1475,11 @@ class Config:
 
     def is_two_sided(self) -> bool:
         """True when the bot should quote BOTH buy and sell ladders."""
-        return (getattr(self, "LIQUIDITY_MODE", "two_sided") == "two_sided"
-                and bool(self.ENABLE_BUY) and bool(self.ENABLE_SELL))
+        return (
+            getattr(self, "LIQUIDITY_MODE", "two_sided") == "two_sided"
+            and bool(self.ENABLE_BUY)
+            and bool(self.ENABLE_SELL)
+        )
 
     def is_single_sided(self) -> bool:
         """True when LIQUIDITY_MODE pins the bot to one side."""
@@ -1261,11 +1505,19 @@ class Config:
 
         Excludes sensitive wallet credentials.
         """
-        excluded = {"CHIA_WALLET_CERT", "CHIA_WALLET_KEY", "WALLET_FINGERPRINT",
-                    "SPACESCAN_API_KEY",
-                    "SAGE_CERT_PATH", "SAGE_KEY_PATH", "SAGE_FINGERPRINT",
-                    "SAGE_EXE_PATH", "SAGE_DATA_DIR",
-                    "FULL_NODE_CERT_PATH", "FULL_NODE_KEY_PATH"}
+        excluded = {
+            "CHIA_WALLET_CERT",
+            "CHIA_WALLET_KEY",
+            "WALLET_FINGERPRINT",
+            "SPACESCAN_API_KEY",
+            "SAGE_CERT_PATH",
+            "SAGE_KEY_PATH",
+            "SAGE_FINGERPRINT",
+            "SAGE_EXE_PATH",
+            "SAGE_DATA_DIR",
+            "FULL_NODE_CERT_PATH",
+            "FULL_NODE_KEY_PATH",
+        }
         result = {}
         for key, value in self.__dict__.items():
             if key.startswith("_") or key in excluded:
@@ -1300,9 +1552,9 @@ cfg = Config()
 
 _TIER_NAMES = ("inner", "mid", "outer", "extreme")
 _REVERSE_BUY_MAP = {
-    "inner":   "extreme",
-    "mid":     "outer",
-    "outer":   "mid",
+    "inner": "extreme",
+    "mid": "outer",
+    "outer": "mid",
     "extreme": "inner",
 }
 

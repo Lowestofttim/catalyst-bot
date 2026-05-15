@@ -9,11 +9,16 @@ import unittest
 
 try:
     from offer_lifecycle import (
-        OfferState, OfferSignal, OfferTransition,
-        apply_signal, apply_fill_verification,
-        coarse_status, is_terminal,
+        OfferState,
+        OfferSignal,
+        OfferTransition,
+        apply_signal,
+        apply_fill_verification,
+        coarse_status,
+        is_terminal,
         _TERMINAL_STATES,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -61,6 +66,7 @@ class TestTerminalStates(unittest.TestCase):
 # ===========================================================================
 # OPEN state transitions
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestOpenStateTransitions(unittest.TestCase):
@@ -110,6 +116,7 @@ class TestOpenStateTransitions(unittest.TestCase):
 # REFRESH_DUE state transitions
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestRefreshDueStateTransitions(unittest.TestCase):
     def _apply(self, signal):
@@ -146,6 +153,7 @@ class TestRefreshDueStateTransitions(unittest.TestCase):
 # ===========================================================================
 # CANCEL_REQUESTED state transitions
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestCancelRequestedStateTransitions(unittest.TestCase):
@@ -186,6 +194,7 @@ class TestCancelRequestedStateTransitions(unittest.TestCase):
 # MEMPOOL_OBSERVED state transitions
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestMempoolObservedStateTransitions(unittest.TestCase):
     def _apply(self, signal):
@@ -220,6 +229,7 @@ class TestMempoolObservedStateTransitions(unittest.TestCase):
 # apply_fill_verification
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestApplyFillVerification(unittest.TestCase):
     def test_fill_verified_stays_filled(self):
@@ -246,6 +256,7 @@ class TestApplyFillVerification(unittest.TestCase):
 # ===========================================================================
 # coarse_status
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestCoarseStatus(unittest.TestCase):
@@ -281,6 +292,7 @@ class TestCoarseStatus(unittest.TestCase):
 # is_terminal
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestIsTerminal(unittest.TestCase):
     def test_cancelled_is_terminal(self):
@@ -308,6 +320,7 @@ class TestIsTerminal(unittest.TestCase):
 # ===========================================================================
 # OfferTransition dataclass is frozen (immutable)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"offer_lifecycle unavailable: {_SKIP}")
 class TestOfferTransitionImmutable(unittest.TestCase):

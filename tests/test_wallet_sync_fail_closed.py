@@ -59,7 +59,10 @@ class WalletSyncFailClosedTests(unittest.TestCase):
         fake_wallet.get_offer_expiry_info = lambda *args, **kwargs: {}
         fake_wallet.get_offer_bech32 = lambda *args, **kwargs: ""
         fake_wallet.cleanup_expired_offers = lambda *args, **kwargs: 0
-        fake_wallet.get_exact_spendable_coins_rpc = lambda *args, **kwargs: {"success": True, "confirmed_records": []}
+        fake_wallet.get_exact_spendable_coins_rpc = lambda *args, **kwargs: {
+            "success": True,
+            "confirmed_records": [],
+        }
         fake_wallet.get_wallet_type = lambda: "sage"
         fake_wallet.get_owned_coins_detailed = lambda *args, **kwargs: None
         fake_wallet.WALLET_ID_XCH = 1
@@ -118,12 +121,18 @@ class WalletSyncFailClosedTests(unittest.TestCase):
 
         fake_get_all_offers._last_error = ""
 
-        with patch.object(self.offer_manager, "get_all_offers", new=fake_get_all_offers), \
-                patch.object(
-                    self.offer_manager,
-                    "classify_offers_from_list",
-                    return_value=([{"trade_id": "buy-live"}], [{"trade_id": "sell-live"}], []),
-                ):
+        with (
+            patch.object(self.offer_manager, "get_all_offers", new=fake_get_all_offers),
+            patch.object(
+                self.offer_manager,
+                "classify_offers_from_list",
+                return_value=(
+                    [{"trade_id": "buy-live"}],
+                    [{"trade_id": "sell-live"}],
+                    [],
+                ),
+            ),
+        ):
             fresh_buy, fresh_sell, _ = manager.sync_from_wallet()
             stale_buy, stale_sell, _ = manager.sync_from_wallet()
 
@@ -158,8 +167,14 @@ class WalletSyncFailClosedTests(unittest.TestCase):
                 )
             return ([], [], [])
 
-        with patch.object(self.offer_manager, "get_all_offers", new=fake_get_all_offers), \
-                patch.object(self.offer_manager, "classify_offers_from_list", side_effect=fake_classify):
+        with (
+            patch.object(self.offer_manager, "get_all_offers", new=fake_get_all_offers),
+            patch.object(
+                self.offer_manager,
+                "classify_offers_from_list",
+                side_effect=fake_classify,
+            ),
+        ):
             fresh_buy, fresh_sell, _ = manager.sync_from_wallet()
             manager.expect_empty_wallet_offer_book("manual_cancel_all")
             empty_buy, empty_sell, _ = manager.sync_from_wallet()
@@ -185,10 +200,13 @@ class WalletSyncFailClosedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cancelled_path = os.path.join(tmp, "worker_cancelled_ids.json")
             with open(cancelled_path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "cancelled_ids": sorted(cancelled_ids),
-                    "timestamp": time.time(),
-                }, f)
+                json.dump(
+                    {
+                        "cancelled_ids": sorted(cancelled_ids),
+                        "timestamp": time.time(),
+                    },
+                    f,
+                )
 
             fake_user_paths = types.ModuleType("user_paths")
             fake_user_paths.worker_cancelled_ids_file = lambda: cancelled_path
@@ -210,9 +228,17 @@ class WalletSyncFailClosedTests(unittest.TestCase):
                     )
                 return ([], [], [])
 
-            with patch.dict(sys.modules, {"user_paths": fake_user_paths}), \
-                    patch.object(self.offer_manager, "get_all_offers", new=fake_get_all_offers), \
-                    patch.object(self.offer_manager, "classify_offers_from_list", side_effect=fake_classify):
+            with (
+                patch.dict(sys.modules, {"user_paths": fake_user_paths}),
+                patch.object(
+                    self.offer_manager, "get_all_offers", new=fake_get_all_offers
+                ),
+                patch.object(
+                    self.offer_manager,
+                    "classify_offers_from_list",
+                    side_effect=fake_classify,
+                ),
+            ):
                 fresh_buy, fresh_sell, _ = manager.sync_from_wallet()
                 empty_buy, empty_sell, _ = manager.sync_from_wallet()
 
@@ -247,7 +273,9 @@ class WalletSyncFailClosedTests(unittest.TestCase):
         self.assertEqual(result["sell_fills"], [])
         self.assertEqual(tracker._mass_disappearance_count, 0)
         self.assertEqual(tracker._previous_ids["buy"], {"buy-a", "buy-b"})
-        self.assertTrue(any(evt == "mass_disappearance_blocked" for _, evt, _, _ in self.logged))
+        self.assertTrue(
+            any(evt == "mass_disappearance_blocked" for _, evt, _, _ in self.logged)
+        )
 
 
 if __name__ == "__main__":

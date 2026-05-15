@@ -79,13 +79,21 @@ class TierGroupCountTests(unittest.TestCase):
         fake_wallet.get_offer_expiry_info = lambda *args, **kwargs: {}
         fake_wallet.get_offer_bech32 = lambda *args, **kwargs: ""
         fake_wallet.cleanup_expired_offers = lambda *args, **kwargs: None
-        fake_wallet.get_exact_spendable_coins_rpc = lambda *args, **kwargs: {"success": True, "records": []}
+        fake_wallet.get_exact_spendable_coins_rpc = lambda *args, **kwargs: {
+            "success": True,
+            "records": [],
+        }
         fake_wallet.get_wallet_type = lambda: "sage"
         fake_wallet.get_owned_coins_detailed = lambda *args, **kwargs: {}
         fake_wallet.WALLET_ID_XCH = 1
         fake_wallet.get_all_coins_for_wallet = lambda *args, **kwargs: []
-        fake_wallet.get_wallet_balance = lambda *args, **kwargs: {"wallet_balance": {"spendable_balance": 0}}
-        fake_wallet.get_next_address = lambda *args, **kwargs: {"success": True, "address": "xch1test"}
+        fake_wallet.get_wallet_balance = lambda *args, **kwargs: {
+            "wallet_balance": {"spendable_balance": 0}
+        }
+        fake_wallet.get_next_address = lambda *args, **kwargs: {
+            "success": True,
+            "address": "xch1test",
+        }
         fake_wallet.send_transaction = lambda *args, **kwargs: {"success": True}
         fake_wallet.split_coins_rpc = lambda *args, **kwargs: {"success": True}
         fake_wallet.get_owned_coins = lambda *args, **kwargs: {}
@@ -168,7 +176,9 @@ class TierGroupCountTests(unittest.TestCase):
     def test_recommended_spare_counts_return_spare_portion_only(self):
         dist = self.coin_manager.get_tier_distribution(6)
         recommended = self.coin_manager.get_recommended_tier_spare_counts(6, 3.0)
-        prepared = self.coin_manager.get_weighted_tier_prep_counts(6, 3.0, spare_counts={})
+        prepared = self.coin_manager.get_weighted_tier_prep_counts(
+            6, 3.0, spare_counts={}
+        )
 
         self.assertEqual(
             sum(recommended.values()),

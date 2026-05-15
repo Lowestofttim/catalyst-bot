@@ -12,15 +12,20 @@ import unittest
 
 try:
     from coin_fsm import (
-        CoinState, STATUSES, DESIGNATIONS,
-        validate_transition, is_terminal,
+        CoinState,
+        STATUSES,
+        DESIGNATIONS,
+        validate_transition,
+        is_terminal,
     )
+
     _SKIP_FSM = None
 except ModuleNotFoundError as exc:
     _SKIP_FSM = str(exc)
 
 try:
     from coin_reservations import ReservationRegistry, _normalise
+
     _SKIP_RES = None
 except ModuleNotFoundError as exc:
     _SKIP_RES = str(exc)
@@ -29,6 +34,7 @@ except ModuleNotFoundError as exc:
 # ===========================================================================
 # coin_fsm — vocabulary sets
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_FSM is not None, f"coin_fsm unavailable: {_SKIP_FSM}")
 class TestCoinFsmVocabulary(unittest.TestCase):
@@ -53,6 +59,7 @@ class TestCoinFsmVocabulary(unittest.TestCase):
 # coin_fsm — CoinState dataclass
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_FSM is not None, f"coin_fsm unavailable: {_SKIP_FSM}")
 class TestCoinState(unittest.TestCase):
     def test_str_representation(self):
@@ -74,6 +81,7 @@ class TestCoinState(unittest.TestCase):
 # coin_fsm — is_terminal
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_FSM is not None, f"coin_fsm unavailable: {_SKIP_FSM}")
 class TestIsTerminal(unittest.TestCase):
     def test_spent_is_terminal(self):
@@ -94,11 +102,13 @@ class TestIsTerminal(unittest.TestCase):
 # coin_fsm — validate_transition
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_FSM is not None, f"coin_fsm unavailable: {_SKIP_FSM}")
 class TestValidateTransition(unittest.TestCase):
     def _ok(self, old_st, old_ds, new_st, new_ds):
         ok, _ = validate_transition(
-            CoinState(old_st, old_ds), CoinState(new_st, new_ds))
+            CoinState(old_st, old_ds), CoinState(new_st, new_ds)
+        )
         return ok
 
     def test_identity_always_ok(self):
@@ -133,42 +143,49 @@ class TestValidateTransition(unittest.TestCase):
 
     def test_spent_to_free_is_terminal(self):
         ok, reason = validate_transition(
-            CoinState("spent", "tier_active"), CoinState("free", "tier_spare"))
+            CoinState("spent", "tier_active"), CoinState("free", "tier_spare")
+        )
         self.assertFalse(ok)
         self.assertIn("terminal", reason)
 
     def test_unknown_old_status_rejects(self):
         ok, reason = validate_transition(
-            CoinState("bogus", "tier_spare"), CoinState("free", "tier_spare"))
+            CoinState("bogus", "tier_spare"), CoinState("free", "tier_spare")
+        )
         self.assertFalse(ok)
         self.assertIn("unknown old status", reason)
 
     def test_unknown_old_designation_rejects(self):
         ok, reason = validate_transition(
-            CoinState("free", "nonexistent"), CoinState("free", "tier_spare"))
+            CoinState("free", "nonexistent"), CoinState("free", "tier_spare")
+        )
         self.assertFalse(ok)
         self.assertIn("unknown old designation", reason)
 
     def test_unknown_new_status_rejects(self):
         ok, reason = validate_transition(
-            CoinState("free", "tier_spare"), CoinState("phantom", "tier_spare"))
+            CoinState("free", "tier_spare"), CoinState("phantom", "tier_spare")
+        )
         self.assertFalse(ok)
         self.assertIn("unknown new status", reason)
 
     def test_reason_empty_when_ok(self):
         _, reason = validate_transition(
-            CoinState("free", "tier_spare"), CoinState("locked", "tier_active"))
+            CoinState("free", "tier_spare"), CoinState("locked", "tier_active")
+        )
         self.assertEqual(reason, "")
 
     def test_reason_non_empty_when_rejected(self):
         _, reason = validate_transition(
-            CoinState("spent", "tier_active"), CoinState("locked", "tier_active"))
+            CoinState("spent", "tier_active"), CoinState("locked", "tier_active")
+        )
         self.assertNotEqual(reason, "")
 
 
 # ===========================================================================
 # coin_reservations — _normalise helper
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_RES is not None, f"coin_reservations unavailable: {_SKIP_RES}")
 class TestNormalise(unittest.TestCase):
@@ -191,6 +208,7 @@ class TestNormalise(unittest.TestCase):
 # ===========================================================================
 # coin_reservations — ReservationRegistry
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_RES is not None, f"coin_reservations unavailable: {_SKIP_RES}")
 class TestReservationRegistry(unittest.TestCase):
@@ -236,7 +254,9 @@ class TestReservationRegistry(unittest.TestCase):
 
     def test_same_owner_refreshes_ttl(self):
         self.reg.reserve(["0xabc"], owner="op1", purpose="test", ttl_seconds=30)
-        result = self.reg.reserve(["0xabc"], owner="op1", purpose="test", ttl_seconds=60)
+        result = self.reg.reserve(
+            ["0xabc"], owner="op1", purpose="test", ttl_seconds=60
+        )
         self.assertEqual(len(result), 1)  # still reserved by op1
 
     def test_filter_unreserved_excludes_reserved(self):

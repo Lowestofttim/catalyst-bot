@@ -16,9 +16,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     from database import (
-        upsert_coin, lock_coin, free_coin, get_free_coins,
-        cleanup_orphaned_locked_coins, add_offer,
+        upsert_coin,
+        lock_coin,
+        free_coin,
+        get_free_coins,
+        cleanup_orphaned_locked_coins,
+        add_offer,
     )
+
     _SKIP_DB = None
 except ModuleNotFoundError as exc:
     _db = None
@@ -26,6 +31,7 @@ except ModuleNotFoundError as exc:
 
 try:
     from bot_health import check_orphan_locks
+
     _SKIP_BH = None
 except ModuleNotFoundError as exc:
     check_orphan_locks = None
@@ -35,6 +41,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Temp-DB base class
 # ---------------------------------------------------------------------------
+
 
 class _TempDB(unittest.TestCase):
     def setUp(self):
@@ -77,10 +84,22 @@ class _TempDB(unittest.TestCase):
         except OSError:
             pass
 
-    def _add_coin(self, coin_id, wallet_type="xch", amount=1_000_000_000_000,
-                  tier="inner", designation="tier_trading"):
-        upsert_coin(coin_id, wallet_type, amount,
-                    tier=tier, designation=designation, status="free")
+    def _add_coin(
+        self,
+        coin_id,
+        wallet_type="xch",
+        amount=1_000_000_000_000,
+        tier="inner",
+        designation="tier_trading",
+    ):
+        upsert_coin(
+            coin_id,
+            wallet_type,
+            amount,
+            tier=tier,
+            designation=designation,
+            status="free",
+        )
 
     def _lock_coin_to_offer(self, coin_id, trade_id):
         lock_coin(coin_id, trade_id)
@@ -97,9 +116,9 @@ class _TempDB(unittest.TestCase):
 # 1. cleanup_orphaned_locked_coins — core logic
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_DB is not None, f"database unavailable: {_SKIP_DB}")
 class TestCleanupOrphanedLockedCoins(_TempDB):
-
     def test_no_locked_coins_returns_zero_freed(self):
         result = cleanup_orphaned_locked_coins(set())
         self.assertEqual(result["total_freed"], 0)
@@ -108,7 +127,9 @@ class TestCleanupOrphanedLockedCoins(_TempDB):
         # Coin locked but no trade_id (offer creation failed)
         self._add_coin("0xcoin1")
         conn = _db.get_connection()
-        conn.execute("UPDATE coins SET status='locked', trade_id=NULL WHERE coin_id='0xcoin1'")
+        conn.execute(
+            "UPDATE coins SET status='locked', trade_id=NULL WHERE coin_id='0xcoin1'"
+        )
         conn.commit()
         result = cleanup_orphaned_locked_coins(set())
         self.assertEqual(result["freed_no_trade"], 1)
@@ -139,8 +160,7 @@ class TestCleanupOrphanedLockedCoins(_TempDB):
         self._lock_coin_to_offer("0xcoin4", "trade-stale")
         # Wallet confirms this coin is locked → don't free it
         result = cleanup_orphaned_locked_coins(
-            open_trade_ids={"trade-active"},
-            wallet_confirmed_locked={"0xcoin4"}
+            open_trade_ids={"trade-active"}, wallet_confirmed_locked={"0xcoin4"}
         )
         self.assertEqual(result["skipped_wallet_locked"], 1)
         self.assertEqual(result["total_freed"], 0)
@@ -180,8 +200,14 @@ class TestCleanupOrphanedLockedCoins(_TempDB):
         self.assertEqual(len(free), 1)
 
     def test_cat_coins_also_freed(self):
-        upsert_coin("0xcat1", "cat", 1000, tier="inner",
-                    designation="tier_trading", status="free")
+        upsert_coin(
+            "0xcat1",
+            "cat",
+            1000,
+            tier="inner",
+            designation="tier_trading",
+            status="free",
+        )
         self._lock_coin_to_offer("0xcat1", "stale-cat-trade")
         result = cleanup_orphaned_locked_coins(set())
         self.assertEqual(result["total_freed"], 1)
@@ -192,12 +218,12 @@ class TestCleanupOrphanedLockedCoins(_TempDB):
 # 2. check_orphan_locks from bot_health
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(
     _SKIP_DB is not None or _SKIP_BH is not None,
-    f"dependencies unavailable: db={_SKIP_DB} bh={_SKIP_BH}"
+    f"dependencies unavailable: db={_SKIP_DB} bh={_SKIP_BH}",
 )
 class TestCheckOrphanLocks(_TempDB):
-
     def test_passes_when_no_locked_coins(self):
         result = check_orphan_locks(auto_repair=False)
         self.assertEqual(result.status, "pass")
@@ -205,8 +231,10 @@ class TestCheckOrphanLocks(_TempDB):
     def test_passes_when_all_locked_coins_have_open_offers(self):
         # Add a coin + open offer in the same DB
         from decimal import Decimal
-        add_offer("t-open", "buy", Decimal("0.001"), Decimal("0.1"),
-                  Decimal("100"), "testcat")
+
+        add_offer(
+            "t-open", "buy", Decimal("0.001"), Decimal("0.1"), Decimal("100"), "testcat"
+        )
         self._add_coin("0xcoin-with-open-offer")
         self._lock_coin_to_offer("0xcoin-with-open-offer", "t-open")
         result = check_orphan_locks(auto_repair=False)
@@ -254,15 +282,23 @@ class TestCheckOrphanLocks(_TempDB):
 # 3. Full orphan cleanup cycle
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP_DB is not None, f"database unavailable: {_SKIP_DB}")
 class TestOrphanCleanupCycle(_TempDB):
     """End-to-end: offers cancelled → orphan detection → coins freed → available again."""
 
     def test_cancel_flow_frees_coins(self):
         from decimal import Decimal
+
         # Setup: add coin + open offer, lock coin to offer
-        add_offer("t-offer", "buy", Decimal("0.001"), Decimal("0.1"),
-                  Decimal("100"), "testcat")
+        add_offer(
+            "t-offer",
+            "buy",
+            Decimal("0.001"),
+            Decimal("0.1"),
+            Decimal("100"),
+            "testcat",
+        )
         self._add_coin("0xcycle1")
         self._lock_coin_to_offer("0xcycle1", "t-offer")
 
@@ -281,10 +317,17 @@ class TestOrphanCleanupCycle(_TempDB):
 
     def test_multiple_offers_partial_cancel(self):
         from decimal import Decimal
+
         # 3 coins locked to 3 offers, 2 cancelled
         for i in range(3):
-            add_offer(f"t-{i}", "buy", Decimal("0.001"), Decimal("0.1"),
-                      Decimal("100"), "testcat")
+            add_offer(
+                f"t-{i}",
+                "buy",
+                Decimal("0.001"),
+                Decimal("0.1"),
+                Decimal("100"),
+                "testcat",
+            )
             self._add_coin(f"0xcycle{i}")
             self._lock_coin_to_offer(f"0xcycle{i}", f"t-{i}")
 

@@ -12,6 +12,7 @@ import unittest
 
 try:
     import super_log as _sl
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _sl = None
@@ -21,6 +22,7 @@ except ModuleNotFoundError as exc:
 # ---------------------------------------------------------------------------
 # Helper: ensure slog doesn't write to file (not initialized)
 # ---------------------------------------------------------------------------
+
 
 def _call_slog(*args, **kwargs):
     """Call slog in an uninitialized state (ring buffer only, no file I/O)."""
@@ -35,6 +37,7 @@ def _call_slog(*args, **kwargs):
 # ===========================================================================
 # LEVELS constant
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestLevels(unittest.TestCase):
@@ -52,6 +55,7 @@ class TestLevels(unittest.TestCase):
 # ===========================================================================
 # slog — ring buffer and sanitization
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestSlogRingBuffer(unittest.TestCase):
@@ -103,6 +107,7 @@ class TestSlogRingBuffer(unittest.TestCase):
 # set_file_level / set_terminal_level
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestSetLevel(unittest.TestCase):
     def setUp(self):
@@ -135,6 +140,7 @@ class TestSetLevel(unittest.TestCase):
 # _TeeWriter
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestTeeWriter(unittest.TestCase):
     def test_none_original_stream_is_safe_for_no_console_builds(self):
@@ -150,6 +156,7 @@ class TestTeeWriter(unittest.TestCase):
 # ===========================================================================
 # Cycle tracking
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestCycleStats(unittest.TestCase):
@@ -203,6 +210,7 @@ class TestCycleStats(unittest.TestCase):
 # log_db_write / log_db_lock
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestLogDbHelpers(unittest.TestCase):
     def setUp(self):
@@ -227,12 +235,20 @@ class TestLogDbHelpers(unittest.TestCase):
 # get_log_stats
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP is not None, f"super_log unavailable: {_SKIP}")
 class TestGetLogStats(unittest.TestCase):
     def test_returns_expected_keys(self):
         stats = _sl.get_log_stats()
-        for key in ("bytes_written", "ring_buffer_size", "ring_buffer_capacity",
-                    "error_dumps", "file_level", "terminal_level", "max_log_mb"):
+        for key in (
+            "bytes_written",
+            "ring_buffer_size",
+            "ring_buffer_capacity",
+            "error_dumps",
+            "file_level",
+            "terminal_level",
+            "max_log_mb",
+        ):
             self.assertIn(key, stats, f"Missing key: {key}")
 
     def test_ring_buffer_size_matches_actual(self):
@@ -260,10 +276,20 @@ class TestLogEventInterceptor(unittest.TestCase):
         fake_database.log_event = original_log_event
 
         direct_modules = [
-            "coin_manager", "bot_loop", "offer_manager", "fill_tracker",
-            "risk_manager", "price_engine", "market_intel", "sniper",
-            "boost_manager", "splash_manager", "dexie_manager",
-            "coin_prep_worker", "wallet_sage", "wallet_chia",
+            "coin_manager",
+            "bot_loop",
+            "offer_manager",
+            "fill_tracker",
+            "risk_manager",
+            "price_engine",
+            "market_intel",
+            "sniper",
+            "boost_manager",
+            "splash_manager",
+            "dexie_manager",
+            "coin_prep_worker",
+            "wallet_sage",
+            "wallet_chia",
         ]
         saved_database = sys.modules.get("database")
         saved_direct_attrs = []
@@ -281,10 +307,10 @@ class TestLogEventInterceptor(unittest.TestCase):
             first_wrapper = fake_database.log_event
             _sl.intercept_log_event()
 
-            self.assertIs(fake_database.log_event._super_log_original,
-                          original_log_event)
-            self.assertIsNot(fake_database.log_event._super_log_original,
-                             first_wrapper)
+            self.assertIs(
+                fake_database.log_event._super_log_original, original_log_event
+            )
+            self.assertIsNot(fake_database.log_event._super_log_original, first_wrapper)
 
             result = fake_database.log_event("info", "test_event", "message")
             self.assertTrue(result)

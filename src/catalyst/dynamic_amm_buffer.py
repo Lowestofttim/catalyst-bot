@@ -28,11 +28,12 @@ from typing import Deque, Optional, Tuple
 # Core class
 # ---------------------------------------------------------------------------
 
+
 class DynamicAMMBuffer:
     """Thread-safe rolling-window sweep tracker that returns widened buffer bps."""
 
     def __init__(self) -> None:
-        self._lock   = threading.Lock()
+        self._lock = threading.Lock()
         # Each entry: (timestamp_monotonic, fill_count)
         self._sweeps: Deque[Tuple[float, int]] = deque()
 
@@ -68,17 +69,18 @@ class DynamicAMMBuffer:
         multiplier = self._get_multiplier()
         try:
             from config import cfg
+
             base_bps = Decimal(str(getattr(cfg, "AMM_BUFFER_BPS", "30")))
             effective_bps = (base_bps * multiplier).quantize(Decimal("0.1"))
         except Exception:
             base_bps = effective_bps = Decimal("30")
         return {
             "sweep_count_in_window": count,
-            "window_mins":           self._window_mins(),
-            "multiplier":            float(multiplier),
-            "base_bps":              str(base_bps),
-            "effective_bps":         str(effective_bps),
-            "enabled":               self._enabled(),
+            "window_mins": self._window_mins(),
+            "multiplier": float(multiplier),
+            "base_bps": str(base_bps),
+            "effective_bps": str(effective_bps),
+            "enabled": self._enabled(),
         }
 
     # ------------------------------------------------------------------
@@ -93,15 +95,19 @@ class DynamicAMMBuffer:
             count = len(self._sweeps)
         try:
             from config import cfg
-            med = Decimal(str(getattr(cfg, "DYNAMIC_BUFFER_MULTIPLIER_MED",  "1.5")))
-            hi  = Decimal(str(getattr(cfg, "DYNAMIC_BUFFER_MULTIPLIER_HIGH", "2.0")))
-            cap = Decimal(str(getattr(cfg, "DYNAMIC_BUFFER_MULTIPLIER_CAP",  "2.5")))
+
+            med = Decimal(str(getattr(cfg, "DYNAMIC_BUFFER_MULTIPLIER_MED", "1.5")))
+            hi = Decimal(str(getattr(cfg, "DYNAMIC_BUFFER_MULTIPLIER_HIGH", "2.0")))
+            cap = Decimal(str(getattr(cfg, "DYNAMIC_BUFFER_MULTIPLIER_CAP", "2.5")))
         except Exception:
             med, hi, cap = Decimal("1.5"), Decimal("2.0"), Decimal("2.5")
 
-        if count == 0:   return Decimal("1")
-        if count <= 2:   return med
-        if count <= 5:   return hi
+        if count == 0:
+            return Decimal("1")
+        if count <= 2:
+            return med
+        if count <= 5:
+            return hi
         return cap
 
     def _prune_locked(self) -> None:
@@ -115,6 +121,7 @@ class DynamicAMMBuffer:
     def _window_mins() -> float:
         try:
             from config import cfg
+
             return float(getattr(cfg, "DYNAMIC_BUFFER_WINDOW_MINS", 60))
         except Exception:
             return 60.0
@@ -123,6 +130,7 @@ class DynamicAMMBuffer:
     def _enabled() -> bool:
         try:
             from config import cfg
+
             return bool(getattr(cfg, "DYNAMIC_BUFFER_ENABLED", True))
         except Exception:
             return True
@@ -156,6 +164,7 @@ def reset_buffer() -> None:
 # Module-level convenience functions
 # ---------------------------------------------------------------------------
 
+
 def record_sweep(fill_count: int = 1) -> None:
     """Record a sweep event.  Call this after each SweepEvent fires."""
     _get_buffer_instance().record_sweep(fill_count)
@@ -169,4 +178,3 @@ def get_buffer(base_bps) -> Decimal:
 def get_state() -> dict:
     """Return diagnostic state dict for the dynamic buffer."""
     return _get_buffer_instance().get_state()
-

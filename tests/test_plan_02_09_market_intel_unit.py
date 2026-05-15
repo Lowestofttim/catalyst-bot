@@ -15,6 +15,7 @@ from unittest.mock import patch
 try:
     import market_intel as _mi_mod
     from market_intel import MarketIntel, _bps_to_pct
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -31,6 +32,7 @@ _FAKE_CFG = SimpleNamespace(
 # ---------------------------------------------------------------------------
 # Base class: patch market_intel.cfg for constructor and all method calls
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"market_intel unavailable: {_SKIP}")
 class _MI(unittest.TestCase):
@@ -59,6 +61,7 @@ class _MI(unittest.TestCase):
 # ===========================================================================
 # _bps_to_pct  (module-level pure function — no base class needed)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP is not None, f"market_intel unavailable: {_SKIP}")
 class TestBpsToPct(unittest.TestCase):
@@ -90,9 +93,11 @@ class TestBpsToPct(unittest.TestCase):
 # _parse_dexie_offer
 # ===========================================================================
 
+
 class TestParseDexieOffer(_MI):
-    def _sell_offer(self, offer_id="offer-001", cat_amount="100", xch_amount="0.5",
-                    tags=None):
+    def _sell_offer(
+        self, offer_id="offer-001", cat_amount="100", xch_amount="0.5", tags=None
+    ):
         return {
             "id": offer_id,
             "offered": [{"code": "CAT", "id": "abc123cat", "amount": cat_amount}],
@@ -159,6 +164,7 @@ class TestParseDexieOffer(_MI):
 # _analyse_orderbook
 # ===========================================================================
 
+
 class TestAnalyseOrderbook(_MI):
     def test_empty_orderbook_all_zeros(self):
         self._mi._analyse_orderbook([], [])
@@ -224,7 +230,7 @@ class TestAnalyseOrderbook(_MI):
         self.assertEqual(self._mi._competitors["thin_side"], "")
 
     def test_whale_orders_captured(self):
-        buys = [self._make_offer(0.010, 2.0, side="buy")]   # xch_amount >= 1 → whale
+        buys = [self._make_offer(0.010, 2.0, side="buy")]  # xch_amount >= 1 → whale
         sells = [self._make_offer(0.011, 0.5, side="sell")]  # not whale
         self._mi._analyse_orderbook(buys, sells)
         self.assertEqual(len(self._mi._competitors["whale_orders"]), 1)
@@ -239,6 +245,7 @@ class TestAnalyseOrderbook(_MI):
 # ===========================================================================
 # State query methods
 # ===========================================================================
+
 
 class TestStateQueryMethods(_MI):
     def test_get_competitor_spread_returns_dict(self):
@@ -257,8 +264,14 @@ class TestStateQueryMethods(_MI):
 
     def test_get_stats_has_all_keys(self):
         stats = self._mi.get_stats()
-        for key in ("competitor_spread_bps", "best_bid", "best_ask",
-                    "buy_depth_xch", "sell_depth_xch", "thin_side"):
+        for key in (
+            "competitor_spread_bps",
+            "best_bid",
+            "best_ask",
+            "buy_depth_xch",
+            "sell_depth_xch",
+            "thin_side",
+        ):
             self.assertIn(key, stats)
 
     def test_get_stats_values_are_strings(self):
@@ -328,10 +341,13 @@ class TestStateQueryMethods(_MI):
 # get_spread_recommendation
 # ===========================================================================
 
+
 class TestGetSpreadRecommendation(_MI):
     def test_no_competitor_data_returns_zero(self):
         # comp_spread defaults to 0 → return 0
-        adj = self._mi.get_spread_recommendation("buy", Decimal("100"), Decimal("0.010"))
+        adj = self._mi.get_spread_recommendation(
+            "buy", Decimal("100"), Decimal("0.010")
+        )
         self.assertEqual(adj, Decimal("0"))
 
     def test_zero_mid_price_returns_zero(self):
@@ -342,13 +358,17 @@ class TestGetSpreadRecommendation(_MI):
     def test_competitors_much_wider_returns_positive_adjustment(self):
         # comp=600, ours=100 → diff=500 > 200 → widen by 500*0.25=125
         self._mi._competitors["competitor_spread_bps"] = Decimal("600")
-        adj = self._mi.get_spread_recommendation("buy", Decimal("100"), Decimal("0.010"))
+        adj = self._mi.get_spread_recommendation(
+            "buy", Decimal("100"), Decimal("0.010")
+        )
         self.assertGreater(adj, Decimal("0"))
 
     def test_competitors_tighter_returns_negative_adjustment(self):
         # comp=50, ours=300 → diff=-250 < -100 → tighten
         self._mi._competitors["competitor_spread_bps"] = Decimal("50")
-        adj = self._mi.get_spread_recommendation("buy", Decimal("300"), Decimal("0.010"))
+        adj = self._mi.get_spread_recommendation(
+            "buy", Decimal("300"), Decimal("0.010")
+        )
         self.assertLess(adj, Decimal("0"))
 
     def test_thin_side_adds_50bps_tightening(self):
@@ -356,14 +376,19 @@ class TestGetSpreadRecommendation(_MI):
         # When this side is thin → subtract 50 → result should be lower.
         self._mi._competitors["competitor_spread_bps"] = Decimal("600")
         self._mi._competitors["thin_side"] = "buy"
-        adj_not_thin = self._mi.get_spread_recommendation("sell", Decimal("100"), Decimal("0.010"))
-        adj_thin = self._mi.get_spread_recommendation("buy", Decimal("100"), Decimal("0.010"))
+        adj_not_thin = self._mi.get_spread_recommendation(
+            "sell", Decimal("100"), Decimal("0.010")
+        )
+        adj_thin = self._mi.get_spread_recommendation(
+            "buy", Decimal("100"), Decimal("0.010")
+        )
         self.assertLess(adj_thin, adj_not_thin)
 
 
 # ===========================================================================
 # check_dbx_eligibility
 # ===========================================================================
+
 
 class TestCheckDbxEligibility(_MI):
     """Eligibility now reads per-pair limits from /v1/incentives (cached).
@@ -376,17 +401,27 @@ class TestCheckDbxEligibility(_MI):
     _FAKE_PAIR = {
         "incentivized": True,
         "buy": {
-            "range_min": 0.1, "range_max": 20.0, "range_unit": "XCH",
-            "max_spread_bps": 500, "max_spread_pct": 0.05,
-            "reward_token": "DBX", "reward_amount_per_day": 100.0,
-            "estimated_apr": 0.5, "within_spread_liquidity": 350.0,
+            "range_min": 0.1,
+            "range_max": 20.0,
+            "range_unit": "XCH",
+            "max_spread_bps": 500,
+            "max_spread_pct": 0.05,
+            "reward_token": "DBX",
+            "reward_amount_per_day": 100.0,
+            "estimated_apr": 0.5,
+            "within_spread_liquidity": 350.0,
             "market_price": 0.0001,
         },
         "sell": {
-            "range_min": 10000.0, "range_max": 1000000.0, "range_unit": "CAT",
-            "max_spread_bps": 500, "max_spread_pct": 0.05,
-            "reward_token": "DBX", "reward_amount_per_day": 100.0,
-            "estimated_apr": 0.4, "within_spread_liquidity": 4000000.0,
+            "range_min": 10000.0,
+            "range_max": 1000000.0,
+            "range_unit": "CAT",
+            "max_spread_bps": 500,
+            "max_spread_pct": 0.05,
+            "reward_token": "DBX",
+            "reward_amount_per_day": 100.0,
+            "estimated_apr": 0.4,
+            "within_spread_liquidity": 4000000.0,
             "market_price": 0.0001,
         },
     }
@@ -394,8 +429,8 @@ class TestCheckDbxEligibility(_MI):
 
     def _patch_pair(self, pair):
         import dexie_incentives
-        return patch.object(dexie_incentives, "get_pair_incentives",
-                             return_value=pair)
+
+        return patch.object(dexie_incentives, "get_pair_incentives", return_value=pair)
 
     def test_spread_within_limit_is_eligible(self):
         self._mi._dbx["last_check"] = 0

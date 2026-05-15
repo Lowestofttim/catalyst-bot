@@ -22,12 +22,18 @@ def _css_block(html: str, selector: str) -> str:
 def test_single_sided_mode_parks_inactive_sections_instead_of_hiding_them():
     html = _html()
 
-    assert "display" not in _css_block(
-        html, "body.liquidity-mode-buy-only .mode-hide-on-buy-only"
-    ).lower()
-    assert "display" not in _css_block(
-        html, "body.liquidity-mode-sell-only .mode-hide-on-sell-only"
-    ).lower()
+    assert (
+        "display"
+        not in _css_block(
+            html, "body.liquidity-mode-buy-only .mode-hide-on-buy-only"
+        ).lower()
+    )
+    assert (
+        "display"
+        not in _css_block(
+            html, "body.liquidity-mode-sell-only .mode-hide-on-sell-only"
+        ).lower()
+    )
     assert "Two-sided only" in html
 
 
@@ -54,7 +60,9 @@ def test_save_and_coin_prep_paths_sanitize_inactive_side_from_liquidity_mode():
 
     assert "function normalizeConfigForLiquidityMode" in html
     assert "normalizeConfigForLiquidityMode(config)" in html
-    assert "params.set('liquidity_mode'" in html or 'params.set("liquidity_mode"' in html
+    assert (
+        "params.set('liquidity_mode'" in html or 'params.set("liquidity_mode"' in html
+    )
     assert "liquidityMode:" in html
     assert re.search(
         r"function\s+buildCoinPrepPlan\s*\(\s*\{[\s\S]{0,500}liquidityMode",

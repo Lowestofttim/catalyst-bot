@@ -140,15 +140,21 @@ class CoinsetClient:
                 self._initialized = bool(puzzle_hashes)
 
             total_phs = sum(len(v) for v in puzzle_hashes.values())
-            log_event("info", "coinset_init",
-                      f"Cached {total_phs} puzzle hashes from "
-                      f"{len(puzzle_hashes)} wallets for Coinset queries")
+            log_event(
+                "info",
+                "coinset_init",
+                f"Cached {total_phs} puzzle hashes from "
+                f"{len(puzzle_hashes)} wallets for Coinset queries",
+            )
 
             return self._initialized
 
         except Exception as e:
-            log_event("warning", "coinset_init_failed",
-                      f"Failed to initialize Coinset puzzle hashes: {e}")
+            log_event(
+                "warning",
+                "coinset_init_failed",
+                f"Failed to initialize Coinset puzzle hashes: {e}",
+            )
             return False
 
     def refresh_puzzle_hashes(self) -> bool:
@@ -200,12 +206,16 @@ class CoinsetClient:
                 if not self._coinset_healthy:
                     self._coinset_healthy = True
                     self._consecutive_failures = 0
-                    log_event("info", "coinset_recovered",
-                              "Coinset connection restored")
+                    log_event(
+                        "info", "coinset_recovered", "Coinset connection restored"
+                    )
 
-                log_event("debug", "coinset_query",
-                          f"Coinset returned {len(coins)} coins "
-                          f"in {elapsed_ms:.0f}ms (wallet {wallet_id})")
+                log_event(
+                    "debug",
+                    "coinset_query",
+                    f"Coinset returned {len(coins)} coins "
+                    f"in {elapsed_ms:.0f}ms (wallet {wallet_id})",
+                )
 
                 # Format response like wallet RPC
                 return self._format_as_wallet_response(coins)
@@ -213,13 +223,15 @@ class CoinsetClient:
         except Exception as e:
             self._consecutive_failures += 1
             if self._consecutive_failures <= 3:
-                log_event("warning", "coinset_error",
-                          f"Coinset query failed: {e}")
+                log_event("warning", "coinset_error", f"Coinset query failed: {e}")
 
             if self._coinset_healthy and self._consecutive_failures >= 3:
                 self._coinset_healthy = False
-                log_event("warning", "coinset_unhealthy",
-                          "Coinset appears offline — falling back to wallet RPC")
+                log_event(
+                    "warning",
+                    "coinset_unhealthy",
+                    "Coinset appears offline — falling back to wallet RPC",
+                )
 
         # Coinset failed — fall back to wallet RPC
         return self._fallback_wallet_rpc(wallet_id, "coinset_failed")
@@ -251,11 +263,7 @@ class CoinsetClient:
         }
 
         self._record_api_call("get_coin_records_by_puzzle_hashes")
-        r = requests.post(
-            url, json=payload,
-            headers=COINSET_HEADERS,
-            timeout=timeout
-        )
+        r = requests.post(url, json=payload, headers=COINSET_HEADERS, timeout=timeout)
 
         if r.status_code == 429:
             try:
@@ -263,21 +271,27 @@ class CoinsetClient:
             except (ValueError, TypeError):
                 retry_after = 60
             self._rate_limited_until = time.time() + retry_after
-            log_event("warning", "coinset_rate_limited",
-                      f"Coinset returned 429 — backing off {retry_after}s")
+            log_event(
+                "warning",
+                "coinset_rate_limited",
+                f"Coinset returned 429 — backing off {retry_after}s",
+            )
             return None
 
         if r.status_code != 200:
-            log_event("debug", "coinset_http_error",
-                      f"Coinset returned HTTP {r.status_code}")
+            log_event(
+                "debug", "coinset_http_error", f"Coinset returned HTTP {r.status_code}"
+            )
             return None
 
         data = r.json()
 
         if not data.get("success"):
-            log_event("debug", "coinset_api_error",
-                      f"Coinset returned success=false: "
-                      f"{data.get('error', 'unknown')}")
+            log_event(
+                "debug",
+                "coinset_api_error",
+                f"Coinset returned success=false: {data.get('error', 'unknown')}",
+            )
             return None
 
         return data.get("coin_records", [])
@@ -306,9 +320,7 @@ class CoinsetClient:
         self._record_api_call("get_coin_record_by_name")
         try:
             r = requests.post(
-                url, json=payload,
-                headers=COINSET_HEADERS,
-                timeout=timeout
+                url, json=payload, headers=COINSET_HEADERS, timeout=timeout
             )
 
             if r.status_code == 429:
@@ -317,8 +329,11 @@ class CoinsetClient:
                 except (ValueError, TypeError):
                     retry_after = 60
                 self._rate_limited_until = time.time() + retry_after
-                log_event("warning", "coinset_rate_limited",
-                          f"Coinset returned 429 on coin lookup — backing off {retry_after}s")
+                log_event(
+                    "warning",
+                    "coinset_rate_limited",
+                    f"Coinset returned 429 on coin lookup — backing off {retry_after}s",
+                )
                 return None
 
             if r.status_code == 200:
@@ -327,8 +342,9 @@ class CoinsetClient:
                     return data.get("coin_record")
 
         except Exception as e:
-            log_event("debug", "coinset_lookup_error",
-                      f"Coinset coin lookup failed: {e}")
+            log_event(
+                "debug", "coinset_lookup_error", f"Coinset coin lookup failed: {e}"
+            )
 
         return None
 
@@ -375,7 +391,8 @@ class CoinsetClient:
         self._record_api_call("get_coin_records_by_parent_ids")
         try:
             r = requests.post(
-                url, json=payload,
+                url,
+                json=payload,
                 headers=COINSET_HEADERS,
                 timeout=timeout,
             )
@@ -391,8 +408,11 @@ class CoinsetClient:
                 if data.get("success"):
                     return data.get("coin_records") or []
         except Exception as e:
-            log_event("debug", "coinset_records_by_parent_error",
-                      f"get_coin_records_by_parent_ids failed: {e}")
+            log_event(
+                "debug",
+                "coinset_records_by_parent_error",
+                f"get_coin_records_by_parent_ids failed: {e}",
+            )
         return None
 
     # -------------------------------------------------------------------
@@ -476,7 +496,8 @@ class CoinsetClient:
         self._record_api_call("get_block_record_by_height")
         try:
             r = requests.post(
-                url, json={"height": int(height)},
+                url,
+                json={"height": int(height)},
                 headers=COINSET_HEADERS,
                 timeout=timeout,
             )
@@ -492,8 +513,11 @@ class CoinsetClient:
                 if data.get("success"):
                     return data.get("block_record")
         except Exception as e:
-            log_event("debug", "coinset_block_record_error",
-                      f"get_block_record_by_height({height}) failed: {e}")
+            log_event(
+                "debug",
+                "coinset_block_record_error",
+                f"get_block_record_by_height({height}) failed: {e}",
+            )
         return None
 
     # -------------------------------------------------------------------
@@ -532,7 +556,8 @@ class CoinsetClient:
         self._record_api_call("get_additions_and_removals")
         try:
             r = requests.post(
-                url, json=payload,
+                url,
+                json=payload,
                 headers=COINSET_HEADERS,
                 timeout=timeout,
             )
@@ -551,8 +576,11 @@ class CoinsetClient:
                         "removals": data.get("removals") or [],
                     }
         except Exception as e:
-            log_event("debug", "coinset_additions_removals_error",
-                      f"get_additions_and_removals failed for {header_hash[:16]}...: {e}")
+            log_event(
+                "debug",
+                "coinset_additions_removals_error",
+                f"get_additions_and_removals failed for {header_hash[:16]}...: {e}",
+            )
         return None
 
     # -------------------------------------------------------------------
@@ -607,7 +635,8 @@ class CoinsetClient:
         self._record_api_call("get_coin_records_by_hint")
         try:
             r = requests.post(
-                url, json=payload,
+                url,
+                json=payload,
                 headers=COINSET_HEADERS,
                 timeout=timeout,
             )
@@ -623,8 +652,11 @@ class CoinsetClient:
                 if data.get("success"):
                     return data.get("coin_records") or []
         except Exception as e:
-            log_event("debug", "coinset_records_by_hint_error",
-                      f"get_coin_records_by_hint failed for {normalised[:16]}...: {e}")
+            log_event(
+                "debug",
+                "coinset_records_by_hint_error",
+                f"get_coin_records_by_hint failed for {normalised[:16]}...: {e}",
+            )
         return None
 
     # -------------------------------------------------------------------
@@ -645,16 +677,22 @@ class CoinsetClient:
 
         try:
             from wallet import get_spendable_coins_rpc
+
             result = get_spendable_coins_rpc(wallet_id)
-            log_event("debug", "coinset_fallback",
-                      f"Used wallet RPC fallback (reason: {reason}, "
-                      f"wallet: {wallet_id})")
+            log_event(
+                "debug",
+                "coinset_fallback",
+                f"Used wallet RPC fallback (reason: {reason}, wallet: {wallet_id})",
+            )
             return result
 
         except Exception as e:
             self._coinset_misses += 1
-            log_event("warning", "coinset_fallback_failed",
-                      f"Both Coinset and wallet RPC failed: {e}")
+            log_event(
+                "warning",
+                "coinset_fallback_failed",
+                f"Both Coinset and wallet RPC failed: {e}",
+            )
             return None
 
     # -------------------------------------------------------------------
@@ -676,7 +714,7 @@ class CoinsetClient:
                 f"{api_url.rstrip('/')}/get_blockchain_state",
                 json={},
                 headers=COINSET_HEADERS,
-                timeout=timeout
+                timeout=timeout,
             )
             latency = (time.time() - start) * 1000
 
@@ -696,14 +734,21 @@ class CoinsetClient:
             }
 
         except requests.ConnectionError:
-            return {"healthy": False, "url": api_url,
-                    "latency_ms": 0, "error": "Connection refused"}
+            return {
+                "healthy": False,
+                "url": api_url,
+                "latency_ms": 0,
+                "error": "Connection refused",
+            }
         except requests.Timeout:
-            return {"healthy": False, "url": api_url,
-                    "latency_ms": timeout * 1000, "error": "Timeout"}
+            return {
+                "healthy": False,
+                "url": api_url,
+                "latency_ms": timeout * 1000,
+                "error": "Timeout",
+            }
         except Exception as e:
-            return {"healthy": False, "url": api_url,
-                    "latency_ms": 0, "error": str(e)}
+            return {"healthy": False, "url": api_url, "latency_ms": 0, "error": str(e)}
 
     # -------------------------------------------------------------------
     # Stats
@@ -726,7 +771,10 @@ class CoinsetClient:
         # as an error.
         try:
             from config import cfg as _cfg
-            wallet_type = str(getattr(_cfg, "WALLET_TYPE", "sage") or "sage").lower().strip()
+
+            wallet_type = (
+                str(getattr(_cfg, "WALLET_TYPE", "sage") or "sage").lower().strip()
+            )
         except Exception:
             wallet_type = "sage"
         if wallet_type == "sage":
@@ -825,4 +873,3 @@ class CoinsetClient:
             "success": True,
             "_source": "coinset",
         }
-

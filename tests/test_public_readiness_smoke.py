@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 try:
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     api_server = None
@@ -87,9 +88,13 @@ class PublicReadinessSmokeTests(unittest.TestCase):
             self.assertTrue(payload["env_exists"])
 
     def test_missing_wallet_fingerprints_return_safe_generic_error(self):
-        with patch("chia_node.get_available_fingerprints",
-                   side_effect=RuntimeError("secret wallet rpc traceback")):
-            resp = self.client.get("/api/sage/fingerprints", environ_base=self._LOOPBACK)
+        with patch(
+            "chia_node.get_available_fingerprints",
+            side_effect=RuntimeError("secret wallet rpc traceback"),
+        ):
+            resp = self.client.get(
+                "/api/sage/fingerprints", environ_base=self._LOOPBACK
+            )
 
         self.assertEqual(resp.status_code, 500)
         body = resp.get_json()
@@ -100,7 +105,9 @@ class PublicReadinessSmokeTests(unittest.TestCase):
         html = (REPO_ROOT / "bot_gui.html").read_text(encoding="utf-8")
 
         self.assertIn("configure Sage's wallet RPC certificate path from the app", html)
-        self.assertNotIn("configure Sage's wallet RPC certificate path without editing .env", html)
+        self.assertNotIn(
+            "configure Sage's wallet RPC certificate path without editing .env", html
+        )
 
     def test_spacescan_setup_copy_describes_app_storage(self):
         html = (REPO_ROOT / "bot_gui.html").read_text(encoding="utf-8")
@@ -116,7 +123,9 @@ class PublicReadinessSmokeTests(unittest.TestCase):
             "platform": {"supported": True},
         }
         with patch("splash_setup.check_installed", return_value=unavailable):
-            resp = self.client.get("/api/splash/setup/check", environ_base=self._LOOPBACK)
+            resp = self.client.get(
+                "/api/splash/setup/check", environ_base=self._LOOPBACK
+            )
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), unavailable)
@@ -143,10 +152,14 @@ class PublicReadinessSmokeTests(unittest.TestCase):
         self.assertIn('placeholder: "v1.2.30"', feedback_template)
 
     def test_token_exempt_routes_remain_loopback_only(self):
-        self.assertEqual(api_server._TOKEN_EXEMPT_WRITE_ROUTES, {"/api/splash/incoming"})
+        self.assertEqual(
+            api_server._TOKEN_EXEMPT_WRITE_ROUTES, {"/api/splash/incoming"}
+        )
 
-        with patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True), \
-                patch("api_server._splash_incoming_rate_limited", return_value=False):
+        with (
+            patch.object(api_server.cfg, "SPLASH_RECEIVE_ENABLED", True),
+            patch("api_server._splash_incoming_rate_limited", return_value=False),
+        ):
             resp = self.client.post(
                 "/api/splash/incoming",
                 json={"offer": "offer1publicreadiness"},
@@ -165,7 +178,9 @@ class PublicReadinessSmokeTests(unittest.TestCase):
     def test_destructive_reset_routes_require_token_and_confirmation(self):
         for path in ("/api/pnl/reset", "/api/reset/offer-history", "/api/reset/full"):
             with self.subTest(path=path, gate="token"):
-                resp = self.client.post(path, json={"confirm": "RESET"}, environ_base=self._LOOPBACK)
+                resp = self.client.post(
+                    path, json={"confirm": "RESET"}, environ_base=self._LOOPBACK
+                )
                 self.assertEqual(resp.status_code, 401)
 
             with self.subTest(path=path, gate="confirmation"):

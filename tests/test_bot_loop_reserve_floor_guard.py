@@ -17,25 +17,30 @@ from bot_loop import _extract_wallet_balance_or_defer, _ReserveCheckDeferred
 
 # ---- Failure cases: must defer (no coercion to zero) ----------------------
 
-@pytest.mark.parametrize("raw", [
-    None,
-    "",
-    [],
-    42,
-    {"success": False, "error": "Sage HTTP 401: Not logged in"},
-    {"success": False, "error": "Sage HTTP 500: Wallet error"},
-    {},                                  # missing wallet_balance entirely
-    {"success": True},                   # success flag but no payload
-    {"wallet_balance": None},            # null payload
-    {"wallet_balance": {}},              # empty payload
-    {"success": True, "wallet_balance": {}},
-])
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        "",
+        [],
+        42,
+        {"success": False, "error": "Sage HTTP 401: Not logged in"},
+        {"success": False, "error": "Sage HTTP 500: Wallet error"},
+        {},  # missing wallet_balance entirely
+        {"success": True},  # success flag but no payload
+        {"wallet_balance": None},  # null payload
+        {"wallet_balance": {}},  # empty payload
+        {"success": True, "wallet_balance": {}},
+    ],
+)
 def test_failed_read_defers(raw):
     with pytest.raises(_ReserveCheckDeferred):
         _extract_wallet_balance_or_defer(raw)
 
 
 # ---- Success cases: must return the wallet_balance dict -------------------
+
 
 def test_explicit_success_returns_payload():
     raw = {

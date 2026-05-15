@@ -16,10 +16,14 @@ from unittest.mock import patch
 try:
     import config as _cfg_mod
     from config import (
-        _strip_quotes, Config,
-        get_buy_tier_size_xch, get_sell_tier_size_xch,
-        get_tier_sizes_for_side, has_per_side_tier_sizes,
+        _strip_quotes,
+        Config,
+        get_buy_tier_size_xch,
+        get_sell_tier_size_xch,
+        get_tier_sizes_for_side,
+        has_per_side_tier_sizes,
     )
+
     _SKIP_CFG = None
 except (ModuleNotFoundError, ImportError) as exc:
     _cfg_mod = None
@@ -27,8 +31,12 @@ except (ModuleNotFoundError, ImportError) as exc:
 
 try:
     from config_validator import (
-        ConfigIssue, ValidationReport, _is_valid_url, validate_config,
+        ConfigIssue,
+        ValidationReport,
+        _is_valid_url,
+        validate_config,
     )
+
     _SKIP_VAL = None
 except (ModuleNotFoundError, ImportError) as exc:
     _SKIP_VAL = str(exc)
@@ -37,6 +45,7 @@ except (ModuleNotFoundError, ImportError) as exc:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _bare_config(**attrs):
     """Create a Config instance without running __init__ (no .env access)."""
@@ -49,6 +58,7 @@ def _bare_config(**attrs):
 # ===========================================================================
 # _strip_quotes
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_CFG is not None, f"config unavailable: {_SKIP_CFG}")
 class TestStripQuotes(unittest.TestCase):
@@ -68,7 +78,7 @@ class TestStripQuotes(unittest.TestCase):
         self.assertEqual(_strip_quotes('"'), '"')
 
     def test_mismatched_quotes_unchanged(self):
-        self.assertEqual(_strip_quotes('"hello\''), '"hello\'')
+        self.assertEqual(_strip_quotes("\"hello'"), "\"hello'")
 
     def test_strips_surrounding_whitespace(self):
         self.assertEqual(_strip_quotes('  "hello"  '), "hello")
@@ -77,6 +87,7 @@ class TestStripQuotes(unittest.TestCase):
 # ===========================================================================
 # _bool (via env patch)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_CFG is not None, f"config unavailable: {_SKIP_CFG}")
 class TestBool(unittest.TestCase):
@@ -115,6 +126,7 @@ class TestBool(unittest.TestCase):
 # ===========================================================================
 # Config computed methods (bare instances, no reload)
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_CFG is not None, f"config unavailable: {_SKIP_CFG}")
 class TestGetSpreadFraction(unittest.TestCase):
@@ -232,6 +244,7 @@ class TestToDict(unittest.TestCase):
 # Module-level tier helpers
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_CFG is not None, f"config unavailable: {_SKIP_CFG}")
 class TestGetBuyTierSizeXch(unittest.TestCase):
     def _with_cfg(self, **attrs):
@@ -295,8 +308,10 @@ class TestGetSellTierSizeXch(unittest.TestCase):
 class TestGetTierSizesForSide(unittest.TestCase):
     def test_returns_dict_with_all_tiers(self):
         ns = SimpleNamespace(
-            BUY_INNER_SIZE_XCH=Decimal("1"), BUY_MID_SIZE_XCH=Decimal("2"),
-            BUY_OUTER_SIZE_XCH=Decimal("3"), BUY_EXTREME_SIZE_XCH=Decimal("4"),
+            BUY_INNER_SIZE_XCH=Decimal("1"),
+            BUY_MID_SIZE_XCH=Decimal("2"),
+            BUY_OUTER_SIZE_XCH=Decimal("3"),
+            BUY_EXTREME_SIZE_XCH=Decimal("4"),
             BUY_LADDER_REVERSED=False,
         )
         with patch.object(_cfg_mod, "cfg", ns):
@@ -305,8 +320,10 @@ class TestGetTierSizesForSide(unittest.TestCase):
 
     def test_unknown_side_uses_sell_path(self):
         ns = SimpleNamespace(
-            SELL_INNER_SIZE_XCH=Decimal("1"), SELL_MID_SIZE_XCH=Decimal("2"),
-            SELL_OUTER_SIZE_XCH=Decimal("3"), SELL_EXTREME_SIZE_XCH=Decimal("4"),
+            SELL_INNER_SIZE_XCH=Decimal("1"),
+            SELL_MID_SIZE_XCH=Decimal("2"),
+            SELL_OUTER_SIZE_XCH=Decimal("3"),
+            SELL_EXTREME_SIZE_XCH=Decimal("4"),
         )
         with patch.object(_cfg_mod, "cfg", ns):
             sizes = get_tier_sizes_for_side("other")
@@ -339,6 +356,7 @@ class TestHasPerSideTierSizes(unittest.TestCase):
 # ===========================================================================
 # config_validator — ValidationReport
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_VAL is not None, f"config_validator unavailable: {_SKIP_VAL}")
 class TestValidationReport(unittest.TestCase):
@@ -373,6 +391,7 @@ class TestValidationReport(unittest.TestCase):
 # config_validator — _is_valid_url
 # ===========================================================================
 
+
 @unittest.skipIf(_SKIP_VAL is not None, f"config_validator unavailable: {_SKIP_VAL}")
 class TestIsValidUrl(unittest.TestCase):
     def test_http_url_valid(self):
@@ -394,6 +413,7 @@ class TestIsValidUrl(unittest.TestCase):
 # ===========================================================================
 # config_validator — validate_config
 # ===========================================================================
+
 
 @unittest.skipIf(_SKIP_VAL is not None, f"config_validator unavailable: {_SKIP_VAL}")
 class TestValidateConfig(unittest.TestCase):
@@ -437,13 +457,15 @@ class TestValidateConfig(unittest.TestCase):
         self.assertIn("CAT_ASSET_ID", keys)
 
     def test_both_sides_disabled_is_error(self):
-        report = validate_config(self._minimal_valid(ENABLE_BUY=False, ENABLE_SELL=False))
+        report = validate_config(
+            self._minimal_valid(ENABLE_BUY=False, ENABLE_SELL=False)
+        )
         self.assertFalse(report.is_valid)
 
     def test_min_trade_greater_than_max_trade_is_error(self):
-        report = validate_config(self._minimal_valid(
-            MIN_TRADE_XCH=Decimal("10"), MAX_TRADE_XCH=Decimal("1")
-        ))
+        report = validate_config(
+            self._minimal_valid(MIN_TRADE_XCH=Decimal("10"), MAX_TRADE_XCH=Decimal("1"))
+        )
         self.assertFalse(report.is_valid)
 
     def test_invalid_price_strategy_is_error(self):
@@ -463,9 +485,11 @@ class TestValidateConfig(unittest.TestCase):
         self.assertFalse(report.is_valid)
 
     def test_hard_min_gt_hard_max_is_error(self):
-        report = validate_config(self._minimal_valid(
-            HARD_MIN_PRICE_XCH=Decimal("2.0"), HARD_MAX_PRICE_XCH=Decimal("1.0")
-        ))
+        report = validate_config(
+            self._minimal_valid(
+                HARD_MIN_PRICE_XCH=Decimal("2.0"), HARD_MAX_PRICE_XCH=Decimal("1.0")
+            )
+        )
         self.assertFalse(report.is_valid)
 
 

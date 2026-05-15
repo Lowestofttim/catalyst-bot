@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     import database as _db
     import api_server
+
     _SKIP = None
 except (ModuleNotFoundError, ImportError) as exc:
     _db = None
@@ -82,14 +83,16 @@ class _TempDB(unittest.TestCase):
         # Snapshot coin prep state so tearDown can restore it
         self._orig_coin_prep_state = dict(api_server._coin_prep_state)
         self._orig_coin_prep_proc = api_server._coin_prep_proc
-        api_server._coin_prep_state.update({
-            "running": False,
-            "complete": False,
-            "error": None,
-            "phase": "idle",
-            "run_id": None,
-            "started_at": None,
-        })
+        api_server._coin_prep_state.update(
+            {
+                "running": False,
+                "complete": False,
+                "error": None,
+                "phase": "idle",
+                "run_id": None,
+                "started_at": None,
+            }
+        )
         api_server._coin_prep_proc = None
 
     def tearDown(self):
@@ -140,11 +143,13 @@ class _TempDB(unittest.TestCase):
     def _trigger(self, bot_mock=None, full_reset=False):
         """POST /api/coin-prep/trigger with threading mocked out."""
         mock_thread = MagicMock()
-        with patch.object(api_server, "bot", bot_mock or self._make_bot()), \
-             patch("blueprints.coin_prep.threading.Thread") as mock_thread_cls, \
-             patch("blueprints.coin_prep.log_event"), \
-             patch("os.path.exists", return_value=True), \
-             patch("builtins.open", unittest.mock.mock_open()):
+        with (
+            patch.object(api_server, "bot", bot_mock or self._make_bot()),
+            patch("blueprints.coin_prep.threading.Thread") as mock_thread_cls,
+            patch("blueprints.coin_prep.log_event"),
+            patch("os.path.exists", return_value=True),
+            patch("builtins.open", unittest.mock.mock_open()),
+        ):
             mock_thread_cls.return_value = mock_thread
             return self.client.post(
                 "/api/coin-prep/trigger",
@@ -154,8 +159,7 @@ class _TempDB(unittest.TestCase):
             )
 
     def _reset(self, bot_mock=None):
-        with patch.object(api_server, "bot", bot_mock), \
-             patch("api_server.log_event"):
+        with patch.object(api_server, "bot", bot_mock), patch("api_server.log_event"):
             return self.client.post(
                 "/api/coin-prep/reset",
                 headers={"X-Bot-Local-Token": self.token},
@@ -163,8 +167,10 @@ class _TempDB(unittest.TestCase):
             )
 
     def _status(self, bot_mock=None):
-        with patch.object(api_server, "bot", bot_mock), \
-             patch("os.path.exists", return_value=False):
+        with (
+            patch.object(api_server, "bot", bot_mock),
+            patch("os.path.exists", return_value=False),
+        ):
             return self.client.get(
                 "/api/coin-prep/status",
                 environ_base=_LOOPBACK,
@@ -174,6 +180,7 @@ class _TempDB(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 03-04: coin-prep full cycle — trigger → running → state transitions
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCoinPrepFullCycle(_TempDB):
@@ -242,6 +249,7 @@ class TestCoinPrepFullCycle(_TempDB):
 # 03-05: coin-prep retry — soft reset preserves DB, re-trigger restores state
 # ---------------------------------------------------------------------------
 
+
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCoinPrepRetry(_TempDB):
     """Soft reset must clear running state without touching fills."""
@@ -307,6 +315,7 @@ class TestCoinPrepRetry(_TempDB):
 # ---------------------------------------------------------------------------
 # 03-06: coin-prep full reset path — full_reset=True clears fills
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipIf(_SKIP is not None, f"modules unavailable: {_SKIP}")
 class TestCoinPrepFullReset(_TempDB):

@@ -71,7 +71,6 @@ def _make_cfg(**overrides):
 
 
 class TestConfigValidator(unittest.TestCase):
-
     def test_valid_config_passes(self):
         report = validate_config(_make_cfg())
         self.assertTrue(report.is_valid)
@@ -87,10 +86,12 @@ class TestConfigValidator(unittest.TestCase):
         self.assertFalse(report.is_valid)
 
     def test_inverted_trade_range_is_error(self):
-        report = validate_config(_make_cfg(
-            MIN_TRADE_XCH=Decimal("1.0"),
-            MAX_TRADE_XCH=Decimal("0.01"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                MIN_TRADE_XCH=Decimal("1.0"),
+                MAX_TRADE_XCH=Decimal("0.01"),
+            )
+        )
         self.assertFalse(report.is_valid)
 
     def test_zero_spread_is_error(self):
@@ -102,10 +103,12 @@ class TestConfigValidator(unittest.TestCase):
         self.assertFalse(report.is_valid)
 
     def test_inverted_hard_limits_is_error(self):
-        report = validate_config(_make_cfg(
-            HARD_MIN_PRICE_XCH=Decimal("10"),
-            HARD_MAX_PRICE_XCH=Decimal("1"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                HARD_MIN_PRICE_XCH=Decimal("10"),
+                HARD_MAX_PRICE_XCH=Decimal("1"),
+            )
+        )
         self.assertFalse(report.is_valid)
 
     def test_negative_reserve_is_error(self):
@@ -122,19 +125,25 @@ class TestConfigValidator(unittest.TestCase):
         self.assertTrue(any("LOOP_SECONDS" in w.key for w in report.warnings))
 
     def test_edge_exceeds_spread_is_warning(self):
-        report = validate_config(_make_cfg(
-            MIN_EDGE_BPS=Decimal("900"),
-            SPREAD_BPS=Decimal("800"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                MIN_EDGE_BPS=Decimal("900"),
+                SPREAD_BPS=Decimal("800"),
+            )
+        )
         self.assertTrue(report.is_valid)
         self.assertTrue(any("MIN_EDGE_BPS" in w.key for w in report.warnings))
 
     def test_negative_tibet_shock_trigger_is_error(self):
-        report = validate_config(_make_cfg(
-            TIBET_SHOCK_CANCEL_TRIGGER_PCT=Decimal("-1"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                TIBET_SHOCK_CANCEL_TRIGGER_PCT=Decimal("-1"),
+            )
+        )
         self.assertFalse(report.is_valid)
-        self.assertTrue(any("TIBET_SHOCK_CANCEL_TRIGGER_PCT" in e.key for e in report.errors))
+        self.assertTrue(
+            any("TIBET_SHOCK_CANCEL_TRIGGER_PCT" in e.key for e in report.errors)
+        )
 
     def test_tier_enabled_zero_counts_is_warning(self):
         report = validate_config(_make_cfg(TIER_ENABLED=True))
@@ -142,19 +151,21 @@ class TestConfigValidator(unittest.TestCase):
         self.assertTrue(any("TIER" in w.key for w in report.warnings))
 
     def test_tier_mode_ignores_legacy_max_trade_cap_for_ladder_sizes(self):
-        report = validate_config(_make_cfg(
-            TIER_ENABLED=True,
-            INNER_TIER_COUNT=7,
-            MID_TIER_COUNT=7,
-            OUTER_TIER_COUNT=6,
-            EXTREME_TIER_COUNT=4,
-            DEFAULT_TRADE_XCH=Decimal("1.798"),
-            MAX_TRADE_XCH=Decimal("0.2"),
-            INNER_SIZE_XCH=Decimal("4.7615"),
-            MID_SIZE_XCH=Decimal("3.9679"),
-            OUTER_SIZE_XCH=Decimal("2.9759"),
-            EXTREME_SIZE_XCH=Decimal("1.5872"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                TIER_ENABLED=True,
+                INNER_TIER_COUNT=7,
+                MID_TIER_COUNT=7,
+                OUTER_TIER_COUNT=6,
+                EXTREME_TIER_COUNT=4,
+                DEFAULT_TRADE_XCH=Decimal("1.798"),
+                MAX_TRADE_XCH=Decimal("0.2"),
+                INNER_SIZE_XCH=Decimal("4.7615"),
+                MID_SIZE_XCH=Decimal("3.9679"),
+                OUTER_SIZE_XCH=Decimal("2.9759"),
+                EXTREME_SIZE_XCH=Decimal("1.5872"),
+            )
+        )
 
         self.assertTrue(report.is_valid)
         noisy_keys = {
@@ -167,18 +178,22 @@ class TestConfigValidator(unittest.TestCase):
         self.assertFalse(noisy_keys.intersection({w.key for w in report.warnings}))
 
     def test_tier_with_zero_size_is_error(self):
-        report = validate_config(_make_cfg(
-            TIER_ENABLED=True,
-            INNER_TIER_COUNT=5,
-            INNER_SIZE_XCH=Decimal("0"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                TIER_ENABLED=True,
+                INNER_TIER_COUNT=5,
+                INNER_SIZE_XCH=Decimal("0"),
+            )
+        )
         self.assertFalse(report.is_valid)
 
     def test_invalid_sage_url_is_error(self):
-        report = validate_config(_make_cfg(
-            WALLET_TYPE="sage",
-            SAGE_RPC_URL="not-a-url",
-        ))
+        report = validate_config(
+            _make_cfg(
+                WALLET_TYPE="sage",
+                SAGE_RPC_URL="not-a-url",
+            )
+        )
         self.assertFalse(report.is_valid)
 
     def test_report_to_dict(self):
@@ -189,11 +204,13 @@ class TestConfigValidator(unittest.TestCase):
         self.assertIn("warnings", d)
 
     def test_dynamic_spread_inverted_is_error(self):
-        report = validate_config(_make_cfg(
-            DYNAMIC_SPREAD_ENABLED=True,
-            MIN_SPREAD_BPS=Decimal("5000"),
-            MAX_SPREAD_BPS=Decimal("100"),
-        ))
+        report = validate_config(
+            _make_cfg(
+                DYNAMIC_SPREAD_ENABLED=True,
+                MIN_SPREAD_BPS=Decimal("5000"),
+                MAX_SPREAD_BPS=Decimal("100"),
+            )
+        )
         self.assertFalse(report.is_valid)
 
 

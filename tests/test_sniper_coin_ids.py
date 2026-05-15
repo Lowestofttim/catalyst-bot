@@ -45,9 +45,15 @@ fake_database.lock_coin = lambda *args, **kwargs: None
 sys.modules["database"] = fake_database
 
 fake_offer_manager = types.ModuleType("offer_manager")
-fake_offer_manager.xch_to_mojos = lambda x: int(Decimal(str(x)) * Decimal("1000000000000"))
-fake_offer_manager.cat_to_mojos = lambda x, decimals: int(Decimal(str(x)) * (Decimal(10) ** decimals))
-fake_offer_manager.mojos_to_cat = lambda mojos, decimals: Decimal(str(mojos)) / (Decimal(10) ** decimals)
+fake_offer_manager.xch_to_mojos = lambda x: int(
+    Decimal(str(x)) * Decimal("1000000000000")
+)
+fake_offer_manager.cat_to_mojos = lambda x, decimals: int(
+    Decimal(str(x)) * (Decimal(10) ** decimals)
+)
+fake_offer_manager.mojos_to_cat = lambda mojos, decimals: (
+    Decimal(str(mojos)) / (Decimal(10) ** decimals)
+)
 sys.modules["offer_manager"] = fake_offer_manager
 
 # Pop sniper so it re-imports with our fakes rather than the cached version
@@ -71,15 +77,23 @@ class _FakeOfferManager:
         self._cycle_used_coin_ids = set()
         self.calls = []
 
-    def create_offer_with_retry(self, offer_dict, expiry_secs=None, coin_ids_enabled=False,
-                                preferred_tier=None, strict_preferred_tier=False):
-        self.calls.append({
-            "offer_dict": offer_dict,
-            "expiry_secs": expiry_secs,
-            "coin_ids_enabled": coin_ids_enabled,
-            "preferred_tier": preferred_tier,
-            "strict_preferred_tier": strict_preferred_tier,
-        })
+    def create_offer_with_retry(
+        self,
+        offer_dict,
+        expiry_secs=None,
+        coin_ids_enabled=False,
+        preferred_tier=None,
+        strict_preferred_tier=False,
+    ):
+        self.calls.append(
+            {
+                "offer_dict": offer_dict,
+                "expiry_secs": expiry_secs,
+                "coin_ids_enabled": coin_ids_enabled,
+                "preferred_tier": preferred_tier,
+                "strict_preferred_tier": strict_preferred_tier,
+            }
+        )
         return {
             "success": True,
             "trade_id": "trade123",
@@ -93,8 +107,13 @@ class SniperCoinIdTests(unittest.TestCase):
         om = _FakeOfferManager()
         sniper = Sniper(offer_manager=om, risk_manager=None, dexie_manager=None)
 
-        with patch("sniper.add_offer") as add_offer_mock, patch("sniper.lock_coin") as lock_coin_mock:
-            result = sniper._create_snipe_offer("buy", Decimal("0.00012"), Decimal("0.2"))
+        with (
+            patch("sniper.add_offer") as add_offer_mock,
+            patch("sniper.lock_coin") as lock_coin_mock,
+        ):
+            result = sniper._create_snipe_offer(
+                "buy", Decimal("0.00012"), Decimal("0.2")
+            )
 
         self.assertIsNotNone(result)
         self.assertEqual(result["coin_id"], "0xabc123")

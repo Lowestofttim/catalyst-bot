@@ -15,11 +15,19 @@ from unittest.mock import patch, MagicMock
 try:
     import spacescan as _ss_mod
     from spacescan import (
-        is_pro_tier, _get_call_interval, _check_daily_budget,
-        get_api_stats, record_external_call, should_check_balance,
-        is_known_wallet_address, is_coin_spent, verify_fill,
-        get_xch_balance, get_token_balance,
+        is_pro_tier,
+        _get_call_interval,
+        _check_daily_budget,
+        get_api_stats,
+        record_external_call,
+        should_check_balance,
+        is_known_wallet_address,
+        is_coin_spent,
+        verify_fill,
+        get_xch_balance,
+        get_token_balance,
     )
+
     _SKIP = None
 except ModuleNotFoundError as exc:
     _SKIP = str(exc)
@@ -91,6 +99,7 @@ class _SS(unittest.TestCase):
 # Tier detection and rate helpers
 # ===========================================================================
 
+
 class TestTierHelpers(_SS):
     def test_is_pro_tier_true_when_api_key_set(self):
         self.assertTrue(is_pro_tier())
@@ -143,6 +152,7 @@ class TestTierHelpers(_SS):
 # Daily budget gate
 # ===========================================================================
 
+
 class TestCheckDailyBudget(_SS):
     def test_pro_tier_always_true(self):
         # Pro ignores call count
@@ -161,6 +171,7 @@ class TestCheckDailyBudget(_SS):
 
     def test_free_balance_at_limit_false(self):
         import datetime
+
         with patch.object(_ss_mod, "cfg", _FREE_CFG):
             # Set today's date so the daily-reset branch is NOT triggered
             _ss_mod._today_date = datetime.date.today().isoformat()
@@ -181,6 +192,7 @@ class TestCheckDailyBudget(_SS):
 # API stats and call counting
 # ===========================================================================
 
+
 class TestApiStats(_SS):
     def test_get_api_stats_tier_paid(self):
         stats = get_api_stats()
@@ -193,8 +205,14 @@ class TestApiStats(_SS):
 
     def test_get_api_stats_has_required_keys(self):
         stats = get_api_stats()
-        for key in ("tier", "calls_this_session", "calls_today",
-                    "session_uptime_hours", "daily_budget", "call_interval_secs"):
+        for key in (
+            "tier",
+            "calls_this_session",
+            "calls_today",
+            "session_uptime_hours",
+            "daily_budget",
+            "call_interval_secs",
+        ):
             self.assertIn(key, stats)
 
     def test_record_external_call_increments_session_counter(self):
@@ -218,6 +236,7 @@ class TestApiStats(_SS):
 # is_known_wallet_address
 # ===========================================================================
 
+
 class TestIsKnownWalletAddress(_SS):
     def _inject_cache(self, addresses):
         _ss_mod._known_wallet_addresses_cache = set(addresses)
@@ -239,12 +258,15 @@ class TestIsKnownWalletAddress(_SS):
 
     def test_explicit_addresses_override(self):
         self._inject_cache([])
-        self.assertTrue(is_known_wallet_address("xch1extra", explicit_addresses={"xch1extra"}))
+        self.assertTrue(
+            is_known_wallet_address("xch1extra", explicit_addresses={"xch1extra"})
+        )
 
 
 # ===========================================================================
 # is_coin_spent (via mocked _spacescan_get)
 # ===========================================================================
+
 
 class TestIsCoinSpent(_SS):
     def _mock_get(self, return_value):
@@ -302,9 +324,11 @@ class TestIsCoinSpent(_SS):
     def test_0x_prefix_added_when_missing(self):
         # Capture the endpoint arg to verify 0x was prepended
         calls = []
+
         def capture(ep):
             calls.append(ep)
             return None
+
         with patch.object(_ss_mod, "_spacescan_get", side_effect=capture):
             is_coin_spent("abc123")
         self.assertTrue(calls[0].endswith("/0xabc123"))
@@ -313,6 +337,7 @@ class TestIsCoinSpent(_SS):
 # ===========================================================================
 # verify_fill decision tree (via mocked is_coin_spent)
 # ===========================================================================
+
 
 class TestVerifyFill(_SS):
     OUR_ADDR = "xch1ourwallet"
@@ -326,90 +351,132 @@ class TestVerifyFill(_SS):
         self.assertIsNone(rv)
 
     def test_unspent_coin_returns_false(self):
-        with self._mock_ics({"spent": False, "offer_info": [], "child_coins": [],
-                             "receiver_address": "", "amount": ""}):
+        with self._mock_ics(
+            {
+                "spent": False,
+                "offer_info": [],
+                "child_coins": [],
+                "receiver_address": "",
+                "amount": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertFalse(rv)
 
     def test_offer_info_status_4_returns_true(self):
-        with self._mock_ics({"spent": True,
-                             "offer_info": [{"offer_status": 4, "hash_base_58": "abc"}],
-                             "child_coins": [], "receiver_address": ""}):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [{"offer_status": 4, "hash_base_58": "abc"}],
+                "child_coins": [],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertTrue(rv)
 
     def test_offer_info_status_3_returns_false(self):
-        with self._mock_ics({"spent": True,
-                             "offer_info": [{"offer_status": 3, "hash_base_58": "abc"}],
-                             "child_coins": [], "receiver_address": ""}):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [{"offer_status": 3, "hash_base_58": "abc"}],
+                "child_coins": [],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertFalse(rv)
 
     def test_offer_info_completed_wins_over_cancelled(self):
-        with self._mock_ics({"spent": True,
-                             "offer_info": [{"offer_status": 3, "hash_base_58": "a"},
-                                            {"offer_status": 4, "hash_base_58": "b"}],
-                             "child_coins": [], "receiver_address": ""}):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [
+                    {"offer_status": 3, "hash_base_58": "a"},
+                    {"offer_status": 4, "hash_base_58": "b"},
+                ],
+                "child_coins": [],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertTrue(rv)
 
     def test_child_coin_external_address_returns_true(self):
         _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
         _ss_mod._known_wallet_addresses_cache_at = time.time()
-        with self._mock_ics({"spent": True, "offer_info": [],
-                             "child_coins": [{"cointype": "child",
-                                              "owner_address": "xch1taker"}],
-                             "receiver_address": ""}):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [],
+                "child_coins": [{"cointype": "child", "owner_address": "xch1taker"}],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertTrue(rv)
 
     def test_child_coins_all_ours_returns_false(self):
         _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
         _ss_mod._known_wallet_addresses_cache_at = time.time()
-        with self._mock_ics({"spent": True, "offer_info": [],
-                             "child_coins": [{"cointype": "child",
-                                              "owner_address": self.OUR_ADDR}],
-                             "receiver_address": ""}):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [],
+                "child_coins": [{"cointype": "child", "owner_address": self.OUR_ADDR}],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertFalse(rv)
 
     def test_child_coin_to_sibling_change_address_returns_false(self):
         _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
         _ss_mod._known_wallet_addresses_cache_at = time.time()
-        with self._mock_ics({
-            "spent": True,
-            "offer_info": [],
-            "child_coins": [
-                {"cointype": "parent", "owner_address": self.OUR_ADDR},
-                {"cointype": "siblings", "owner_address": "xch1changeaddress"},
-                {"cointype": "child", "owner_address": "xch1changeaddress"},
-            ],
-            "receiver_address": "",
-        }):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [],
+                "child_coins": [
+                    {"cointype": "parent", "owner_address": self.OUR_ADDR},
+                    {"cointype": "siblings", "owner_address": "xch1changeaddress"},
+                    {"cointype": "child", "owner_address": "xch1changeaddress"},
+                ],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertFalse(rv)
 
     def test_child_coin_to_external_address_still_returns_true_with_siblings(self):
         _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
         _ss_mod._known_wallet_addresses_cache_at = time.time()
-        with self._mock_ics({
-            "spent": True,
-            "offer_info": [],
-            "child_coins": [
-                {"cointype": "parent", "owner_address": self.OUR_ADDR},
-                {"cointype": "siblings", "owner_address": "xch1changeaddress"},
-                {"cointype": "child", "owner_address": "xch1takeraddress"},
-            ],
-            "receiver_address": "",
-        }):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [],
+                "child_coins": [
+                    {"cointype": "parent", "owner_address": self.OUR_ADDR},
+                    {"cointype": "siblings", "owner_address": "xch1changeaddress"},
+                    {"cointype": "child", "owner_address": "xch1takeraddress"},
+                ],
+                "receiver_address": "",
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertTrue(rv)
 
     def test_receiver_is_ours_returns_false(self):
         _ss_mod._known_wallet_addresses_cache = {self.OUR_ADDR}
         _ss_mod._known_wallet_addresses_cache_at = time.time()
-        with self._mock_ics({"spent": True, "offer_info": [], "child_coins": [],
-                             "receiver_address": self.OUR_ADDR}):
+        with self._mock_ics(
+            {
+                "spent": True,
+                "offer_info": [],
+                "child_coins": [],
+                "receiver_address": self.OUR_ADDR,
+            }
+        ):
             rv = verify_fill("coin1", self.OUR_ADDR)
         self.assertFalse(rv)
 
@@ -417,6 +484,7 @@ class TestVerifyFill(_SS):
 # ===========================================================================
 # get_xch_balance and get_token_balance (via mocked _spacescan_get)
 # ===========================================================================
+
 
 class TestBalanceFunctions(_SS):
     def _mock_get(self, return_value):

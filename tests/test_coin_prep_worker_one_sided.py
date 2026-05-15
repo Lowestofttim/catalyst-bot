@@ -45,7 +45,9 @@ def test_sage_tiered_prep_handles_buy_only_without_cat_tiers():
     worker._tx_fee_mojos = lambda: 0
     worker._split_tx_fee_mojos = lambda: 0
     worker._wait_for_preselected_pool_coin = (
-        lambda wallet_id, pool_coin, side_label, tier_name, timeout_s=300, poll_interval_s=5: pool_coin
+        lambda wallet_id, pool_coin, side_label, tier_name, timeout_s=300, poll_interval_s=5: (
+            pool_coin
+        )
     )
     worker._get_transaction_confirmation_state = lambda tx_ids: {
         "known": True,
@@ -69,17 +71,23 @@ def test_sage_tiered_prep_handles_buy_only_without_cat_tiers():
 
     worker._get_owned_coin_amount_map = owned_map
     worker._get_strict_selectable_coin_id_set = lambda wallet_id, name: (
-        set(output_ids) if "split-poll-cycle" in name else ({pool_id} if wallet_id == 1 else set())
+        set(output_ids)
+        if "split-poll-cycle" in name
+        else ({pool_id} if wallet_id == 1 else set())
     )
     worker._are_coin_ids_selectable = lambda wallet_id, coin_ids, name: True
 
-    with patch.dict(sys.modules, {"wallet_sage": fake_wallet_sage}), patch(
-        "coin_prep_worker.time.sleep", return_value=None
+    with (
+        patch.dict(sys.modules, {"wallet_sage": fake_wallet_sage}),
+        patch("coin_prep_worker.time.sleep", return_value=None),
     ):
-        assert worker.create_and_split_tier_pools_sage(
-            Decimal("2"),
-            Decimal("0"),
-        ) is True
+        assert (
+            worker.create_and_split_tier_pools_sage(
+                Decimal("2"),
+                Decimal("0"),
+            )
+            is True
+        )
 
     fake_wallet_sage.send_transaction_multi.assert_called_once()
     fake_wallet_sage.send_cat_multi.assert_not_called()

@@ -35,6 +35,7 @@ def _secrets_path() -> Path:
     users don't lose their saved secrets.
     """
     from user_paths import data_dir
+
     return Path(data_dir()) / "user_secrets.json"
 
 
@@ -80,6 +81,7 @@ def _load_locked() -> dict:
     # fast and so the restore is durable across processes.
     try:
         import sys as _sys
+
         _sys.stderr.write(
             f"[user_secrets] WARNING: live secrets file at {path} was empty; "
             f"restoring from backup {bak} (keys: {sorted(backup.keys())}).\n"
@@ -98,9 +100,7 @@ def _load_locked() -> dict:
 def _write_atomic(path: Path, data: dict) -> None:
     """Write *data* to *path* as JSON. Caller holds _LOCK."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(
-        f".{path.name}.tmp.{os.getpid()}.{threading.get_ident()}"
-    )
+    tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
     try:
         with tmp_path.open("w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
@@ -207,4 +207,3 @@ def apply_to_config(cfg) -> None:
     key = get_secret("SPACESCAN_API_KEY")
     if key:
         cfg.SPACESCAN_API_KEY = key
-

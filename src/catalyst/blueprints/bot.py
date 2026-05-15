@@ -29,12 +29,14 @@ import api_server
 from config import cfg
 from database import log_event, backup_database, get_stats
 from super_log import slog
+
 # Shared helper defined in the offers blueprint — used by /api/status.
 from blueprints.offers import _build_fill_history_for_gui
 
 try:
     from api_call_tracker import record as _record_api_call
 except Exception:
+
     def _record_api_call(*args, **kwargs):
         return None
 
@@ -65,6 +67,7 @@ def api_events():
     The GUI listens with EventSource('/api/events') in JavaScript.
     """
     bot = api_server.bot
+
     def stream():
         q = api_server.events.subscribe()
         try:
@@ -77,7 +80,11 @@ def api_events():
                 try:
                     msg = q.get(timeout=30)
                     # Serialize Decimals
-                    serialized = api_server._serialize_dict(msg) if isinstance(msg, dict) else msg
+                    serialized = (
+                        api_server._serialize_dict(msg)
+                        if isinstance(msg, dict)
+                        else msg
+                    )
                     yield f"data: {json.dumps(serialized, default=str)}\n\n"
                 except queue.Empty:
                     # Send keepalive every 30 seconds
@@ -89,9 +96,12 @@ def api_events():
             # and abrupt disconnect (WSGI server closes the generator).
             api_server.events.unsubscribe(q)
 
-    return Response(stream(), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache",
-                             "X-Accel-Buffering": "no"})
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 @bp.route("/api/bot/start", methods=["POST"])
 def api_bot_start():
@@ -125,18 +135,24 @@ def api_bot_start():
     # Check wallet connectivity (non-blocking, best effort)
     try:
         from wallet import get_wallet_sync_status
+
         sync = get_wallet_sync_status()
         if sync:
             sync_state = str(sync.get("sync_state") or "").strip().lower()
             if not sync.get("reachable", False):
-                warnings.append("Could not reach wallet RPC — check if Sage/Chia is running")
+                warnings.append(
+                    "Could not reach wallet RPC — check if Sage/Chia is running"
+                )
             elif sync_state == "not_synced":
                 warnings.append("Wallet is not fully synced — offers may fail")
         else:
-            warnings.append("Could not reach wallet RPC — check if Sage/Chia is running")
+            warnings.append(
+                "Could not reach wallet RPC — check if Sage/Chia is running"
+            )
     except Exception as e:
-        log_event("warning", "wallet_check_failed",
-                  f"Pre-start wallet sync check failed: {e}")
+        log_event(
+            "warning", "wallet_check_failed", f"Pre-start wallet sync check failed: {e}"
+        )
         warnings.append("Wallet check failed - check if Sage/Chia is running")
 
     signing_block_reason = server._get_sage_signing_block_reason()
@@ -180,9 +196,13 @@ def api_bot_start():
     # shouldn't trade until it's fixed.
     try:
         from coin_manager import check_tier_size_drift_standalone
-        _drift = check_tier_size_drift_standalone(
-            low_ratio=0.50, high_ratio=2.00, min_sample=2
-        ) or []
+
+        _drift = (
+            check_tier_size_drift_standalone(
+                low_ratio=0.50, high_ratio=2.00, min_sample=2
+            )
+            or []
+        )
         if _drift:
             tier_size_drift = _drift
             needs_coin_prep = True
@@ -197,8 +217,11 @@ def api_bot_start():
             )
             coin_prep_error = errors[-1]
     except Exception as _drift_err:
-        log_event("warning", "tier_drift_gate_failed",
-                  f"Tier-drift gate skipped: {_drift_err}")
+        log_event(
+            "warning",
+            "tier_drift_gate_failed",
+            f"Tier-drift gate skipped: {_drift_err}",
+        )
         warnings.append("Tier-drift gate skipped - check logs before trading")
 
     if getattr(cfg, "ENABLE_COIN_PREP", False):
@@ -211,34 +234,47 @@ def api_bot_start():
             if _prep_running:
                 needs_coin_prep = True
                 coin_prep_reason = "coin_prep_running"
-                coin_prep_error = (
-                    "Coin Prep is still running - wait for it to finish before starting the bot"
-                )
+                coin_prep_error = "Coin Prep is still running - wait for it to finish before starting the bot"
                 errors.append(coin_prep_error)
             elif _prep_error or _prep_phase == "error":
                 needs_coin_prep = True
                 coin_prep_reason = "coin_prep_failed"
                 if _prep_error:
-                    log_event("warning", "coin_prep_gate_failed",
-                              f"Coin Prep failure blocked bot start: {_prep_error}")
-                coin_prep_error = "Coin Prep failed - rerun Coin Prep before starting the bot"
+                    log_event(
+                        "warning",
+                        "coin_prep_gate_failed",
+                        f"Coin Prep failure blocked bot start: {_prep_error}",
+                    )
+                coin_prep_error = (
+                    "Coin Prep failed - rerun Coin Prep before starting the bot"
+                )
                 errors.append(coin_prep_error)
         except Exception as _prep_gate_err:
-            log_event("warning", "coin_prep_gate_check_failed",
-                      f"Coin-prep gate check failed: {_prep_gate_err}")
+            log_event(
+                "warning",
+                "coin_prep_gate_check_failed",
+                f"Coin-prep gate check failed: {_prep_gate_err}",
+            )
             warnings.append("Coin-prep gate skipped - check logs before trading")
 
     # Block start on critical errors
     if errors:
-        payload = {"success": False, "status": "error", "errors": errors, "warnings": warnings}
+        payload = {
+            "success": False,
+            "status": "error",
+            "errors": errors,
+            "warnings": warnings,
+        }
         if needs_coin_prep:
-            payload.update({
-                "needs_coin_prep": True,
-                "reason": coin_prep_reason or "coin_prep_required",
-                "error": coin_prep_error or errors[-1],
-                "message": coin_prep_error or errors[-1],
-                "tier_size_drift": tier_size_drift,
-            })
+            payload.update(
+                {
+                    "needs_coin_prep": True,
+                    "reason": coin_prep_reason or "coin_prep_required",
+                    "error": coin_prep_error or errors[-1],
+                    "message": coin_prep_error or errors[-1],
+                    "tier_size_drift": tier_size_drift,
+                }
+            )
         return jsonify(payload), 400
 
     server._reset_runtime_session_stats()
@@ -254,12 +290,14 @@ def api_bot_start():
         message = "Bot start was blocked before trading could begin"
         if str(state.get("status") or "").strip().lower() == "blocked":
             message = "Bot start blocked - active wallet cannot sign or preflight did not pass"
-        return jsonify({
-            "status": "error",
-            "errors": [message],
-            "warnings": warnings,
-            "bot_status": state.get("status") or "blocked",
-        }), 400
+        return jsonify(
+            {
+                "status": "error",
+                "errors": [message],
+                "warnings": warnings,
+                "bot_status": state.get("status") or "blocked",
+            }
+        ), 400
     # Clear the fresh-start flag now that a real run has begun.
     # This ensures the resume modal shows correctly on the NEXT restart —
     # the flag was only meant to suppress the modal within a single session
@@ -270,6 +308,7 @@ def api_bot_start():
     if warnings:
         result["warnings"] = warnings
     return jsonify(result)
+
 
 @bp.route("/api/bot/stop", methods=["POST"])
 def api_bot_stop():
@@ -284,6 +323,7 @@ def api_bot_stop():
     server.events.emit("bot_control", {"action": "stopped"})
     return jsonify({"status": "stopped"})
 
+
 @bp.route("/api/shutdown", methods=["POST"])
 def api_shutdown():
     """Full shutdown — stop bot, cancel offers, kill server.
@@ -293,7 +333,9 @@ def api_shutdown():
     """
     bot = api_server.bot
     try:
-        cancel_first = bool((request.get_json(silent=True) or {}).get("cancel_offers", False))
+        cancel_first = bool(
+            (request.get_json(silent=True) or {}).get("cancel_offers", False)
+        )
     except Exception:
         cancel_first = False
 
@@ -305,7 +347,10 @@ def api_shutdown():
 
         # 0. Kill coin prep subprocess if it's still running
         try:
-            if api_server._coin_prep_proc is not None and api_server._coin_prep_proc.poll() is None:
+            if (
+                api_server._coin_prep_proc is not None
+                and api_server._coin_prep_proc.poll() is None
+            ):
                 prep_pid = api_server._coin_prep_proc.pid
                 print(f"   Stopping coin prep worker (PID: {prep_pid})...", flush=True)
                 api_server._coin_prep_proc.terminate()
@@ -319,7 +364,7 @@ def api_shutdown():
                 api_server._coin_prep_state["running"] = False
                 api_server._coin_prep_state["error"] = "Stopped by shutdown"
                 # Ungate bot loop in case it was gated by coin prep
-                if bot and hasattr(bot, 'coin_manager'):
+                if bot and hasattr(bot, "coin_manager"):
                     bot.coin_manager._prep_running = False
         except Exception as e:
             print(f"   ⚠️ Coin prep cleanup: {e}", flush=True)
@@ -350,9 +395,9 @@ def api_shutdown():
             try:
                 import time as _t
                 from database import get_open_offers, update_offer_status
+
                 submitted_tids = [
-                    tid for tid, r in (result or {}).items()
-                    if r and r.get("success")
+                    tid for tid, r in (result or {}).items() if r and r.get("success")
                 ]
                 deadline = _t.time() + 30
                 final_open: list = []
@@ -373,18 +418,23 @@ def api_shutdown():
                     except Exception:
                         pass
                 if cleared:
-                    print(f"   ✅ {len(cleared)} cancellation(s) confirmed; "
-                          f"DB marked cancelled", flush=True)
+                    print(
+                        f"   ✅ {len(cleared)} cancellation(s) confirmed; "
+                        f"DB marked cancelled",
+                        flush=True,
+                    )
                 if final_open:
-                    print(f"   ⚠️ {len(final_open)} offer(s) still pending after "
-                          f"30s — next startup reconcile will catch them",
-                          flush=True)
+                    print(
+                        f"   ⚠️ {len(final_open)} offer(s) still pending after "
+                        f"30s — next startup reconcile will catch them",
+                        flush=True,
+                    )
             except Exception as e:
                 print(f"   ⚠️ Cancel settle wait failed: {e}", flush=True)
 
         # 3. Stop Splash node (in case bot.stop() didn't cover it)
         try:
-            if bot and hasattr(bot, 'splash_node') and bot.splash_node.is_running():
+            if bot and hasattr(bot, "splash_node") and bot.splash_node.is_running():
                 bot.splash_node.stop()
                 print("   ✅ Splash node stopped", flush=True)
         except Exception:
@@ -407,6 +457,7 @@ def api_shutdown():
         # this, recent writes sit in the -wal file; a hard exit can lose them.
         try:
             from database import get_connection as _get_conn
+
             _conn = _get_conn()
             _conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             try:
@@ -425,6 +476,7 @@ def api_shutdown():
 
     threading.Thread(target=_do_shutdown, daemon=True).start()
     return jsonify({"success": True, "message": "Shutting down..."})
+
 
 @bp.route("/api/bot/state")
 def api_bot_state():
@@ -447,22 +499,41 @@ def api_bot_state():
 
         try:
             coins = dict(state.get("coins") or {})
-            if int(coins.get("xch_coins", 0) or 0) == 0 and int(coins.get("xch_total_coins", 0) or 0) == 0:
+            if (
+                int(coins.get("xch_coins", 0) or 0) == 0
+                and int(coins.get("xch_total_coins", 0) or 0) == 0
+            ):
                 from database import get_coin_summary
 
                 db_coin_summary = get_coin_summary() or {}
                 if db_coin_summary:
                     inventory = dict(coins.get("inventory") or {})
-                    coins["xch_coins"] = int(db_coin_summary.get("xch_free_count", 0) or 0)
-                    coins["cat_coins"] = int(db_coin_summary.get("cat_free_count", 0) or 0)
-                    coins["xch_locked_coins"] = int(db_coin_summary.get("xch_locked_count", 0) or 0)
-                    coins["cat_locked_coins"] = int(db_coin_summary.get("cat_locked_count", 0) or 0)
-                    coins["xch_total_coins"] = int(db_coin_summary.get("xch_total", 0) or 0)
-                    coins["cat_total_coins"] = int(db_coin_summary.get("cat_total", 0) or 0)
-                    inventory["xch_locked_amount"] = f"{int(db_coin_summary.get('xch_locked_mojos', 0) or 0) / 1e12:.4f}"
-                    cat_decimals = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+                    coins["xch_coins"] = int(
+                        db_coin_summary.get("xch_free_count", 0) or 0
+                    )
+                    coins["cat_coins"] = int(
+                        db_coin_summary.get("cat_free_count", 0) or 0
+                    )
+                    coins["xch_locked_coins"] = int(
+                        db_coin_summary.get("xch_locked_count", 0) or 0
+                    )
+                    coins["cat_locked_coins"] = int(
+                        db_coin_summary.get("cat_locked_count", 0) or 0
+                    )
+                    coins["xch_total_coins"] = int(
+                        db_coin_summary.get("xch_total", 0) or 0
+                    )
+                    coins["cat_total_coins"] = int(
+                        db_coin_summary.get("cat_total", 0) or 0
+                    )
+                    inventory["xch_locked_amount"] = (
+                        f"{int(db_coin_summary.get('xch_locked_mojos', 0) or 0) / 1e12:.4f}"
+                    )
+                    cat_decimals = api_server._active_cat.get("decimals") or getattr(
+                        cfg, "CAT_DECIMALS", 3
+                    )
                     inventory["cat_locked_amount"] = (
-                        f"{int(db_coin_summary.get('cat_locked_mojos', 0) or 0) / (10 ** cat_decimals):.2f}"
+                        f"{int(db_coin_summary.get('cat_locked_mojos', 0) or 0) / (10**cat_decimals):.2f}"
                     )
                     inventory["xch_locked_coins"] = coins["xch_locked_coins"]
                     inventory["cat_locked_coins"] = coins["cat_locked_coins"]
@@ -470,23 +541,33 @@ def api_bot_state():
                     inventory["cat_total_coins"] = coins["cat_total_coins"]
                     coins["inventory"] = inventory
 
-                if int(coins.get("xch_coins", 0) or 0) == 0 and int(coins.get("xch_total_coins", 0) or 0) == 0:
+                if (
+                    int(coins.get("xch_coins", 0) or 0) == 0
+                    and int(coins.get("xch_total_coins", 0) or 0) == 0
+                ):
                     from wallet import get_spendable_coin_count, WALLET_ID_XCH
 
                     xch_free = int(get_spendable_coin_count(WALLET_ID_XCH) or 0)
-                    cat_wallet_id = api_server._active_cat.get("wallet_id") or getattr(cfg, "CAT_WALLET_ID", 2)
+                    cat_wallet_id = api_server._active_cat.get("wallet_id") or getattr(
+                        cfg, "CAT_WALLET_ID", 2
+                    )
                     cat_free = int(get_spendable_coin_count(cat_wallet_id) or 0)
 
                     coins["xch_coins"] = xch_free
                     coins["cat_coins"] = cat_free
-                    coins["xch_total_coins"] = xch_free + int(coins.get("xch_locked_coins", 0) or 0)
-                    coins["cat_total_coins"] = cat_free + int(coins.get("cat_locked_coins", 0) or 0)
+                    coins["xch_total_coins"] = xch_free + int(
+                        coins.get("xch_locked_coins", 0) or 0
+                    )
+                    coins["cat_total_coins"] = cat_free + int(
+                        coins.get("cat_locked_coins", 0) or 0
+                    )
 
                 state["coins"] = coins
         except Exception:
             pass
 
     return jsonify(api_server._serialize_dict(state))
+
 
 @bp.route("/api/status")
 def api_status():
@@ -498,7 +579,11 @@ def api_status():
     bot = api_server.bot
     cfg = api_server.cfg
     try:
-        from database import get_offer_lifecycle_summary, get_recent_events, get_open_offers
+        from database import (
+            get_offer_lifecycle_summary,
+            get_recent_events,
+            get_open_offers,
+        )
 
         # If bot hasn't been created yet, return minimal static state.
         # DO NOT make live network calls during polling — /api/status is called
@@ -516,12 +601,19 @@ def api_status():
             # for 60 s so log entries and HTTP calls drop to 1 per minute.
             global _prebot_price_cache  # noqa: PLW0603
             if "_prebot_price_cache" not in globals():
-                _prebot_price_cache = {"fetched_at": 0.0, "pricing": None,
-                                        "asset_id": ""}
+                _prebot_price_cache = {
+                    "fetched_at": 0.0,
+                    "pricing": None,
+                    "asset_id": "",
+                }
 
             pricing = {"bid": 0, "mid": 0, "ask": 0}
-            asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
-            cat_dec = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+            asset_id = api_server._active_cat.get("asset_id") or (
+                cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+            )
+            cat_dec = api_server._active_cat.get("decimals") or getattr(
+                cfg, "CAT_DECIMALS", 3
+            )
 
             _cache_ttl = 60.0
             _now_ts = time.time()
@@ -537,97 +629,198 @@ def api_status():
                 asset_id = ""
 
             if asset_id:
-                print(f"[STATUS] Pricing lookup: asset_id={asset_id!r}, decimals={cat_dec}", flush=True)
-                log_event("info", "price_lookup", f"Looking up price for {api_server._active_cat.get('name', 'unknown')}")
+                print(
+                    f"[STATUS] Pricing lookup: asset_id={asset_id!r}, decimals={cat_dec}",
+                    flush=True,
+                )
+                log_event(
+                    "info",
+                    "price_lookup",
+                    f"Looking up price for {api_server._active_cat.get('name', 'unknown')}",
+                )
             if asset_id:
                 import requests as _req
+
                 mid = 0
 
                 # --- Try TibetSwap ---
                 try:
                     _record_api_call("tibetswap", "/pairs")
-                    resp = _req.get("https://api.v2.tibetswap.io/pairs",
-                                    params={"skip": 0, "limit": 200}, timeout=8)
+                    resp = _req.get(
+                        "https://api.v2.tibetswap.io/pairs",
+                        params={"skip": 0, "limit": 200},
+                        timeout=8,
+                    )
                     if resp.status_code == 200:
                         norm_id = asset_id.lower().strip().replace("0x", "")
                         for p in resp.json():
-                            p_id = str(p.get("asset_id", "")).lower().strip().replace("0x", "")
+                            p_id = (
+                                str(p.get("asset_id", ""))
+                                .lower()
+                                .strip()
+                                .replace("0x", "")
+                            )
                             if p_id == norm_id:
-                                xr = Decimal(str(p.get("xch_reserve", 0))) / Decimal("1000000000000")
-                                tr = Decimal(str(p.get("token_reserve", 0))) / (Decimal(10) ** int(cat_dec))
+                                xr = Decimal(str(p.get("xch_reserve", 0))) / Decimal(
+                                    "1000000000000"
+                                )
+                                tr = Decimal(str(p.get("token_reserve", 0))) / (
+                                    Decimal(10) ** int(cat_dec)
+                                )
                                 if tr > 0:
                                     mid = xr / tr
-                                    pricing = {"bid": mid, "mid": mid, "ask": mid,
-                                               "tibet_price": mid, "tibet_enabled": True,
-                                               "source": "tibetswap",
-                                               "liquidity": {"xch_reserve": str(xr), "token_reserve": str(tr)}}
-                                    print(f"[STATUS] TibetSwap price: {mid}", flush=True)
-                                    log_event("success", "price_found", f"TibetSwap price: {mid:.8f} XCH")
+                                    pricing = {
+                                        "bid": mid,
+                                        "mid": mid,
+                                        "ask": mid,
+                                        "tibet_price": mid,
+                                        "tibet_enabled": True,
+                                        "source": "tibetswap",
+                                        "liquidity": {
+                                            "xch_reserve": str(xr),
+                                            "token_reserve": str(tr),
+                                        },
+                                    }
+                                    print(
+                                        f"[STATUS] TibetSwap price: {mid}", flush=True
+                                    )
+                                    log_event(
+                                        "success",
+                                        "price_found",
+                                        f"TibetSwap price: {mid:.8f} XCH",
+                                    )
                                 break
                 except Exception as e:
                     print(f"[STATUS] TibetSwap failed: {e}")
-                    slog("API_STATUS", f"TibetSwap price lookup failed: {e!r}", level="debug")
-                    log_event("warning", "price_lookup", "TibetSwap price lookup failed")
+                    slog(
+                        "API_STATUS",
+                        f"TibetSwap price lookup failed: {e!r}",
+                        level="debug",
+                    )
+                    log_event(
+                        "warning", "price_lookup", "TibetSwap price lookup failed"
+                    )
 
                 # --- Fallback to Dexie if TibetSwap had no match ---
                 if mid == 0:
                     print("[STATUS] No TibetSwap price, trying Dexie...", flush=True)
-                    log_event("info", "price_lookup", "No TibetSwap price, trying Dexie fallback")
+                    log_event(
+                        "info",
+                        "price_lookup",
+                        "No TibetSwap price, trying Dexie fallback",
+                    )
                     try:
-                        ticker_id = api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", "") or ""
+                        ticker_id = (
+                            api_server._active_cat.get("ticker_id")
+                            or getattr(cfg, "CAT_TICKER_ID", "")
+                            or ""
+                        )
                         # Dexie ticker format is "{CAT}_XCH" e.g. "SBX_XCH" (V1 confirmed)
                         if ticker_id and "_" not in ticker_id:
                             ticker_id = f"{ticker_id}_XCH"
-                        dexie_base = getattr(cfg, "DEXIE_API_BASE", "https://api.dexie.space")
+                        dexie_base = getattr(
+                            cfg, "DEXIE_API_BASE", "https://api.dexie.space"
+                        )
                         if ticker_id:
                             _record_api_call("dexie", "/v2/prices/tickers")
-                            resp = _req.get(f"{dexie_base}/v2/prices/tickers",
-                                            params={"ticker_id": ticker_id}, timeout=8)
+                            resp = _req.get(
+                                f"{dexie_base}/v2/prices/tickers",
+                                params={"ticker_id": ticker_id},
+                                timeout=8,
+                            )
                             if resp.status_code == 200:
                                 tickers = resp.json().get("tickers", [])
                                 if tickers:
                                     tk = tickers[0]
-                                    tk_bid = Decimal(str(tk.get("bid") or tk.get("best_bid") or 0))
-                                    tk_ask = Decimal(str(tk.get("ask") or tk.get("best_ask") or 0))
+                                    tk_bid = Decimal(
+                                        str(tk.get("bid") or tk.get("best_bid") or 0)
+                                    )
+                                    tk_ask = Decimal(
+                                        str(tk.get("ask") or tk.get("best_ask") or 0)
+                                    )
                                     if tk_bid > 0 and tk_ask > 0 and tk_bid <= tk_ask:
                                         mid = (tk_bid + tk_ask) / 2
-                                        pricing = {"bid": tk_bid, "mid": mid, "ask": tk_ask,
-                                                   "dexie_price": mid, "tibet_enabled": False,
-                                                   "source": "dexie_bid_ask"}
-                                        print(f"[STATUS] Dexie live bid/ask price: {mid}")
-                                        log_event("success", "price_found", f"Dexie live bid/ask price: {mid:.8f} XCH")
+                                        pricing = {
+                                            "bid": tk_bid,
+                                            "mid": mid,
+                                            "ask": tk_ask,
+                                            "dexie_price": mid,
+                                            "tibet_enabled": False,
+                                            "source": "dexie_bid_ask",
+                                        }
+                                        print(
+                                            f"[STATUS] Dexie live bid/ask price: {mid}"
+                                        )
+                                        log_event(
+                                            "success",
+                                            "price_found",
+                                            f"Dexie live bid/ask price: {mid:.8f} XCH",
+                                        )
                                     else:
-                                        log_event("info", "dexie_ticker_unusable",
-                                                  "Dexie ticker had no sane live bid/ask; ignoring historical price fields")
+                                        log_event(
+                                            "info",
+                                            "dexie_ticker_unusable",
+                                            "Dexie ticker had no sane live bid/ask; ignoring historical price fields",
+                                        )
                         # If no ticker_id or no result, try orderbook
                         if mid == 0:
                             _record_api_call("dexie", "/v1/offers")
-                            resp = _req.get(f"{dexie_base}/v1/offers",
-                                            params={"offered": asset_id, "requested": "xch",
-                                                     "status": 0, "page_size": 1, "sort": "price_asc"},
-                                            timeout=8)
+                            resp = _req.get(
+                                f"{dexie_base}/v1/offers",
+                                params={
+                                    "offered": asset_id,
+                                    "requested": "xch",
+                                    "status": 0,
+                                    "page_size": 1,
+                                    "sort": "price_asc",
+                                },
+                                timeout=8,
+                            )
                             if resp.status_code == 200:
                                 offers = resp.json().get("offers", [])
                                 if offers:
                                     best_ask = Decimal(str(offers[0].get("price", 0)))
                                     if best_ask > 0:
                                         mid = best_ask
-                                        pricing = {"bid": mid, "mid": mid, "ask": mid,
-                                                   "dexie_price": mid, "tibet_enabled": False,
-                                                   "source": "dexie_orderbook"}
+                                        pricing = {
+                                            "bid": mid,
+                                            "mid": mid,
+                                            "ask": mid,
+                                            "dexie_price": mid,
+                                            "tibet_enabled": False,
+                                            "source": "dexie_orderbook",
+                                        }
                                         print(f"[STATUS] Dexie orderbook price: {mid}")
-                                        log_event("success", "price_found", f"Dexie orderbook price: {mid:.8f} XCH")
+                                        log_event(
+                                            "success",
+                                            "price_found",
+                                            f"Dexie orderbook price: {mid:.8f} XCH",
+                                        )
                     except Exception as e:
                         print(f"[STATUS] Dexie fallback failed: {e}")
-                        slog("API_STATUS", f"Dexie fallback price lookup failed: {e!r}", level="debug")
-                        log_event("warning", "price_lookup", "Dexie fallback price lookup failed")
+                        slog(
+                            "API_STATUS",
+                            f"Dexie fallback price lookup failed: {e!r}",
+                            level="debug",
+                        )
+                        log_event(
+                            "warning",
+                            "price_lookup",
+                            "Dexie fallback price lookup failed",
+                        )
 
                 if mid == 0:
                     print("[STATUS] No price from any source")
-                    log_event("error", "price_lookup", "No price available from any source")
+                    log_event(
+                        "error", "price_lookup", "No price available from any source"
+                    )
             else:
                 print("[STATUS] No asset_id available for pricing", flush=True)
-                log_event("warning", "price_lookup", "No asset_id configured — cannot fetch price")
+                log_event(
+                    "warning",
+                    "price_lookup",
+                    "No asset_id configured — cannot fetch price",
+                )
 
             # Compute actual bid/ask from mid using configured spread
             try:
@@ -637,7 +830,13 @@ def api_status():
                 _mid_for_spread = Decimal(0)
                 _bid_for_spread = Decimal(0)
             if _mid_for_spread > 0 and _bid_for_spread == _mid_for_spread:
-                _spread_bps = Decimal(str(getattr(cfg, "BASE_SPREAD_BPS", 0) or getattr(cfg, "SPREAD_BPS", 200) or 200))
+                _spread_bps = Decimal(
+                    str(
+                        getattr(cfg, "BASE_SPREAD_BPS", 0)
+                        or getattr(cfg, "SPREAD_BPS", 200)
+                        or 200
+                    )
+                )
                 _spread_frac = _spread_bps / Decimal("10000")
                 pricing["bid"] = _mid_for_spread * (1 - _spread_frac / 2)
                 pricing["ask"] = _mid_for_spread * (1 + _spread_frac / 2)
@@ -667,11 +866,15 @@ def api_status():
             offers_sell_pre = []
             try:
                 from wallet import get_all_offers, classify_offers_from_list
-                asset_id_for_offers = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+
+                asset_id_for_offers = api_server._active_cat.get("asset_id") or getattr(
+                    cfg, "CAT_ASSET_ID", ""
+                )
                 pre_offers = get_all_offers(include_completed=False, start=0, end=500)
                 if pre_offers and isinstance(pre_offers, list) and asset_id_for_offers:
                     open_buys, open_sells, _ = classify_offers_from_list(
-                        pre_offers, asset_id_for_offers)
+                        pre_offers, asset_id_for_offers
+                    )
 
                     # Load DB offers once for Dexie link / tier / coin_id lookup
                     db_map = {}
@@ -689,22 +892,30 @@ def api_status():
                         xch_mojos = Decimal(str(offered.get("xch", 0)))
                         cat_mojos = Decimal(str(requested.get(asset_id_for_offers, 0)))
                         xch_amount = xch_mojos / Decimal("1000000000000")
-                        cat_amount = cat_mojos / (Decimal(10) ** cat_dec) if cat_mojos else Decimal(0)
-                        price = xch_amount / cat_amount if cat_amount > 0 else Decimal(0)
+                        cat_amount = (
+                            cat_mojos / (Decimal(10) ** cat_dec)
+                            if cat_mojos
+                            else Decimal(0)
+                        )
+                        price = (
+                            xch_amount / cat_amount if cat_amount > 0 else Decimal(0)
+                        )
                         tid = o.get("trade_id", "")
                         db_offer = db_map.get(tid, {})
-                        offers_buy_pre.append({
-                            "trade_id": tid,
-                            "side": "buy",
-                            "price_xch": f"{price:.10f}",
-                            "size_xch": f"{xch_amount:.4f}",
-                            "size_cat": f"{cat_amount:.3f}",
-                            "status": "open",
-                            "tier": db_offer.get("tier", ""),
-                            "dexie_id": db_offer.get("dexie_id", ""),
-                            "coin_id": db_offer.get("coin_id", ""),
-                            "created_at": o.get("creation_timestamp", ""),
-                        })
+                        offers_buy_pre.append(
+                            {
+                                "trade_id": tid,
+                                "side": "buy",
+                                "price_xch": f"{price:.10f}",
+                                "size_xch": f"{xch_amount:.4f}",
+                                "size_cat": f"{cat_amount:.3f}",
+                                "status": "open",
+                                "tier": db_offer.get("tier", ""),
+                                "dexie_id": db_offer.get("dexie_id", ""),
+                                "coin_id": db_offer.get("coin_id", ""),
+                                "created_at": o.get("creation_timestamp", ""),
+                            }
+                        )
 
                     for o in open_sells:
                         summary = o.get("summary") or {}
@@ -713,25 +924,36 @@ def api_status():
                         cat_mojos = Decimal(str(offered.get(asset_id_for_offers, 0)))
                         xch_mojos = Decimal(str(requested.get("xch", 0)))
                         xch_amount = xch_mojos / Decimal("1000000000000")
-                        cat_amount = cat_mojos / (Decimal(10) ** cat_dec) if cat_mojos else Decimal(0)
-                        price = xch_amount / cat_amount if cat_amount > 0 else Decimal(0)
+                        cat_amount = (
+                            cat_mojos / (Decimal(10) ** cat_dec)
+                            if cat_mojos
+                            else Decimal(0)
+                        )
+                        price = (
+                            xch_amount / cat_amount if cat_amount > 0 else Decimal(0)
+                        )
                         tid = o.get("trade_id", "")
                         db_offer = db_map.get(tid, {})
-                        offers_sell_pre.append({
-                            "trade_id": tid,
-                            "side": "sell",
-                            "price_xch": f"{price:.10f}",
-                            "size_xch": f"{xch_amount:.4f}",
-                            "size_cat": f"{cat_amount:.3f}",
-                            "status": "open",
-                            "tier": db_offer.get("tier", ""),
-                            "dexie_id": db_offer.get("dexie_id", ""),
-                            "coin_id": db_offer.get("coin_id", ""),
-                            "created_at": o.get("creation_timestamp", ""),
-                        })
+                        offers_sell_pre.append(
+                            {
+                                "trade_id": tid,
+                                "side": "sell",
+                                "price_xch": f"{price:.10f}",
+                                "size_xch": f"{xch_amount:.4f}",
+                                "size_cat": f"{cat_amount:.3f}",
+                                "status": "open",
+                                "tier": db_offer.get("tier", ""),
+                                "dexie_id": db_offer.get("dexie_id", ""),
+                                "coin_id": db_offer.get("coin_id", ""),
+                                "created_at": o.get("creation_timestamp", ""),
+                            }
+                        )
 
-                    print(f"[STATUS] Pre-bot offers: {len(offers_buy_pre)} buys, "
-                          f"{len(offers_sell_pre)} sells", flush=True)
+                    print(
+                        f"[STATUS] Pre-bot offers: {len(offers_buy_pre)} buys, "
+                        f"{len(offers_sell_pre)} sells",
+                        flush=True,
+                    )
             except Exception as e:
                 slog("API_STATUS", f"Pre-bot offer fetch error: {e}", level="warning")
 
@@ -740,8 +962,11 @@ def api_status():
             cat_free = 0
             try:
                 from wallet import get_spendable_coin_count, WALLET_ID_XCH
+
                 xch_free = int(get_spendable_coin_count(WALLET_ID_XCH) or 0)
-                cat_wid_coins = api_server._active_cat.get("wallet_id") or getattr(cfg, 'CAT_WALLET_ID', 2)
+                cat_wid_coins = api_server._active_cat.get("wallet_id") or getattr(
+                    cfg, "CAT_WALLET_ID", 2
+                )
                 cat_free = int(get_spendable_coin_count(cat_wid_coins) or 0)
             except Exception:
                 pass
@@ -761,32 +986,49 @@ def api_status():
                 "cat_locked_amount": f"{cat_locked_amt:.0f}",
             }
 
-            cat_name = api_server._active_cat.get("name") or (cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else "")
+            cat_name = api_server._active_cat.get("name") or (
+                cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else ""
+            )
+            prebot_pricing_safe = api_server._client_safe_payload(
+                api_server._decimal_safe(pricing)
+            )
             # Pre-bot status contains sanitized offer summaries and local
             # cached pricing data, not exception text.
-            return jsonify(api_server._client_safe_payload({
-                "running": False,
-                "stats": {"loop_count": 0, "uptime_seconds": 0, "last_loop_time": 0,
-                           "total_fills": 0, "errors": 0},
-                "balances": {"xch": xch_bal, "cat": cat_bal},
-                "pricing": api_server._decimal_safe(pricing),
-                "offers": {
-                    "buy": offers_buy_pre,
-                    "sell": offers_sell_pre,
-                    "history": _build_fill_history_for_gui(asset_id, limit=20),
-                },
-                "coin_tracking": coin_tracking_pre,
-                "logs": [],
-                "chia_health": api_server._get_health_snapshot(),
-                "wallet_type": api_server.get_wallet_type(),
-                "current_cat": {
-                    "name": cat_name,
-                    "asset_id": asset_id,
-                    "wallet_id": api_server._active_cat.get("wallet_id") or getattr(cfg, "CAT_WALLET_ID", None),
-                    "decimals": api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3),
-                    "ticker_id": api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", None),
-                },
-            }))
+            return jsonify(
+                api_server._serialize_dict(
+                    {
+                        "running": False,
+                        "stats": {
+                            "loop_count": 0,
+                            "uptime_seconds": 0,
+                            "last_loop_time": 0,
+                            "total_fills": 0,
+                            "errors": 0,
+                        },
+                        "balances": {"xch": xch_bal, "cat": cat_bal},
+                        "pricing": prebot_pricing_safe,
+                        "offers": {
+                            "buy": offers_buy_pre,
+                            "sell": offers_sell_pre,
+                            "history": _build_fill_history_for_gui(asset_id, limit=20),
+                        },
+                        "coin_tracking": coin_tracking_pre,
+                        "logs": [],
+                        "chia_health": api_server._get_health_snapshot(),
+                        "wallet_type": api_server.get_wallet_type(),
+                        "current_cat": {
+                            "name": cat_name,
+                            "asset_id": asset_id,
+                            "wallet_id": api_server._active_cat.get("wallet_id")
+                            or getattr(cfg, "CAT_WALLET_ID", None),
+                            "decimals": api_server._active_cat.get("decimals")
+                            or getattr(cfg, "CAT_DECIMALS", 3),
+                            "ticker_id": api_server._active_cat.get("ticker_id")
+                            or getattr(cfg, "CAT_TICKER_ID", None),
+                        },
+                    }
+                )
+            )
 
         # Get raw state from bot
         raw = bot.get_state()
@@ -795,6 +1037,7 @@ def api_status():
         db_stats = raw.get("stats") or {}
         # Compute uptime from bot's start_time (db_stats doesn't track this)
         import time as _time
+
         _uptime = int(_time.time() - bot._start_time) if bot._start_time else 0
         stats_out = {
             "loop_count": raw.get("loop_count", 0),
@@ -810,11 +1053,15 @@ def api_status():
         cat_bal = coins_data.get("cat_balance") or {}
         balances_out = {
             "xch": {
-                "spendable": api_server._safe_float(xch_bal.get("spendable") or xch_bal.get("free", 0)),
+                "spendable": api_server._safe_float(
+                    xch_bal.get("spendable") or xch_bal.get("free", 0)
+                ),
                 "total": api_server._safe_float(xch_bal.get("total", 0)),
             },
             "cat": {
-                "spendable": api_server._safe_float(cat_bal.get("spendable") or cat_bal.get("free", 0)),
+                "spendable": api_server._safe_float(
+                    cat_bal.get("spendable") or cat_bal.get("free", 0)
+                ),
                 "total": api_server._safe_float(cat_bal.get("total", 0)),
             },
         }
@@ -823,11 +1070,14 @@ def api_status():
         if balances_out["xch"]["total"] == 0:
             try:
                 from wallet import get_wallet_balance, WALLET_ID_XCH
+
                 xch_result = get_wallet_balance(WALLET_ID_XCH)
                 if xch_result and xch_result.get("success"):
                     wb = xch_result.get("wallet_balance") or {}
                     # Chia returns mojos — convert to XCH (1 XCH = 1e12 mojos)
-                    confirmed = api_server._safe_float(wb.get("confirmed_wallet_balance", 0))
+                    confirmed = api_server._safe_float(
+                        wb.get("confirmed_wallet_balance", 0)
+                    )
                     spendable = api_server._safe_float(wb.get("spendable_balance", 0))
                     balances_out["xch"]["total"] = confirmed / 1e12
                     balances_out["xch"]["spendable"] = spendable / 1e12
@@ -837,16 +1087,23 @@ def api_status():
         if balances_out["cat"]["total"] == 0:
             try:
                 from wallet import get_wallet_balance
+
                 # Use actively selected CAT wallet_id, fall back to config
-                cat_wallet_id = api_server._active_cat.get("wallet_id") or getattr(cfg, 'CAT_WALLET_ID', 2)
+                cat_wallet_id = api_server._active_cat.get("wallet_id") or getattr(
+                    cfg, "CAT_WALLET_ID", 2
+                )
                 cat_result = get_wallet_balance(cat_wallet_id)
                 if cat_result and cat_result.get("success"):
                     wb = cat_result.get("wallet_balance") or {}
-                    cat_decimals = api_server._active_cat.get("decimals") or getattr(cfg, 'CAT_DECIMALS', 3)
-                    confirmed = api_server._safe_float(wb.get("confirmed_wallet_balance", 0))
+                    cat_decimals = api_server._active_cat.get("decimals") or getattr(
+                        cfg, "CAT_DECIMALS", 3
+                    )
+                    confirmed = api_server._safe_float(
+                        wb.get("confirmed_wallet_balance", 0)
+                    )
                     spendable = api_server._safe_float(wb.get("spendable_balance", 0))
-                    balances_out["cat"]["total"] = confirmed / (10 ** cat_decimals)
-                    balances_out["cat"]["spendable"] = spendable / (10 ** cat_decimals)
+                    balances_out["cat"]["total"] = confirmed / (10**cat_decimals)
+                    balances_out["cat"]["spendable"] = spendable / (10**cat_decimals)
             except Exception:
                 pass
 
@@ -877,22 +1134,40 @@ def api_status():
         if mid == 0:
             try:
                 import requests as _req
-                asset_id = api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else "")
-                cat_dec = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+
+                asset_id = api_server._active_cat.get("asset_id") or (
+                    cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""
+                )
+                cat_dec = api_server._active_cat.get("decimals") or getattr(
+                    cfg, "CAT_DECIMALS", 3
+                )
                 if asset_id:
                     _record_api_call("tibetswap", "/pairs")
-                    resp = _req.get("https://api.v2.tibetswap.io/pairs",
-                                    params={"skip": 0, "limit": 200}, timeout=8)
+                    resp = _req.get(
+                        "https://api.v2.tibetswap.io/pairs",
+                        params={"skip": 0, "limit": 200},
+                        timeout=8,
+                    )
                     if resp.status_code == 200:
                         norm_id = asset_id.lower().strip().replace("0x", "")
                         for p in resp.json():
-                            p_id = str(p.get("asset_id", "")).lower().strip().replace("0x", "")
+                            p_id = (
+                                str(p.get("asset_id", ""))
+                                .lower()
+                                .strip()
+                                .replace("0x", "")
+                            )
                             if p_id == norm_id:
                                 xr = float(p.get("xch_reserve", 0)) / 1e12
-                                tr = float(p.get("token_reserve", 0)) / (10 ** int(cat_dec))
+                                tr = float(p.get("token_reserve", 0)) / (
+                                    10 ** int(cat_dec)
+                                )
                                 if tr > 0:
                                     mid = xr / tr
-                                    print(f"[STATUS] TibetSwap fallback price: {mid:.8f}", flush=True)
+                                    print(
+                                        f"[STATUS] TibetSwap fallback price: {mid:.8f}",
+                                        flush=True,
+                                    )
                                 break
             except Exception as e:
                 print(f"[STATUS] TibetSwap fallback failed: {e}", flush=True)
@@ -907,8 +1182,12 @@ def api_status():
                 if hasattr(bot, "risk_manager") and bot.risk_manager:
                     health = bot.risk_manager.get_market_health()
                     if health:
-                        _buy_bps = api_server._safe_float(health.get("buy_spread_bps", 0))
-                        _sell_bps = api_server._safe_float(health.get("sell_spread_bps", 0))
+                        _buy_bps = api_server._safe_float(
+                            health.get("buy_spread_bps", 0)
+                        )
+                        _sell_bps = api_server._safe_float(
+                            health.get("sell_spread_bps", 0)
+                        )
                         if _buy_bps > 0 and _sell_bps > 0:
                             bid = mid * (1 - _buy_bps / 10000)
                             ask = mid * (1 + _sell_bps / 10000)
@@ -947,11 +1226,22 @@ def api_status():
             offers_sell = []
             try:
                 from wallet import get_all_offers, classify_offers_from_list
-                asset_id_for_classify = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
-                cat_decimals = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+
+                asset_id_for_classify = api_server._active_cat.get(
+                    "asset_id"
+                ) or getattr(cfg, "CAT_ASSET_ID", "")
+                cat_decimals = api_server._active_cat.get("decimals") or getattr(
+                    cfg, "CAT_DECIMALS", 3
+                )
                 all_offers = get_all_offers(end=200)
-                if all_offers and isinstance(all_offers, list) and asset_id_for_classify:
-                    buys_raw, sells_raw, _ = classify_offers_from_list(all_offers, asset_id_for_classify)
+                if (
+                    all_offers
+                    and isinstance(all_offers, list)
+                    and asset_id_for_classify
+                ):
+                    buys_raw, sells_raw, _ = classify_offers_from_list(
+                        all_offers, asset_id_for_classify
+                    )
 
                     def _extract_offer_data(tr, side):
                         """Extract price/size from a classified offer's normalized summary."""
@@ -973,7 +1263,7 @@ def api_status():
 
                         # Convert mojos to display units
                         xch_val = abs(float(xch_mojos)) / 1e12
-                        cat_val = abs(float(cat_mojos)) / (10 ** cat_decimals)
+                        cat_val = abs(float(cat_mojos)) / (10**cat_decimals)
 
                         # Calculate price (XCH per CAT)
                         price = xch_val / cat_val if cat_val > 0 else 0
@@ -985,7 +1275,8 @@ def api_status():
                             "size_xch": str(xch_val),
                             "size_cat": str(cat_val),
                             "status": "open",
-                            "created_at": tr.get("created_at_time") or api_server._sage_ts_to_iso(tr.get("creation_timestamp")),
+                            "created_at": tr.get("created_at_time")
+                            or api_server._sage_ts_to_iso(tr.get("creation_timestamp")),
                         }
 
                     for tr in buys_raw:
@@ -994,13 +1285,17 @@ def api_status():
                         offers_sell.append(_extract_offer_data(tr, "sell"))
 
             except Exception as e:
-                slog("API_STATUS", f"Wallet offer fetch (bot stopped): {e}", level="warning")
+                slog(
+                    "API_STATUS",
+                    f"Wallet offer fetch (bot stopped): {e}",
+                    level="warning",
+                )
 
         # Enrich wallet-sourced offers with Dexie links from bot's dexie_manager
         # and/or database records (prices, sizes, tier, expiry)
         if not is_running and (offers_buy or offers_sell):
             # Source 1: Bot's in-memory dexie_manager (survives within same process)
-            dexie_mgr = getattr(bot, 'dexie_manager', None) if bot else None
+            dexie_mgr = getattr(bot, "dexie_manager", None) if bot else None
             if dexie_mgr:
                 for o in offers_buy + offers_sell:
                     tid = o.get("trade_id", "")
@@ -1013,17 +1308,24 @@ def api_status():
             # Source 2: Database offers table (has dexie_id, tier, expiry)
             try:
                 from database import get_open_offers as db_get_open_offers
+
                 db_offers = db_get_open_offers()
                 db_map = {o["trade_id"]: o for o in db_offers if o.get("trade_id")}
                 # One-shot diagnostic — check how many DB offers have dexie_id
-                if not hasattr(api_status, '_dexie_diag_done'):
+                if not hasattr(api_status, "_dexie_diag_done"):
                     api_status._dexie_diag_done = True
                     has_dexie = sum(1 for o in db_offers if o.get("dexie_id"))
-                    print(f"  [DEXIE] DB has {len(db_offers)} open offers, "
-                          f"{has_dexie} have dexie_id", flush=True)
+                    print(
+                        f"  [DEXIE] DB has {len(db_offers)} open offers, "
+                        f"{has_dexie} have dexie_id",
+                        flush=True,
+                    )
                     if db_offers and not has_dexie:
-                        print("  [DEXIE] ⚠️ NO offers have dexie_id in DB — "
-                              "Dexie posting may have failed in previous sessions", flush=True)
+                        print(
+                            "  [DEXIE] ⚠️ NO offers have dexie_id in DB — "
+                            "Dexie posting may have failed in previous sessions",
+                            flush=True,
+                        )
                 for o in offers_buy + offers_sell:
                     tid = o.get("trade_id", "")
                     if tid and tid in db_map:
@@ -1052,7 +1354,9 @@ def api_status():
 
         # Enrich offers with Dexie links and GUI-friendly fields
         cat_name = api_server._active_cat.get("name") or getattr(cfg, "CAT_NAME", "CAT")
-        cat_dec = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+        cat_dec = api_server._active_cat.get("decimals") or getattr(
+            cfg, "CAT_DECIMALS", 3
+        )
         mid = pricing_out.get("mid", 0)
 
         def _enrich_offer(offer_dict):
@@ -1065,7 +1369,7 @@ def api_status():
             # Source 2: In-memory dexie_manager (catches freshly posted offers
             # before next DB read, and covers startup where DB might lag)
             if not dexie_id and is_running:
-                dexie_mgr = getattr(bot, 'dexie_manager', None) if bot else None
+                dexie_mgr = getattr(bot, "dexie_manager", None) if bot else None
                 if dexie_mgr:
                     tid = o.get("trade_id", "")
                     if tid:
@@ -1170,11 +1474,19 @@ def api_status():
                 norm = dict(it)
                 if "status" not in norm or not norm.get("status"):
                     vs = str(norm.get("verification_status") or "").lower()
-                    norm["status"] = "FILLED" if vs in ("verified", "confirmed") else (vs.upper() or "FILLED")
+                    norm["status"] = (
+                        "FILLED"
+                        if vs in ("verified", "confirmed")
+                        else (vs.upper() or "FILLED")
+                    )
                 if "price" not in norm and "price_xch" in norm:
                     norm["price"] = norm["price_xch"]
                 if "cat_name" not in norm:
-                    norm["cat_name"] = api_server._active_cat.get("name") or getattr(cfg, "CAT_NAME", "") or "CAT"
+                    norm["cat_name"] = (
+                        api_server._active_cat.get("name")
+                        or getattr(cfg, "CAT_NAME", "")
+                        or "CAT"
+                    )
                 history_out.append(norm)
         offers_out = {
             "buy": api_server._serialize_list(enriched_buy),
@@ -1185,8 +1497,11 @@ def api_status():
         # --- Logs (latest 100 events, filtered to current session) ---
         try:
             from database import get_events_since, get_recent_events
+
             cutoff = api_server._session_start_time
-            if api_server._logs_cleared_at and (not cutoff or api_server._logs_cleared_at > cutoff):
+            if api_server._logs_cleared_at and (
+                not cutoff or api_server._logs_cleared_at > cutoff
+            ):
                 cutoff = api_server._logs_cleared_at
             if cutoff:
                 events_list = get_events_since(cutoff, limit=100)
@@ -1195,20 +1510,25 @@ def api_status():
             # Map database field names to what GUI expects
             logs_out = []
             for ev in events_list:
-                logs_out.append({
-                    "timestamp": ev.get("timestamp", ""),
-                    "full_ts": ev.get("timestamp", ""),
-                    "level": ev.get("severity", "info"),
-                    "source": ev.get("event_type", ""),
-                    "message": ev.get("message", ""),
-                })
+                logs_out.append(
+                    {
+                        "timestamp": ev.get("timestamp", ""),
+                        "full_ts": ev.get("timestamp", ""),
+                        "level": ev.get("severity", "info"),
+                        "source": ev.get("event_type", ""),
+                        "message": ev.get("message", ""),
+                    }
+                )
             # One-shot diagnostic — log first time we return events
-            if not hasattr(api_status, '_logs_diag_done'):
+            if not hasattr(api_status, "_logs_diag_done"):
                 api_status._logs_diag_done = True
                 print(f"  [LOGS] Session cutoff: {cutoff}", flush=True)
                 print(f"  [LOGS] Events returned: {len(logs_out)}", flush=True)
                 if logs_out:
-                    print(f"  [LOGS] First: {logs_out[0].get('message', '')[:80]}", flush=True)
+                    print(
+                        f"  [LOGS] First: {logs_out[0].get('message', '')[:80]}",
+                        flush=True,
+                    )
         except Exception as e:
             logs_out = []
             print(f"  [LOGS] ⚠️ Log query failed: {e}", flush=True)
@@ -1218,6 +1538,7 @@ def api_status():
         inv = coins_data.get("inventory") or {}
         try:
             from database import get_coin_summary
+
             db_coin_summary = get_coin_summary()
         except Exception:
             db_coin_summary = {}
@@ -1237,7 +1558,7 @@ def api_status():
                 "cat_locked": _cat_locked_db,
                 "cat_total": db_coin_summary.get("cat_total", 0),
                 "xch_locked_amount": f"{db_coin_summary.get('xch_locked_mojos', 0) / 1e12:.4f}",
-                "cat_locked_amount": f"{db_coin_summary.get('cat_locked_mojos', 0) / (10 ** ((api_server._active_cat.get('decimals') or getattr(cfg, 'CAT_DECIMALS', 3)))):.2f}",
+                "cat_locked_amount": f"{db_coin_summary.get('cat_locked_mojos', 0) / (10 ** (api_server._active_cat.get('decimals') or getattr(cfg, 'CAT_DECIMALS', 3))):.2f}",
                 "xch_topup_pool_amount": inv.get("xch_reserve_total", "0"),
                 "cat_topup_pool_amount": inv.get("cat_reserve_total", "0"),
             }
@@ -1268,19 +1589,31 @@ def api_status():
         if coin_tracking["xch_free"] == 0 and coin_tracking["xch_total"] == 0:
             try:
                 from wallet import rpc as wallet_rpc
-                cat_asset_id = api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+
+                cat_asset_id = api_server._active_cat.get("asset_id") or getattr(
+                    cfg, "CAT_ASSET_ID", ""
+                )
 
                 def _count_coins(asset_id, filter_mode):
                     """Query Sage get_coins and return (count, total_mojos)."""
-                    result = wallet_rpc("get_coins", {
-                        "asset_id": asset_id,
-                        "offset": 0, "limit": 500,
-                        "filter_mode": filter_mode,
-                    }, timeout=10)
+                    result = wallet_rpc(
+                        "get_coins",
+                        {
+                            "asset_id": asset_id,
+                            "offset": 0,
+                            "limit": 500,
+                            "filter_mode": filter_mode,
+                        },
+                        timeout=10,
+                    )
                     if not result:
                         return 0, 0
-                    coins = (result.get("coins") or result.get("records")
-                             or result.get("data") or [])
+                    coins = (
+                        result.get("coins")
+                        or result.get("records")
+                        or result.get("data")
+                        or []
+                    )
                     total_mojos = sum(int(c.get("amount", "0")) for c in coins)
                     return len(coins), total_mojos
 
@@ -1290,7 +1623,9 @@ def api_status():
                 # CAT coins: selectable (free) from Sage RPC
                 cat_free, cat_free_mojos = _count_coins(cat_asset_id, "selectable")
 
-                cat_dec = api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3)
+                cat_dec = api_server._active_cat.get("decimals") or getattr(
+                    cfg, "CAT_DECIMALS", 3
+                )
 
                 # Locked counts from OFFERS, not from owned-selectable.
                 # Each buy offer locks 1 XCH coin; each sell offer locks 1 CAT coin.
@@ -1298,12 +1633,21 @@ def api_status():
                 # Sage marks coins on both sides of an offer as non-selectable.
                 xch_locked = len(offers_buy)
                 cat_locked = len(offers_sell)
-                xch_locked_mojos = int(sum(
-                    float(o.get("size_xch", 0)) * 1e12 for o in offers_buy
-                )) if offers_buy else 0
-                cat_locked_mojos = int(sum(
-                    float(o.get("size_cat", 0)) * (10 ** cat_dec) for o in offers_sell
-                )) if offers_sell else 0
+                xch_locked_mojos = (
+                    int(sum(float(o.get("size_xch", 0)) * 1e12 for o in offers_buy))
+                    if offers_buy
+                    else 0
+                )
+                cat_locked_mojos = (
+                    int(
+                        sum(
+                            float(o.get("size_cat", 0)) * (10**cat_dec)
+                            for o in offers_sell
+                        )
+                    )
+                    if offers_sell
+                    else 0
+                )
 
                 # "spendable" = raw wallet selectable coin count
                 # "free" = truly available (spendable minus coins locked by active offers)
@@ -1319,24 +1663,32 @@ def api_status():
                 coin_tracking["cat_locked"] = cat_locked
                 coin_tracking["cat_total"] = cat_free + cat_locked
                 coin_tracking["xch_locked_amount"] = f"{xch_locked_mojos / 1e12:.4f}"
-                coin_tracking["cat_locked_amount"] = f"{cat_locked_mojos / (10 ** cat_dec):.2f}"
+                coin_tracking["cat_locked_amount"] = (
+                    f"{cat_locked_mojos / (10**cat_dec):.2f}"
+                )
 
-                if not hasattr(api_status, '_coin_diag_logged'):
+                if not hasattr(api_status, "_coin_diag_logged"):
                     api_status._coin_diag_logged = True
                     print("[STATUS] Coin tracking (Sage RPC):", flush=True)
-                    print(f"  XCH: {xch_free} selectable, {xch_locked} locked "
-                          f"({len(offers_buy)} buy offers)", flush=True)
-                    print(f"  CAT: {cat_free} selectable, {cat_locked} locked "
-                          f"({len(offers_sell)} sell offers)", flush=True)
+                    print(
+                        f"  XCH: {xch_free} selectable, {xch_locked} locked "
+                        f"({len(offers_buy)} buy offers)",
+                        flush=True,
+                    )
+                    print(
+                        f"  CAT: {cat_free} selectable, {cat_locked} locked "
+                        f"({len(offers_sell)} sell offers)",
+                        flush=True,
+                    )
 
             except Exception as e:
                 slog("API_STATUS", f"Coin tracking RPC failed: {e}", level="warning")
 
         # --- Spread BPS for Close the Gap modal ---
         spread_bps_val = "0"
-        if hasattr(bot, '_bot_state') and bot._bot_state.get("spread_bps"):
+        if hasattr(bot, "_bot_state") and bot._bot_state.get("spread_bps"):
             spread_bps_val = bot._bot_state["spread_bps"]
-        elif hasattr(bot, 'risk_manager') and bot.risk_manager:
+        elif hasattr(bot, "risk_manager") and bot.risk_manager:
             try:
                 bs = bot.risk_manager.get_adjusted_spread("buy")
                 ss = bot.risk_manager.get_adjusted_spread("sell")
@@ -1346,7 +1698,7 @@ def api_status():
 
         # --- Arb gap for Close the Gap modal ---
         arb_gap_val = "0"
-        if hasattr(bot, '_bot_state') and bot._bot_state.get("arb_gap_bps"):
+        if hasattr(bot, "_bot_state") and bot._bot_state.get("arb_gap_bps"):
             arb_gap_val = bot._bot_state["arb_gap_bps"]
 
         # --- Risk manager state ---
@@ -1366,7 +1718,8 @@ def api_status():
 
         try:
             lifecycle_out = get_offer_lifecycle_summary(
-                api_server._active_cat.get("asset_id") or getattr(cfg, "CAT_ASSET_ID", "")
+                api_server._active_cat.get("asset_id")
+                or getattr(cfg, "CAT_ASSET_ID", "")
             )
         except Exception:
             lifecycle_out = {}
@@ -1393,14 +1746,21 @@ def api_status():
             "diagnostics": raw.get("diagnostics") or {},
             "requote_diagnostics": raw.get("requote_diagnostics") or {},
             "offer_lifecycle": lifecycle_out,
-            "chia_health": api_server._get_health_snapshot() if not raw.get("running", False) else (raw.get("chia_health") or {}),
+            "chia_health": api_server._get_health_snapshot()
+            if not raw.get("running", False)
+            else (raw.get("chia_health") or {}),
             "wallet_type": raw.get("wallet_type", "sage"),
             "current_cat": {
-                "name": api_server._active_cat.get("name") or (cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else ""),
-                "asset_id": api_server._active_cat.get("asset_id") or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""),
-                "wallet_id": api_server._active_cat.get("wallet_id") or getattr(cfg, "CAT_WALLET_ID", None),
-                "decimals": api_server._active_cat.get("decimals") or getattr(cfg, "CAT_DECIMALS", 3),
-                "ticker_id": api_server._active_cat.get("ticker_id") or getattr(cfg, "CAT_TICKER_ID", None),
+                "name": api_server._active_cat.get("name")
+                or (cfg.CAT_NAME if hasattr(cfg, "CAT_NAME") else ""),
+                "asset_id": api_server._active_cat.get("asset_id")
+                or (cfg.CAT_ASSET_ID if hasattr(cfg, "CAT_ASSET_ID") else ""),
+                "wallet_id": api_server._active_cat.get("wallet_id")
+                or getattr(cfg, "CAT_WALLET_ID", None),
+                "decimals": api_server._active_cat.get("decimals")
+                or getattr(cfg, "CAT_DECIMALS", 3),
+                "ticker_id": api_server._active_cat.get("ticker_id")
+                or getattr(cfg, "CAT_TICKER_ID", None),
             },
             # Liquidity mode block — used by the GUI to show the mode badge
             # and, in single-sided modes, a "fuel parked" banner when the
@@ -1413,17 +1773,26 @@ def api_status():
     except Exception:
         return api_server._api_exception(request.path)
 
+
 @bp.route("/api/diagnostics/runtime")
 def api_runtime_diagnostics():
     """Return the live runtime-monitor snapshot."""
     bot = api_server.bot
     if not bot:
-        return jsonify({"enabled": False, "status": "idle", "recent_actions": [], "recent_findings": []})
+        return jsonify(
+            {
+                "enabled": False,
+                "status": "idle",
+                "recent_actions": [],
+                "recent_findings": [],
+            }
+        )
     try:
         raw = bot.get_state() or {}
         return jsonify(api_server._serialize_dict(raw.get("diagnostics") or {}))
     except Exception:
         return api_server._api_exception(request.path)
+
 
 @bp.route("/api/diagnostics/api-stats")
 def api_diagnostics_api_stats():
@@ -1439,8 +1808,8 @@ def api_diagnostics_api_stats():
     bot = api_server.bot
     payload: Dict[str, Any] = {
         "spacescan": {"available": False},
-        "coinset":   {"available": False},
-        "dexie":     {"available": False},
+        "coinset": {"available": False},
+        "dexie": {"available": False},
     }
 
     # Pull the centralized tracker once. Lets us merge "direct" calls
@@ -1461,6 +1830,7 @@ def api_diagnostics_api_stats():
     # --- Spacescan ----------------------------------------------------
     try:
         import spacescan as _ss
+
         stats = _ss.get_api_stats() or {}
         payload["spacescan"] = {
             "available": True,
@@ -1493,6 +1863,7 @@ def api_diagnostics_api_stats():
                     get_market_analysis_cache,
                     get_market_analysis_cache_age_secs,
                 )
+
                 cached = get_market_analysis_cache(asset_id, "spacescan")
                 payload["spacescan"]["token_context_cached"] = bool(cached)
                 age_secs = get_market_analysis_cache_age_secs(asset_id, "spacescan")
@@ -1510,7 +1881,9 @@ def api_diagnostics_api_stats():
         _tracked = int(_tracker_get_count("spacescan"))
         if _tracked:
             payload["spacescan"]["direct_calls"] = _tracked
-            payload["spacescan"]["direct_calls_by_endpoint"] = _tracker_endpoints("spacescan")
+            payload["spacescan"]["direct_calls_by_endpoint"] = _tracker_endpoints(
+                "spacescan"
+            )
 
     # --- Coinset ------------------------------------------------------
     try:
@@ -1534,12 +1907,18 @@ def api_diagnostics_api_stats():
                 "hit_rate_pct": float(cstats.get("hit_rate_pct", 0) or 0),
                 # F53 counters — fire on every HTTP request regardless of mode
                 "api_calls_total": int(cstats.get("api_calls_total", 0) or 0),
-                "api_calls_by_method": dict(cstats.get("api_calls_by_method", {}) or {}),
+                "api_calls_by_method": dict(
+                    cstats.get("api_calls_by_method", {}) or {}
+                ),
                 "api_errors_total": int(cstats.get("api_errors_total", 0) or 0),
-                "last_coinset_time_ms": float(cstats.get("last_coinset_time_ms", 0) or 0),
+                "last_coinset_time_ms": float(
+                    cstats.get("last_coinset_time_ms", 0) or 0
+                ),
                 "healthy": bool(cstats.get("healthy", False)),
                 "consecutive_failures": int(cstats.get("consecutive_failures", 0) or 0),
-                "rate_limited_until": float(getattr(bot.coinset_client, "_rate_limited_until", 0.0) or 0),
+                "rate_limited_until": float(
+                    getattr(bot.coinset_client, "_rate_limited_until", 0.0) or 0
+                ),
             }
     except Exception as e:
         payload["coinset"]["error"] = str(e)
@@ -1551,7 +1930,9 @@ def api_diagnostics_api_stats():
         _direct = int(_tracker_get_count("coinset"))
         if _direct:
             payload["coinset"]["direct_calls"] = _direct
-            payload["coinset"]["direct_calls_by_endpoint"] = _tracker_endpoints("coinset")
+            payload["coinset"]["direct_calls_by_endpoint"] = _tracker_endpoints(
+                "coinset"
+            )
             payload["coinset"]["api_calls_total"] = (
                 payload["coinset"].get("api_calls_total", 0) + _direct
             )
@@ -1559,6 +1940,7 @@ def api_diagnostics_api_stats():
     # Add mempool watcher's Coinset API call count (separate HTTP client)
     try:
         import mempool_watcher as _mw
+
         _watcher = getattr(_mw, "_watcher_instance", None)
         if _watcher:
             _mw_coinset = getattr(_watcher, "_coinset_api_calls", 0)
@@ -1605,9 +1987,15 @@ def api_diagnostics_api_stats():
                 "session_skipped": int(dstats.get("session_skipped", 0) or 0),
                 "known_mappings": int(dstats.get("known_mappings", 0) or 0),
                 "hydrated_from_db": bool(dstats.get("hydrated_from_db", False)),
-                "rate_limited_until": float(getattr(bot.dexie_manager, "_rate_limited_until", 0.0) or 0),
-                "v3_trades_cached_pairs": len(getattr(bot.dexie_manager, "_v3_trades_cache", {}) or {}),
-                "v3_pairs_cached": bool(getattr(bot.dexie_manager, "_v3_pairs_cache", None)),
+                "rate_limited_until": float(
+                    getattr(bot.dexie_manager, "_rate_limited_until", 0.0) or 0
+                ),
+                "v3_trades_cached_pairs": len(
+                    getattr(bot.dexie_manager, "_v3_trades_cache", {}) or {}
+                ),
+                "v3_pairs_cached": bool(
+                    getattr(bot.dexie_manager, "_v3_pairs_cache", None)
+                ),
             }
     except Exception as e:
         payload["dexie"]["error"] = str(e)
@@ -1647,7 +2035,9 @@ def api_diagnostics_api_stats():
                 "queue_size": int(sp_stats.get("queue_size", 0) or 0),
                 "fingerprints_cached": int(sp_stats.get("fingerprints_cached", 0) or 0),
                 "healthy": bool(sp_stats.get("healthy", True)),
-                "consecutive_failures": int(sp_stats.get("consecutive_failures", 0) or 0),
+                "consecutive_failures": int(
+                    sp_stats.get("consecutive_failures", 0) or 0
+                ),
                 "health": sp_health,
                 "receive": sp_receive,
             }
@@ -1666,7 +2056,13 @@ def api_diagnostics_api_stats():
             _pe_tibet_fetches = 0
             _pe_dexie_fetches = 0
             if _pe:
-                with getattr(_pe, "_price_lock", type("_", (), {"__enter__": lambda s: s, "__exit__": lambda *a: None})()):
+                with getattr(
+                    _pe,
+                    "_price_lock",
+                    type(
+                        "_", (), {"__enter__": lambda s: s, "__exit__": lambda *a: None}
+                    )(),
+                ):
                     _last_tibet_ts = getattr(_pe, "_last_tibet_price_time", 0) or 0
                     if _last_tibet_ts > 0:
                         _tibet_cache_age = round(time.time() - _last_tibet_ts, 1)
@@ -1686,7 +2082,9 @@ def api_diagnostics_api_stats():
                 "arb_pressure_label": amm_stats.get("arb_pressure_label", "unknown"),
                 "total_polls": int(amm_stats.get("total_polls", 0) or 0),
                 "failed_polls": int(amm_stats.get("failed_polls", 0) or 0),
-                "consecutive_failures": int(amm_stats.get("consecutive_failures", 0) or 0),
+                "consecutive_failures": int(
+                    amm_stats.get("consecutive_failures", 0) or 0
+                ),
                 "last_success_ago_secs": amm_stats.get("last_success_ago_secs"),
                 "price_cache_age_secs": _tibet_cache_age,
                 "pair_id": amm_stats.get("pair_id", ""),
@@ -1695,6 +2093,7 @@ def api_diagnostics_api_stats():
             # Add mempool watcher's Tibet API calls
             try:
                 import mempool_watcher as _mw2
+
                 _watcher2 = getattr(_mw2, "_watcher_instance", None)
                 if _watcher2:
                     _mw_tibet2 = getattr(_watcher2, "_tibet_api_calls", 0)
@@ -1711,8 +2110,12 @@ def api_diagnostics_api_stats():
             # Dynamic buffer stats if available
             dyn = amm_stats.get("dynamic_buffer", {})
             if dyn:
-                payload["tibetswap"]["sweep_count_in_window"] = dyn.get("sweep_count_in_window", 0)
-                payload["tibetswap"]["buffer_widened"] = dyn.get("current_buffer_bps") is not None
+                payload["tibetswap"]["sweep_count_in_window"] = dyn.get(
+                    "sweep_count_in_window", 0
+                )
+                payload["tibetswap"]["buffer_widened"] = (
+                    dyn.get("current_buffer_bps") is not None
+                )
         else:
             payload["tibetswap"] = {"available": False}
     except Exception as e:
@@ -1730,7 +2133,9 @@ def api_diagnostics_api_stats():
         # Even when amm_monitor is offline (available=False), expose
         # the direct calls so the modal can render *something*.
         payload["tibetswap"]["direct_calls"] = _tibet_direct
-        payload["tibetswap"]["direct_calls_by_endpoint"] = _tracker_endpoints("tibetswap")
+        payload["tibetswap"]["direct_calls_by_endpoint"] = _tracker_endpoints(
+            "tibetswap"
+        )
         # Promote to "available" if at least one direct call landed —
         # the panel becomes meaningful even without the AMM monitor.
         if not payload["tibetswap"].get("available"):
@@ -1774,6 +2179,7 @@ def api_diagnostics_api_stats():
         payload["generated_at"] = None
         payload["generated_at_iso"] = None
     return jsonify(payload)
+
 
 @bp.route("/api/bot/price")
 def api_bot_price():

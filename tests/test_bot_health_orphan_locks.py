@@ -1,6 +1,7 @@
 """Tests for bot_health.check_orphan_locks() — finds DB-locked coins
 whose trade_id points to no open offer and frees them.
 """
+
 import sys
 import types
 import unittest
@@ -16,17 +17,30 @@ def _ensure_stubs():
         sys.modules["dotenv"] = d
     if "requests" not in sys.modules:
         r = types.ModuleType("requests")
+
         class _Resp:
             status_code = 200
-            def json(self): return {}
-            def raise_for_status(self): pass
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
         class _Session:
             headers = {}
-            def get(self, *a, **kw): return _Resp()
-            def mount(self, *a, **kw): pass
+
+            def get(self, *a, **kw):
+                return _Resp()
+
+            def mount(self, *a, **kw):
+                pass
+
         r.get = lambda *a, **kw: _Resp()
         r.Session = _Session
-        r.exceptions = types.SimpleNamespace(Timeout=Exception, ConnectionError=Exception)
+        r.exceptions = types.SimpleNamespace(
+            Timeout=Exception, ConnectionError=Exception
+        )
         a = types.ModuleType("requests.adapters")
         a.HTTPAdapter = object
         r.adapters = a
@@ -39,6 +53,7 @@ def _ensure_stubs():
         u.disable_warnings = lambda *a, **kw: None
         sys.modules["urllib3"] = u
 
+
 _ensure_stubs()
 import bot_health  # noqa: E402
 
@@ -47,7 +62,9 @@ class _ModuleStubMixin:
     _STUBBED_NAMES = ("database", "dexie_manager", "wallet")
 
     def setUp(self):
-        self._saved = {n: sys.modules[n] for n in self._STUBBED_NAMES if n in sys.modules}
+        self._saved = {
+            n: sys.modules[n] for n in self._STUBBED_NAMES if n in sys.modules
+        }
         bot_health._last_run_lock_ts = 0.0
         bot_health._last_report = None
 
@@ -70,7 +87,6 @@ def _orphan(coin_id, last_seen=None, trade_id=None, wt="cat"):
 
 
 class CheckOrphanLocksTests(_ModuleStubMixin, unittest.TestCase):
-
     def _patch_db(self, orphans):
         fake = types.ModuleType("database")
         cur = MagicMock()
@@ -127,7 +143,6 @@ class CheckOrphanLocksTests(_ModuleStubMixin, unittest.TestCase):
 
 
 class CheckStaleDexiePostsTests(_ModuleStubMixin, unittest.TestCase):
-
     def _patch_db(self, rows):
         fake = types.ModuleType("database")
         cur = MagicMock()
@@ -153,10 +168,15 @@ class CheckStaleDexiePostsTests(_ModuleStubMixin, unittest.TestCase):
 
     def test_stale_post_is_requeued(self):
         old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        rows = [{
-            "trade_id": "tid1", "side": "buy", "tier": "inner",
-            "offer_bech32": "offer1...", "created_at": old,
-        }]
+        rows = [
+            {
+                "trade_id": "tid1",
+                "side": "buy",
+                "tier": "inner",
+                "offer_bech32": "offer1...",
+                "created_at": old,
+            }
+        ]
         self._patch_db(rows)
         dx = self._patch_dexie_manager()
         c = bot_health.check_stale_dexie_posts(auto_repair=True)
@@ -166,10 +186,15 @@ class CheckStaleDexiePostsTests(_ModuleStubMixin, unittest.TestCase):
 
     def test_recent_offer_not_requeued(self):
         recent = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
-        rows = [{
-            "trade_id": "tid1", "side": "buy", "tier": "inner",
-            "offer_bech32": "offer1...", "created_at": recent,
-        }]
+        rows = [
+            {
+                "trade_id": "tid1",
+                "side": "buy",
+                "tier": "inner",
+                "offer_bech32": "offer1...",
+                "created_at": recent,
+            }
+        ]
         self._patch_db(rows)
         dx = self._patch_dexie_manager()
         c = bot_health.check_stale_dexie_posts(auto_repair=True)

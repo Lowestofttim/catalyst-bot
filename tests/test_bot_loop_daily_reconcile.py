@@ -20,12 +20,16 @@ class BotLoopDailyReconcileTests(unittest.TestCase):
             calls.append((args, kwargs))
             return []
 
-        with patch.object(bot_loop.cfg, "RUN_HISTORY_CUTOFF", cutoff, create=True), \
-             patch.object(bot_loop.cfg, "SPACESCAN_ENABLED", False), \
-             patch.object(bot_loop, "backfill_verified_fills_from_offers", fake_backfill), \
-             patch.object(bot_loop, "get_all_offers", return_value=[]), \
-             patch("database.get_open_offers", return_value=[]), \
-             patch.object(bot_loop, "log_event"):
+        with (
+            patch.object(bot_loop.cfg, "RUN_HISTORY_CUTOFF", cutoff, create=True),
+            patch.object(bot_loop.cfg, "SPACESCAN_ENABLED", False),
+            patch.object(
+                bot_loop, "backfill_verified_fills_from_offers", fake_backfill
+            ),
+            patch.object(bot_loop, "get_all_offers", return_value=[]),
+            patch("database.get_open_offers", return_value=[]),
+            patch.object(bot_loop, "log_event"),
+        ):
             bot_loop.BotLoop._maybe_run_daily_reconcile(host)
 
         self.assertEqual(len(calls), 1)
@@ -45,7 +49,9 @@ class BotLoopDailyReconcileTests(unittest.TestCase):
         host.coin_manager = types.SimpleNamespace(get_status=lambda: {})
         host.risk_manager = types.SimpleNamespace(get_inventory_state=lambda: {})
         host.dexie_manager = types.SimpleNamespace(get_stats=lambda: {})
-        host.fill_tracker = types.SimpleNamespace(get_fill_counts=lambda: {"buy": 0, "sell": 0})
+        host.fill_tracker = types.SimpleNamespace(
+            get_fill_counts=lambda: {"buy": 0, "sell": 0}
+        )
         host.sniper = types.SimpleNamespace(get_stats=lambda: {})
         host.market_intel = types.SimpleNamespace(get_stats=lambda: {})
         host.runtime_monitor = types.SimpleNamespace(get_state=lambda: {})
@@ -59,14 +65,16 @@ class BotLoopDailyReconcileTests(unittest.TestCase):
             calls.append((args, kwargs))
             return [{"trade_id": "fresh-only"}]
 
-        with patch.object(bot_loop.cfg, "CAT_ASSET_ID", "asset-test", create=True), \
-             patch.object(bot_loop.cfg, "RUN_HISTORY_CUTOFF", cutoff, create=True), \
-             patch.object(bot_loop.cfg, "LOOP_SECONDS", 30, create=True), \
-             patch.object(bot_loop.cfg, "DRY_RUN", False, create=True), \
-             patch("database.get_fills", fake_get_fills), \
-             patch.object(bot_loop, "get_stats", return_value={}), \
-             patch.object(bot_loop.BotLoop, "_get_requote_diagnostics", return_value={}), \
-             patch.object(bot_loop.BotLoop, "get_splash_receive_stats", return_value={}):
+        with (
+            patch.object(bot_loop.cfg, "CAT_ASSET_ID", "asset-test", create=True),
+            patch.object(bot_loop.cfg, "RUN_HISTORY_CUTOFF", cutoff, create=True),
+            patch.object(bot_loop.cfg, "LOOP_SECONDS", 30, create=True),
+            patch.object(bot_loop.cfg, "DRY_RUN", False, create=True),
+            patch("database.get_fills", fake_get_fills),
+            patch.object(bot_loop, "get_stats", return_value={}),
+            patch.object(bot_loop.BotLoop, "_get_requote_diagnostics", return_value={}),
+            patch.object(bot_loop.BotLoop, "get_splash_receive_stats", return_value={}),
+        ):
             state = bot_loop.BotLoop.get_state(host)
 
         self.assertEqual(state["fills"]["recent"], [{"trade_id": "fresh-only"}])

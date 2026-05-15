@@ -21,6 +21,7 @@ Usage:
 # --- src-layout bootstrap (auto-inserted) ---
 import os as _os
 import sys as _sys
+
 _sys.path.insert(
     0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "src", "catalyst")
 )
@@ -37,11 +38,11 @@ import argparse
 # Paths
 # ---------------------------------------------------------------------------
 HERE = os.path.dirname(os.path.abspath(__file__))
-SPEC_FILE = os.path.join(HERE, 'catalyst.spec')
-DIST_DIR = os.path.join(HERE, 'dist')
-BUILD_DIR = os.path.join(HERE, 'build')
-OUTPUT_DIR = os.path.join(DIST_DIR, 'Catalyst')
-ENV_EXAMPLE = os.path.join(HERE, '.env.example')
+SPEC_FILE = os.path.join(HERE, "catalyst.spec")
+DIST_DIR = os.path.join(HERE, "dist")
+BUILD_DIR = os.path.join(HERE, "build")
+OUTPUT_DIR = os.path.join(DIST_DIR, "Catalyst")
+ENV_EXAMPLE = os.path.join(HERE, ".env.example")
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +63,13 @@ def _ensure_pyinstaller():
     try:
         import PyInstaller  # noqa: F401
         import PyInstaller.__main__  # noqa: F401
+
         print("  PyInstaller found.")
     except ImportError:
         print("  ERROR: PyInstaller is not installed.")
-        print("  Install build dependencies with: python -m pip install -r requirements-dev.txt")
+        print(
+            "  Install build dependencies with: python -m pip install -r requirements-dev.txt"
+        )
         raise SystemExit(1)
 
 
@@ -76,7 +80,7 @@ def _clean():
             print(f"  Removing {path} ...")
             shutil.rmtree(path)
     # Remove PyInstaller's spec-generated __pycache__ entries but not the project's own
-    pycache = os.path.join(HERE, '__pycache__')
+    pycache = os.path.join(HERE, "__pycache__")
     if os.path.isdir(pycache):
         print(f"  Removing {pycache} ...")
         shutil.rmtree(pycache)
@@ -84,13 +88,18 @@ def _clean():
 
 def _build():
     """Run PyInstaller with our spec file."""
-    _run([
-        sys.executable,
-        '-m', 'PyInstaller',
-        '--noconfirm',          # Overwrite dist without prompting
-        '--log-level', 'WARN',  # Suppress INFO noise; keep warnings/errors
-        SPEC_FILE,
-    ], cwd=HERE)
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",  # Overwrite dist without prompting
+            "--log-level",
+            "WARN",  # Suppress INFO noise; keep warnings/errors
+            SPEC_FILE,
+        ],
+        cwd=HERE,
+    )
 
 
 def _post_build():
@@ -101,14 +110,16 @@ def _post_build():
 
     # Copy .env.example so users know what to configure
     if os.path.isfile(ENV_EXAMPLE):
-        dest = os.path.join(OUTPUT_DIR, '.env.example')
+        dest = os.path.join(OUTPUT_DIR, ".env.example")
         shutil.copy2(ENV_EXAMPLE, dest)
         print(f"  Copied .env.example -> {dest}")
     else:
-        print("  Warning: .env.example not found — users will need to create .env manually.")
+        print(
+            "  Warning: .env.example not found — users will need to create .env manually."
+        )
 
     # Sanity: confirm the executable exists (platform-specific name)
-    exe_name = 'Catalyst.exe' if sys.platform == 'win32' else 'Catalyst'
+    exe_name = "Catalyst.exe" if sys.platform == "win32" else "Catalyst"
     exe_path = os.path.join(OUTPUT_DIR, exe_name)
     if not os.path.isfile(exe_path):
         print(f"\n  ERROR: Executable not found at expected path: {exe_path}")
@@ -117,8 +128,10 @@ def _post_build():
     # Confirm HTML files are bundled (quick sanity check). PyInstaller 6
     # onedir builds place data files under _internal; older layouts kept
     # them next to the executable.
-    data_roots = (OUTPUT_DIR, os.path.join(OUTPUT_DIR, '_internal'))
-    if not any(os.path.isfile(os.path.join(root, 'bot_gui.html')) for root in data_roots):
+    data_roots = (OUTPUT_DIR, os.path.join(OUTPUT_DIR, "_internal"))
+    if not any(
+        os.path.isfile(os.path.join(root, "bot_gui.html")) for root in data_roots
+    ):
         print("\n  WARNING: bot_gui.html not found in the bundle.")
         print("  The app may fail to load the GUI. Check the .spec datas list.")
     else:
@@ -126,7 +139,7 @@ def _post_build():
 
 
 def _print_success():
-    exe_name = 'Catalyst.exe' if sys.platform == 'win32' else 'Catalyst'
+    exe_name = "Catalyst.exe" if sys.platform == "win32" else "Catalyst"
     exe_path = os.path.join(OUTPUT_DIR, exe_name)
     size_mb = os.path.getsize(exe_path) / (1024 * 1024)
     print(f"""
@@ -152,8 +165,12 @@ def _print_success():
 # Entry point
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description='Build CATalyst')
-    parser.add_argument('--no-clean', action='store_true', help='Skip cleaning dist/ and build/ before building')
+    parser = argparse.ArgumentParser(description="Build CATalyst")
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="Skip cleaning dist/ and build/ before building",
+    )
     args = parser.parse_args()
 
     print(f"\n  CATalyst — Build ({sys.platform})")
@@ -184,6 +201,5 @@ def main():
     _print_success()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-

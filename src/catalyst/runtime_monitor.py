@@ -90,10 +90,18 @@ class RuntimeMonitor:
         self._bot = bot
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
-        self._interval_secs = max(10, int(getattr(cfg, "RUNTIME_MONITOR_POLL_SECS", 20) or 20))
-        self._dexie_grace_secs = max(30, int(getattr(cfg, "RUNTIME_MONITOR_DEXIE_GRACE_SECS", 120) or 120))
-        self._topup_warn_secs = max(120, int(getattr(cfg, "RUNTIME_MONITOR_TOPUP_WARN_SECS", 900) or 900))
-        self._stale_warn_polls = max(1, int(getattr(cfg, "RUNTIME_MONITOR_STALE_POLLS", 2) or 2))
+        self._interval_secs = max(
+            10, int(getattr(cfg, "RUNTIME_MONITOR_POLL_SECS", 20) or 20)
+        )
+        self._dexie_grace_secs = max(
+            30, int(getattr(cfg, "RUNTIME_MONITOR_DEXIE_GRACE_SECS", 120) or 120)
+        )
+        self._topup_warn_secs = max(
+            120, int(getattr(cfg, "RUNTIME_MONITOR_TOPUP_WARN_SECS", 900) or 900)
+        )
+        self._stale_warn_polls = max(
+            1, int(getattr(cfg, "RUNTIME_MONITOR_STALE_POLLS", 2) or 2)
+        )
         self._enabled = bool(getattr(cfg, "RUNTIME_MONITOR_ENABLED", True))
         self._service_running = False
         self._wake_event = threading.Event()
@@ -225,8 +233,11 @@ class RuntimeMonitor:
     def _run(self):
         if not self._enabled:
             return
-        log_event("info", "bot_health_watch_started",
-                  f"Bot health watch started (polling every {self._interval_secs}s)")
+        log_event(
+            "info",
+            "bot_health_watch_started",
+            f"Bot health watch started (polling every {self._interval_secs}s)",
+        )
         while self._service_running:
             if not self._bot._running:
                 self._sync_alert([], "healthy")
@@ -243,8 +254,11 @@ class RuntimeMonitor:
             try:
                 self._run_once()
             except Exception as e:
-                log_event("warning", "bot_health_watch_error",
-                          f"Bot health watch check failed: {str(e)[:180]}")
+                log_event(
+                    "warning",
+                    "bot_health_watch_error",
+                    f"Bot health watch check failed: {str(e)[:180]}",
+                )
             for _ in range(self._interval_secs):
                 if not self._service_running:
                     break
@@ -305,7 +319,8 @@ class RuntimeMonitor:
         interesting = (
             severity in ("warning", "error")
             # Explicit high-value event types (kept for precision):
-            or event_type in {
+            or event_type
+            in {
                 "wallet_sync",
                 "wallet_sync_live_again",
                 "offer_created",
@@ -328,17 +343,19 @@ class RuntimeMonitor:
             }
             # Category-based catch-all — surfaces any new event types that
             # belong to important categories without needing explicit listing.
-            or category in (EventCategory.RISK, EventCategory.OFFER,
-                            EventCategory.LIFECYCLE)
+            or category
+            in (EventCategory.RISK, EventCategory.OFFER, EventCategory.LIFECYCLE)
         )
         if interesting:
-            self._recent_actions.append({
-                "timestamp": timestamp,
-                "severity": severity,
-                "event_type": event_type,
-                "category": category,
-                "message": message[:240],
-            })
+            self._recent_actions.append(
+                {
+                    "timestamp": timestamp,
+                    "severity": severity,
+                    "event_type": event_type,
+                    "category": category,
+                    "message": message[:240],
+                }
+            )
 
         # --- Activity tracking (category-aware) ---
         # Post activity: any EXCHANGE or OFFER event signals the ladder is live
@@ -368,7 +385,9 @@ class RuntimeMonitor:
 
         # Coin prep tracking (COIN category catches future prep event names)
         if category == EventCategory.COIN or event_type in {
-            "topup_trigger", "health_topup_trigger", "coin_prep_started"
+            "topup_trigger",
+            "health_topup_trigger",
+            "coin_prep_started",
         }:
             if "started" in event_type or "trigger" in event_type:
                 if self._topup_started_at <= 0:
@@ -451,9 +470,12 @@ class RuntimeMonitor:
 
         try:
             from user_paths import log_dir as _user_log_dir
+
             pattern = os.path.join(_user_log_dir(), "bot_superlog_*.log")
         except Exception:
-            pattern = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_superlog_*.log")
+            pattern = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "bot_superlog_*.log"
+            )
         matches = sorted(glob.glob(pattern))
         return matches[-1] if matches else ""
 
@@ -474,7 +496,8 @@ class RuntimeMonitor:
         # Surfacing this count helps the dashboard distinguish "cancellation in progress"
         # from confirmed cancelled offers.
         db_cancel_pending = sum(
-            1 for offer in open_offers
+            1
+            for offer in open_offers
             if offer.get("lifecycle_state") == "cancel_requested"
         )
         db_tier_counts = {
@@ -518,10 +541,14 @@ class RuntimeMonitor:
 
         offer_churn_reasons = []
         cycle_step = str(getattr(self._bot, "_current_cycle_step", "") or "").lower()
-        if any(token in cycle_step for token in ("requote", "create", "post", "cancel")):
+        if any(
+            token in cycle_step for token in ("requote", "create", "post", "cancel")
+        ):
             offer_churn_reasons.append(cycle_step)
         try:
-            pending_by_side = getattr(self._bot, "_pending_cancel_wallet_ids_by_side", {}) or {}
+            pending_by_side = (
+                getattr(self._bot, "_pending_cancel_wallet_ids_by_side", {}) or {}
+            )
             pending_cancel_count = sum(len(v or []) for v in pending_by_side.values())
         except Exception:
             pending_cancel_count = 0
@@ -532,7 +559,8 @@ class RuntimeMonitor:
         try:
             sweep = getattr(self._bot, "_sweep_protection", {}) or {}
             sweep_active = sorted(
-                side for side, expiry in sweep.items()
+                side
+                for side, expiry in sweep.items()
                 if float(expiry or 0) > time.time()
             )
             if sweep_active:
@@ -542,15 +570,20 @@ class RuntimeMonitor:
         try:
             backoffs = getattr(self._bot, "_requote_failure_backoff_until", {}) or {}
             backoff_active = sorted(
-                side for side, expiry in backoffs.items()
+                side
+                for side, expiry in backoffs.items()
                 if float(expiry or 0) > time.time()
             )
             if backoff_active:
-                offer_churn_reasons.append(f"requote_backoff:{'+'.join(backoff_active)}")
+                offer_churn_reasons.append(
+                    f"requote_backoff:{'+'.join(backoff_active)}"
+                )
         except Exception:
             pass
         try:
-            last_bulk_create = float(getattr(self._bot, "_last_bulk_create_time", 0.0) or 0.0)
+            last_bulk_create = float(
+                getattr(self._bot, "_last_bulk_create_time", 0.0) or 0.0
+            )
         except Exception:
             last_bulk_create = 0.0
         if last_bulk_create > 0 and (time.time() - last_bulk_create) < 180:
@@ -575,8 +608,12 @@ class RuntimeMonitor:
                 "dexie_total_buy": int(orderbook_snapshot.get("buy_count", 0) or 0),
                 "dexie_total_sell": int(orderbook_snapshot.get("sell_count", 0) or 0),
                 "dexie_page_size": int(orderbook_snapshot.get("page_size", 0) or 0),
-                "dexie_buy_truncated": bool(orderbook_snapshot.get("buy_truncated", False)),
-                "dexie_sell_truncated": bool(orderbook_snapshot.get("sell_truncated", False)),
+                "dexie_buy_truncated": bool(
+                    orderbook_snapshot.get("buy_truncated", False)
+                ),
+                "dexie_sell_truncated": bool(
+                    orderbook_snapshot.get("sell_truncated", False)
+                ),
                 "best_competitor_bid": str(competitor_bid),
                 "best_competitor_ask": str(competitor_ask),
                 "our_best_bid": str(our_best_bid),
@@ -585,12 +622,18 @@ class RuntimeMonitor:
                 "our_ask_gap_bps": _price_gap_bps(competitor_ask, our_best_ask),
                 "orderbook_age_secs": orderbook_summary.get("orderbook_age_secs", 0),
                 "orderbook_errors": orderbook_summary.get("orderbook_errors", 0),
-                "orderbook_refreshes": int(orderbook_summary.get("orderbook_refreshes", 0) or 0),
+                "orderbook_refreshes": int(
+                    orderbook_summary.get("orderbook_refreshes", 0) or 0
+                ),
                 "wallet_sync_fresh": bool(wallet_meta.get("fresh", True)),
                 "wallet_sync_using_cache": bool(wallet_meta.get("using_cache", False)),
-                "wallet_sync_failures": int(wallet_meta.get("consecutive_failures", 0) or 0),
+                "wallet_sync_failures": int(
+                    wallet_meta.get("consecutive_failures", 0) or 0
+                ),
                 "wallet_sync_error": str(wallet_meta.get("last_error") or ""),
-                "dexie_queue_size": int(self._bot.dexie_manager.get_stats().get("queue_size", 0) or 0),
+                "dexie_queue_size": int(
+                    self._bot.dexie_manager.get_stats().get("queue_size", 0) or 0
+                ),
                 "db_buy_tiers": dict(db_tier_counts["buy"]),
                 "db_sell_tiers": dict(db_tier_counts["sell"]),
                 "offer_churn_active": offer_churn_active,
@@ -610,17 +653,27 @@ class RuntimeMonitor:
             "performance": performance,
             "bot": {
                 "loop_count": int(self._bot._loop_count or 0),
-                "loop_duration_secs": round(float(self._bot._last_loop_duration or 0), 2),
+                "loop_duration_secs": round(
+                    float(self._bot._last_loop_duration or 0), 2
+                ),
                 "mid_price": str(self._bot._current_mid_price),
                 "started_at": self._bot._start_time,
-                "last_post_activity_secs_ago": round(max(0.0, time.time() - self._last_post_activity_at), 1)
-                if self._last_post_activity_at > 0 else None,
-                "last_fill_activity_secs_ago": round(max(0.0, time.time() - self._last_fill_activity_at), 1)
-                if self._last_fill_activity_at > 0 else None,
+                "last_post_activity_secs_ago": round(
+                    max(0.0, time.time() - self._last_post_activity_at), 1
+                )
+                if self._last_post_activity_at > 0
+                else None,
+                "last_fill_activity_secs_ago": round(
+                    max(0.0, time.time() - self._last_fill_activity_at), 1
+                )
+                if self._last_fill_activity_at > 0
+                else None,
             },
         }
 
-    def _safe_free_coin_counts(self, wallet_buy: int = 0, wallet_sell: int = 0) -> Dict[str, int]:
+    def _safe_free_coin_counts(
+        self, wallet_buy: int = 0, wallet_sell: int = 0
+    ) -> Dict[str, int]:
         try:
             return self._bot.coin_manager.get_free_coin_counts(wallet_buy, wallet_sell)
         except Exception:
@@ -667,7 +720,7 @@ class RuntimeMonitor:
         startup_grace = now < (float(self._bot._start_time or now) + 180.0)
         wallet_fresh = bool(market.get("wallet_sync_fresh", True))
 
-        stale_active = (not wallet_fresh)
+        stale_active = not wallet_fresh
         self._update_streak("wallet_sync_stale", stale_active)
         if self._apply_condition(
             "wallet_sync_stale",
@@ -682,15 +735,17 @@ class RuntimeMonitor:
             close_event="bot_health_wallet_fresh",
             close_message="Wallet sync is fresh again",
         ):
-            active_conditions.append(self._condition_entry(
-                "wallet_sync_stale",
-                "warning",
-                "Wallet sync is stale/cached",
-                detail=(
-                    f"Wallet sync is stale/cached: failures={market.get('wallet_sync_failures', 0)}, "
-                    f"using_cache={market.get('wallet_sync_using_cache')}"
-                ),
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "wallet_sync_stale",
+                    "warning",
+                    "Wallet sync is stale/cached",
+                    detail=(
+                        f"Wallet sync is stale/cached: failures={market.get('wallet_sync_failures', 0)}, "
+                        f"using_cache={market.get('wallet_sync_using_cache')}"
+                    ),
+                )
+            )
 
         # Compute the SIGNED gap per side. Positive = wallet has more than
         # DB (zombies the bot lost track of — actionable). Negative = DB
@@ -726,15 +781,17 @@ class RuntimeMonitor:
             close_event="bot_health_db_wallet_ok",
             close_message="DB and wallet offer count gap is no longer actionable",
         ):
-            active_conditions.append(self._condition_entry(
-                "db_wallet_divergence",
-                "warning",
-                "Wallet and DB offer counts differ",
-                detail=(
-                    f"Wallet {market['wallet_buy']}/{market['wallet_sell']} vs "
-                    f"DB {market['db_buy']}/{market['db_sell']}"
-                ),
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "db_wallet_divergence",
+                    "warning",
+                    "Wallet and DB offer counts differ",
+                    detail=(
+                        f"Wallet {market['wallet_buy']}/{market['wallet_sell']} vs "
+                        f"DB {market['db_buy']}/{market['db_sell']}"
+                    ),
+                )
+            )
 
         def _expected_side_target(side: str) -> int:
             if side == "buy":
@@ -793,10 +850,9 @@ class RuntimeMonitor:
         market["full_sell_target"] = int(full_sell_target)
         market["buy_target"] = int(buy_target)
         market["sell_target"] = int(sell_target)
-        market["adaptive_target_active"] = (
-            int(buy_target) < int(full_buy_target)
-            or int(sell_target) < int(full_sell_target)
-        )
+        market["adaptive_target_active"] = int(buy_target) < int(
+            full_buy_target
+        ) or int(sell_target) < int(full_sell_target)
         buy_deficit = max(0, buy_target - buy_visible)
         sell_deficit = max(0, sell_target - sell_visible)
         under_target_total = buy_deficit + sell_deficit
@@ -809,11 +865,7 @@ class RuntimeMonitor:
             and not gap_closer_active
             and not offer_churn_active
             and not coin_recovery_active
-            and (
-                buy_deficit >= 2
-                or sell_deficit >= 2
-                or under_target_total >= 3
-            )
+            and (buy_deficit >= 2 or sell_deficit >= 2 or under_target_total >= 3)
         )
         if under_target_total <= 0:
             book_under_target_close_message = "Live book counts are back on target"
@@ -850,23 +902,29 @@ class RuntimeMonitor:
             close_event="bot_health_book_under_target_ok",
             close_message=book_under_target_close_message,
         ):
-            active_conditions.append(self._condition_entry(
-                "book_under_target",
-                "warning",
-                "Live book is under target",
-                detail=(
-                    f"Buy {buy_visible}/{buy_target}, sell {sell_visible}/{sell_target}; "
-                    "wallet, DB, and Dexie no longer show active churn"
-                ),
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "book_under_target",
+                    "warning",
+                    "Live book is under target",
+                    detail=(
+                        f"Buy {buy_visible}/{buy_target}, sell {sell_visible}/{sell_target}; "
+                        "wallet, DB, and Dexie no longer show active churn"
+                    ),
+                )
+            )
 
         # The Dexie orderbook snapshot is capped to a page size, so counts on a
         # full top-of-book page are not authoritative for "missing offer" checks.
-        dexie_gap_buy = 0 if bool(market.get("dexie_buy_truncated")) else max(
-            0, int(market["wallet_buy"]) - int(market["dexie_our_buy"])
+        dexie_gap_buy = (
+            0
+            if bool(market.get("dexie_buy_truncated"))
+            else max(0, int(market["wallet_buy"]) - int(market["dexie_our_buy"]))
         )
-        dexie_gap_sell = 0 if bool(market.get("dexie_sell_truncated")) else max(
-            0, int(market["wallet_sell"]) - int(market["dexie_our_sell"])
+        dexie_gap_sell = (
+            0
+            if bool(market.get("dexie_sell_truncated"))
+            else max(0, int(market["wallet_sell"]) - int(market["dexie_our_sell"]))
         )
         dexie_visible = (
             not startup_grace
@@ -875,11 +933,15 @@ class RuntimeMonitor:
             and bool(getattr(cfg, "DEXIE_POST_ENABLED", True))
             and int(market["dexie_queue_size"]) == 0
             and int(market["orderbook_refreshes"]) > 0
-            and float(market.get("orderbook_age_secs", 0) or 0) < max(90, self._dexie_grace_secs)
+            and float(market.get("orderbook_age_secs", 0) or 0)
+            < max(90, self._dexie_grace_secs)
             and (now - float(self._last_post_activity_at or 0)) > self._dexie_grace_secs
             and now >= float(self._dexie_reconcile_grace_until or 0)
         )
-        self._update_streak("dexie_visibility_gap", dexie_visible and (dexie_gap_buy + dexie_gap_sell) >= 3)
+        self._update_streak(
+            "dexie_visibility_gap",
+            dexie_visible and (dexie_gap_buy + dexie_gap_sell) >= 3,
+        )
         if self._apply_condition(
             "dexie_visibility_gap",
             self._streaks["dexie_visibility_gap"] >= 2,
@@ -892,15 +954,17 @@ class RuntimeMonitor:
             close_event="bot_health_dexie_ok",
             close_message="Dexie live offer counts are aligned with wallet offers again",
         ):
-            active_conditions.append(self._condition_entry(
-                "dexie_visibility_gap",
-                "warning",
-                "Dexie live counts are behind wallet offers",
-                detail=(
-                    f"Dexie {market['dexie_our_buy']}/{market['dexie_our_sell']} vs "
-                    f"wallet {market['wallet_buy']}/{market['wallet_sell']}"
-                ),
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "dexie_visibility_gap",
+                    "warning",
+                    "Dexie live counts are behind wallet offers",
+                    detail=(
+                        f"Dexie {market['dexie_our_buy']}/{market['dexie_our_sell']} vs "
+                        f"wallet {market['wallet_buy']}/{market['wallet_sell']}"
+                    ),
+                )
+            )
 
         tier_template = _tier_template_counts()
         expected_total = sum(tier_template.values())
@@ -912,11 +976,14 @@ class RuntimeMonitor:
             and expected_total > 0
             and not coins.get("prep_running")
             and not coins.get("topup_running")
-            and (now - float(self._last_post_activity_at or 0)) > max(45, self._dexie_grace_secs // 2)
+            and (now - float(self._last_post_activity_at or 0))
+            > max(45, self._dexie_grace_secs // 2)
         ):
             for side in ("buy", "sell"):
                 actual = market.get(f"db_{side}_tiers", {}) or {}
-                actual_total = sum(int(actual.get(tier, 0) or 0) for tier in tier_template)
+                actual_total = sum(
+                    int(actual.get(tier, 0) or 0) for tier in tier_template
+                )
                 if actual_total != expected_total:
                     continue
                 mismatched = [
@@ -927,7 +994,10 @@ class RuntimeMonitor:
                 if mismatched:
                     ladder_shape_mismatches.append(f"{side} " + ", ".join(mismatched))
 
-        self._update_streak("ladder_shape_drift", bool(ladder_shape_mismatches) and not gap_closer_active)
+        self._update_streak(
+            "ladder_shape_drift",
+            bool(ladder_shape_mismatches) and not gap_closer_active,
+        )
         # Signature = the exact mismatch breakdown. If the same signature
         # re-fires within 2 hours, suppress the alert — the misfit mix hasn't
         # changed (no fills, no reshape), so re-notifying is pure noise.
@@ -951,12 +1021,14 @@ class RuntimeMonitor:
             signature=ladder_shape_signature,
             signature_refire_secs=7200,  # 2h — if same shape, don't renotify
         ):
-            active_conditions.append(self._condition_entry(
-                "ladder_shape_drift",
-                "warning",
-                "Live ladder tier mix does not match the configured template",
-                detail=" | ".join(ladder_shape_mismatches[:2]),
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "ladder_shape_drift",
+                    "warning",
+                    "Live ladder tier mix does not match the configured template",
+                    detail=" | ".join(ladder_shape_mismatches[:2]),
+                )
+            )
 
         low_spares = (
             not startup_grace
@@ -964,7 +1036,10 @@ class RuntimeMonitor:
             and not coins.get("topup_running")
             and (
                 (bool(getattr(cfg, "ENABLE_BUY", True)) and int(coins["xch_free"]) <= 1)
-                or (bool(getattr(cfg, "ENABLE_SELL", True)) and int(coins["cat_free"]) <= 1)
+                or (
+                    bool(getattr(cfg, "ENABLE_SELL", True))
+                    and int(coins["cat_free"]) <= 1
+                )
             )
         )
         self._update_streak("coin_headroom_low", low_spares)
@@ -981,17 +1056,21 @@ class RuntimeMonitor:
             close_event="bot_health_coin_headroom_ok",
             close_message="Coin headroom recovered",
         ):
-            active_conditions.append(self._condition_entry(
-                "coin_headroom_low",
-                "info",
-                "Coin headroom is low",
-                detail=(
-                    f"Free XCH={coins['xch_free']}, free CAT={coins['cat_free']}, "
-                    f"locked XCH={coins['xch_locked']}, locked CAT={coins['cat_locked']}"
-                ),
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "coin_headroom_low",
+                    "info",
+                    "Coin headroom is low",
+                    detail=(
+                        f"Free XCH={coins['xch_free']}, free CAT={coins['cat_free']}, "
+                        f"locked XCH={coins['xch_locked']}, locked CAT={coins['cat_locked']}"
+                    ),
+                )
+            )
 
-        topup_running = bool(coins.get("prep_running")) or bool(coins.get("topup_running"))
+        topup_running = bool(coins.get("prep_running")) or bool(
+            coins.get("topup_running")
+        )
         if topup_running and self._topup_started_at <= 0:
             self._topup_started_at = now
             self._topup_baseline = {
@@ -999,15 +1078,17 @@ class RuntimeMonitor:
                 "cat_free": int(coins["cat_free"]),
             }
         if not topup_running and self._topup_started_at > 0:
-            improved = (
-                int(coins["xch_free"]) > int(self._topup_baseline.get("xch_free", 0))
-                or int(coins["cat_free"]) > int(self._topup_baseline.get("cat_free", 0))
-            )
+            improved = int(coins["xch_free"]) > int(
+                self._topup_baseline.get("xch_free", 0)
+            ) or int(coins["cat_free"]) > int(self._topup_baseline.get("cat_free", 0))
             if improved:
-                log_event("success", "bot_health_topup_recovered",
-                          f"Coin prep/top-up finished with improved free coins: "
-                          f"XCH {self._topup_baseline.get('xch_free', 0)}->{coins['xch_free']}, "
-                          f"CAT {self._topup_baseline.get('cat_free', 0)}->{coins['cat_free']}")
+                log_event(
+                    "success",
+                    "bot_health_topup_recovered",
+                    f"Coin prep/top-up finished with improved free coins: "
+                    f"XCH {self._topup_baseline.get('xch_free', 0)}->{coins['xch_free']}, "
+                    f"CAT {self._topup_baseline.get('cat_free', 0)}->{coins['cat_free']}",
+                )
             self._topup_started_at = 0.0
             self._topup_baseline = {}
 
@@ -1030,12 +1111,14 @@ class RuntimeMonitor:
             close_event="bot_health_topup_clear",
             close_message="Coin prep/top-up is no longer lagging",
         ):
-            active_conditions.append(self._condition_entry(
-                "topup_lag",
-                "warning",
-                "Coin prep/top-up is lagging",
-                detail=f"Top-up is still running after {int(now - self._topup_started_at)}s without improving free coins",
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "topup_lag",
+                    "warning",
+                    "Coin prep/top-up is lagging",
+                    detail=f"Top-up is still running after {int(now - self._topup_started_at)}s without improving free coins",
+                )
+            )
 
         slow_detail = ", ".join(
             f"{method} {round(self._slow_last_ms.get(method, 0.0), 1)}ms"
@@ -1060,12 +1143,16 @@ class RuntimeMonitor:
             close_event="bot_health_perf_ok",
             close_message="Runtime slow-call alerts cleared",
         ):
-            active_conditions.append(self._condition_entry(
-                "slow_runtime",
-                "warning",
-                "Repeated slow runtime calls are active",
-                detail=f"Slow calls: {slow_detail}" if slow_detail else "Repeated slow runtime calls are active",
-            ))
+            active_conditions.append(
+                self._condition_entry(
+                    "slow_runtime",
+                    "warning",
+                    "Repeated slow runtime calls are active",
+                    detail=f"Slow calls: {slow_detail}"
+                    if slow_detail
+                    else "Repeated slow runtime calls are active",
+                )
+            )
 
         return active_conditions
 
@@ -1077,12 +1164,19 @@ class RuntimeMonitor:
         else:
             self._streaks[key] = 0
 
-    def _apply_condition(self, key: str, active: bool, severity: str,
-                         open_event: str, open_message: str,
-                         close_event: str, close_message: str,
-                         min_refire_secs: float = 0.0,
-                         signature: Optional[str] = None,
-                         signature_refire_secs: float = 0.0) -> bool:
+    def _apply_condition(
+        self,
+        key: str,
+        active: bool,
+        severity: str,
+        open_event: str,
+        open_message: str,
+        close_event: str,
+        close_message: str,
+        min_refire_secs: float = 0.0,
+        signature: Optional[str] = None,
+        signature_refire_secs: float = 0.0,
+    ) -> bool:
         """Evaluate a health condition and emit log events on transitions.
 
         min_refire_secs — if > 0, suppress the open-event log when the
@@ -1103,31 +1197,35 @@ class RuntimeMonitor:
         now = time.monotonic()
         if active and not was_active:
             last_logged = self._condition_last_logged.get(key, 0.0)
-            refire_ok = (
-                min_refire_secs <= 0.0
-                or (now - last_logged) >= min_refire_secs
-            )
+            refire_ok = min_refire_secs <= 0.0 or (now - last_logged) >= min_refire_secs
             sig_ok = True
             if signature is not None and signature_refire_secs > 0.0:
                 last_sig = self._condition_last_signature.get(key, "")
-                if last_sig == signature and (now - last_logged) < signature_refire_secs:
+                if (
+                    last_sig == signature
+                    and (now - last_logged) < signature_refire_secs
+                ):
                     sig_ok = False
             if refire_ok and sig_ok:
                 log_event(severity, open_event, open_message)
                 self._condition_last_logged[key] = now
                 if signature is not None:
                     self._condition_last_signature[key] = signature
-                self._recent_findings.append({
-                    "timestamp": _utc_now_iso(),
-                    "severity": severity,
-                    "code": key,
-                    "message": open_message,
-                })
+                self._recent_findings.append(
+                    {
+                        "timestamp": _utc_now_iso(),
+                        "severity": severity,
+                        "code": key,
+                        "message": open_message,
+                    }
+                )
         elif not active and was_active:
             log_event("success", close_event, close_message)
         return bool(active)
 
-    def _condition_entry(self, code: str, severity: str, message: str, detail: Optional[str] = None) -> Dict:
+    def _condition_entry(
+        self, code: str, severity: str, message: str, detail: Optional[str] = None
+    ) -> Dict:
         return {
             "code": code,
             "severity": severity,
@@ -1140,8 +1238,13 @@ class RuntimeMonitor:
             self._last_status = "healthy"
             return "healthy"
         severity_rank = {"info": 0, "success": 0, "warning": 1, "error": 2}
-        highest = max(active_conditions, key=lambda item: severity_rank.get(item.get("severity", "warning"), 1))
-        self._last_status = "critical" if highest.get("severity") == "error" else "warning"
+        highest = max(
+            active_conditions,
+            key=lambda item: severity_rank.get(item.get("severity", "warning"), 1),
+        )
+        self._last_status = (
+            "critical" if highest.get("severity") == "error" else "warning"
+        )
         return self._last_status
 
     def _sync_alert(self, active_conditions: List[Dict], status: str):
@@ -1171,4 +1274,3 @@ class RuntimeMonitor:
             title,
             " | ".join(lines),
         )
-
