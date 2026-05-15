@@ -1648,24 +1648,6 @@ class FillTracker:
         if trade_id in verified_trade_ids:
             return None
 
-        if verified_fill_count > 0:
-            log_event(
-                "warning",
-                "fill_reused_coin_duplicate_rejected",
-                f"Spacescan saw source coin {coin_id[:16]}... spent for "
-                f"{trade_id[:16]}..., but that coin is already attributed to "
-                f"{verified_fill_count} verified fill(s). Rejecting duplicate "
-                f"fill attribution.",
-                data={
-                    "trade_id": trade_id,
-                    "side": side,
-                    "coin_id": coin_id,
-                    "offer_count": offer_count,
-                    "verified_fill_count": verified_fill_count,
-                },
-            )
-            return "rejected"
-
         dexie_terminal = self._dexie_terminal_status(trade_id)
         if dexie_terminal == "filled":
             log_event(
@@ -1718,6 +1700,25 @@ class FillTracker:
                 },
             )
             return None
+
+        if verified_fill_count > 0:
+            log_event(
+                "warning",
+                "fill_reused_coin_duplicate_needs_trade_confirmation",
+                f"Spacescan saw source coin {coin_id[:16]}... spent for "
+                f"{trade_id[:16]}..., but that coin is already attributed to "
+                f"{verified_fill_count} verified fill(s). Dexie/Sage did not "
+                f"confirm this exact trade, so the bot will retry instead of "
+                f"booking a likely duplicate fill.",
+                data={
+                    "trade_id": trade_id,
+                    "side": side,
+                    "coin_id": coin_id,
+                    "offer_count": offer_count,
+                    "verified_fill_count": verified_fill_count,
+                },
+            )
+            return "unverified"
 
         log_event(
             "warning",

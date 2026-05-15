@@ -338,6 +338,68 @@ class FillTrackerVerificationTests(unittest.TestCase):
             any(evt == "fill_reused_coin_confirmed" for _, evt, _, _ in self.logged)
         )
 
+    def test_reused_coin_with_prior_fill_records_when_dexie_confirms_trade(self):
+        self.db_offer = {"coin_id": "0xcoin123", "dexie_id": "dexie-reused-filled"}
+        sys.modules["database"].get_offer_coin_usage_summary = (
+            lambda coin_id, cat_asset_id=None: {
+                "coin_id": coin_id,
+                "offer_count": 4,
+                "verified_fill_count": 2,
+                "verified_trade_ids": ["older-trade-a", "older-trade-b"],
+            }
+        )
+        self.fake_spacescan.verify_fill = lambda coin_id, our_address: True
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: {
+            "status": 4,
+            "trade_id": "trade-reused-filled",
+            "involved_coins": ["0xcoin123"],
+        }
+        tracker = self.fill_tracker.FillTracker()
+        trade_id = "trade-reused-filled"
+        fill_detail = {"trade_id": trade_id, "side": "sell", "price": "0.1"}
+        tracker._record_fill = lambda trade_id, side, details_cache: fill_detail
+        tracker._previous_ids["sell"] = {trade_id}
+        tracker._previous_ids["buy"] = set()
+
+        result = tracker.detect_fills(set(), set(), {})
+
+        self.assertEqual(result["sell_fills"], [fill_detail])
+        self.assertTrue(
+            any(evt == "fill_reused_coin_confirmed" for _, evt, _, _ in self.logged)
+        )
+
+    def test_reused_coin_with_prior_fill_waits_without_exact_confirmation(self):
+        self.db_offer = {"coin_id": "0xcoin123", "dexie_id": "dexie-reused-open"}
+        sys.modules["database"].get_offer_coin_usage_summary = (
+            lambda coin_id, cat_asset_id=None: {
+                "coin_id": coin_id,
+                "offer_count": 4,
+                "verified_fill_count": 2,
+                "verified_trade_ids": ["older-trade-a", "older-trade-b"],
+            }
+        )
+        self.fake_spacescan.verify_fill = lambda coin_id, our_address: True
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: None
+        tracker = self.fill_tracker.FillTracker()
+        trade_id = "trade-reused-open"
+        tracker._previous_ids["sell"] = {trade_id}
+        tracker._previous_ids["buy"] = set()
+
+        result = tracker.detect_fills(set(), set(), {})
+
+        self.assertEqual(result["sell_fills"], [])
+        self.assertEqual(self.recorded, [])
+        self.assertIn(trade_id, tracker._pending_reverify)
+        self.assertFalse(
+            any(status == "cancelled" for _, status in self.status_updates)
+        )
+        self.assertTrue(
+            any(
+                evt == "fill_reused_coin_duplicate_needs_trade_confirmation"
+                for _, evt, _, _ in self.logged
+            )
+        )
+
     def test_bot_cancelled_dexie_cancel_skips_spacescan(self):
         self.db_offer = {
             "coin_id": "0xcoin123",
