@@ -345,6 +345,50 @@ class FillTrackerVerificationTests(unittest.TestCase):
             )
         )
 
+    def test_dexie_status3_with_requested_output_records_buy_fill(self):
+        trade_id = "581431f32377422cdeb78cdbccb9d391554305bcda179b641829e6a8ad80bb9c"
+        self.db_offer = {
+            "coin_id": "0xf7322fb1c109351bf2bee6b74117e617e6b687838daf250f148d6011078aec73",
+            "dexie_id": "dexie-buy-status3",
+        }
+        self.fake_spacescan.verify_fill = lambda coin_id, our_address: None
+        self.fake_dexie_manager.get_offer_detail = lambda *args, **kwargs: {
+            "status": 3,
+            "trade_id": f"0x{trade_id}",
+            "involved_coins": [
+                "0xf7322fb1c109351bf2bee6b74117e617e6b687838daf250f148d6011078aec73",
+                "0x6380e3142090a3383df9cfb2bc2cf7403d240243ed547789d255a499db0c047f",
+            ],
+            "offered": [{"id": "xch", "amount": 3.3663}],
+            "requested": [
+                {
+                    "id": "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105",
+                    "amount": 30382.512,
+                }
+            ],
+            "output_coins": {
+                "0xb8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105": [
+                    {
+                        "id": "0x6380e3142090a3383df9cfb2bc2cf7403d240243ed547789d255a499db0c047f",
+                        "amount": 30382512,
+                    }
+                ]
+            },
+        }
+        fill_detail = {"trade_id": trade_id, "side": "buy", "price": "0.0001108"}
+
+        tracker = self.fill_tracker.FillTracker()
+        tracker._record_fill = lambda trade_id, side, details_cache: fill_detail
+        tracker._previous_ids["buy"] = {trade_id}
+        tracker._previous_ids["sell"] = set()
+
+        result = tracker.detect_fills(set(), set(), {})
+
+        self.assertEqual(result["buy_fills"], [fill_detail])
+        self.assertTrue(
+            any(evt == "fill_verified_via_dexie" for _, evt, _, _ in self.logged)
+        )
+
     def test_recently_created_offer_missing_from_wallet_snapshot_can_record_fill(self):
         self.db_offer = {
             "coin_id": "0xcoin123",

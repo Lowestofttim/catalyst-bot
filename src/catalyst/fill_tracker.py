@@ -33,6 +33,57 @@ from database import (
 )
 
 
+def _dexie_asset_key(value) -> str:
+    text = str(value or "").strip().lower()
+    return text[2:] if text.startswith("0x") else text
+
+
+def _dexie_status_code(detail: Dict) -> Optional[int]:
+    try:
+        return int(detail.get("status"))
+    except Exception:
+        return None
+
+
+def _dexie_detail_has_requested_output(detail: Dict) -> bool:
+    """True when a status=3 Dexie offer still shows requested-asset outputs.
+
+    Dexie can return status=3 for a spent maker buy offer even though the
+    payload includes output coins for the requested CAT. A cancel returns the
+    offered asset; a fill returns the requested asset.
+    """
+    requested = {
+        _dexie_asset_key(item.get("id"))
+        for item in (detail.get("requested") or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    requested.discard("")
+    if not requested:
+        return False
+
+    output_coins = detail.get("output_coins") or {}
+    if not isinstance(output_coins, dict):
+        return False
+
+    for asset_id, coins in output_coins.items():
+        if _dexie_asset_key(asset_id) in requested and coins:
+            return True
+    return False
+
+
+def _dexie_detail_confirms_fill(detail: Dict) -> bool:
+    status = _dexie_status_code(detail)
+    if status == 4:
+        return True
+    return status == 3 and _dexie_detail_has_requested_output(detail)
+
+
+def _dexie_detail_confirms_cancel(detail: Dict) -> bool:
+    return _dexie_status_code(detail) == 3 and not _dexie_detail_has_requested_output(
+        detail
+    )
+
+
 class FillTracker:
     """Detects fills and matches round-trip PnL.
 
@@ -1381,12 +1432,12 @@ class FillTracker:
                             _match_f = (
                                 _dexie_trade_f == _our_trade_f or not _dexie_trade_f
                             )
-                            if _detail_f.get("status") == 4 and _match_f:
+                            if _dexie_detail_confirms_fill(_detail_f) and _match_f:
                                 log_event(
                                     "success",
                                     "fill_dexie_override_false_path",
                                     f"Spacescan self-spend AND Sage non-confirm BUT "
-                                    f"Dexie status=4 confirms FILL for "
+                                    f"Dexie status={_detail_f.get('status')} confirms FILL for "
                                     f"{trade_id[:16]}... — recording fill.",
                                 )
                                 return "filled"
@@ -1429,12 +1480,13 @@ class FillTracker:
                         )
                         _our_trade_r = str(trade_id).lower().replace("0x", "")
                         _match_r = _dexie_trade_r == _our_trade_r or not _dexie_trade_r
-                        if _detail_r.get("status") == 4 and _match_r:
+                        if _dexie_detail_confirms_fill(_detail_r) and _match_r:
                             log_event(
                                 "warning",
                                 "fill_spacescan_dexie_disagree",
                                 f"Spacescan REJECTED {side} fill for "
-                                f"{trade_id[:16]}... but Dexie status=4 "
+                                f"{trade_id[:16]}... but Dexie status="
+                                f"{_detail_r.get('status')} "
                                 f"suggests COMPLETED. Spacescan is "
                                 f"authoritative — NOT recording fill. "
                                 f"Operator should reconcile manually if "
@@ -1443,7 +1495,7 @@ class FillTracker:
                                     "trade_id": trade_id,
                                     "side": side,
                                     "dexie_id": _dexie_id_rej,
-                                    "dexie_status": 4,
+                                    "dexie_status": _detail_r.get("status"),
                                     "spacescan_verdict": "rejected",
                                 },
                             )
@@ -1509,18 +1561,16 @@ class FillTracker:
                             _dexie_trade == _our_trade
                             or not _dexie_trade  # no trade_id in response = trust dexie_id match
                         )
-                        dexie_status = detail.get("status")
-                        if (
-                            dexie_status == 4 and _trade_match
-                        ):  # Dexie: 4 = completed/filled
+                        if _dexie_detail_confirms_fill(detail) and _trade_match:
                             log_event(
                                 "success",
                                 "fill_verified_via_dexie",
                                 f"Spacescan inconclusive BUT Dexie confirms FILL "
-                                f"(status=4) for {trade_id[:16]}... — recording fill.",
+                                f"(status={detail.get('status')}) for "
+                                f"{trade_id[:16]}... — recording fill.",
                             )
                             return "filled"
-                        elif dexie_status == 3:  # Dexie: 3 = cancelled
+                        elif _dexie_detail_confirms_cancel(detail):
                             log_event(
                                 "info",
                                 "fill_rejected_via_dexie",
@@ -1663,12 +1713,14 @@ class FillTracker:
         Used for bot-cancel cleanup and as a fallback when Spacescan
         verification is exhausted so we don't silently lose a real fill
         to a rate-limit cascade. Dexie indexes every on-chain spend and
-        distinguishes status=3 (spend was a cancel) from status=4
-        (spend was a fill) once a block confirms.
+        distinguishes status=3 (usually cancel) from status=4
+        (fill) once a block confirms. Dexie can report maker buy fills
+        as status=3 while still including requested-asset output coins;
+        treat that requested-output evidence as filled.
 
         Returns:
-            "filled"    — Dexie status=4
-            "cancelled" — Dexie status=3
+            "filled"    — Dexie status=4, or status=3 with requested outputs
+            "cancelled" — Dexie status=3 without requested outputs
             "unknown"   — any other state (still open, pending, 404,
                           rate-limited, mismatched trade_id, or network
                           error). The caller should fall back to a
@@ -1709,12 +1761,11 @@ class FillTracker:
         if detail_trade_id and detail_trade_id != norm_trade_id:
             return "unknown"
 
-        status = detail.get("status")
-        if status == 4:
+        if _dexie_detail_confirms_fill(detail):
             # Cache for _record_fill() so it doesn't re-fetch
             self._last_dexie_details[trade_id] = detail
             return "filled"
-        if status == 3:
+        if _dexie_detail_confirms_cancel(detail):
             return "cancelled"
         return "unknown"
 
