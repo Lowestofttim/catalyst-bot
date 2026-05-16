@@ -13301,8 +13301,8 @@
                             // The dynamic limits (DYNAMIC_LIMIT_PCT) and step-change guard
                             // (MAX_STEP_CHANGE_FRACTION) cover the same ground correctly.
                             // Field is preserved in the DOM as a hidden vestige; ignored on save.
-                            document.getElementById('configMinMid').value = parseFloat(g('HARD_MIN_PRICE_XCH') || 0) > 0 ? g('HARD_MIN_PRICE_XCH') : '';
-                            document.getElementById('configMaxMid').value = parseFloat(g('HARD_MAX_PRICE_XCH') || 0) > 0 ? g('HARD_MAX_PRICE_XCH') : '';
+                            document.getElementById('configMinMid').value = formatPriceGuardInput(g('HARD_MIN_PRICE_XCH'));
+                            document.getElementById('configMaxMid').value = formatPriceGuardInput(g('HARD_MAX_PRICE_XCH'));
                             const dlp = parseFloat(g('DYNAMIC_LIMIT_PCT') || 0); document.getElementById('configDynamicLimitPct').value = dlp > 0 ? dlp : 50;
                             const msc = parseFloat(g('MAX_STEP_CHANGE_FRACTION') || 0); document.getElementById('configMaxStepChange').value = msc > 0 ? (msc * 100).toFixed(0) : 0;
                             const tsp = parseFloat(g('TIBET_SHOCK_CANCEL_TRIGGER_PCT') || 0); document.getElementById('configTibetShockCancelPct').value = tsp > 0 ? tsp.toFixed(2) : 0;
@@ -15215,6 +15215,13 @@
         }
         const _bps2pct = v => (Number(v) / 100).toFixed(1);
         const _pct2bps = v => Math.round((parseFloat(v) || 0) * 100);
+
+        function formatPriceGuardInput(value) {
+            const n = Number(String(value ?? '').trim());
+            if (!Number.isFinite(n) || n <= 0) return '';
+            const fixed = n >= 1 ? n.toFixed(8) : n.toFixed(12);
+            return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+        }
 
         // =================================================================
         // LIVE CONTROLS — Toggles, Sliders, Debounce, Apply
