@@ -130,3 +130,49 @@ def test_pnl_terms_panel_exposes_live_realized_unrealized_and_total_values():
     assert "function updatePnlMetricCard" in html
     assert "unrealised_pnl_xch" in html
     assert "total_pnl_xch" in html
+
+
+def test_pnl_breakdown_does_not_treat_inventory_notional_as_unrealized_pnl():
+    html = _html()
+
+    derive = re.search(
+        r"function\s+derivePnlBreakdown\s*\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n\s*\}\n\s*function\s+updatePnlMetricCard",
+        html,
+    )
+    assert derive, "derivePnlBreakdown() not found"
+    assert "netPositionCat * mid" not in derive.group("body")
+    assert "hasExplicitUnrealizedPnl" in derive.group("body")
+
+
+def test_dashboard_performance_payload_cannot_overwrite_missing_pnl_breakdown():
+    html = _html()
+
+    apply = re.search(
+        r"function\s+applyPnlSummary\s*\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n\s*\}\n\s*function\s+fetchPnLData",
+        html,
+    )
+    assert apply, "applyPnlSummary() not found"
+    body = apply.group("body")
+    assert "hasFullPnlBreakdown" in body
+    assert re.search(
+        r"if\s*\(\s*hasFullPnlBreakdown\s*\)\s*\{[\s\S]{0,1200}pnlUnrealizedMetric",
+        body,
+    )
+    assert re.search(
+        r"if\s*\(\s*hasFullPnlBreakdown\s*\)\s*\{[\s\S]{0,1600}pnlTotalMetric",
+        body,
+    )
+
+
+def test_dashboard_price_limits_use_guard_price_formatter():
+    html = _html()
+
+    update = re.search(
+        r"function\s+updateCommandCentre\s*\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n\s*\}\n\s*function\s+formatTierGroupLabel",
+        html,
+    )
+    assert update, "updateCommandCentre() not found"
+    body = update.group("body")
+    assert "formatPriceGuardInput(sa.hard_min_price)" in body
+    assert "formatPriceGuardInput(sa.hard_max_price)" in body
+    assert "sa.hard_min_price + ' - ' + sa.hard_max_price" not in body

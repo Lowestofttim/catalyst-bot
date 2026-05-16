@@ -24934,18 +24934,20 @@
                 0
             );
             const mid = resolvePnlMidPrice(data);
-            const netPositionCat = parseFiniteNumber(
-                data.net_position_cat ?? data.net_position ?? data.net_cat_flow,
-                0
-            );
+            const hasExplicitUnrealizedPnl =
+                data.unrealised_pnl_xch !== undefined
+                || data.unrealized_pnl_xch !== undefined;
             let unrealized = parseFiniteNumber(
-                data.unrealised_pnl_xch ?? data.unrealized_pnl_xch,
+                hasExplicitUnrealizedPnl
+                    ? (data.unrealised_pnl_xch ?? data.unrealized_pnl_xch)
+                    : Number.NaN,
                 Number.NaN
             );
-            if (!Number.isFinite(unrealized)) {
-                unrealized = mid > 0 ? netPositionCat * mid : 0;
-            }
             let total = parseFiniteNumber(data.total_pnl_xch, Number.NaN);
+            if (!Number.isFinite(unrealized) && Number.isFinite(total)) {
+                unrealized = total - realized;
+            }
+            if (!Number.isFinite(unrealized)) unrealized = 0;
             if (!Number.isFinite(total)) total = realized + unrealized;
             return { realized, unrealized, total, mid };
         }
@@ -24995,6 +24997,11 @@
             const xchUsdPrice = parseFloat(data.xch_usd_price || 0);
             const hasUsdPrice = Number.isFinite(xchUsdPrice) && xchUsdPrice > 0;
             const pnlBreakdown = derivePnlBreakdown(data);
+            const hasExplicitUnrealizedPnl =
+                data.unrealised_pnl_xch !== undefined
+                || data.unrealized_pnl_xch !== undefined;
+            const hasExplicitTotalPnl = data.total_pnl_xch !== undefined;
+            const hasFullPnlBreakdown = hasExplicitUnrealizedPnl || hasExplicitTotalPnl;
             const pendingMetricSuffix = pendingCount > 0 ? ' - ' + pendingCount + ' pending' : '';
             const realizedUsd = hasUsdPrice
                 ? formatUsdAmount(data.realised_pnl_usd || (pnlBreakdown.realized * xchUsdPrice), { signed: true })
@@ -25011,20 +25018,22 @@
                 pnlBreakdown.realized,
                 realizedUsd ? realizedUsd + ' realized' + pendingMetricSuffix : 'Round trips booked in XCH' + pendingMetricSuffix
             );
-            updatePnlMetricCard(
-                'pnlUnrealizedMetric',
-                'pnlUnrealizedMetricSub',
-                pnlBreakdown.unrealized,
-                pnlBreakdown.mid > 0
-                    ? ((unrealizedUsd ? unrealizedUsd + ' - ' : '') + 'Marked at ' + formatXchAmount(pnlBreakdown.mid) + ' XCH mid')
-                    : 'Waiting for live mid price'
-            );
-            updatePnlMetricCard(
-                'pnlTotalMetric',
-                'pnlTotalMetricSub',
-                pnlBreakdown.total,
-                totalUsd ? totalUsd + ' total mark' : 'Realized + Unrealized PnL'
-            );
+            if (hasFullPnlBreakdown) {
+                updatePnlMetricCard(
+                    'pnlUnrealizedMetric',
+                    'pnlUnrealizedMetricSub',
+                    pnlBreakdown.unrealized,
+                    pnlBreakdown.mid > 0
+                        ? ((unrealizedUsd ? unrealizedUsd + ' - ' : '') + 'Marked at ' + formatXchAmount(pnlBreakdown.mid) + ' XCH mid')
+                        : 'Waiting for live mid price'
+                );
+                updatePnlMetricCard(
+                    'pnlTotalMetric',
+                    'pnlTotalMetricSub',
+                    pnlBreakdown.total,
+                    totalUsd ? totalUsd + ' total mark' : 'Realized + Unrealized PnL'
+                );
+            }
             const sniperStats = data.sniper || ((_dashboardData && _dashboardData.sniper) ? _dashboardData.sniper : null);
             try { updatePnlFlowDiagnostics({ stats: data }); } catch (_) {}
 
@@ -25572,7 +25581,11 @@
                 if (s.safety) {
                     const sa = s.safety;
                     el('ccReserves').textContent = (sa.xch_reserve || 0) + ' / ' + (sa.cat_reserve || 0);
-                    if (sa.hard_min_price) el('ccPriceLimits').textContent = sa.hard_min_price + ' - ' + sa.hard_max_price;
+                    if (sa.hard_min_price || sa.hard_max_price) {
+                        const minPrice = formatPriceGuardInput(sa.hard_min_price);
+                        const maxPrice = formatPriceGuardInput(sa.hard_max_price);
+                        el('ccPriceLimits').textContent = (minPrice || '-') + ' - ' + (maxPrice || '-');
+                    }
                     if (sa.circuit_breaker_active) {
                         el('ccCircuitBreaker').innerHTML = '<span class="cc-badge cc-badge-off">TRIPPED</span>';
                     } else {
