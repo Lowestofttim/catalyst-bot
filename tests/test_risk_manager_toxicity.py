@@ -93,6 +93,8 @@ def test_market_health_exposes_toxicity_operator_details(monkeypatch):
                 }
             ],
             suggested_action="Throttle new buy offers until toxicity cools.",
+            clear_condition="BUY pressure disappears",
+            cooldown_secs_if_clear=225,
         )
     )
 
@@ -102,6 +104,8 @@ def test_market_health_exposes_toxicity_operator_details(monkeypatch):
     assert metrics["toxicity_buy_spread_multiplier"] == "1.75"
     assert metrics["toxicity_sell_spread_multiplier"] == "1.20"
     assert metrics["toxicity_throttle_until"] == {"buy": 9999999999.0}
+    assert metrics["toxicity_clear_condition"] == "BUY pressure disappears"
+    assert metrics["toxicity_cooldown_secs_if_clear"] == 225
     assert metrics["toxicity_enabled"] is True
 
 

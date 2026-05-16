@@ -25975,6 +25975,16 @@
             }).join('; ');
         }
 
+        function _toxicityCooldownText(seconds) {
+            const secs = Math.max(0, Math.round(_toxicityNumber(seconds, 0)));
+            if (!secs) return '';
+            if (secs < 90) return `${secs}s`;
+            const mins = Math.round(secs / 60);
+            if (mins < 90) return `${mins}m`;
+            const hours = Math.round((mins / 60) * 10) / 10;
+            return `${hours}h`;
+        }
+
         function openToxicityGuardSettings() {
             if (typeof v4SwitchView === 'function') v4SwitchView('settings');
             else if (typeof switchView === 'function') switchView('settings');
@@ -26082,9 +26092,17 @@
 
             const reason = _toxicityReasonText(m && m.toxicity_reasons);
             if (reasonEl) {
-                reasonEl.textContent = reason
-                    ? `Reason: ${reason}`
-                    : 'No manual override is shown here; use settings or stop the bot if you want to change risk posture.';
+                const clearCondition = String(m && m.toxicity_clear_condition || '').trim();
+                const cooldown = _toxicityCooldownText(m && m.toxicity_cooldown_secs_if_clear);
+                if (reason || clearCondition || cooldown) {
+                    const parts = [];
+                    if (reason) parts.push(`Reason: ${reason}`);
+                    if (clearCondition) parts.push(`Clears when: ${clearCondition}`);
+                    if (cooldown) parts.push(`Expected cool-down once clear: ${cooldown}`);
+                    reasonEl.textContent = parts.join(' · ');
+                } else {
+                    reasonEl.textContent = 'No manual override is shown here; use settings or stop the bot if you want to change risk posture.';
+                }
             }
         }
 

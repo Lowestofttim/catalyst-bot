@@ -18,6 +18,7 @@ Key responsibilities:
 import time
 import requests
 import threading
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
@@ -296,6 +297,7 @@ class MarketIntel:
                 "cat_amount": cat_amount,
                 "is_ours": is_ours,
                 "created_at": offer.get("date_found", ""),
+                "age_secs": self._offer_age_secs(offer.get("date_found")),
             }
 
         except Exception:
@@ -380,6 +382,8 @@ class MarketIntel:
                         "price": str(o["price"]),
                         "xch_amount": str(o["xch_amount"]),
                         "is_ours": o["is_ours"],
+                        "created_at": o.get("created_at", ""),
+                        "age_secs": o.get("age_secs"),
                     }
                 )
 
@@ -440,6 +444,29 @@ class MarketIntel:
             self._competitors["num_competitor_sells"] = len(competitor_sells)
             self._competitors["whale_orders"] = whales[:5]  # Cap at 5
             self._competitors["thin_side"] = thin_side
+
+    @staticmethod
+    def _offer_age_secs(created_at) -> Optional[float]:
+        raw = str(created_at or "").strip()
+        if not raw:
+            return None
+        try:
+            if raw.isdigit():
+                ts = float(raw)
+                if ts > 10_000_000_000:
+                    ts /= 1000
+            else:
+                normalized = raw.replace("Z", "+00:00")
+                try:
+                    dt = datetime.fromisoformat(normalized)
+                except ValueError:
+                    dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ts = dt.timestamp()
+            return max(0.0, time.time() - ts)
+        except Exception:
+            return None
 
     # -------------------------------------------------------------------
     # Competitor-Aware Spread Recommendations

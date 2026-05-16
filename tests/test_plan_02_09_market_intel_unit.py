@@ -160,6 +160,25 @@ class TestParseDexieOffer(_MI):
         self.assertIsNone(parsed)
 
 
+    def test_offer_age_seconds_from_iso_date_found(self):
+        offer = self._sell_offer()
+        offer["date_found"] = "2026-05-16T11:59:00Z"
+
+        with patch.object(_mi_mod.time, "time", return_value=1778932800):
+            parsed = self._mi._parse_dexie_offer(offer, "sell")
+
+        self.assertEqual(parsed["age_secs"], 60)
+
+    def test_offer_age_seconds_from_epoch_milliseconds(self):
+        offer = self._sell_offer()
+        offer["date_found"] = "1778932790000"
+
+        with patch.object(_mi_mod.time, "time", return_value=1778932800):
+            parsed = self._mi._parse_dexie_offer(offer, "sell")
+
+        self.assertEqual(parsed["age_secs"], 10)
+
+
 # ===========================================================================
 # _analyse_orderbook
 # ===========================================================================

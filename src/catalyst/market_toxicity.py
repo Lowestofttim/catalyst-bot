@@ -8,6 +8,7 @@ that `risk_manager` can use to widen spreads and pause fresh exposure.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
@@ -66,6 +67,8 @@ class ToxicitySnapshot:
     throttle_until: Dict[str, float] = field(default_factory=dict)
     reasons: List[Dict[str, Any]] = field(default_factory=list)
     suggested_action: str = "No toxicity action needed."
+    clear_condition: str = ""
+    cooldown_secs_if_clear: int = 0
     updated_at: float = 0.0
     enabled: bool = True
 
@@ -90,6 +93,8 @@ class ToxicitySnapshot:
             "throttle_until": dict(self.throttle_until),
             "reasons": list(self.reasons),
             "suggested_action": self.suggested_action,
+            "clear_condition": self.clear_condition,
+            "cooldown_secs_if_clear": self.cooldown_secs_if_clear,
             "updated_at": self.updated_at,
             "enabled": self.enabled,
         }
@@ -188,6 +193,8 @@ class MarketToxicityGuard:
             throttle_until=throttle_until,
             reasons=reasons[:12],
             suggested_action=self._suggested_action(level, throttled_sides),
+            clear_condition=self._clear_condition(reasons),
+            cooldown_secs_if_clear=self._cooldown_secs_if_clear(score),
             updated_at=now,
             enabled=True,
         )
@@ -393,24 +400,242 @@ class MarketToxicityGuard:
                     18,
                     "public sell depth dominates buy depth",
                 )
-        whale_counts = {"buy": 0, "sell": 0}
+        whale_signals = {"buy": [], "sell": []}
+        taker_pressure = self._recent_taker_pressure(context)
         for whale in intel.get("whale_orders") or []:
             side = str(whale.get("side") or "").lower()
             is_ours = whale.get("is_ours")
             if is_ours is True or str(is_ours).strip().lower() in {"1", "true", "yes"}:
                 continue
             if side in SIDES:
-                whale_counts[side] += 1
-        for side, count in whale_counts.items():
-            if count <= 0:
+                signal = self._score_public_whale_order(
+                    context=context,
+                    intel=intel,
+                    whale=whale,
+                    side=side,
+                    taker_pressure=taker_pressure.get(side, 0),
+                )
+                if signal:
+                    whale_signals[side].append(signal)
+        for side, signals in whale_signals.items():
+            if not signals:
                 continue
-            offer_word = "offer" if count == 1 else "offers"
-            detail = (
-                f"large public {side} offer visible on Dexie"
-                if count == 1
-                else f"{count} large public {side} {offer_word} visible on Dexie"
+            total_score = min(
+                Decimal("70"), sum((_dec(s.get("score")) for s in signals), Decimal("0"))
             )
-            add(side, "whale_public_offer", 12 * count, detail)
+            count = len(signals)
+            detail = (
+                signals[0]["detail"]
+                if count == 1
+                else self._public_whale_group_detail(side, signals)
+            )
+            add(side, "whale_public_offer", total_score, detail)
+
+    def _score_public_whale_order(
+        self,
+        context: ToxicityContext,
+        intel: Dict[str, Any],
+        whale: Dict[str, Any],
+        side: str,
+        taker_pressure: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Score one public large order using market-relative size and freshness.
+
+        A plain ">= 1 XCH" public order is normal in a liquid book. It becomes
+        adverse-selection evidence only when it is large relative to available
+        depth or our own ladder, and close enough to the live market to attract
+        near-term taking.
+        """
+
+        amount = _dec(whale.get("xch_amount"))
+        price = _dec(whale.get("price"))
+        mid = _dec(context.mid_price)
+        if amount <= 0:
+            return None
+
+        same_depth = _dec(intel.get(f"{side}_depth_xch"))
+        other_side = "sell" if side == "buy" else "buy"
+        other_depth = _dec(intel.get(f"{other_side}_depth_xch"))
+        total_depth = same_depth + other_depth
+        depth_share = (
+            amount / same_depth * Decimal("100") if same_depth > 0 else Decimal("0")
+        )
+        total_share = (
+            amount / total_depth * Decimal("100") if total_depth > 0 else Decimal("0")
+        )
+
+        side_offers = [
+            _dec(o.get("size_xch") or o.get("xch_amount"))
+            for o in context.open_offers
+            if str(o.get("side") or "").lower() == side
+        ]
+        avg_our_offer = (
+            sum(side_offers, Decimal("0")) / Decimal(len(side_offers))
+            if side_offers
+            else Decimal("0")
+        )
+        large_vs_ours = avg_our_offer > 0 and amount >= avg_our_offer * Decimal("2")
+
+        if not (
+            depth_share >= Decimal("8")
+            or total_share >= Decimal("5")
+            or large_vs_ours
+        ):
+            return None
+
+        proximity_bps = self._public_order_proximity_bps(side, price, mid)
+        if proximity_bps is not None and proximity_bps > Decimal("600") and taker_pressure <= 0:
+            return None
+
+        if depth_share >= Decimal("30"):
+            score = Decimal("40")
+        elif depth_share >= Decimal("20"):
+            score = Decimal("32")
+        elif depth_share >= Decimal("12"):
+            score = Decimal("24")
+        elif depth_share >= Decimal("8"):
+            score = Decimal("18")
+        elif total_share >= Decimal("5"):
+            score = Decimal("14")
+        elif large_vs_ours:
+            score = Decimal("10")
+        else:
+            score = Decimal("0")
+
+        if proximity_bps is not None:
+            if proximity_bps <= Decimal("75"):
+                score += Decimal("6")
+            elif proximity_bps <= Decimal("200"):
+                score += Decimal("3")
+            elif proximity_bps > Decimal("400"):
+                score -= Decimal("8")
+
+        age = self._offer_age_secs(whale, context.now)
+        if age is None:
+            age_factor = Decimal("0.85")
+        elif age <= Decimal("900"):
+            age_factor = Decimal("1.0")
+        elif age <= Decimal("3600"):
+            age_factor = Decimal("0.70")
+        elif age <= Decimal("21600"):
+            age_factor = Decimal("0.45")
+        else:
+            age_factor = Decimal("0.20")
+        score *= age_factor
+
+        if taker_pressure > 0:
+            score = score * Decimal("1.25") + Decimal("8")
+
+        score_i = _bounded_score(score)
+        if score_i < 8:
+            return None
+
+        detail_parts = [
+            f"{amount:.2f} XCH public {side} offer",
+        ]
+        if proximity_bps is not None and proximity_bps <= Decimal("300"):
+            detail_parts.append(f"near live market ({proximity_bps:.0f} bps from mid)")
+        elif proximity_bps is not None:
+            detail_parts.append(f"{proximity_bps:.0f} bps from mid")
+        if same_depth > 0:
+            detail_parts.append(f"{depth_share:.1f}% of {side} depth")
+        if large_vs_ours:
+            detail_parts.append("large vs our ladder")
+        if age is not None:
+            detail_parts.append(f"age {self._format_age(age)}")
+        if taker_pressure > 0:
+            detail_parts.append(f"recent {side} taker pressure")
+
+        return {
+            "score": score_i,
+            "amount": amount,
+            "depth_share": depth_share,
+            "proximity_bps": proximity_bps,
+            "detail": "; ".join(detail_parts),
+        }
+
+    @staticmethod
+    def _public_order_proximity_bps(
+        side: str, price: Decimal, mid: Decimal
+    ) -> Optional[Decimal]:
+        if price <= 0 or mid <= 0:
+            return None
+        if side == "buy":
+            return max(Decimal("0"), (mid - price) / mid * Decimal("10000"))
+        return max(Decimal("0"), (price - mid) / mid * Decimal("10000"))
+
+    def _recent_taker_pressure(self, context: ToxicityContext) -> Dict[str, int]:
+        pressure = {"buy": 0, "sell": 0}
+        for fill in context.recent_fills or []:
+            side = str(fill.get("side") or "").lower()
+            if side not in SIDES:
+                continue
+            age = _dec(fill.get("age_secs"), "9999")
+            if age <= Decimal("600"):
+                pressure[side] += 1
+        for event in context.recent_sweep_events or []:
+            side = str(event.get("side") or "").lower()
+            if side not in SIDES:
+                continue
+            pressure[side] += max(
+                1, int(_dec(event.get("side_fill_count", event.get("fill_count")), "1"))
+            )
+        return pressure
+
+    def _public_whale_group_detail(
+        self, side: str, signals: List[Dict[str, Any]]
+    ) -> str:
+        total_amount = sum((_dec(s.get("amount")) for s in signals), Decimal("0"))
+        max_share = max((_dec(s.get("depth_share")) for s in signals), default=Decimal("0"))
+        near_count = sum(
+            1
+            for s in signals
+            if s.get("proximity_bps") is not None
+            and _dec(s.get("proximity_bps")) <= Decimal("300")
+        )
+        count = len(signals)
+        near_text = (
+            f", {near_count} near live market" if near_count > 0 else ""
+        )
+        return (
+            f"{count} market-relative public {side} offers visible on Dexie"
+            f" ({total_amount:.2f} XCH total{near_text}; largest {max_share:.1f}% of {side} depth)"
+        )
+
+    def _offer_age_secs(self, item: Dict[str, Any], now: float) -> Optional[Decimal]:
+        age = _dec(item.get("age_secs"), "-1")
+        if age >= 0:
+            return age
+        raw = str(item.get("created_at") or item.get("date_found") or "").strip()
+        if not raw:
+            return None
+        try:
+            if raw.isdigit():
+                ts = float(raw)
+                if ts > 10_000_000_000:
+                    ts /= 1000
+            else:
+                normalized = raw.replace("Z", "+00:00")
+                try:
+                    dt = datetime.fromisoformat(normalized)
+                except ValueError:
+                    dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ts = dt.timestamp()
+            return max(Decimal("0"), _dec(now) - _dec(ts))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _format_age(age: Decimal) -> str:
+        if age < Decimal("90"):
+            return f"{age:.0f}s"
+        mins = age / Decimal("60")
+        if mins < Decimal("90"):
+            return f"{mins:.0f}m"
+        hours = mins / Decimal("60")
+        return f"{hours:.1f}h"
 
     def _score_data_quality(self, context: ToxicityContext, add_both) -> None:
         intel = context.market_intel or {}
@@ -425,6 +650,34 @@ class MarketToxicityGuard:
         snapshot = context.orderbook_snapshot or {}
         if snapshot.get("buy_truncated") or snapshot.get("sell_truncated"):
             add_both("market_data_quality", 8, "Dexie orderbook page is truncated")
+
+    def _cooldown_secs_if_clear(self, score: int) -> int:
+        if score <= 0:
+            return 0
+        decay = max(1, int(_dec(getattr(cfg, "TOXICITY_DECAY_PER_LOOP", 8), "8")))
+        loop_secs = max(1, int(_dec(getattr(cfg, "LOOP_SECONDS", 45), "45")))
+        loops = (int(score) + decay - 1) // decay
+        return int(loops * loop_secs)
+
+    @staticmethod
+    def _clear_condition(reasons: List[Dict[str, Any]]) -> str:
+        keys = {str(r.get("key") or "") for r in reasons if isinstance(r, dict)}
+        sides = sorted(
+            {
+                str(r.get("side") or "").upper()
+                for r in reasons
+                if isinstance(r, dict) and str(r.get("side") or "").lower() in SIDES
+            }
+        )
+        side_text = "/".join(sides) if sides else "risk-side"
+        if "whale_public_offer" in keys:
+            return (
+                f"{side_text} public orders are no longer large relative to live depth, "
+                "near the touch, or paired with recent same-side taking"
+            )
+        if keys:
+            return "current adverse-selection signals disappear from the selected CAT market"
+        return ""
 
     def _next_throttle_until(
         self, now: float, buy_score: int, sell_score: int, signal_keys: Dict[str, set]

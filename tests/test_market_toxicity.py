@@ -284,14 +284,30 @@ def test_public_whale_depth_reasons_are_aggregated_per_side():
 
     snap = guard.update(
         _ctx(
+            mid_price=Decimal("0.010"),
             market_intel={
                 "whale_orders": [
-                    {"side": "buy", "xch_amount": "4.0"},
-                    {"side": "buy", "xch_amount": "3.0"},
-                    {"side": "buy", "xch_amount": "2.0"},
-                    {"side": "buy", "xch_amount": "1.5"},
-                    {"side": "buy", "xch_amount": "1.1"},
+                    {
+                        "side": "buy",
+                        "price": "0.00995",
+                        "xch_amount": "4.0",
+                        "age_secs": 90,
+                    },
+                    {
+                        "side": "buy",
+                        "price": "0.00990",
+                        "xch_amount": "3.0",
+                        "age_secs": 120,
+                    },
+                    {
+                        "side": "buy",
+                        "price": "0.00985",
+                        "xch_amount": "2.0",
+                        "age_secs": 180,
+                    },
                 ],
+                "buy_depth_xch": "18",
+                "sell_depth_xch": "16",
                 "orderbook_refreshes": 3,
                 "orderbook_age_secs": 12,
             }
@@ -304,8 +320,162 @@ def test_public_whale_depth_reasons_are_aggregated_per_side():
         if r["key"] == "whale_public_offer" and r["side"] == "buy"
     ]
     assert len(whale_reasons) == 1
-    assert whale_reasons[0]["score"] == 60
-    assert whale_reasons[0]["detail"] == "5 large public buy offers visible on Dexie"
+    assert whale_reasons[0]["score"] >= 60
+    assert "3 market-relative public buy offers visible on Dexie" in whale_reasons[0]["detail"]
+    assert "near live market" in whale_reasons[0]["detail"]
+
+
+def test_deep_market_public_whales_do_not_keep_guard_mild():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            mid_price=Decimal("0.010"),
+            market_intel={
+                "buy_depth_xch": "120",
+                "sell_depth_xch": "110",
+                "whale_orders": [
+                    {"side": "buy", "price": "0.0090", "xch_amount": "2.0"},
+                    {"side": "buy", "price": "0.0088", "xch_amount": "2.0"},
+                    {"side": "buy", "price": "0.0086", "xch_amount": "2.0"},
+                ],
+                "orderbook_refreshes": 3,
+                "orderbook_age_secs": 12,
+            },
+            open_offers=[
+                {"side": "buy", "size_xch": "1.2"},
+                {"side": "sell", "size_xch": "1.2"},
+            ],
+        )
+    )
+
+    assert snap.buy_score == 0
+    assert snap.score == 0
+    assert "whale_public_offer" not in {r["key"] for r in snap.reasons}
+
+
+def test_near_touch_fresh_market_relative_public_order_scores_with_clear_hint():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            mid_price=Decimal("0.010"),
+            market_intel={
+                "buy_depth_xch": "20",
+                "sell_depth_xch": "18",
+                "whale_orders": [
+                    {
+                        "side": "buy",
+                        "price": "0.00994",
+                        "xch_amount": "5.0",
+                        "age_secs": 120,
+                    }
+                ],
+                "orderbook_refreshes": 3,
+                "orderbook_age_secs": 12,
+            },
+            open_offers=[
+                {"side": "buy", "size_xch": "1.0"},
+                {"side": "sell", "size_xch": "1.0"},
+            ],
+        )
+    )
+
+    whale_reasons = [r for r in snap.reasons if r["key"] == "whale_public_offer"]
+    assert snap.buy_score >= 30
+    assert whale_reasons
+    assert "near live market" in whale_reasons[0]["detail"]
+    assert "25.0% of buy depth" in whale_reasons[0]["detail"]
+    assert snap.clear_condition
+    assert snap.cooldown_secs_if_clear > 0
+
+
+def test_stale_public_order_contributes_less_than_fresh_near_touch_order():
+    fresh_guard = MarketToxicityGuard()
+    stale_guard = MarketToxicityGuard()
+
+    base_intel = {
+        "buy_depth_xch": "20",
+        "sell_depth_xch": "18",
+        "orderbook_refreshes": 3,
+        "orderbook_age_secs": 12,
+    }
+    fresh = fresh_guard.update(
+        _ctx(
+            mid_price=Decimal("0.010"),
+            market_intel={
+                **base_intel,
+                "whale_orders": [
+                    {
+                        "side": "buy",
+                        "price": "0.00994",
+                        "xch_amount": "5.0",
+                        "age_secs": 120,
+                    }
+                ],
+            },
+        )
+    )
+    stale = stale_guard.update(
+        _ctx(
+            mid_price=Decimal("0.010"),
+            market_intel={
+                **base_intel,
+                "whale_orders": [
+                    {
+                        "side": "buy",
+                        "price": "0.00994",
+                        "xch_amount": "5.0",
+                        "age_secs": 7200,
+                    }
+                ],
+            },
+        )
+    )
+
+    assert stale.buy_score < fresh.buy_score
+    assert stale.level == "normal"
+
+
+def test_recent_taker_intent_amplifies_near_touch_public_order():
+    base_guard = MarketToxicityGuard()
+    intent_guard = MarketToxicityGuard()
+    market_intel = {
+        "buy_depth_xch": "20",
+        "sell_depth_xch": "18",
+        "whale_orders": [
+            {
+                "side": "buy",
+                "price": "0.00994",
+                "xch_amount": "4.0",
+                "age_secs": 120,
+            }
+        ],
+        "orderbook_refreshes": 3,
+        "orderbook_age_secs": 12,
+    }
+
+    base = base_guard.update(_ctx(mid_price=Decimal("0.010"), market_intel=market_intel))
+    with_intent = intent_guard.update(
+        _ctx(
+            mid_price=Decimal("0.010"),
+            market_intel=market_intel,
+            recent_fills=[
+                {
+                    "side": "buy",
+                    "age_secs": 240,
+                    "price": "0.00995",
+                    "size_xch": "1.0",
+                }
+            ],
+        )
+    )
+
+    assert with_intent.buy_score > base.buy_score
+    assert any(
+        r["key"] == "whale_public_offer" and "recent buy taker pressure" in r["detail"]
+        for r in with_intent.reasons
+    )
 
 
 def test_scores_decay_when_conditions_calm():

@@ -1231,6 +1231,10 @@ class RiskManager:
         metrics["toxicity_throttle_until"] = toxicity.get("throttle_until", {})
         metrics["toxicity_reasons"] = toxicity.get("reasons", [])
         metrics["toxicity_suggested_action"] = toxicity.get("suggested_action", "")
+        metrics["toxicity_clear_condition"] = toxicity.get("clear_condition", "")
+        metrics["toxicity_cooldown_secs_if_clear"] = toxicity.get(
+            "cooldown_secs_if_clear", 0
+        )
         metrics["toxicity_enabled"] = toxicity.get("enabled", True)
 
         # F44 (2026-04-08): wire Dexie v3 historical-trades market metrics

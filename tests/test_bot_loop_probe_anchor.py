@@ -209,8 +209,14 @@ class _DummySniper:
 
 
 class _DummyBoostManager:
-    def __init__(self, offer_manager=None, dexie_manager=None, risk_manager=None):
-        pass
+    def __init__(
+        self,
+        offer_manager=None,
+        dexie_manager=None,
+        risk_manager=None,
+        splash_manager=None,
+    ):
+        del offer_manager, dexie_manager, risk_manager, splash_manager
 
 
 class _DummyAMMMonitor:
