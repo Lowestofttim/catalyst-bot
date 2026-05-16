@@ -10287,7 +10287,7 @@
                     <div id="splashSectionBody">
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                         <div>
-                            <div style="color: rgba(255,255,255,0.5); font-size: 11px;">Broadcast</div>
+                            <div style="color: rgba(255,255,255,0.5); font-size: 11px;">Local Submit</div>
                             <div id="splashPosted" style="font-size: 14px; font-weight: 600; color: var(--status-success);">0</div>
                         </div>
                         <div>
@@ -10358,7 +10358,7 @@
                         <div id="splashPeersHint" style="margin-top: 6px; font-size: 11px; color: var(--status-warning);"></div>
                         <div id="splashIncomingHint" style="margin-top: 8px; font-size: 11px; color: rgba(255,255,255,0.45);">Relevant = inbound peer offers that match the current CAT/XCH pair.</div>
                     </div>
-                    <div id="splashStatusHint" style="margin-top: 10px; font-size: 11px; color: rgba(255,255,255,0.45);">Posted / failed / skipped are session counters. Queue and cached live offers explain quiet runs.</div>
+                    <div id="splashStatusHint" style="margin-top: 10px; font-size: 11px; color: rgba(255,255,255,0.45);">Submitted / failed / skipped are local submits only; peer relay depends on daemon peers. Queue and cached live offers explain quiet runs.</div>
                     <!-- Setup / Download section -->
                     <div id="splashSetupSection" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; margin-top: 8px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
@@ -24489,7 +24489,7 @@
                     const cached = Number(splash.fingerprints_cached || 0);
                     const sessionPosts = Number(splash.total_posted || 0);
                     el('splashStatusHint').textContent =
-                        'Queue ' + queueSize + ' • cached live offers ' + cached + ' • session posts ' + sessionPosts + '.';
+                        'Queue ' + queueSize + ' • cached live offers ' + cached + ' • local submits ' + sessionPosts + '.';
                 }
             }
 
@@ -28236,7 +28236,7 @@
                         <div class="v4-modal-panel-title">Splash ${sp.available ? (sp.healthy ? '✅' : '⚠️') : '❌'}</div>
                         ${sp.available ? `
                           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:0.92em;">
-                            <div style="color:var(--text-secondary);">Offers posted</div><div>${fmtN(sp.total_posted)}</div>
+                            <div style="color:var(--text-secondary);">Local submits</div><div>${fmtN(sp.total_posted)}</div>
                             <div style="color:var(--text-secondary);">Post failures</div><div>${fmtN(sp.total_failed)}</div>
                             <div style="color:var(--text-secondary);">Skipped (dedup)</div><div>${fmtN(sp.total_skipped)}</div>
                             <div style="color:var(--text-secondary);">Queue size</div><div>${fmtN(sp.queue_size)}</div>

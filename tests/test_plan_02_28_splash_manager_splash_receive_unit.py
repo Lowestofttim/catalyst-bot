@@ -7,6 +7,7 @@ All functions are stateless transformations — no network, DB, or file I/O.
 """
 
 import unittest
+from pathlib import Path
 
 try:
     from splash_manager import SplashManager
@@ -29,6 +30,7 @@ except ModuleNotFoundError as exc:
     _SKIP_SR = str(exc)
 
 _ASSET = "b8edcc6a7cf3738a3806fdbadb1bbcfc2540ec37f6732ab3a6a4bbcd2dbec105"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +73,19 @@ class TestSplashQueuePurge(unittest.TestCase):
 
         remaining = [item["trade_id"] for item in manager._queue]
         self.assertEqual(remaining, ["keep", "keep-too"])
+
+
+def test_splash_outbound_copy_distinguishes_local_submit_from_peer_relay():
+    manager = (ROOT / "src" / "catalyst" / "splash_manager.py").read_text(
+        encoding="utf-8"
+    )
+    loop = (ROOT / "src" / "catalyst" / "bot_loop.py").read_text(encoding="utf-8")
+
+    assert "Submitted {posted} queued offers to the local Splash node" in manager
+    assert "peer relay depends on daemon peers" in manager
+    assert "Submitted to local Splash node OK" in manager
+    assert "Submitting {splash_q} offers to local Splash node" in loop
+    assert "Splash submit: {result}" in loop
 
 
 # ---------------------------------------------------------------------------

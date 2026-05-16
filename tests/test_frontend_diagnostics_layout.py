@@ -257,6 +257,15 @@ def test_splash_incoming_hint_explains_sparse_relevant_gossip():
     assert "Connected" in html
 
 
+def test_splash_panel_distinguishes_local_submits_from_peer_relay():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert "Local Submit" in html
+    assert "local submits " in html
+    assert "local submits only; peer relay depends on daemon peers" in html
+    assert "Local submits</div><div>${fmtN(sp.total_posted)}</div>" in html
+
+
 def test_market_health_copy_distinguishes_recovery_from_market_health():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 

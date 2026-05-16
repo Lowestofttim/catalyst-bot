@@ -99,7 +99,7 @@ class SplashManager:
             )
 
     def flush_queue(self, flush_all: bool = False) -> Dict:
-        """Broadcast all queued offers to Splash.
+        """Submit queued offers to the local Splash node.
 
         Returns summary: {posted: N, failed: N, skipped: N}
         """
@@ -205,8 +205,9 @@ class SplashManager:
             log_event(
                 "info",
                 "splash_flush",
-                f"Broadcast {posted} queued offers to Splash "
-                f"({skipped} skipped, {failed} failed)",
+                f"Submitted {posted} queued offers to the local Splash node "
+                f"({skipped} skipped, {failed} failed); "
+                "peer relay depends on daemon peers",
             )
         return summary
 
@@ -269,7 +270,7 @@ class SplashManager:
                     log_event(
                         "debug",
                         "splash_posted",
-                        f"Broadcast to Splash OK (trade: {tid_short})",
+                        f"Submitted to local Splash node OK (trade: {tid_short})",
                     )
 
                     return {"success": True, "trade_id": trade_id}

@@ -11761,31 +11761,31 @@ class BotLoop:
             print("   [11] Dexie auto-post OFF", flush=True)
             log_event("debug", "dexie_disabled", "DEXIE_AUTO_POST is off")
 
-        # ---- Step 11b: Broadcast to Splash after Dexie visibility is live ----
+        # ---- Step 11b: Submit to local Splash node after Dexie is live ----
         if getattr(cfg, "SPLASH_ENABLED", False):
             try:
                 splash_q = len(getattr(self.splash_manager, "_queue", []) or [])
                 if splash_q > 0:
                     print(
-                        f"   [11b] Broadcasting {splash_q} offers to Splash...",
+                        f"   [11b] Submitting {splash_q} offers to local Splash node...",
                         end="",
                         flush=True,
                     )
                     log_event(
                         "debug",
                         "splash_flush_start",
-                        f"Broadcasting {splash_q} offers to Splash...",
+                        f"Submitting {splash_q} offers to local Splash node...",
                     )
                 result = self.splash_manager.flush_queue()
                 if splash_q > 0:
                     print(f" {result}", flush=True)
                     log_event(
-                        "info", "splash_flush_result", f"Splash broadcast: {result}"
+                        "info", "splash_flush_result", f"Splash submit: {result}"
                     )
                 else:
                     print("   [11b] Splash queue empty", flush=True)
             except Exception as e:
-                print(f"   [11b] Splash broadcast error: {e}", flush=True)
+                print(f"   [11b] Splash submit error: {e}", flush=True)
                 log_event("debug", "splash_error", f"Splash flush failed: {e}")
         else:
             print("   [11b] Splash OFF", flush=True)

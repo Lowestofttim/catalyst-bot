@@ -109,7 +109,7 @@ r = ws.rpc('get_offers', {'offset':0,'limit':100,'include_completed':True}, time
 from collections import Counter
 print(Counter(o.get('status') for o in (r or {}).get('offers', [])))"
 
-# Splash daemon's own view of broadcasts/peers
+# Splash daemon's own view of local submits/peers
 curl -s --max-time 3 http://127.0.0.1:4001/metrics
 
 # Bot's API view of coin counts
@@ -365,9 +365,10 @@ A healthy bot returns `0 / 0` on both wallet types.
 
 ### 13.2 Splash daemon vs bot view
 
-The bot's panel shows "Broadcast N" (POSTs the bot made). Splash's own
-counter shows what was actually relayed to peers. They normally diverge
-because Splash deduplicates against offers it already knows from other channels.
+The bot's panel shows "Local Submit N" (POSTs accepted by the local Splash
+node). Splash's own peer counter shows whether those offers can actually relay
+to connected peers. They can diverge while the node has no peers or deduplicates
+offers it already knows from other channels.
 
 ```bash
 # Splash internal counter (source of truth for the wire)
