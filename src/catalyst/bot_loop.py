@@ -4126,6 +4126,14 @@ class BotLoop:
         Without this, stale _probe_state, _last_quoted_price, etc. from
         the previous session cause incorrect behaviour on the second start.
         """
+
+        def note_reset_failure(component: str, exc: Exception) -> None:
+            log_event(
+                "debug",
+                "runtime_state_reset_skipped",
+                f"Runtime reset skipped {component}: {exc}",
+            )
+
         # Reset probe state to empty initial value (lock for thread safety)
         with self._probe_lock:
             self._probe_state = {
@@ -4204,20 +4212,20 @@ class BotLoop:
         }
         try:
             self.market_toxicity_guard.reset()
-        except Exception:
-            pass
+        except Exception as exc:
+            note_reset_failure("market_toxicity_guard", exc)
         try:
             from sweep_coordinator import reset_coordinator as _reset_sweeps
 
             _reset_sweeps()
-        except Exception:
-            pass
+        except Exception as exc:
+            note_reset_failure("sweep_coordinator", exc)
         try:
             from dynamic_amm_buffer import reset_buffer as _reset_dynamic_buffer
 
             _reset_dynamic_buffer()
-        except Exception:
-            pass
+        except Exception as exc:
+            note_reset_failure("dynamic_amm_buffer", exc)
         self._adaptive_target_backoff_until = {"buy": 0.0, "sell": 0.0}
         self._last_adaptive_offer_targets = {"buy": 0, "sell": 0}
         self._last_pricing_success_ts = 0
