@@ -397,10 +397,7 @@ class MempoolWatcher:
         now = time.time()
         with self._lock:
             warned_at = self._fill_warned_coin_ids.get(norm)
-            hit = (
-                warned_at is not None
-                and (now - warned_at) < self._fill_warn_ttl_secs
-            )
+            hit = warned_at is not None and (now - warned_at) < self._fill_warn_ttl_secs
             if warned_at is not None:
                 self._fill_warned_coin_ids.pop(norm, None)
             if hit:
