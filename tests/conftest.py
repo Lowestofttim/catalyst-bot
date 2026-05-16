@@ -11,6 +11,7 @@ Fixes:
 import sys
 import os
 import io
+import importlib
 
 # ---------------------------------------------------------------------------
 # Isolate the test run from the user's real %APPDATA%\Catalyst\ data dir.
@@ -63,12 +64,12 @@ if os.path.isdir(_SRC_DIR) and _SRC_DIR not in sys.path:
 # collection those stubs can leak into later modules before fixture teardown
 # runs, so preload the real packages once for the test session.
 try:
-    import dotenv as _real_dotenv  # noqa: F401
+    importlib.import_module("dotenv")
 except Exception:
     pass
 
 try:
-    import urllib3 as _real_urllib3  # noqa: F401
+    importlib.import_module("urllib3")
 except Exception:
     pass
 

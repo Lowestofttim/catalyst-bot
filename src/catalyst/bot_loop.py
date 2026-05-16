@@ -11779,9 +11779,7 @@ class BotLoop:
                 result = self.splash_manager.flush_queue()
                 if splash_q > 0:
                     print(f" {result}", flush=True)
-                    log_event(
-                        "info", "splash_flush_result", f"Splash submit: {result}"
-                    )
+                    log_event("info", "splash_flush_result", f"Splash submit: {result}")
                 else:
                     print("   [11b] Splash queue empty", flush=True)
             except Exception as e:

@@ -1,4 +1,6 @@
-import api_server  # noqa: F401 - load blueprints through the normal API bootstrap
+import importlib
+
+importlib.import_module("api_server")  # load blueprints through normal API bootstrap
 from blueprints import offers
 
 

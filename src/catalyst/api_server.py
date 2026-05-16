@@ -1520,28 +1520,35 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
     """Clear in-memory state that should not survive a full fresh reset."""
     reset_components: list[str] = []
 
+    def note_reset_failure(component: str, exc: Exception) -> None:
+        slog(
+            "RESET",
+            f"Fresh-run reset skipped {component}: {exc}",
+            level="debug",
+        )
+
     if bot:
         try:
             if bot.is_running():
                 return ["bot_runtime_skipped_running"]
-        except Exception:
-            pass
+        except Exception as exc:
+            note_reset_failure("bot.is_running", exc)
 
     try:
         from sweep_coordinator import reset_coordinator
 
         reset_coordinator()
         reset_components.append("sweep_coordinator")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("sweep_coordinator", exc)
 
     try:
         from dynamic_amm_buffer import reset_buffer
 
         reset_buffer()
         reset_components.append("dynamic_amm_buffer")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("dynamic_amm_buffer", exc)
 
     if not bot:
         return reset_components
@@ -1553,8 +1560,8 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
         else:
             setattr(bot, "_sweep_protection", {})
         reset_components.append("bot.sweep_protection")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("bot.sweep_protection", exc)
 
     try:
         recent_sweeps = getattr(bot, "_recent_sweep_events", None)
@@ -1563,8 +1570,8 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
         else:
             setattr(bot, "_recent_sweep_events", [])
         reset_components.append("bot.recent_sweep_events")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("bot.recent_sweep_events", exc)
 
     try:
         setattr(
@@ -1576,16 +1583,16 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
             },
         )
         reset_components.append("bot.toxicity_live_cancel")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("bot.toxicity_live_cancel", exc)
 
     try:
         guard = getattr(bot, "market_toxicity_guard", None)
         if guard is not None and hasattr(guard, "reset"):
             guard.reset()
             reset_components.append("market_toxicity_guard")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("market_toxicity_guard", exc)
 
     try:
         risk_manager = getattr(bot, "risk_manager", None)
@@ -1595,8 +1602,8 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
         elif risk_manager is not None and hasattr(risk_manager, "reset_position"):
             risk_manager.reset_position()
             reset_components.append("risk_manager.position")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("risk_manager", exc)
 
     try:
         sniper = getattr(bot, "sniper", None)
@@ -1610,8 +1617,8 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
                     sniper._active_snipe_ids.clear()
                 sniper._last_snipe_time = 0
             reset_components.append("sniper.counters")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("sniper.counters", exc)
 
     try:
         fill_tracker = getattr(bot, "fill_tracker", None)
@@ -1621,16 +1628,16 @@ def _reset_fresh_run_runtime_memory() -> list[str]:
             if hasattr(fill_tracker, "_mass_disappearance_first_at"):
                 fill_tracker._mass_disappearance_first_at = None
             reset_components.append("fill_tracker.counters")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("fill_tracker.counters", exc)
 
     try:
         watchdog_streaks = getattr(bot, "_watchdog_violation_streaks", None)
         if isinstance(watchdog_streaks, dict):
             watchdog_streaks.clear()
             reset_components.append("watchdog.streaks")
-    except Exception:
-        pass
+    except Exception as exc:
+        note_reset_failure("watchdog.streaks", exc)
 
     return reset_components
 

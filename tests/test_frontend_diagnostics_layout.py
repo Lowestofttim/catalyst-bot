@@ -44,7 +44,9 @@ def test_alert_refresh_removes_backend_alerts_missing_from_server_snapshot():
     assert "..._serverAlertIds" in html
     assert "...ACTIONABLE_ALERT_IDS" in html
     assert "...ADVISOR_DIAGNOSTIC_ALERT_IDS" in html
-    assert "if (!nextServerAlertIds.has(alertId)) delete _activeAlerts[alertId];" in html
+    assert (
+        "if (!nextServerAlertIds.has(alertId)) delete _activeAlerts[alertId];" in html
+    )
     assert "syncServerAlerts(data.alerts);" in html
 
 
