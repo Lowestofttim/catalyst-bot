@@ -375,6 +375,7 @@ class BotLoop:
             offer_manager=self.offer_manager,
             dexie_manager=self.dexie_manager,
             risk_manager=self.risk_manager,
+            splash_manager=self.splash_manager,
         )
         self.runtime_monitor = RuntimeMonitor(self)
         # AMM monitor — live TibetSwap reserve polling and drift detection

@@ -12,9 +12,9 @@ Key responsibilities:
     - Detect the arb floor from TibetSwap's gap and hold there
     - Cascade inner-tier main-book offers behind the proven price
 
-Offer-side dependencies (`risk_manager`, `dexie_manager`, `offer_manager`)
-are injected through the constructor; this module holds no direct imports
-of them at module scope.
+Offer-side dependencies (`risk_manager`, `dexie_manager`, `splash_manager`,
+`offer_manager`) are injected through the constructor; this module holds no
+direct imports of them at module scope.
 """
 
 import time
@@ -51,10 +51,17 @@ class BoostManager:
     from normal offers (tier="boost" in database).
     """
 
-    def __init__(self, offer_manager=None, dexie_manager=None, risk_manager=None):
+    def __init__(
+        self,
+        offer_manager=None,
+        dexie_manager=None,
+        risk_manager=None,
+        splash_manager=None,
+    ):
         self._offer_manager = offer_manager
         self._dexie_manager = dexie_manager
         self._risk_manager = risk_manager
+        self._splash_manager = splash_manager
 
         # Re-entrant lock protecting mutation of _active_boost_ids,
         # _boost_active, _gap_spread_bps, _boost_id_expiry, convergence,
@@ -1077,6 +1084,10 @@ class BoostManager:
                     trade_id = offer.get("trade_id", "")
                     if bech32 and trade_id:
                         self._dexie_manager.queue_post(bech32, trade_id)
+                        if self._splash_manager and getattr(
+                            cfg, "SPLASH_ENABLED", False
+                        ):
+                            self._splash_manager.queue_post(bech32, trade_id)
 
             # Cancel matching number of furthest inner offers (fire-and-forget)
             cancel_ids = []

@@ -196,5 +196,88 @@ class TestFlexibleProbeSize(unittest.TestCase):
         self.assertEqual(retry_kwargs["selected_coin_id"], "cat-sniper-79000")
 
 
+@unittest.skipIf(_SKIP is not None, _SKIP_MSG)
+class TestInvertedCascadeBroadcast(unittest.TestCase):
+    def test_inverted_cascade_queues_new_offers_to_dexie_and_splash(self):
+        class QueuePoster:
+            def __init__(self):
+                self.queued = []
+
+            def queue_post(self, bech32, trade_id):
+                self.queued.append((bech32, trade_id))
+
+        class CascadeOfferManager:
+            def __init__(self):
+                self._bot_cancelled_ids = set()
+                self.cancelled = []
+
+            def create_ladder(self, _mid_price, side, **_kwargs):
+                return [
+                    {
+                        "offer_bech32": f"offer1-{side}-1",
+                        "trade_id": f"{side}-new-1",
+                    },
+                    {
+                        "offer_bech32": f"offer1-{side}-2",
+                        "trade_id": f"{side}-new-2",
+                    },
+                ]
+
+            def cancel_offers(self, trade_ids, **_kwargs):
+                self.cancelled.extend(trade_ids)
+                return {tid: {"success": True} for tid in trade_ids}
+
+        fake_cfg = SimpleNamespace(
+            CAT_ASSET_ID="asset",
+            COIN_IDS_ENABLED=True,
+            DEXIE_AUTO_POST=True,
+            ENABLE_BUY=True,
+            ENABLE_SELL=True,
+            GAP_PROBE_CASCADE_COUNT_PER_SIDE=2,
+            GAP_PROBE_CASCADE_HALF_SPREAD_BPS=50,
+            SPLASH_ENABLED=True,
+        )
+        old_offers = {
+            "buy": [
+                {"trade_id": "buy-old-1", "tier": "inner", "price": "0.00009"},
+                {"trade_id": "buy-old-2", "tier": "inner", "price": "0.00008"},
+            ],
+            "sell": [
+                {"trade_id": "sell-old-1", "tier": "inner", "price": "0.00012"},
+                {"trade_id": "sell-old-2", "tier": "inner", "price": "0.00013"},
+            ],
+        }
+
+        def get_open_offers(side=None, **_kwargs):
+            return old_offers.get(side, [])
+
+        offer_manager = CascadeOfferManager()
+        dexie = QueuePoster()
+        splash = QueuePoster()
+        mgr = BoostManager(
+            offer_manager=offer_manager,
+            dexie_manager=dexie,
+            risk_manager=object(),
+            splash_manager=splash,
+        )
+        mgr._boost_mid_price = Decimal("0.00010")
+
+        with (
+            patch.object(_bm_mod, "cfg", fake_cfg),
+            patch("database.get_open_offers", side_effect=get_open_offers),
+            patch.object(_bm_mod, "log_event"),
+        ):
+            mgr._cascade_after_inverted_floor()
+
+        expected = [
+            ("offer1-buy-1", "buy-new-1"),
+            ("offer1-buy-2", "buy-new-2"),
+            ("offer1-sell-1", "sell-new-1"),
+            ("offer1-sell-2", "sell-new-2"),
+        ]
+        self.assertEqual(dexie.queued, expected)
+        self.assertEqual(splash.queued, expected)
+
+
 if __name__ == "__main__":
     unittest.main()
