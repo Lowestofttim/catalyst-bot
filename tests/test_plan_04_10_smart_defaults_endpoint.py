@@ -287,6 +287,15 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
         self.assertIn("toxicity_max_spread_multiplier:", html)
         self.assertIn("toxicity_throttle_secs:", html)
 
+    def test_frontend_explains_toxicity_levels_location(self):
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "bot_gui.html").read_text(encoding="utf-8")
+
+        self.assertIn("Market toxicity levels", html)
+        self.assertIn("Dashboard &rarr; Market Health &rarr; Toxicity", html)
+        self.assertIn("Normal &lt;30", html)
+        self.assertIn("Extreme 90+", html)
+
     def test_smart_toxicity_defaults_defensive_for_small_thin_one_sided_wallet(self):
         from blueprints.smart_defaults import _smart_toxicity_defaults
 
