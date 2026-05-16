@@ -292,7 +292,9 @@ class TestSmartDefaultsSourceContract(unittest.TestCase):
         html = (root / "bot_gui.html").read_text(encoding="utf-8")
 
         self.assertIn("Market toxicity levels", html)
+        self.assertIn("v4-settings-info-note", html)
         self.assertIn("Dashboard &rarr; Market Health &rarr; Toxicity", html)
+        self.assertIn("Live score:", html)
         self.assertIn("Normal &lt;30", html)
         self.assertIn("Extreme 90+", html)
 

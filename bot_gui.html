@@ -2908,6 +2908,25 @@
             color: var(--text-tertiary);
             margin-top: 5px;
         }
+        .v4-settings-info-note {
+            display: grid;
+            gap: 4px;
+            margin-top: 10px;
+            padding: 10px 12px;
+            border: 1px solid rgba(251, 191, 36, 0.34);
+            border-radius: var(--radius-md);
+            background: rgba(245, 158, 11, 0.08);
+            color: var(--text-secondary);
+            font-size: var(--text-xs);
+            line-height: 1.45;
+        }
+        .v4-settings-info-note strong {
+            color: var(--warning-300);
+            font-weight: 700;
+        }
+        .v4-settings-info-note span {
+            display: block;
+        }
         .v4-settings-select {
             width: 100%;
             padding: 10px;
@@ -11114,9 +11133,9 @@
                                 </div>
                             </div>
                             <div class="v4-settings-hint">Smart Settings keeps this gentle on deep markets and defensive for small wallets, one-sided setups, thin books, or volatile tokens.</div>
-                            <div class="v4-settings-hint" style="margin-top: 8px;">
-                                <strong>Market toxicity levels:</strong> Normal &lt;30, Mild 30-54, Elevated 55-74, High 75-89, Extreme 90+.
-                                This guard uses the same toxicity score shown live at Dashboard &rarr; Market Health &rarr; Toxicity.
+                            <div class="v4-settings-info-note">
+                                <span><strong>Market toxicity levels:</strong> Normal &lt;30, Mild 30-54, Elevated 55-74, High 75-89, Extreme 90+.</span>
+                                <span><strong>Live score:</strong> Dashboard &rarr; Market Health &rarr; Toxicity.</span>
                             </div>
                         </div>
 
