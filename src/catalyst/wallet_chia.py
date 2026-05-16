@@ -68,15 +68,24 @@ _TLS_VERIFY = False  # nosec B501
 # IMPORTANT: connect=0 means NO retries on connection refused — when Chia is down,
 # retrying immediately just wastes 10+ seconds per call. The bot loop handles recovery.
 session = requests.Session()
-retries = Retry(
-    total=2,
-    connect=0,  # Don't retry connection refused (Chia down = down)
-    backoff_factor=0.5,
-    status_forcelist=[500, 502, 503, 504],
-)
-session.mount(
-    "https://", HTTPAdapter(max_retries=retries, pool_connections=1, pool_maxsize=5)
-)
+try:
+    retries = Retry(
+        total=2,
+        connect=0,  # Don't retry connection refused (Chia down = down)
+        backoff_factor=0.5,
+        status_forcelist=[500, 502, 503, 504],
+    )
+    _adapter = HTTPAdapter(
+        max_retries=retries,
+        pool_connections=1,
+        pool_maxsize=5,
+    )
+except TypeError:
+    # Some pure-unit tests install a tiny urllib3 stub where Retry is just
+    # object. Keep import-time pure functions usable in that environment.
+    retries = None
+    _adapter = HTTPAdapter()
+session.mount("https://", _adapter)
 
 # Quiet mode: suppress RPC error logging (used during Chia restart)
 _quiet_mode = False

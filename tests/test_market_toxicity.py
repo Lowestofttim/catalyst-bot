@@ -248,6 +248,66 @@ def test_own_whale_orders_do_not_self_throttle():
     assert "whale_public_offer" not in {r["key"] for r in snap.reasons}
 
 
+def test_sweep_reason_uses_side_specific_fill_count_when_available():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            recent_sweep_events=[
+                {
+                    "side": "buy",
+                    "fill_count": 14,
+                    "side_fill_count": 8,
+                    "sweep_group_id": "sweep_mixed",
+                },
+                {
+                    "side": "sell",
+                    "fill_count": 14,
+                    "side_fill_count": 6,
+                    "sweep_group_id": "sweep_mixed",
+                },
+            ],
+        )
+    )
+
+    sweep_details = [
+        r["detail"] for r in snap.reasons if r["key"] == "same_block_sweep"
+    ]
+    assert "8 buy fills grouped in the same sweep" in sweep_details
+    assert "6 sell fills grouped in the same sweep" in sweep_details
+    assert "14 buy fills grouped in the same sweep" not in sweep_details
+    assert "14 sell fills grouped in the same sweep" not in sweep_details
+
+
+def test_public_whale_depth_reasons_are_aggregated_per_side():
+    guard = MarketToxicityGuard()
+
+    snap = guard.update(
+        _ctx(
+            market_intel={
+                "whale_orders": [
+                    {"side": "buy", "xch_amount": "4.0"},
+                    {"side": "buy", "xch_amount": "3.0"},
+                    {"side": "buy", "xch_amount": "2.0"},
+                    {"side": "buy", "xch_amount": "1.5"},
+                    {"side": "buy", "xch_amount": "1.1"},
+                ],
+                "orderbook_refreshes": 3,
+                "orderbook_age_secs": 12,
+            }
+        )
+    )
+
+    whale_reasons = [
+        r
+        for r in snap.reasons
+        if r["key"] == "whale_public_offer" and r["side"] == "buy"
+    ]
+    assert len(whale_reasons) == 1
+    assert whale_reasons[0]["score"] == 60
+    assert whale_reasons[0]["detail"] == "5 large public buy offers visible on Dexie"
+
+
 def test_scores_decay_when_conditions_calm():
     guard = MarketToxicityGuard()
     hot = guard.update(

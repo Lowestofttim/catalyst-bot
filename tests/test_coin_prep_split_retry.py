@@ -175,6 +175,19 @@ class TestCoinPrepSplitRetry(unittest.TestCase):
             "split not confirmed after {timeout_s}s — proceeding cautiously", source
         )
 
+    def test_worker_proceeds_when_onchain_splits_confirm_but_local_view_lags(self):
+        source = (
+            Path(__file__).resolve().parent.parent
+            / "src"
+            / "catalyst"
+            / "coin_prep_worker.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Proceeding with the coins Sage currently exposes", source)
+        self.assertNotIn(
+            "Coin prep cannot be marked complete until the wallet can see the prepared coins.",
+            source,
+        )
+
     def test_worker_uses_transaction_builder_for_sage_cat_splits(self):
         source = (
             Path(__file__).resolve().parent.parent

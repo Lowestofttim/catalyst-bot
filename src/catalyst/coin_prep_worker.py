@@ -4125,17 +4125,20 @@ class CoinPrepWorker:
 
             coin_id = pool_coin.get("coin_id", "").replace("0x", "")
 
-            for spend_attempt in range(60):
-                if self._are_coin_ids_selectable(
-                    wallet_id, [coin_id], f"{side_label}-{tier_name}-submit-selectable"
-                ):
-                    break
-                if spend_attempt > 0 and spend_attempt % 6 == 0:
-                    self.log(f"      {spend_attempt * 5}s - not yet spendable...")
-                time.sleep(5)
-            else:
-                self.log("      Coin never became spendable after 300s!")
-                return None
+            if not pool_coin.get("_catalyst_pool_resolution_checked_selectable"):
+                for spend_attempt in range(60):
+                    if self._are_coin_ids_selectable(
+                        wallet_id,
+                        [coin_id],
+                        f"{side_label}-{tier_name}-submit-selectable",
+                    ):
+                        break
+                    if spend_attempt > 0 and spend_attempt % 6 == 0:
+                        self.log(f"      {spend_attempt * 5}s - not yet spendable...")
+                    time.sleep(5)
+                else:
+                    self.log("      Coin never became spendable after 300s!")
+                    return None
 
             self.log(
                 f"   Splitting {side_label} {tier_name}: {coin_id[:16]}... into {count} pieces"
@@ -5322,12 +5325,12 @@ class CoinPrepWorker:
         if xch_short or cat_short:
             if not self._wait_for_expected_local_coin_counts(timeout_s=300, poll_s=10):
                 self.log(
-                    "   Split transactions confirmed, but Sage local coin view did not reach target."
+                    "   Split transactions confirmed on-chain, but Sage local coin view did not reach target."
                 )
                 self.log(
-                    "   Coin prep cannot be marked complete until the wallet can see the prepared coins."
+                    "   Proceeding with the coins Sage currently exposes; "
+                    "missing local coins can appear later as Sage catches up."
                 )
-                return False
             xch_final = self.get_confirmed_coin_count(self.xch_wallet_id)
             cat_final = self.get_confirmed_coin_count(self.cat_wallet_id)
             self._set_status_coin_counts(xch_total=xch_final, cat_total=cat_final)
@@ -5821,6 +5824,7 @@ class CoinPrepWorker:
                     None,
                 )
                 if exact_match:
+                    exact_match["_catalyst_pool_resolution_checked_selectable"] = True
                     return exact_match
 
             if self._are_coin_ids_selectable(
@@ -5834,6 +5838,7 @@ class CoinPrepWorker:
                 if target_amount > 0:
                     resolved.setdefault("amount", target_amount)
                     resolved.setdefault("amount_mojos", target_amount)
+                resolved["_catalyst_pool_resolution_checked_selectable"] = True
                 return resolved
 
             time.sleep(poll_interval_s)
@@ -5841,6 +5846,30 @@ class CoinPrepWorker:
         # Phase 2: exact ID not found — fall back to amount match from selectable view
         # This handles cases where the pool coin map was built from stale wallet data
         # (e.g. after a previous run was aborted mid-flight).
+        owned_exact = None
+        try:
+            for owned_coin in (
+                self._get_owned_coins_via_rpc(
+                    wallet_id, f"{side_label}-{tier_name}-pool-owned-fallback"
+                )
+                or []
+            ):
+                owned_id = owned_coin.get("coin_id", "").replace("0x", "").lower()
+                if owned_id == expected_coin_id:
+                    owned_exact = dict(owned_coin)
+                    break
+        except Exception:
+            owned_exact = None
+        if owned_exact:
+            owned_exact["_catalyst_owned_only"] = True
+            owned_exact["_catalyst_pool_resolution_checked_selectable"] = True
+            self.log(
+                f"      {side_label} {tier_name} pool coin is owned but not selectable yet; "
+                "submitting by exact coin id so Sage can arbitrate current spendability",
+                severity="info",
+            )
+            return owned_exact
+
         if target_amount > 0:
             self.log(
                 f"      {side_label} {tier_name} preselected coin ID not found after {id_timeout_s}s — "
@@ -5876,6 +5905,9 @@ class CoinPrepWorker:
                 )
                 if amount_match:
                     matched_id = amount_match.get("coin_id", "").replace("0x", "")
+                    amount_match[
+                        "_catalyst_pool_resolution_checked_selectable"
+                    ] = True
                     self.log(
                         f"      ✅ {side_label} {tier_name} amount-fallback found coin {matched_id[:16]}..."
                     )

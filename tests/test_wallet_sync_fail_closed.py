@@ -190,6 +190,49 @@ class WalletSyncFailClosedTests(unittest.TestCase):
         self.assertEqual(meta["cache_size"], 0)
         self.assertEqual(meta.get("expected_empty_reason"), "manual_cancel_all")
 
+    def test_empty_wallet_book_accepted_when_db_has_no_active_offers(self):
+        manager = self.offer_manager.OfferManager()
+
+        def fake_get_all_offers(*args, **kwargs):
+            if not hasattr(fake_get_all_offers, "_calls"):
+                fake_get_all_offers._calls = 0
+            fake_get_all_offers._calls += 1
+            if fake_get_all_offers._calls == 1:
+                return [{"trade_id": "seed"}]
+            return []
+
+        def fake_classify(all_offers, _asset_id):
+            if all_offers:
+                return (
+                    [{"trade_id": f"buy-live-{i}"} for i in range(3)],
+                    [{"trade_id": f"sell-live-{i}"} for i in range(3)],
+                    [],
+                )
+            return ([], [], [])
+
+        with (
+            patch.object(self.offer_manager, "get_all_offers", new=fake_get_all_offers),
+            patch.object(
+                self.offer_manager,
+                "classify_offers_from_list",
+                side_effect=fake_classify,
+            ),
+            patch.object(self.offer_manager, "get_open_offers", return_value=[]),
+        ):
+            fresh_buy, fresh_sell, _ = manager.sync_from_wallet()
+            empty_buy, empty_sell, _ = manager.sync_from_wallet()
+
+        self.assertEqual(len(fresh_buy), 3)
+        self.assertEqual(len(fresh_sell), 3)
+        self.assertEqual(empty_buy, [])
+        self.assertEqual(empty_sell, [])
+
+        meta = manager.get_wallet_sync_meta()
+        self.assertTrue(meta["fresh"])
+        self.assertFalse(meta["using_cache"])
+        self.assertEqual(meta["cache_size"], 0)
+        self.assertEqual(meta.get("expected_empty_reason"), "db_no_active_offers")
+
     def test_worker_cancelled_ids_file_bypasses_empty_cache_guard(self):
         manager = self.offer_manager.OfferManager()
         cancelled_ids = {

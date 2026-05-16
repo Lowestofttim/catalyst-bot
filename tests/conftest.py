@@ -58,6 +58,20 @@ _SRC_DIR = os.path.abspath(
 if os.path.isdir(_SRC_DIR) and _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+# Some older pure-unit tests install tiny import-time stubs for optional-ish
+# dependencies when those packages are absent from sys.modules. Under full
+# collection those stubs can leak into later modules before fixture teardown
+# runs, so preload the real packages once for the test session.
+try:
+    import dotenv as _real_dotenv  # noqa: F401
+except Exception:
+    pass
+
+try:
+    import urllib3 as _real_urllib3  # noqa: F401
+except Exception:
+    pass
+
 # ---------------------------------------------------------------------------
 # Exclude standalone integration scripts from collection.
 # These files contain module-level code (sys.exit, live API calls) that

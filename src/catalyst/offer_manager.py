@@ -4747,6 +4747,21 @@ class OfferManager:
             return "coin_prep_cancel_all"
         return ""
 
+    def _db_empty_offer_book_reason(self) -> str:
+        """Return a reason when the DB has no active offers to protect in cache."""
+        try:
+            active_offers = get_open_offers(cat_asset_id=cfg.CAT_ASSET_ID)
+        except Exception as e:
+            log_event(
+                "debug",
+                "db_active_offer_check_failed",
+                f"Could not inspect active DB offers before accepting empty wallet: {e}",
+            )
+            return ""
+        if not active_offers:
+            return "db_no_active_offers"
+        return ""
+
     def _expected_empty_wallet_reason(self, now_ts: float, cached_ids: set) -> str:
         expected_until = float(
             self._expected_empty_wallet_book.get("until", 0.0) or 0.0
@@ -4756,7 +4771,9 @@ class OfferManager:
                 self._expected_empty_wallet_book.get("reason", "")
                 or "expected_empty_offer_book"
             )
-        return self._worker_cancelled_empty_reason(cached_ids)
+        return self._worker_cancelled_empty_reason(cached_ids) or (
+            self._db_empty_offer_book_reason() if cached_ids else ""
+        )
 
     def sync_from_wallet(self) -> Tuple[List, List, List]:
         """Sync offer state from the Chia wallet RPC.

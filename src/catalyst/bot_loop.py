@@ -274,6 +274,31 @@ def map_sage_terminal_offer_status(
     return None
 
 
+def collect_locally_expired_stale_offer_ids(
+    stale_ids, stale_db_map, already_resolved=None, now_ts=None
+):
+    """Return stale DB offers whose local max_time has already elapsed.
+
+    Startup cleanup only sees offers missing from the wallet-open list. If
+    Sage completed history also omits one of those offers, the local expiry
+    timestamp is still enough to distinguish an expiry from a cancel.
+    """
+    resolved = set(already_resolved or set())
+    expired = set()
+    for tid in stale_ids:
+        if tid in resolved:
+            continue
+        mapped = map_sage_terminal_offer_status(
+            None,
+            sage_offer={},
+            local_offer=(stale_db_map or {}).get(tid, {}),
+            now_ts=now_ts,
+        )
+        if mapped == "expired":
+            expired.add(tid)
+    return expired
+
+
 class _ReserveCheckDeferred(Exception):
     """Raised inside the reserve-floor block when a balance read failed.
 
@@ -6606,6 +6631,26 @@ class BotLoop:
                             f"Could not check completed offers at startup: {e}",
                         )
 
+                    local_expire_ids = collect_locally_expired_stale_offer_ids(
+                        stale_ids,
+                        stale_db_map,
+                        already_resolved=(
+                            fill_ids
+                            | expire_ids
+                            | pending_cancel_ids
+                            | deferred_stale_ids
+                        ),
+                        now_ts=now_ts_cleanup,
+                    )
+                    if local_expire_ids:
+                        expire_ids.update(local_expire_ids)
+                        log_event(
+                            "info",
+                            "db_cleanup_local_expired",
+                            f"Classified {len(local_expire_ids)} stale DB offers "
+                            f"as expired from local offer max_time",
+                        )
+
                     cancel_ids = [
                         t
                         for t in stale_ids
@@ -7638,29 +7683,40 @@ class BotLoop:
                     getattr(cfg, "SWEEP_PROTECTION_UNKNOWN_SECS", 30)
                 )
                 _protected_sides: dict = {}  # side → expiry timestamp
+                _side_fill_counts = {"buy": 0, "sell": 0}
+
+                def _protect_sweep_side(_side: str, _secs: float) -> None:
+                    if _side not in ("buy", "sell"):
+                        return
+                    _protected_sides[_side] = time.time() + _secs
+                    _side_fill_counts[_side] += 1
+
                 for _entry in _sweep_evt.fills:
                     if _entry.classification == _FT.ARB_SWEEP_BUY:
                         # Arb bought from us → our SELL offers swept
-                        _protected_sides["sell"] = time.time() + _prot_secs_known
+                        _protect_sweep_side("sell", _prot_secs_known)
                     elif _entry.classification == _FT.ARB_SWEEP_SELL:
                         # Arb sold to us → our BUY offers swept
-                        _protected_sides["buy"] = time.time() + _prot_secs_known
+                        _protect_sweep_side("buy", _prot_secs_known)
                     elif _entry.side in ("buy", "sell"):
                         # Direction from fill side: the offer that got swept
-                        _protected_sides[_entry.side] = time.time() + _prot_secs_known
+                        _protect_sweep_side(_entry.side, _prot_secs_known)
                     else:
                         # No direction data — protect both but only briefly
                         for _s in ("buy", "sell"):
-                            _protected_sides.setdefault(
-                                _s, time.time() + _prot_secs_unknown
-                            )
+                            _protect_sweep_side(_s, _prot_secs_unknown)
                 self._sweep_protection.update(_protected_sides)
                 _sweep_now = time.time()
                 for _side in _protected_sides.keys() or [""]:
+                    _side_fill_count = (
+                        _side_fill_counts.get(_side) or _sweep_evt.fill_count
+                    )
                     self._recent_sweep_events.append(
                         {
                             "side": _side,
-                            "fill_count": _sweep_evt.fill_count,
+                            "fill_count": _side_fill_count,
+                            "side_fill_count": _side_fill_count,
+                            "total_fill_count": _sweep_evt.fill_count,
                             "sweep_group_id": _sweep_evt.sweep_group_id,
                             "spent_block_index": _sweep_evt.spent_block_index,
                             "timestamp": _sweep_now,

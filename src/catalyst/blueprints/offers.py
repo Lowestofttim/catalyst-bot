@@ -45,6 +45,46 @@ def _decimal_or_none(value) -> Decimal | None:
         return None
 
 
+_CANCEL_PENDING_LIFECYCLES = {"cancel_requested", "cancel_sent"}
+_TERMINAL_OFFER_STATES = {"cancelled", "filled", "expired", "failed"}
+
+
+def _norm_offer_state(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _classify_offer_diagnostic_sets(db_rows, wallet_ids):
+    """Split wallet/DB differences into active, canceling, and terminal buckets."""
+    wallet_ids = {str(w or "") for w in (wallet_ids or set()) if w}
+    active_db_ids = set()
+    pending_cancel_ids = set()
+    terminal_db_ids = set()
+
+    for row in db_rows or []:
+        trade_id = str(row.get("trade_id") or "")
+        if not trade_id:
+            continue
+        status = _norm_offer_state(row.get("status"))
+        lifecycle = _norm_offer_state(row.get("lifecycle_state")) or status
+        if lifecycle in _CANCEL_PENDING_LIFECYCLES:
+            pending_cancel_ids.add(trade_id)
+        elif status in _TERMINAL_OFFER_STATES or lifecycle in _TERMINAL_OFFER_STATES:
+            terminal_db_ids.add(trade_id)
+        elif status == "open":
+            active_db_ids.add(trade_id)
+
+    known_db_ids = active_db_ids | pending_cancel_ids | terminal_db_ids
+    return {
+        "active_db_ids": active_db_ids,
+        "pending_cancel_ids": pending_cancel_ids,
+        "terminal_db_ids": terminal_db_ids,
+        "stale_in_db": sorted(active_db_ids - wallet_ids),
+        "wallet_only": sorted(wallet_ids - known_db_ids),
+        "wallet_cancel_pending": sorted(wallet_ids & pending_cancel_ids),
+        "wallet_cancelled_still_visible": sorted(wallet_ids & terminal_db_ids),
+    }
+
+
 def _usd_string(amount, usd_price: Decimal | None) -> str:
     amount_dec = _decimal_or_none(amount)
     if amount_dec is None or usd_price is None:
@@ -1049,10 +1089,12 @@ def api_offers_diagnostic():
         db_rows = conn.execute(
             """SELECT o.trade_id, o.side, o.tier, o.price_xch, o.size_xch, o.size_cat,
                       o.coin_id, o.dexie_id, o.dexie_posted, o.created_at,
-                      c.designation, c.assigned_tier
+                      o.status, o.lifecycle_state, c.designation, c.assigned_tier
                FROM offers o
                LEFT JOIN coins c ON c.coin_id = o.coin_id
                WHERE o.status='open' AND o.cat_asset_id=?
+                 AND COALESCE(o.lifecycle_state, 'open') NOT IN
+                     ('cancel_requested', 'cancel_sent')
                ORDER BY o.side,
                         CASE o.tier
                             WHEN 'inner' THEN 1
@@ -1066,13 +1108,22 @@ def api_offers_diagnostic():
             (asset_id,),
         ).fetchall()
         db_open = [dict(row) for row in db_rows]
-        db_ids = {row["trade_id"] for row in db_open if row.get("trade_id")}
+
+        known_rows = conn.execute(
+            """SELECT trade_id, side, status, lifecycle_state
+               FROM offers
+               WHERE cat_asset_id=? AND trade_id IS NOT NULL AND trade_id != ''""",
+            (asset_id,),
+        ).fetchall()
+        known_db_rows = [dict(row) for row in known_rows]
 
         duplicate_rows = conn.execute(
             """SELECT coin_id, COUNT(*) as cnt,
                       GROUP_CONCAT(SUBSTR(trade_id, 1, 16)) as trade_samples
                FROM offers
                WHERE status='open' AND cat_asset_id=? AND coin_id IS NOT NULL AND coin_id != ''
+                 AND COALESCE(lifecycle_state, 'open') NOT IN
+                     ('cancel_requested', 'cancel_sent')
                GROUP BY coin_id
                HAVING COUNT(*) > 1
                ORDER BY cnt DESC, coin_id""",
@@ -1085,6 +1136,8 @@ def api_offers_diagnostic():
                FROM offers o
                JOIN coins c ON c.coin_id = o.coin_id
                WHERE o.status='open' AND o.cat_asset_id=? AND c.designation='reserve'
+                 AND COALESCE(o.lifecycle_state, 'open') NOT IN
+                     ('cancel_requested', 'cancel_sent')
                ORDER BY o.side, o.tier, CAST(o.price_xch AS REAL)""",
             (asset_id,),
         ).fetchall()
@@ -1094,6 +1147,8 @@ def api_offers_diagnostic():
             """SELECT side, tier, COUNT(*) as offers, COUNT(DISTINCT coin_id) as unique_coins
                FROM offers
                WHERE status='open' AND cat_asset_id=?
+                 AND COALESCE(lifecycle_state, 'open') NOT IN
+                     ('cancel_requested', 'cancel_sent')
                GROUP BY side, tier
                ORDER BY side, tier""",
             (asset_id,),
@@ -1127,8 +1182,17 @@ def api_offers_diagnostic():
             for o in (wallet_open_buys + wallet_open_sells)
             if o.get("trade_id")
         }
-        stale_in_db = sorted(db_ids - wallet_ids)
-        wallet_only = sorted(wallet_ids - db_ids)
+        diagnostic_sets = _classify_offer_diagnostic_sets(known_db_rows, wallet_ids)
+        stale_in_db = diagnostic_sets["stale_in_db"]
+        wallet_only = diagnostic_sets["wallet_only"]
+        wallet_cancel_pending = diagnostic_sets["wallet_cancel_pending"]
+        wallet_cancelled_still_visible = diagnostic_sets[
+            "wallet_cancelled_still_visible"
+        ]
+        pending_cancel_ids = diagnostic_sets["pending_cancel_ids"]
+        pending_cancel_rows = [
+            row for row in known_db_rows if row.get("trade_id") in pending_cancel_ids
+        ]
 
         likely_stale_dexie_rows = (
             wallet_error is None
@@ -1136,6 +1200,19 @@ def api_offers_diagnostic():
             and len(reserve_backed) == 0
             and len(stale_in_db) == 0
             and len(wallet_only) == 0
+            and len(wallet_cancel_pending) == 0
+            and len(wallet_cancelled_still_visible) == 0
+        )
+        cancel_settle_in_progress = (
+            wallet_error is None
+            and len(duplicate_coin_ids) == 0
+            and len(reserve_backed) == 0
+            and len(stale_in_db) == 0
+            and len(wallet_only) == 0
+            and (
+                len(wallet_cancel_pending) > 0
+                or len(wallet_cancelled_still_visible) > 0
+            )
         )
 
         if likely_stale_dexie_rows:
@@ -1143,6 +1220,12 @@ def api_offers_diagnostic():
                 "Wallet and DB agree on the open book, and each live offer has a "
                 "unique non-reserve coin. Greyed Dexie rows are likely stale invalid "
                 "offers from earlier runs or Dexie cache lag."
+            )
+        elif cancel_settle_in_progress:
+            diagnosis = (
+                "Wallet and DB are in a cancel-settle window. Sage still shows "
+                "offers that CATalyst has already cancelled or is cancelling; new "
+                "offer creation should remain blocked until those rows disappear."
             )
         else:
             diagnosis = (
@@ -1165,10 +1248,18 @@ def api_offers_diagnostic():
                     "db_open_sells": sum(
                         1 for row in db_open if row.get("side") == "sell"
                     ),
+                    "db_pending_cancel_buys": sum(
+                        1 for row in pending_cancel_rows if row.get("side") == "buy"
+                    ),
+                    "db_pending_cancel_sells": sum(
+                        1 for row in pending_cancel_rows if row.get("side") == "sell"
+                    ),
                     "duplicate_coin_ids": duplicate_coin_ids,
                     "reserve_backed_offers": reserve_backed,
                     "stale_in_db": stale_in_db,
                     "wallet_only": wallet_only,
+                    "wallet_cancel_pending": wallet_cancel_pending,
+                    "wallet_cancelled_still_visible": wallet_cancelled_still_visible,
                     "summary": db_summary,
                     "open_offers": db_open,
                 }

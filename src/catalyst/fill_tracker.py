@@ -46,11 +46,12 @@ def _dexie_status_code(detail: Dict) -> Optional[int]:
 
 
 def _dexie_detail_has_requested_output(detail: Dict) -> bool:
-    """True when a status=3 Dexie offer still shows requested-asset outputs.
+    """True when Dexie detail shows requested-asset outputs.
 
-    Dexie can return status=3 for a spent maker buy offer even though the
-    payload includes output coins for the requested CAT. A cancel returns the
-    offered asset; a fill returns the requested asset.
+    This is useful diagnostic context, but it is not enough to prove a fill:
+    real-world cancel records can also expose requested-asset output rows in
+    the Dexie payload. Spacescan/offer_info must arbitrate ambiguous status=3
+    rows instead of letting Dexie alone book a fill.
     """
     requested = {
         _dexie_asset_key(item.get("id"))
@@ -73,9 +74,7 @@ def _dexie_detail_has_requested_output(detail: Dict) -> bool:
 
 def _dexie_detail_confirms_fill(detail: Dict) -> bool:
     status = _dexie_status_code(detail)
-    if status == 4:
-        return True
-    return status == 3 and _dexie_detail_has_requested_output(detail)
+    return status == 4
 
 
 def _dexie_detail_confirms_cancel(detail: Dict) -> bool:
@@ -1090,6 +1089,21 @@ class FillTracker:
                     pass
                 # Clear any cached Dexie detail — _record_fill() won't run to consume it
                 self._last_dexie_details.pop(trade_id, None)
+                if local_clock_expired:
+                    self._retire_local_offer(
+                        trade_id,
+                        side,
+                        details_cache,
+                        status="expired",
+                        event_type="offer_closed_nonfill",
+                        severity="info",
+                        suffix="expired after source-truth rejection",
+                        data_extra={
+                            "verification_state": "rejected",
+                            "source": "spacescan_or_sage_dexie",
+                            "local_clock_expired": True,
+                        },
+                    )
             elif verification == "unverified":
                 # Spacescan couldn't decisively classify the on-chain spend.
                 # Instead of retiring immediately (which used to misclassify
@@ -1855,13 +1869,13 @@ class FillTracker:
         Used for bot-cancel cleanup and as a fallback when Spacescan
         verification is exhausted so we don't silently lose a real fill
         to a rate-limit cascade. Dexie indexes every on-chain spend and
-        distinguishes status=3 (usually cancel) from status=4
-        (fill) once a block confirms. Dexie can report maker buy fills
-        as status=3 while still including requested-asset output coins;
-        treat that requested-output evidence as filled.
+        distinguishes status=3 (usually cancel/expired) from status=4
+        (filled) once a block confirms. Status=3 rows are intentionally
+        conservative even when requested-output coin details are present:
+        that payload shape has been observed on bot cancel transactions too.
 
         Returns:
-            "filled"    — Dexie status=4, or status=3 with requested outputs
+            "filled"    — Dexie status=4
             "cancelled" — Dexie status=3 without requested outputs
             "unknown"   — any other state (still open, pending, 404,
                           rate-limited, mismatched trade_id, or network
@@ -1981,6 +1995,32 @@ class FillTracker:
             status_num = None
 
         if status_num == 0:
+            now_ts = time.time()
+            expiry_sources = []
+            db_expiry_ts = self._parse_iso_ts((db_offer or {}).get("expires_at"))
+            if db_expiry_ts is not None:
+                expiry_sources.append(("db", db_expiry_ts))
+            dexie_expiry_ts = self._parse_iso_ts(
+                detail.get("date_expiry") or detail.get("expires_at")
+            )
+            if dexie_expiry_ts is not None:
+                expiry_sources.append(("dexie", dexie_expiry_ts))
+            if expiry_sources and all(now_ts > ts for _, ts in expiry_sources):
+                log_event(
+                    "info",
+                    "fill_dexie_open_expired_defer",
+                    f"Dexie still shows {trade_id[:16]}... as OPEN, but the "
+                    f"offer expiry has passed; deferring to Spacescan for "
+                    f"the authoritative verdict.",
+                    data={
+                        "trade_id": trade_id,
+                        "dexie_id": dexie_id,
+                        "expiry_sources": {
+                            source: ts for source, ts in expiry_sources
+                        },
+                    },
+                )
+                return None
             log_event(
                 "info",
                 "fill_dexie_still_open",

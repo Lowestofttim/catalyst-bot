@@ -272,6 +272,47 @@ class CoinPrepConfirmedViewTests(unittest.TestCase):
         self.assertEqual(resolved["coin_id"].replace("0x", "").lower(), ("33" * 32))
         self.assertEqual(resolved["amount"], 220)
 
+    def test_preselected_pool_helper_returns_exact_owned_coin_when_selectable_view_lags(
+        self,
+    ):
+        expected_coin_id = "0x" + "55" * 32
+
+        original_get = self.worker._get_coins_via_rpc
+        original_owned = self.worker._get_owned_coins_via_rpc
+        original_selectable = self.worker._are_coin_ids_selectable
+        try:
+            self.worker._get_coins_via_rpc = lambda *args, **kwargs: []
+            self.worker._are_coin_ids_selectable = lambda *args, **kwargs: False
+            self.worker._get_owned_coins_via_rpc = lambda *args, **kwargs: [
+                {
+                    "coin_id": expected_coin_id,
+                    "id": expected_coin_id,
+                    "amount": 220,
+                    "amount_mojos": 220,
+                }
+            ]
+
+            resolved = self.worker._wait_for_preselected_pool_coin(
+                wallet_id=1,
+                pool_coin={
+                    "coin_id": expected_coin_id,
+                    "amount": 220,
+                    "amount_mojos": 220,
+                },
+                side_label="XCH",
+                tier_name="sniper",
+                timeout_s=1,
+                poll_interval_s=1,
+            )
+        finally:
+            self.worker._get_coins_via_rpc = original_get
+            self.worker._get_owned_coins_via_rpc = original_owned
+            self.worker._are_coin_ids_selectable = original_selectable
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved["coin_id"].replace("0x", "").lower(), ("55" * 32))
+        self.assertTrue(resolved.get("_catalyst_owned_only"))
+
     def test_extract_sage_transaction_ids_handles_both_plural_and_single_fields(self):
         tx_ids = self.coin_prep_worker.CoinPrepWorker._extract_sage_transaction_ids(
             {

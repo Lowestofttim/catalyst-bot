@@ -305,7 +305,11 @@ def api_logs():
         ):
             cutoff = api_server._logs_cleared_at
         if cutoff:
-            events_list = get_events_since(cutoff, limit=limit, category=category)
+            events_list = get_events_since(
+                since=cutoff,
+                limit=limit,
+                category=category,
+            )
         else:
             events_list = get_recent_events(limit=limit, category=category)
         return jsonify({"logs": api_server._serialize_list(events_list)})

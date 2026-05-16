@@ -354,7 +354,9 @@ class MarketToxicityGuard:
     def _score_sweeps(self, context: ToxicityContext, add) -> None:
         for event in context.recent_sweep_events or []:
             side = str(event.get("side") or "").lower()
-            fill_count = int(_dec(event.get("fill_count"), "0"))
+            fill_count = int(
+                _dec(event.get("side_fill_count", event.get("fill_count")), "0")
+            )
             if side in SIDES and fill_count >= 2:
                 add(
                     side,
@@ -391,18 +393,24 @@ class MarketToxicityGuard:
                     18,
                     "public sell depth dominates buy depth",
                 )
+        whale_counts = {"buy": 0, "sell": 0}
         for whale in intel.get("whale_orders") or []:
             side = str(whale.get("side") or "").lower()
             is_ours = whale.get("is_ours")
             if is_ours is True or str(is_ours).strip().lower() in {"1", "true", "yes"}:
                 continue
             if side in SIDES:
-                add(
-                    side,
-                    "whale_public_offer",
-                    12,
-                    f"large public {side} offer visible on Dexie",
-                )
+                whale_counts[side] += 1
+        for side, count in whale_counts.items():
+            if count <= 0:
+                continue
+            offer_word = "offer" if count == 1 else "offers"
+            detail = (
+                f"large public {side} offer visible on Dexie"
+                if count == 1
+                else f"{count} large public {side} {offer_word} visible on Dexie"
+            )
+            add(side, "whale_public_offer", 12 * count, detail)
 
     def _score_data_quality(self, context: ToxicityContext, add_both) -> None:
         intel = context.market_intel or {}
