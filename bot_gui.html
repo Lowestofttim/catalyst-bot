@@ -27048,10 +27048,12 @@
 
             // Handle alert events from SSE
             if (type === 'alert') {
+                _serverAlertIds.add(data.id);
                 _activeAlerts[data.id] = data;
                 renderAlerts();
             }
             if (type === 'alert_cleared') {
+                _serverAlertIds.delete(data.id);
                 delete _activeAlerts[data.id];
                 renderAlerts();
             }
@@ -27684,6 +27686,7 @@
 
         // ===== ALERT NOTIFICATION SYSTEM =====
         let _activeAlerts = {};
+        let _serverAlertIds = new Set();
         const ADVISOR_ACTION_IDS = new Set([
             'enableInventory',
             'applySpread',
@@ -27707,6 +27710,26 @@
             'bot_health_watch',
             'runtime_monitor'
         ]);
+
+        function syncServerAlerts(alerts = []) {
+            const nextServerAlertIds = new Set();
+            (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+                const alertId = String((alert && alert.id) || '');
+                if (!alertId) return;
+                nextServerAlertIds.add(alertId);
+                _activeAlerts[alertId] = alert;
+            });
+
+            const knownBackendIds = new Set([
+                ..._serverAlertIds,
+                ...ACTIONABLE_ALERT_IDS,
+                ...ADVISOR_DIAGNOSTIC_ALERT_IDS
+            ]);
+            knownBackendIds.forEach((alertId) => {
+                if (!nextServerAlertIds.has(alertId)) delete _activeAlerts[alertId];
+            });
+            _serverAlertIds = nextServerAlertIds;
+        }
 
         function isRecoveryGuidanceActive() {
             const recoveryAlert = _activeAlerts && _activeAlerts.bot_recovery;
@@ -28821,7 +28844,7 @@
                 const res = await apiFetch(`${API_URL}/alerts`);
                 const data = await res.json();
                 if (data.alerts) {
-                    data.alerts.forEach(a => { _activeAlerts[a.id] = a; });
+                    syncServerAlerts(data.alerts);
                     renderAlerts();
                 }
             } catch (e) { /* will retry on next SSE event */ }

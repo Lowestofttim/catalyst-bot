@@ -35,6 +35,19 @@ def test_recommendations_clear_stale_rotator_cache_when_empty():
     )
 
 
+def test_alert_refresh_removes_backend_alerts_missing_from_server_snapshot():
+    html = GUI.read_text(encoding="utf-8", errors="replace")
+
+    assert "let _serverAlertIds = new Set();" in html
+    assert "function syncServerAlerts(alerts = [])" in html
+    assert "const knownBackendIds = new Set([" in html
+    assert "..._serverAlertIds" in html
+    assert "...ACTIONABLE_ALERT_IDS" in html
+    assert "...ADVISOR_DIAGNOSTIC_ALERT_IDS" in html
+    assert "if (!nextServerAlertIds.has(alertId)) delete _activeAlerts[alertId];" in html
+    assert "syncServerAlerts(data.alerts);" in html
+
+
 def test_recommendation_action_row_wraps_inside_guidance_card():
     html = GUI.read_text(encoding="utf-8", errors="replace")
 
