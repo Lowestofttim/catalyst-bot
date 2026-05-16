@@ -2015,9 +2015,7 @@ class FillTracker:
                     data={
                         "trade_id": trade_id,
                         "dexie_id": dexie_id,
-                        "expiry_sources": {
-                            source: ts for source, ts in expiry_sources
-                        },
+                        "expiry_sources": {source: ts for source, ts in expiry_sources},
                     },
                 )
                 return None

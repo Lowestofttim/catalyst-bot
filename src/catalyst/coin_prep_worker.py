@@ -5905,9 +5905,7 @@ class CoinPrepWorker:
                 )
                 if amount_match:
                     matched_id = amount_match.get("coin_id", "").replace("0x", "")
-                    amount_match[
-                        "_catalyst_pool_resolution_checked_selectable"
-                    ] = True
+                    amount_match["_catalyst_pool_resolution_checked_selectable"] = True
                     self.log(
                         f"      ✅ {side_label} {tier_name} amount-fallback found coin {matched_id[:16]}..."
                     )

@@ -431,9 +431,7 @@ class TestFullReset(_FlaskBase):
                 side="sell",
             ),
         )
-        self.assertEqual(
-            old_coordinator.get_pending_summary()["pending_fill_count"], 1
-        )
+        self.assertEqual(old_coordinator.get_pending_summary()["pending_fill_count"], 1)
 
         bot = MagicMock()
         bot.is_running.return_value = False
@@ -478,7 +476,9 @@ class TestFullReset(_FlaskBase):
         self.assertIsNone(bot.fill_tracker._mass_disappearance_first_at)
         self.assertEqual(get_state()["sweep_count_in_window"], 0)
         self.assertIsNot(get_coordinator(), old_coordinator)
-        self.assertEqual(get_coordinator().get_pending_summary()["pending_fill_count"], 0)
+        self.assertEqual(
+            get_coordinator().get_pending_summary()["pending_fill_count"], 0
+        )
 
 
 # ---------------------------------------------------------------------------
