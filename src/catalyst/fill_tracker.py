@@ -107,7 +107,7 @@ class FillTracker:
         mempool_warned,
     ) -> str:
         coin_str = f" coin={str(coin_id)[:16]}..." if coin_id != "unknown" else ""
-        warned_tag = "" if mempool_warned else " (mempool-miss)"
+        warned_tag = " (mempool-hit)" if mempool_warned else " (mempool-miss)"
         price_display = f"{Decimal(str(price or 0)):.8f}"
         size_cat_display = f"{Decimal(str(size_cat or 0)):.2f}"
         return (

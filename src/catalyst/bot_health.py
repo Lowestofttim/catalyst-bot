@@ -27,7 +27,7 @@ import urllib.error
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from config import cfg
 from super_log import slog
@@ -40,6 +40,16 @@ DEXIE_STATUS_CANCELLED = 3
 DEXIE_STATUS_COMPLETED = 4
 DEXIE_STATUS_UNKNOWN = 5
 DEXIE_STATUS_EXPIRED = 6
+
+
+_DexieRequeueHandler = Callable[[str, Optional[str]], None]
+_dexie_requeue_handler: Optional[_DexieRequeueHandler] = None
+
+
+def set_dexie_requeue_handler(handler: Optional[_DexieRequeueHandler]) -> None:
+    """Register the live Dexie queue used by runtime repair checks."""
+    global _dexie_requeue_handler
+    _dexie_requeue_handler = handler
 
 
 @dataclass(frozen=True, slots=True)
@@ -606,8 +616,8 @@ def check_stale_dexie_posts(auto_repair: bool = True) -> HealthCheck:
     the offer exists in Sage but no one can find it on the open market —
     invisible inventory.
 
-    Repair: re-queue via dexie_manager.queue_post(). Idempotent because
-    the queue dedupes on trade_id.
+    Repair: re-queue through the live bot's DexieManager instance. The
+    handler is registered by BotLoop on startup.
     """
     from database import get_connection
 
@@ -637,17 +647,14 @@ def check_stale_dexie_posts(auto_repair: bool = True) -> HealthCheck:
     repair_log = []
     repaired = 0
     if auto_repair:
-        try:
-            from dexie_manager import queue_post
-        except Exception as e:
+        queue_post = _dexie_requeue_handler
+        if queue_post is None:
             slog(
                 "BOT_HEALTH",
-                f"dexie_manager unavailable for re-queue: {e}",
+                "Dexie requeue handler unavailable; stale posts were not re-queued.",
                 level="warn",
             )
-            queue_post = None
-
-        if queue_post:
+        else:
             for off in stale:
                 tid = off["trade_id"]
                 bech = off.get("offer_bech32")
@@ -667,11 +674,13 @@ def check_stale_dexie_posts(auto_repair: bool = True) -> HealthCheck:
                         level="warn",
                     )
 
+    unrepaired = bool(stale) and (not auto_repair or repaired < len(stale))
+
     return HealthCheck(
         name="stale_dexie_posts",
         category="offers",
-        status="warn" if (stale and not auto_repair) else "pass",
-        severity="warning" if (stale and not auto_repair) else "info",
+        status="warn" if unrepaired else "pass",
+        severity="warning" if unrepaired else "info",
         message=f"{len(stale)} offers older than {_DEXIE_POST_STALE_SECS}s "
         f"with no Dexie post.",
         anomaly_count=len(stale),

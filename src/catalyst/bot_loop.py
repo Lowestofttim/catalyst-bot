@@ -789,7 +789,23 @@ class BotLoop:
 
         # Flag: __init__ complete — get_state() checks this to avoid
         # AttributeError when SSE connects before all attrs are set.
+        try:
+            from bot_health import set_dexie_requeue_handler
+
+            set_dexie_requeue_handler(self._queue_stale_dexie_post)
+        except Exception as e:
+            log_event(
+                "warning",
+                "bot_health_dexie_requeue_hook_failed",
+                f"Failed to register Dexie stale-post repair hook: {e}",
+            )
+
         self._init_complete = True
+
+    def _queue_stale_dexie_post(
+        self, offer_bech32: str, trade_id: Optional[str] = None
+    ) -> None:
+        self.dexie_manager.queue_post(offer_bech32, trade_id, force=True)
 
     def _requote_backoff_remaining(self, side: str) -> float:
         try:
@@ -8152,6 +8168,8 @@ class BotLoop:
         # (mirroring trim_excess_offers), so neither inflates the main ladder
         # count and triggers a false trim-create cycle. Boost = Close the Gap
         # probes, sniper = arb snipes — both live in their own pools.
+        _db_buy_all = []
+        _db_sell_all = []
         try:
             from database import get_open_offers as _db_get_open
 
@@ -8316,7 +8334,15 @@ class BotLoop:
             try:
                 w = _mempool_watcher_mod._watcher_instance
                 if w:
-                    all_open_offers = list(open_buys) + list(open_sells)
+                    # Sage wallet offer records do not reliably include the
+                    # locked coin_id. CATalyst's DB rows do, so include the
+                    # DB-open book when feeding the mempool watcher.
+                    all_open_offers = (
+                        list(open_buys)
+                        + list(open_sells)
+                        + list(_db_buy_all)
+                        + list(_db_sell_all)
+                    )
                     offer_coin_ids = {
                         o.get("coin_id", "")
                         for o in all_open_offers

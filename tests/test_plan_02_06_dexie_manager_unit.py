@@ -31,6 +31,10 @@ class _FakeCfg:
     MAX_POSTS_PER_LOOP = 10
     DEXIE_API_BASE = "https://api.dexie.space"
     BOT_TAG = "test-bot"
+    DEXIE_POST_RETRIES = 0
+    DEXIE_POST_TIMEOUT = 1
+    DEXIE_POST_RETRY_SLEEP = 0
+    DEXIE_AUTO_CLAIM_REWARDS = False
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +144,46 @@ class TestFlushQueueNoHTTP(_DM):
         self.dm.flush_queue(flush_all=True)
         # Queue still has item because disabled path returns early
         self.assertEqual(len(self.dm._queue), 1)
+
+
+# ===========================================================================
+# flush_queue retry classification
+# ===========================================================================
+
+
+class TestFlushQueueRetryClassification(_DM):
+    @patch("dexie_manager.log_event")
+    @patch("dexie_manager.requests.post", create=True)
+    def test_invalid_offer_400_is_requeued_for_settle_race(self, mock_post, _mock_log):
+        resp = MagicMock()
+        resp.status_code = 400
+        resp.text = "Invalid Offer"
+        resp.headers = {}
+        mock_post.return_value = resp
+
+        self.dm.queue_post("offer1abc", trade_id="t1")
+        result = self.dm.flush_queue()
+
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["requeued"], 1)
+        self.assertEqual(len(self.dm._queue), 1)
+        self.assertEqual(self.dm._queue[0]["trade_id"], "t1")
+
+    @patch("dexie_manager.log_event")
+    @patch("dexie_manager.requests.post", create=True)
+    def test_other_4xx_is_not_requeued(self, mock_post, _mock_log):
+        resp = MagicMock()
+        resp.status_code = 401
+        resp.text = "Unauthorized"
+        resp.headers = {}
+        mock_post.return_value = resp
+
+        self.dm.queue_post("offer1abc", trade_id="t1")
+        result = self.dm.flush_queue()
+
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["requeued"], 0)
+        self.assertEqual(len(self.dm._queue), 0)
 
 
 # ===========================================================================

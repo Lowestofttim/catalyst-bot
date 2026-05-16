@@ -62,6 +62,11 @@ def compute_coin_id(parent_coin_info: str, puzzle_hash: str, amount: int) -> str
         return ""
 
 
+def _normalise_coin_id(coin_id: str) -> str:
+    text = str(coin_id or "").strip().lower()
+    return text[2:] if text.startswith("0x") else text
+
+
 def _coin_amount(coin: Dict) -> Optional[int]:
     try:
         raw = coin.get("amount")
@@ -388,9 +393,16 @@ class MempoolWatcher:
         """
         if not coin_id:
             return False
-        norm = coin_id.removeprefix("0x").lower()
+        norm = _normalise_coin_id(coin_id)
+        now = time.time()
         with self._lock:
-            hit = norm in self._fill_warned_coin_ids
+            warned_at = self._fill_warned_coin_ids.get(norm)
+            hit = (
+                warned_at is not None
+                and (now - warned_at) < self._fill_warn_ttl_secs
+            )
+            if warned_at is not None:
+                self._fill_warned_coin_ids.pop(norm, None)
             if hit:
                 self._fill_warn_hits += 1
             else:
@@ -407,21 +419,19 @@ class MempoolWatcher:
         a 'fill_imminent' signal is emitted so the bot can wake early and
         run fill detection before the 30-second cycle fires.
 
-        Coins that are no longer in the new set are removed from the debounce
-        cache so a fresh signal fires if they somehow reappear (shouldn't
-        happen in practice, but keeps state clean).
+        Fill warnings stay in the attribution cache until consumed or TTL
+        expiry, even if the coin has left the open-offer watch set. Wallet
+        sync can remove an offer before fill verification logs it.
         """
-        normalised = {c.removeprefix("0x").lower() for c in coin_ids if c}
+        normalised = {_normalise_coin_id(c) for c in coin_ids if c}
         with self._lock:
             self._watched_offer_coins = normalised
-            # Remove debounce entries for coins no longer being watched
-            # F10: dict-based debounce — keep only entries for coins still
-            # in the watch set, AND drop entries that have aged past TTL.
+            # Keep unconsumed attribution entries; only TTL expiry clears them.
             now = time.time()
             self._fill_warned_coin_ids = {
                 cid: ts
                 for cid, ts in self._fill_warned_coin_ids.items()
-                if cid in normalised and (now - ts) < self._fill_warn_ttl_secs
+                if (now - ts) < self._fill_warn_ttl_secs
             }
 
     # ------------------------------------------------------------------

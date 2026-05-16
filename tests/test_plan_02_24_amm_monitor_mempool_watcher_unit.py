@@ -7,6 +7,7 @@ amm_monitor: AMMMonitor.get_drift_bps, get_arb_pressure_label,
 """
 
 import sys
+import time
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
@@ -265,6 +266,33 @@ class TestInferPendingPoolMove(unittest.TestCase):
         )
 
         self.assertIsNone(move)
+
+
+@unittest.skipIf(_SKIP_MW is not None, f"mempool_watcher unavailable: {_SKIP_MW}")
+class TestFillWarningAttribution(unittest.TestCase):
+    def test_unwatch_does_not_drop_pending_fill_warning_before_recording(self):
+        watcher = _mempool_watcher.MempoolWatcher("pair1", "asset1")
+        coin_id = "aa" * 32
+
+        watcher.set_watched_offer_coins({"0x" + coin_id})
+        watcher._fill_warned_coin_ids[coin_id] = time.time()
+        watcher.set_watched_offer_coins(set())
+
+        self.assertTrue(watcher.was_fill_warned("0x" + coin_id))
+        self.assertEqual(watcher._fill_warn_hits, 1)
+        self.assertEqual(watcher._fill_warn_misses, 0)
+        self.assertNotIn(coin_id, watcher._fill_warned_coin_ids)
+
+    def test_expired_fill_warning_counts_as_miss_and_is_removed(self):
+        watcher = _mempool_watcher.MempoolWatcher("pair1", "asset1")
+        watcher._fill_warn_ttl_secs = 10
+        coin_id = "bb" * 32
+        watcher._fill_warned_coin_ids[coin_id] = time.time() - 20
+
+        self.assertFalse(watcher.was_fill_warned(coin_id))
+        self.assertEqual(watcher._fill_warn_hits, 0)
+        self.assertEqual(watcher._fill_warn_misses, 1)
+        self.assertNotIn(coin_id, watcher._fill_warned_coin_ids)
 
 
 # ---------------------------------------------------------------------------

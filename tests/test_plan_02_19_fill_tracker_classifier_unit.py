@@ -331,6 +331,20 @@ class TestFillTrackerStateHelpers(unittest.TestCase):
         msg.encode("ascii")
         self.assertIn("SELL offer filled", msg)
 
+    def test_offer_filled_log_message_marks_mempool_hit(self):
+        msg = FillTracker._format_offer_filled_log_message(
+            side="sell",
+            coin_id="0xabcdef1234567890",
+            price=1.25,
+            size_xch="2.5",
+            size_cat=1000,
+            tier="mid",
+            mempool_warned=True,
+        )
+
+        self.assertIn("mempool-hit", msg)
+        self.assertNotIn("mempool-miss", msg)
+
     @patch("fill_tracker.log_event")
     def test_get_fill_history_empty(self, _mock_log):
         ft = self._make_ft()

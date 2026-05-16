@@ -225,6 +225,8 @@ def api_full_node_status():
         "coinset_calls": 0,
         "fill_warn_hits": 0,
         "fill_warn_misses": 0,
+        "watched_offer_coins": 0,
+        "pending_fill_warns": 0,
     }
     try:
         import mempool_watcher as _mw
@@ -238,6 +240,12 @@ def api_full_node_status():
             status["coinset_calls"] = int(getattr(w, "_coinset_api_calls", 0) or 0)
             status["fill_warn_hits"] = int(getattr(w, "_fill_warn_hits", 0) or 0)
             status["fill_warn_misses"] = int(getattr(w, "_fill_warn_misses", 0) or 0)
+            status["watched_offer_coins"] = len(
+                getattr(w, "_watched_offer_coins", set()) or set()
+            )
+            status["pending_fill_warns"] = len(
+                getattr(w, "_fill_warned_coin_ids", {}) or {}
+            )
     except Exception as _err:
         status["watcher_error"] = str(_err)
     return jsonify(status)

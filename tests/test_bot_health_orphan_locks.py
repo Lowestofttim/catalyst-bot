@@ -67,8 +67,12 @@ class _ModuleStubMixin:
         }
         bot_health._last_run_lock_ts = 0.0
         bot_health._last_report = None
+        if hasattr(bot_health, "set_dexie_requeue_handler"):
+            bot_health.set_dexie_requeue_handler(None)
 
     def tearDown(self):
+        if hasattr(bot_health, "set_dexie_requeue_handler"):
+            bot_health.set_dexie_requeue_handler(None)
         for n in self._STUBBED_NAMES:
             sys.modules.pop(n, None)
             if n in self._saved:
@@ -178,11 +182,29 @@ class CheckStaleDexiePostsTests(_ModuleStubMixin, unittest.TestCase):
             }
         ]
         self._patch_db(rows)
-        dx = self._patch_dexie_manager()
+        queue_post = MagicMock()
+        bot_health.set_dexie_requeue_handler(queue_post)
         c = bot_health.check_stale_dexie_posts(auto_repair=True)
         self.assertEqual(c.repaired_count, 1)
-        dx.queue_post.assert_called_once_with("offer1...", "tid1")
+        queue_post.assert_called_once_with("offer1...", "tid1")
         self.assertIn("requeued_dexie_post", c.repair_log[0])
+
+    def test_stale_post_without_requeue_handler_is_reported_not_repaired(self):
+        old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        rows = [
+            {
+                "trade_id": "tid1",
+                "side": "buy",
+                "tier": "inner",
+                "offer_bech32": "offer1...",
+                "created_at": old,
+            }
+        ]
+        self._patch_db(rows)
+        c = bot_health.check_stale_dexie_posts(auto_repair=True)
+        self.assertEqual(c.status, "warn")
+        self.assertEqual(c.anomaly_count, 1)
+        self.assertEqual(c.repaired_count, 0)
 
     def test_recent_offer_not_requeued(self):
         recent = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()

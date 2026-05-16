@@ -325,6 +325,7 @@ class DexieManager:
 
         last_err = None
         _permanent = False  # Set True for HTTP 4xx — don't requeue
+        _invalid_offer_race = False
         for attempt in range(cfg.DEXIE_POST_RETRIES + 1):
             try:
                 r = requests.post(
@@ -397,10 +398,17 @@ class DexieManager:
                     break  # Don't burn remaining retries
 
                 # 4xx (except 429) — permanent client error, don't retry.
-                # "Invalid Offer" (400) means the offer blob references spent
-                # coins or is otherwise un-takeable.  Retrying won't help.
+                # "Invalid Offer" can also be Dexie validation lag on a
+                # just-created Sage offer, so keep that case retryable.
                 if 400 <= r.status_code < 500:
                     last_err = f"HTTP {r.status_code}: {r.text[:200]}"
+                    if (
+                        r.status_code == 400
+                        and "invalid offer" in str(r.text or "").lower()
+                    ):
+                        _invalid_offer_race = True
+                        _permanent = False
+                        break
                     _permanent = True
                     break
 
@@ -417,19 +425,19 @@ class DexieManager:
             if attempt < cfg.DEXIE_POST_RETRIES:
                 time.sleep(cfg.DEXIE_POST_RETRY_SLEEP)
 
-        # "Invalid Offer" 400s are an expected race condition: the offer may
-        # have been filled or cancelled between creation and the Dexie flush.
-        # Downgrade to debug so these don't flood the log during high-churn
-        # periods; genuine network/server failures stay at warning/error.
-        _invalid_offer = _permanent and "invalid offer" in last_err.lower()
-        if _invalid_offer:
-            _level = "debug"
+        # "Invalid Offer" 400s immediately after offer creation are often
+        # Dexie validation lag. Requeue that case; other 4xx responses stay
+        # permanent.
+        if _invalid_offer_race:
+            _level = "info"
         elif _permanent:
             _level = "warning"
         else:
             _level = "error"
         _retries_text = (
-            "1 attempt (permanent 4xx)"
+            "1 attempt (will retry after Dexie validation lag)"
+            if _invalid_offer_race
+            else "1 attempt (permanent 4xx)"
             if _permanent
             else f"{cfg.DEXIE_POST_RETRIES + 1} attempts"
         )
