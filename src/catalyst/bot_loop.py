@@ -2628,6 +2628,8 @@ class BotLoop:
         cancelled_by_side = {"buy": set(), "sell": set()}
         if snapshot is None:
             return cancelled_by_side
+        if not bool(getattr(cfg, "TOXICITY_CANCEL_ENABLED", False)):
+            return cancelled_by_side
         if not bool(getattr(cfg, "MARKET_TOXICITY_CANCEL_LIVE_OFFERS", True)):
             return cancelled_by_side
 

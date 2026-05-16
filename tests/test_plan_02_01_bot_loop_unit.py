@@ -463,7 +463,54 @@ class TestBotLoopWiring(_PatchedCfg):
         self.assertEqual(loop._bot_state["our_best_bid"], "1.00")
         self.assertEqual(loop._bot_state["our_best_ask"], "1.05")
 
-    def test_toxicity_throttle_cancels_live_offers_for_throttled_side(self):
+    def test_toxicity_cancel_disabled_leaves_live_offers_on_book(self):
+        loop = _make_loop()
+        calls = []
+
+        class Snapshot:
+            score = 95
+            level = "extreme"
+            suggested_action = "Throttle new buy offers"
+            throttled_sides = ("buy",)
+
+            def is_side_throttled(self, side, now):
+                return side == "buy"
+
+            def to_dict(self):
+                return {
+                    "score": self.score,
+                    "level": self.level,
+                    "throttled_sides": list(self.throttled_sides),
+                }
+
+        def cancel_offers(trade_ids, **kwargs):
+            calls.append((tuple(trade_ids), kwargs))
+            return {tid: {"success": True} for tid in trade_ids}
+
+        loop.offer_manager = types.SimpleNamespace(cancel_offers=cancel_offers)
+
+        with (
+            patch.object(bot_loop.cfg, "TOXICITY_CANCEL_ENABLED", False, create=True),
+            patch.object(
+                bot_loop.cfg,
+                "MARKET_TOXICITY_CANCEL_LIVE_OFFERS",
+                True,
+                create=True,
+            ),
+            patch.object(bot_loop, "log_event"),
+            patch.object(bot_loop.time, "time", return_value=1000),
+        ):
+            cancelled = loop._cancel_toxicity_throttled_offers(
+                Snapshot(),
+                current_buy_ids={"buy-1", "buy-2"},
+                current_sell_ids={"sell-1"},
+            )
+
+        self.assertEqual(cancelled["buy"], set())
+        self.assertEqual(cancelled["sell"], set())
+        self.assertEqual(calls, [])
+
+    def test_toxicity_cancel_enabled_cancels_live_offers_for_throttled_side(self):
         loop = _make_loop()
         calls = []
 
@@ -496,7 +543,7 @@ class TestBotLoopWiring(_PatchedCfg):
         with (
             patch.object(
                 bot_loop.cfg,
-                "MARKET_TOXICITY_CANCEL_LIVE_OFFERS",
+                "TOXICITY_CANCEL_ENABLED",
                 True,
                 create=True,
             ),
