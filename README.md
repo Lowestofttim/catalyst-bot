@@ -62,6 +62,9 @@ and market shocks.
   confirms.
 - **Circuit breakers.** Hard price bands, step-change guards, sweep detection,
   and per-cycle cancel/create caps.
+- **Adverse-selection guard.** Scores market toxicity separately for buy and
+  sell flow, then widens or pauses only the side that is at risk when fills,
+  sweeps, public depth, or AMM/Dexie dislocations suggest adverse selection.
 - **Dynamic price limits.** Tracks a live reference price and rejects quotes
   outside a configurable band.
 - **Risk disclosure.** On first run, the operator must accept an on-screen
@@ -129,6 +132,57 @@ to 90 seconds:
 Between cycles, coin prep/topup reshapes the wallet coin set, AMM monitoring
 keeps TibetSwap reserves fresh, and the mempool watcher can wake the loop early
 when pending spends suggest a fill or price shock.
+
+### Adverse-Selection Guard
+
+The dashboard uses **market toxicity** as shorthand for adverse-selection risk:
+the chance that offers are being taken because the selected CAT/XCH market has
+started moving against the bot, rather than because the bot is naturally earning
+spread. It is not a token-quality score, and it is not a wallet security score.
+It is a live 0-100 pressure score for the currently selected CAT market.
+
+Each trading cycle, `market_toxicity.py` builds a side-aware snapshot from the
+same context the bot is already using:
+
+- Verified recent fills, including how quickly an offer was taken after it was
+  created.
+- One-sided fill clusters, same-block sweep-like fills, and recent sweep
+  events.
+- Post-fill adverse price moves, Dexie/TibetSwap dislocations, and
+  TibetSwap/mempool shock signals.
+- Dexie public orderbook depth, large market-relative public offers, stale
+  orderbook data, and truncated orderbook pages.
+- Current inventory and spendable XCH/CAT exposure relative to the configured
+  limits and live open offers.
+
+Buy and sell are scored separately. That matters: if the sell side is being
+swept, CATalyst can widen or pause new sell offers while still allowing buy
+offers that reduce the exposure. The score also has short memory and decays by
+`TOXICITY_DECAY_PER_LOOP`, so a mild or elevated score can stay visible for a
+few loops after the obvious pressure disappears. The dashboard shows the current
+reason, the clear condition, and the estimated cooldown.
+
+Default levels are:
+
+| Score | Level | Typical action |
+|-------|-------|----------------|
+| 0-29 | Normal | No toxicity action needed. |
+| 30-54 | Mild | Slightly widen the affected side. |
+| 55-74 | Elevated | Widen more aggressively and keep the reason visible. |
+| 75-89 | High | Throttle fresh offers on the risky side when enough independent signals agree. |
+| 90-100 | Extreme | Treat the side as high risk; throttle immediately and, if enabled, cancel live exposure on that side. |
+
+The guard writes buy and sell spread multipliers into the risk manager, capped
+by `TOXICITY_MAX_SPREAD_MULTIPLIER`. When a side crosses the throttle threshold,
+`risk_manager.py` blocks fresh offers on that side for `TOXICITY_THROTTLE_SECS`.
+If live toxicity cancellation is enabled, `bot_loop.py` can also cancel already
+open offers on the throttled side instead of leaving them exposed on the book.
+
+Smart Settings chooses defensive, balanced, or gentle defaults from the current
+wallet balance and market depth, then saves the guard settings with the rest of
+the trading configuration. Coinset or local full-node mempool signals can wake
+the loop early when a watched offer coin or TibetSwap pool coin is spent, so the
+fill detector and toxicity guard can react before the next normal cycle.
 
 ---
 
@@ -316,6 +370,7 @@ fields afterwards.
 | `fill_tracker.py` | Fill detection and multi-source verification. |
 | `price_engine.py` | Price oracle using TibetSwap and Dexie. |
 | `risk_manager.py` | Circuit breakers, position limits, and spread calculation. |
+| `market_toxicity.py` | Side-aware adverse-selection scoring used by the dashboard and risk manager. |
 | `coin_manager.py` | UTXO tracking, tier classification, and topup. |
 | `coin_prep_worker.py` | Async coin splitting subprocess. |
 | `wallet_sage.py` | Sage wallet RPC adapter. |
