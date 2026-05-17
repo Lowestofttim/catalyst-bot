@@ -3282,7 +3282,7 @@ def _calculate_smart_defaults(
         # crushed the buy ladder. Re-anchor topup to the operational target
         # before enforcing the final budget.
         _f66_largest_buy_tier = max(
-            _smart_buy_inner if _smart_buy_inner > 0 else 0.0,
+            _smart_buy_inner,
             _smart_buy_mid if _smart_buy_mid > 0 else 0.0,
             _smart_buy_outer if _smart_buy_outer > 0 else 0.0,
             _smart_buy_extreme if _smart_buy_extreme > 0 else 0.0,
@@ -3364,9 +3364,7 @@ def _calculate_smart_defaults(
             + ((_buy_n_extreme * _smart_buy_extreme) if _max_tiers == 4 else 0.0)
         )
         _trading_xch = round(_f66_live_xch, 4)
-        _trading_pct = (
-            round(_trading_xch / _avail_xch * 100, 1) if _avail_xch > 0 else 0.0
-        )
+        _trading_pct = round(_trading_xch / _avail_xch * 100, 1)
         if "_capital_plan" in dir() and isinstance(_capital_plan, dict):
             _capital_plan["trading_xch"] = _trading_xch
             _capital_plan["trading_pct"] = _trading_pct
