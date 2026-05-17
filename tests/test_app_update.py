@@ -232,6 +232,27 @@ class TestAppUpdateSecurity(unittest.TestCase):
         self.assertIn("/CATALYST_RELAUNCH=0", helper_text)
         self.assertIn(r"C:\Program Files\CATalyst\Catalyst.exe", helper_text)
 
+    def test_launch_installer_pins_silent_upgrade_to_running_install_dir(self):
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(app_update.sys, "platform", "win32"),
+            patch.object(
+                app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"
+            ),
+            patch.object(app_update.os, "getpid", return_value=4321),
+            patch.object(app_update.subprocess, "Popen") as popen,
+        ):
+            installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
+            installer.write_bytes(b"fake installer")
+
+            app_update._launch_installer(installer)
+
+            helper_path = Path(popen.call_args.args[0][3])
+            helper_text = helper_path.read_text(encoding="utf-8")
+
+        self.assertIn(r'set "APP_DIR=C:\Program Files\CATalyst"', helper_text)
+        self.assertIn(r'/DIR="%APP_DIR%"', helper_text)
+
 
 class TestAppUpdateApi(unittest.TestCase):
     def setUp(self):

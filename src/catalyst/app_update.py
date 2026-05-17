@@ -600,10 +600,12 @@ def _launch_installer(installer_path: Path) -> None:
     helper_path = installer_path.parent / f"catalyst-update-{app_pid}.cmd"
     safe_installer = _safe_cmd_value(installer_path)
     safe_app_exe = _safe_cmd_value(sys.executable)
+    safe_app_dir = _safe_cmd_value(Path(sys.executable).resolve().parent)
     helper_script = f"""@echo off
 setlocal
 set "INSTALLER={safe_installer}"
 set "APP_EXE={safe_app_exe}"
+set "APP_DIR={safe_app_dir}"
 for /l %%I in (1,1,120) do (
     tasklist /FI "PID eq {app_pid}" 2>NUL | findstr /C:"{app_pid}" >NUL
     if errorlevel 1 goto app_gone
@@ -612,7 +614,7 @@ for /l %%I in (1,1,120) do (
 set "INSTALL_EXIT=1"
 goto finish
 :app_gone
-start /wait "" "%INSTALLER%" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /CATALYST_RELAUNCH=0
+start /wait "" "%INSTALLER%" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /CATALYST_RELAUNCH=0 /DIR="%APP_DIR%"
 set "INSTALL_EXIT=%ERRORLEVEL%"
 if "%INSTALL_EXIT%"=="0" goto relaunch
 if "%INSTALL_EXIT%"=="3010" goto relaunch
