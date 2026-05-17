@@ -310,7 +310,7 @@ def test_public_whale_depth_reasons_are_aggregated_per_side():
                 "sell_depth_xch": "16",
                 "orderbook_refreshes": 3,
                 "orderbook_age_secs": 12,
-            }
+            },
         )
     )
 
@@ -321,7 +321,10 @@ def test_public_whale_depth_reasons_are_aggregated_per_side():
     ]
     assert len(whale_reasons) == 1
     assert whale_reasons[0]["score"] >= 60
-    assert "3 market-relative public buy offers visible on Dexie" in whale_reasons[0]["detail"]
+    assert (
+        "3 market-relative public buy offers visible on Dexie"
+        in whale_reasons[0]["detail"]
+    )
     assert "near live market" in whale_reasons[0]["detail"]
 
 
@@ -455,7 +458,9 @@ def test_recent_taker_intent_amplifies_near_touch_public_order():
         "orderbook_age_secs": 12,
     }
 
-    base = base_guard.update(_ctx(mid_price=Decimal("0.010"), market_intel=market_intel))
+    base = base_guard.update(
+        _ctx(mid_price=Decimal("0.010"), market_intel=market_intel)
+    )
     with_intent = intent_guard.update(
         _ctx(
             mid_price=Decimal("0.010"),

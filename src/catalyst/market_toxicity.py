@@ -421,7 +421,8 @@ class MarketToxicityGuard:
             if not signals:
                 continue
             total_score = min(
-                Decimal("70"), sum((_dec(s.get("score")) for s in signals), Decimal("0"))
+                Decimal("70"),
+                sum((_dec(s.get("score")) for s in signals), Decimal("0")),
             )
             count = len(signals)
             detail = (
@@ -477,14 +478,16 @@ class MarketToxicityGuard:
         large_vs_ours = avg_our_offer > 0 and amount >= avg_our_offer * Decimal("2")
 
         if not (
-            depth_share >= Decimal("8")
-            or total_share >= Decimal("5")
-            or large_vs_ours
+            depth_share >= Decimal("8") or total_share >= Decimal("5") or large_vs_ours
         ):
             return None
 
         proximity_bps = self._public_order_proximity_bps(side, price, mid)
-        if proximity_bps is not None and proximity_bps > Decimal("600") and taker_pressure <= 0:
+        if (
+            proximity_bps is not None
+            and proximity_bps > Decimal("600")
+            and taker_pressure <= 0
+        ):
             return None
 
         if depth_share >= Decimal("30"):
@@ -586,7 +589,9 @@ class MarketToxicityGuard:
         self, side: str, signals: List[Dict[str, Any]]
     ) -> str:
         total_amount = sum((_dec(s.get("amount")) for s in signals), Decimal("0"))
-        max_share = max((_dec(s.get("depth_share")) for s in signals), default=Decimal("0"))
+        max_share = max(
+            (_dec(s.get("depth_share")) for s in signals), default=Decimal("0")
+        )
         near_count = sum(
             1
             for s in signals
@@ -594,9 +599,7 @@ class MarketToxicityGuard:
             and _dec(s.get("proximity_bps")) <= Decimal("300")
         )
         count = len(signals)
-        near_text = (
-            f", {near_count} near live market" if near_count > 0 else ""
-        )
+        near_text = f", {near_count} near live market" if near_count > 0 else ""
         return (
             f"{count} market-relative public {side} offers visible on Dexie"
             f" ({total_amount:.2f} XCH total{near_text}; largest {max_share:.1f}% of {side} depth)"

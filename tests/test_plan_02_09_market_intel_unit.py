@@ -159,7 +159,6 @@ class TestParseDexieOffer(_MI):
         parsed = self._mi._parse_dexie_offer(None, "buy")
         self.assertIsNone(parsed)
 
-
     def test_offer_age_seconds_from_iso_date_found(self):
         offer = self._sell_offer()
         offer["date_found"] = "2026-05-16T11:59:00Z"

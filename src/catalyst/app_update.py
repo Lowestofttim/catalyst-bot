@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
 import re
 import subprocess
@@ -600,7 +601,7 @@ def _launch_installer(installer_path: Path) -> None:
     helper_path = installer_path.parent / f"catalyst-update-{app_pid}.cmd"
     safe_installer = _safe_cmd_value(installer_path)
     safe_app_exe = _safe_cmd_value(sys.executable)
-    safe_app_dir = _safe_cmd_value(Path(sys.executable).resolve().parent)
+    safe_app_dir = _safe_cmd_value(ntpath.dirname(ntpath.abspath(sys.executable)))
     helper_script = f"""@echo off
 setlocal
 set "INSTALLER={safe_installer}"
