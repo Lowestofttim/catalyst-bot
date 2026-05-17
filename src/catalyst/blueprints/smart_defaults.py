@@ -3274,8 +3274,51 @@ def _calculate_smart_defaults(
         if _max_tiers == 4 and _smart_buy_extreme > 0:
             _f66_tiers.append((_buy_n_extreme + _buy_spare_extreme, _smart_buy_extreme))
         _f66_tier_xch = sum(_cnt * _sx * _f66_hm for _cnt, _sx in _f66_tiers)
+
+        # F83 (2026-05-17): after F62 computes independent BUY sizes,
+        # `_topup_buffer_xch` may still be based on the earlier CAT-limited
+        # symmetric ladder. In that case, all XCH not mirrored by CAT was
+        # labelled "topup", so F66 protected most of the XCH balance and
+        # crushed the buy ladder. Re-anchor topup to the operational target
+        # before enforcing the final budget.
+        _f66_largest_buy_tier = max(
+            _smart_buy_inner if _smart_buy_inner > 0 else 0.0,
+            _smart_buy_mid if _smart_buy_mid > 0 else 0.0,
+            _smart_buy_outer if _smart_buy_outer > 0 else 0.0,
+            _smart_buy_extreme if _smart_buy_extreme > 0 else 0.0,
+            float(_MIN_OFFER_XCH),
+        )
+        _f66_target_topup = round(
+            max(_topup_buffer_reserve, _f66_largest_buy_tier * 2), 4
+        )
+        _f66_max_topup = round(_post_pools_xch * 0.25, 4)
+        if _f66_max_topup > 0:
+            _f66_target_topup = min(_f66_target_topup, _f66_max_topup)
+        _f66_target_topup = max(
+            0.0,
+            min(_f66_target_topup, _avail_xch - _fee_pool_xch - _sniper_pool_xch),
+        )
+        if abs(_topup_buffer_xch - _f66_target_topup) > 0.0001:
+            _f66_old_topup = _topup_buffer_xch
+            _topup_buffer_xch = _f66_target_topup
+            _topup_buffer_adequate = _topup_buffer_xch >= _f66_largest_buy_tier * 2
+            messages.append(
+                f"Topup buffer resized {_f66_old_topup:.2f} → {_topup_buffer_xch:.2f} XCH "
+                f"after buy-side sizing so Smart Settings uses the live XCH balance."
+            )
+            print(
+                f"[SMART_DEFAULTS] F66 topup rebalance: "
+                f"{_f66_old_topup:.4f} → {_topup_buffer_xch:.4f} XCH "
+                f"(largest_buy={_f66_largest_buy_tier:.4f}, "
+                f"reserve={_topup_buffer_reserve:.4f})"
+            )
+            if "_capital_plan" in dir() and isinstance(_capital_plan, dict):
+                _capital_plan["topup_buffer_xch"] = _topup_buffer_xch
+                _capital_plan["topup_buffer_adequate"] = _topup_buffer_adequate
+                _capital_plan["largest_tier_xch"] = round(_f66_largest_buy_tier, 4)
+
         # Budget: avail minus fixed carve-outs (fee pool, sniper pool, topup buffer).
-        # Use _topup_buffer_xch (the final bumped value) not _topup_buffer_reserve.
+        # Use the rebalanced topup buffer, not stale CAT-limited leftover XCH.
         _f66_budget = max(
             0.0,
             (_avail_xch - _fee_pool_xch - _sniper_pool_xch - _topup_buffer_xch) * 0.98,
@@ -3314,6 +3357,21 @@ def _calculate_smart_defaults(
                 f"inner {_f66_old_inner:.4f} → {_smart_buy_inner:.4f}, "
                 f"tier_xch {_f66_tier_xch:.2f} → budget {_f66_budget:.2f}"
             )
+        _f66_live_xch = (
+            _buy_n_inner * _smart_buy_inner
+            + _buy_n_mid * _smart_buy_mid
+            + ((_buy_n_outer * _smart_buy_outer) if _max_tiers >= 3 else 0.0)
+            + ((_buy_n_extreme * _smart_buy_extreme) if _max_tiers == 4 else 0.0)
+        )
+        _trading_xch = round(_f66_live_xch, 4)
+        _trading_pct = (
+            round(_trading_xch / _avail_xch * 100, 1) if _avail_xch > 0 else 0.0
+        )
+        if "_capital_plan" in dir() and isinstance(_capital_plan, dict):
+            _capital_plan["trading_xch"] = _trading_xch
+            _capital_plan["trading_pct"] = _trading_pct
+            _capital_plan["topup_buffer_xch"] = _topup_buffer_xch
+            _capital_plan["topup_buffer_adequate"] = _topup_buffer_adequate
     # ═══ END F66 FINAL BUY-SIDE XCH VERIFICATION ══════════════════════════
 
     # ═══ F64 (2026-04-12): SELL-SIDE INDEPENDENT SIZING ═════════════════

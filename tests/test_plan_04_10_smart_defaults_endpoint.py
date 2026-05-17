@@ -465,5 +465,124 @@ class TestSmartDefaultsSmallWalletSizing(unittest.TestCase):
         self.assertLessEqual(sniper["pool_xch"], 0.12)
 
 
+@unittest.skipIf(_SKIP is not None, f"api_server unavailable: {_SKIP}")
+class TestSmartDefaultsBalanceSizingRegression(_FlaskBase):
+    def test_large_xch_balance_is_not_stranded_in_topup_when_cat_is_smaller(self):
+        from blueprints import smart_defaults
+
+        def fake_balance(wallet_id):
+            if wallet_id == 1:
+                mojos = int(70.8517 * 1_000_000_000_000)
+            else:
+                mojos = 50_433_477
+            return {
+                "success": True,
+                "wallet_balance": {
+                    "unconfirmed_wallet_balance": mojos,
+                    "confirmed_wallet_balance": mojos,
+                    "spendable_balance": mojos,
+                    "pending_coin_removal_count": 0,
+                },
+            }
+
+        raw_market = {
+            "dexie_ticker": {
+                "price": 0.00011083,
+                "volume_30d": 60,
+                "high_30d": 0.00013,
+                "low_30d": 0.00009,
+            },
+            "dexie_trades": {
+                "total_count": 200,
+                "volume_trend": "flat",
+                "trades": [
+                    {"price": 0.00011083, "xch_amount": 1.0},
+                    {"price": 0.00011083, "xch_amount": 1.0},
+                    {"price": 0.00011083, "xch_amount": 1.0},
+                ],
+            },
+            "tibet_pool": {
+                "has_data": True,
+                "price": 0.00011083,
+                "xch_reserve": 100,
+            },
+            "tibet_quote": {},
+            "spacescan": {"has_data": True, "price_xch": 0.00011083},
+            "internal_db": {"price_count": 60, "fill_count": 0, "pool_trend": "stable"},
+        }
+        analysis = {
+            "volatility": {
+                "regime": "volatile",
+                "range_30d_pct": 30,
+                "range_90d_pct": 40,
+                "max_single_move_pct": 10,
+                "confidence": "high",
+                "std_dev_pct": 4,
+            },
+            "liquidity": {
+                "fills_per_day": 6.67,
+                "daily_volume_xch": 2.0,
+                "level": "moderate",
+            },
+            "token_health": {
+                "risk_level": "healthy",
+                "activity_level": "active",
+                "holder_count": 100,
+            },
+            "bot_performance": {"has_history": False},
+            "data_quality": {"score": 100, "quality": "excellent"},
+        }
+        orderbook = {
+            "has_data": True,
+            "api_ok": True,
+            "num_buy_offers": 10,
+            "num_sell_offers": 10,
+            "competitor_spread_bps": 500,
+            "best_bid": 0.00010,
+            "best_ask": 0.00012,
+        }
+
+        with (
+            patch("wallet.get_wallet_balance", side_effect=fake_balance),
+            patch(
+                "market_data_collector.collect_all_market_data",
+                return_value=raw_market,
+            ),
+            patch("market_data_collector.analyze_market_data", return_value=analysis),
+            patch.object(
+                smart_defaults,
+                "_fetch_dexie_orderbook_standalone",
+                return_value=orderbook,
+            ),
+            patch.object(
+                smart_defaults,
+                "_smart_dbx_defaults",
+                return_value={
+                    "dbx_max_spread_bps": 500,
+                    "pair_incentivized": False,
+                    "dbx_buy_incentive": None,
+                    "dbx_sell_incentive": None,
+                },
+            ),
+            patch("tx_fees.get_suggested_transaction_fee", return_value={"available": False}),
+        ):
+            with api_server.app.test_request_context("/api/smart-defaults"):
+                resp = smart_defaults._calculate_smart_defaults(
+                    xch_reserve=17.713,
+                    cat_reserve=0,
+                    risk_profile="aggressive",
+                    asset_id="asset",
+                    cat_wallet_id=2,
+                    cat_decimals=3,
+                    cat_ticker_id="MZ_XCH",
+                    cat_name="Monkeyzoo Token",
+                )
+
+        body = resp.get_json()
+        self.assertLess(body["topup_pool_xch"], 5)
+        self.assertGreater(body["buy_mid_size_xch"], 0.5)
+        self.assertGreater(body["_capital_plan"]["trading_xch"], 25)
+
+
 if __name__ == "__main__":
     unittest.main()
