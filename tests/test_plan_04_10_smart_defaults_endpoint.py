@@ -564,7 +564,10 @@ class TestSmartDefaultsBalanceSizingRegression(_FlaskBase):
                     "dbx_sell_incentive": None,
                 },
             ),
-            patch("tx_fees.get_suggested_transaction_fee", return_value={"available": False}),
+            patch(
+                "tx_fees.get_suggested_transaction_fee",
+                return_value={"available": False},
+            ),
         ):
             with api_server.app.test_request_context("/api/smart-defaults"):
                 resp = smart_defaults._calculate_smart_defaults(
