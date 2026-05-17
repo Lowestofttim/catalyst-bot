@@ -8,6 +8,7 @@ No user-provided URL is ever executed.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import ntpath
@@ -582,17 +583,32 @@ def _safe_cmd_value(value: Any) -> str:
     )
 
 
+def _windows_update_helper_creationflags(*, allow_breakaway: bool = True) -> int:
+    creationflags = 0
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        creationflags |= subprocess.DETACHED_PROCESS
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    if allow_breakaway and hasattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB"):
+        creationflags |= subprocess.CREATE_BREAKAWAY_FROM_JOB
+    return creationflags
+
+
+def _is_breakaway_launch_denied(exc: OSError) -> bool:
+    return getattr(exc, "winerror", None) == 5 or getattr(exc, "errno", None) in {
+        errno.EACCES,
+        errno.EPERM,
+    }
+
+
 def _launch_installer(installer_path: Path) -> None:
     if sys.platform != "win32":
         raise RuntimeError(
             "automatic installer launch is only supported on Windows builds"
         )
 
-    creationflags = 0
-    if hasattr(subprocess, "DETACHED_PROCESS"):
-        creationflags |= subprocess.DETACHED_PROCESS
-    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
-        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    creationflags = _windows_update_helper_creationflags()
+    breakaway_flag = getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
 
     # The helper waits until the old process has fully exited before running
     # the installer, then relaunches the updated exe after Inno Setup returns.
@@ -602,38 +618,59 @@ def _launch_installer(installer_path: Path) -> None:
     safe_installer = _safe_cmd_value(installer_path)
     safe_app_exe = _safe_cmd_value(sys.executable)
     safe_app_dir = _safe_cmd_value(ntpath.dirname(ntpath.abspath(sys.executable)))
+    safe_update_log = _safe_cmd_value(
+        installer_path.parent / f"catalyst-update-{app_pid}.log"
+    )
+    safe_install_log = _safe_cmd_value(
+        installer_path.parent / f"catalyst-installer-{app_pid}.log"
+    )
     helper_script = f"""@echo off
 setlocal
 set "INSTALLER={safe_installer}"
 set "APP_EXE={safe_app_exe}"
 set "APP_DIR={safe_app_dir}"
-for /l %%I in (1,1,120) do (
-    tasklist /FI "PID eq {app_pid}" 2>NUL | findstr /C:"{app_pid}" >NUL
-    if errorlevel 1 goto app_gone
-    timeout /t 1 /nobreak >NUL
+set "UPDATE_LOG={safe_update_log}"
+set "INSTALL_LOG={safe_install_log}"
+echo [%DATE% %TIME%] helper started for pid {app_pid}>"%UPDATE_LOG%"
+echo [%DATE% %TIME%] waiting for app pid {app_pid} to exit>>"%UPDATE_LOG%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$deadline=(Get-Date).AddSeconds(120); while ((Get-Date) -lt $deadline -and (Get-Process -Id {app_pid} -ErrorAction SilentlyContinue)) {{ Start-Sleep -Milliseconds 500 }}; if (Get-Process -Id {app_pid} -ErrorAction SilentlyContinue) {{ exit 1 }}; exit 0"
+if errorlevel 1 (
+    echo [%DATE% %TIME%] timed out waiting for app pid {app_pid}>>"%UPDATE_LOG%"
+    set "INSTALL_EXIT=1"
+    goto finish
 )
-set "INSTALL_EXIT=1"
-goto finish
-:app_gone
-start /wait "" "%INSTALLER%" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /CATALYST_RELAUNCH=0 /DIR="%APP_DIR%"
+echo [%DATE% %TIME%] app pid {app_pid} exited; running installer>>"%UPDATE_LOG%"
+start /wait "" "%INSTALLER%" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /CATALYST_RELAUNCH=1 /DIR="%APP_DIR%" /LOG="%INSTALL_LOG%"
 set "INSTALL_EXIT=%ERRORLEVEL%"
+echo [%DATE% %TIME%] installer exit %INSTALL_EXIT%>>"%UPDATE_LOG%"
 if "%INSTALL_EXIT%"=="0" goto relaunch
 if "%INSTALL_EXIT%"=="3010" goto relaunch
 goto finish
 :relaunch
-timeout /t 2 /nobreak >NUL
+ping -n 3 127.0.0.1 >NUL
+echo [%DATE% %TIME%] relaunching "%APP_EXE%">>"%UPDATE_LOG%"
 start "" "%APP_EXE%"
 :finish
+echo [%DATE% %TIME%] helper finished with %INSTALL_EXIT%>>"%UPDATE_LOG%"
 del "%~f0" >NUL 2>NUL
 exit /b %INSTALL_EXIT%
 """
     helper_path.write_text(helper_script, encoding="utf-8")
-    subprocess.Popen(
-        ["cmd.exe", "/d", "/c", str(helper_path)],
-        cwd=str(installer_path.parent),
-        close_fds=True,
-        creationflags=creationflags,
-    )
+    helper_command = ["cmd.exe", "/d", "/c", str(helper_path)]
+    helper_kwargs = {
+        "cwd": str(installer_path.parent),
+        "close_fds": True,
+        "creationflags": creationflags,
+    }
+    try:
+        subprocess.Popen(helper_command, **helper_kwargs)
+    except OSError as exc:
+        if not (breakaway_flag and (creationflags & breakaway_flag)):
+            raise
+        if not _is_breakaway_launch_denied(exc):
+            raise
+        helper_kwargs["creationflags"] = creationflags & ~breakaway_flag
+        subprocess.Popen(helper_command, **helper_kwargs)
 
 
 def _run_update_worker(

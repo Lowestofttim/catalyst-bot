@@ -226,10 +226,11 @@ class TestAppUpdateSecurity(unittest.TestCase):
             helper_path = Path(argv[3])
             helper_text = helper_path.read_text(encoding="utf-8")
 
-        self.assertIn("PID eq 4321", helper_text)
+        self.assertIn("Get-Process -Id 4321", helper_text)
+        self.assertIn("AddSeconds(120)", helper_text)
         self.assertIn("start /wait", helper_text)
         self.assertIn("Catalyst-Setup-v1.2.32.exe", helper_text)
-        self.assertIn("/CATALYST_RELAUNCH=0", helper_text)
+        self.assertIn("/CATALYST_RELAUNCH=1", helper_text)
         self.assertIn(r"C:\Program Files\CATalyst\Catalyst.exe", helper_text)
 
     def test_launch_installer_pins_silent_upgrade_to_running_install_dir(self):
@@ -252,6 +253,112 @@ class TestAppUpdateSecurity(unittest.TestCase):
 
         self.assertIn(r'set "APP_DIR=C:\Program Files\CATalyst"', helper_text)
         self.assertIn(r'/DIR="%APP_DIR%"', helper_text)
+
+    def test_launch_installer_breaks_helper_away_from_parent_job(self):
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(app_update.sys, "platform", "win32"),
+            patch.object(
+                app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"
+            ),
+            patch.object(app_update.os, "getpid", return_value=4321),
+            patch.object(
+                app_update.subprocess, "DETACHED_PROCESS", 0x00000008, create=True
+            ),
+            patch.object(
+                app_update.subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0x00000200,
+                create=True,
+            ),
+            patch.object(
+                app_update.subprocess,
+                "CREATE_BREAKAWAY_FROM_JOB",
+                0x01000000,
+                create=True,
+            ),
+            patch.object(app_update.subprocess, "Popen") as popen,
+        ):
+            installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
+            installer.write_bytes(b"fake installer")
+
+            app_update._launch_installer(installer)
+
+            creationflags = int(popen.call_args.kwargs.get("creationflags") or 0)
+
+        self.assertTrue(creationflags & 0x00000008)
+        self.assertTrue(creationflags & 0x00000200)
+        self.assertTrue(creationflags & 0x01000000)
+
+    def test_launch_installer_retries_without_breakaway_when_job_blocks_it(self):
+        access_denied = PermissionError("access denied")
+        access_denied.winerror = 5
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(app_update.sys, "platform", "win32"),
+            patch.object(
+                app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"
+            ),
+            patch.object(app_update.os, "getpid", return_value=4321),
+            patch.object(
+                app_update.subprocess, "DETACHED_PROCESS", 0x00000008, create=True
+            ),
+            patch.object(
+                app_update.subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0x00000200,
+                create=True,
+            ),
+            patch.object(
+                app_update.subprocess,
+                "CREATE_BREAKAWAY_FROM_JOB",
+                0x01000000,
+                create=True,
+            ),
+            patch.object(app_update.subprocess, "Popen") as popen,
+        ):
+            popen.side_effect = [access_denied, object()]
+            installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
+            installer.write_bytes(b"fake installer")
+
+            app_update._launch_installer(installer)
+
+            first_flags = int(popen.call_args_list[0].kwargs.get("creationflags") or 0)
+            second_flags = int(popen.call_args_list[1].kwargs.get("creationflags") or 0)
+
+        self.assertEqual(popen.call_count, 2)
+        self.assertTrue(first_flags & 0x01000000)
+        self.assertFalse(second_flags & 0x01000000)
+        self.assertTrue(second_flags & 0x00000008)
+        self.assertTrue(second_flags & 0x00000200)
+
+    def test_launch_installer_writes_helper_and_inno_diagnostic_logs(self):
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(app_update.sys, "platform", "win32"),
+            patch.object(
+                app_update.sys, "executable", r"C:\Program Files\CATalyst\Catalyst.exe"
+            ),
+            patch.object(app_update.os, "getpid", return_value=4321),
+            patch.object(app_update.subprocess, "Popen") as popen,
+        ):
+            installer = Path(td) / "Catalyst-Setup-v1.2.32.exe"
+            installer.write_bytes(b"fake installer")
+
+            app_update._launch_installer(installer)
+
+            helper_path = Path(popen.call_args.args[0][3])
+            helper_text = helper_path.read_text(encoding="utf-8")
+
+        self.assertIn('set "UPDATE_LOG=', helper_text)
+        self.assertIn('set "INSTALL_LOG=', helper_text)
+        self.assertIn(r'/LOG="%INSTALL_LOG%"', helper_text)
+        self.assertIn("installer exit %INSTALL_EXIT%", helper_text)
+        self.assertNotIn("timeout /t", helper_text)
+        self.assertNotIn("tasklist /FI", helper_text)
+        self.assertIn("Start-Sleep -Milliseconds 500", helper_text)
+        self.assertIn("ping -n 3 127.0.0.1", helper_text)
 
 
 class TestAppUpdateApi(unittest.TestCase):
